@@ -15,6 +15,8 @@ export interface BusEvent {
   at?: Date;
   /** Repeat emits with the same key start no second run in the same workflow. */
   dedupeKey?: string;
+  /** Also wakes runs parked on an `event` wait for this type and key. */
+  waitKey?: string;
 }
 
 /**
@@ -31,6 +33,7 @@ export class EventBus {
   /** Returns the runs the event started. */
   async emit(event: BusEvent): Promise<RunRow[]> {
     const ctx = this.#ctx;
+    if (event.waitKey) await ctx.engine.onEvent(event.type, event.waitKey, event.payload);
     const at = event.at ?? new Date();
     const where: SQL[] = [
       eq(schema.workflowTriggers.workspaceId, event.workspaceId),
