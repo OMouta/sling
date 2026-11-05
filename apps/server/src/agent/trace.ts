@@ -94,7 +94,8 @@ export class TraceRecorder {
     const steps = this.#steps.filter((s) => s.kind === "tool" || s.text.trim());
     return {
       answer,
-      trace: steps.length > 0 ? { steps: structuredClone(steps), ms: Date.now() - this.#started } : null,
+      trace:
+        steps.length > 0 ? { steps: structuredClone(steps), ms: Date.now() - this.#started } : null,
     };
   }
 
