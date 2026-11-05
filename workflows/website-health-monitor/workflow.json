@@ -1,0 +1,215 @@
+{
+  "schema": "sling.workflow/v1",
+  "name": "Website health monitor",
+  "description": "Alerts in Discord when a site is down.",
+  "nodes": [
+    {
+      "id": "every5",
+      "type": "core.schedule",
+      "version": 1,
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "config": {
+        "cron": "*/5 * * * *"
+      },
+      "label": "Every 5 minutes"
+    },
+    {
+      "id": "check",
+      "type": "http.request",
+      "version": 1,
+      "position": {
+        "x": 300,
+        "y": 0
+      },
+      "config": {
+        "method": "GET",
+        "url": "https://example.com",
+        "timeoutMs": 10000,
+        "failOnError": false
+      },
+      "label": "Check the site"
+    },
+    {
+      "id": "keep",
+      "type": "core.set_var",
+      "version": 1,
+      "position": {
+        "x": 600,
+        "y": 0
+      },
+      "config": {
+        "name": "response"
+      },
+      "label": "Keep the response"
+    },
+    {
+      "id": "down",
+      "type": "core.if",
+      "version": 1,
+      "position": {
+        "x": 900,
+        "y": 0
+      },
+      "config": {
+        "condition": "inputs.value.status >= 400"
+      },
+      "label": "Error status?"
+    },
+    {
+      "id": "alert",
+      "type": "discord.send_message",
+      "version": 1,
+      "position": {
+        "x": 1200,
+        "y": -60
+      },
+      "config": {
+        "installationId": "$discord",
+        "content": "={{ \"Health check failed: HTTP \" & $string(vars.response.status) & \" after \" & $string(vars.response.durationMs) & \" ms.\" }}",
+        "approvalButtons": false
+      },
+      "label": "Alert"
+    },
+    {
+      "id": "keepError",
+      "type": "core.set_var",
+      "version": 1,
+      "position": {
+        "x": 600,
+        "y": 200
+      },
+      "config": {
+        "name": "error"
+      },
+      "label": "Keep the error"
+    },
+    {
+      "id": "unreachable",
+      "type": "discord.send_message",
+      "version": 1,
+      "position": {
+        "x": 900,
+        "y": 200
+      },
+      "config": {
+        "installationId": "$discord",
+        "content": "={{ \"Health check couldn't reach the site: \" & vars.error.message }}",
+        "approvalButtons": false
+      },
+      "label": "Alert: unreachable"
+    }
+  ],
+  "edges": [
+    {
+      "id": "x_every5_check",
+      "kind": "exec",
+      "from": {
+        "node": "every5",
+        "port": "next"
+      },
+      "to": {
+        "node": "check",
+        "port": "in"
+      }
+    },
+    {
+      "id": "x_check_keep",
+      "kind": "exec",
+      "from": {
+        "node": "check",
+        "port": "next"
+      },
+      "to": {
+        "node": "keep",
+        "port": "in"
+      }
+    },
+    {
+      "id": "d_check_response_keep_value",
+      "kind": "data",
+      "from": {
+        "node": "check",
+        "port": "response"
+      },
+      "to": {
+        "node": "keep",
+        "port": "value"
+      }
+    },
+    {
+      "id": "x_keep_down",
+      "kind": "exec",
+      "from": {
+        "node": "keep",
+        "port": "next"
+      },
+      "to": {
+        "node": "down",
+        "port": "in"
+      }
+    },
+    {
+      "id": "d_check_response_down_value",
+      "kind": "data",
+      "from": {
+        "node": "check",
+        "port": "response"
+      },
+      "to": {
+        "node": "down",
+        "port": "value"
+      }
+    },
+    {
+      "id": "x_down_alert",
+      "kind": "exec",
+      "from": {
+        "node": "down",
+        "port": "true"
+      },
+      "to": {
+        "node": "alert",
+        "port": "in"
+      }
+    },
+    {
+      "id": "x_check_keepError",
+      "kind": "exec",
+      "from": {
+        "node": "check",
+        "port": "error"
+      },
+      "to": {
+        "node": "keepError",
+        "port": "in"
+      }
+    },
+    {
+      "id": "d_check_error_keepError_value",
+      "kind": "data",
+      "from": {
+        "node": "check",
+        "port": "error"
+      },
+      "to": {
+        "node": "keepError",
+        "port": "value"
+      }
+    },
+    {
+      "id": "x_keepError_unreachable",
+      "kind": "exec",
+      "from": {
+        "node": "keepError",
+        "port": "next"
+      },
+      "to": {
+        "node": "unreachable",
+        "port": "in"
+      }
+    }
+  ]
+}

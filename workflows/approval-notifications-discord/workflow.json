@@ -1,0 +1,58 @@
+{
+  "schema": "sling.workflow/v1",
+  "name": "Approval notifications in Discord",
+  "description": "Posts approvals to Discord with buttons.",
+  "nodes": [
+    {
+      "id": "approval",
+      "type": "sling.approval_requested",
+      "version": 1,
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "config": {},
+      "label": "Approval needed"
+    },
+    {
+      "id": "send",
+      "type": "discord.send_message",
+      "version": 1,
+      "position": {
+        "x": 320,
+        "y": 0
+      },
+      "config": {
+        "installationId": "$discord",
+        "approvalButtons": true
+      },
+      "label": "Ask in Discord"
+    }
+  ],
+  "edges": [
+    {
+      "id": "x_approval_send",
+      "kind": "exec",
+      "from": {
+        "node": "approval",
+        "port": "next"
+      },
+      "to": {
+        "node": "send",
+        "port": "in"
+      }
+    },
+    {
+      "id": "d_approval_approval_send_approval",
+      "kind": "data",
+      "from": {
+        "node": "approval",
+        "port": "approval"
+      },
+      "to": {
+        "node": "send",
+        "port": "approval"
+      }
+    }
+  ]
+}

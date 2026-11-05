@@ -1,0 +1,18 @@
+{
+  "key": "important-email-to-discord",
+  "name": "Important email to Discord",
+  "description": "When mail arrives from a sender on your list, summarize it, pull out action items, and post them to Discord. Edit the sender list in the condition node.",
+  "builtIn": false,
+  "bindings": [
+    {
+      "placeholder": "$email",
+      "connectorId": "email",
+      "label": "Mailbox"
+    },
+    {
+      "placeholder": "$discord",
+      "connectorId": "discord",
+      "label": "Discord bot"
+    }
+  ]
+}
