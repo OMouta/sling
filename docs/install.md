@@ -54,6 +54,12 @@ Under **Settings**, pick a provider:
 
 The key is encrypted at rest with AES-256-GCM. **Test connection** makes one small call.
 
+## Connectors
+
+Discord and email are set up in the web app under **Connectors**. Their credentials are encrypted the same way as model keys. Setup guides: [Discord](connectors/discord.md), [Email](connectors/email.md).
+
+The server reaches Discord and your mail server from inside the container, so it needs outbound access to `discord.com` and your IMAP and SMTP hosts.
+
 ## Upgrades
 
 ```sh

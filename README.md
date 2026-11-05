@@ -8,7 +8,9 @@ Sling is a self-hosted assistant that hands real work to coding agents on your o
 
 Sling coordinates. Codex writes the code. The control plane never edits source itself.
 
-This repo is at **Stage 1** of the plan in [`plan/stage1.md`](plan/stage1.md): one assistant, one kind of Runner, one specialist (Codex). Workflows, Discord, and cloud sandboxes come in later stages.
+Around that sits a workflow engine with a visual editor. Workflows react to email, Discord messages, schedules, webhooks, and Sling's own events, and they can summarize with a model, ask for approval, or hand work to Codex. The chat assistant is itself a workflow, so the web app and Discord talk to the same one.
+
+This repo is at **Stage 2** of the plan in [`plan/`](plan/): workflows, the editor, and the Discord and email connectors. Cloud sandboxes and routing across many machines come next.
 
 ## How it fits together
 
@@ -45,6 +47,8 @@ sling-runner service install
 
 Then start a conversation: "The footer year in site is hardcoded. Make it dynamic and add a test."
 
+To use Discord or email, add them under **Connectors**, then install a template under **Workflows**, for example **Important email to Discord** or **Discord assistant**.
+
 ## Permission modes
 
 | Mode | Codex sandbox | Asks before |
@@ -62,6 +66,8 @@ Each conversation has a mode, and each machine can cap the mode it accepts. Deta
 - [Run Sling Runner on a machine](docs/runner.md)
 - [Reach Sling from outside your network](docs/remote-access.md)
 - [Permission modes and what enforces them](docs/modes.md)
+- [Workflows, nodes, and templates](docs/workflows.md)
+- Connectors: [Discord](docs/connectors/discord.md), [Email](docs/connectors/email.md)
 - [Threat model](docs/threat-model.md)
 - [Development](docs/development.md)
 - Product spec, decisions, and plan: [`plan/`](plan/)
