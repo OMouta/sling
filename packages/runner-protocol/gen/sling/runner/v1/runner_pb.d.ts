@@ -66,6 +66,12 @@ export declare type Envelope = Message<"sling.runner.v1.Envelope"> & {
     case: "repoChangeResult";
   } | {
     /**
+     * @generated from field: sling.runner.v1.ChatEvent chat_event = 6;
+     */
+    value: ChatEvent;
+    case: "chatEvent";
+  } | {
+    /**
      * Server to Runner.
      *
      * @generated from field: sling.runner.v1.Challenge challenge = 20;
@@ -126,6 +132,18 @@ export declare type Envelope = Message<"sling.runner.v1.Envelope"> & {
      */
     value: RepoScan;
     case: "repoScan";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ChatTurn chat_turn = 30;
+     */
+    value: ChatTurn;
+    case: "chatTurn";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ChatCancel chat_cancel = 31;
+     */
+    value: ChatCancel;
+    case: "chatCancel";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1520,6 +1538,234 @@ export enum ActionResult_Outcome {
  * Describes the enum sling.runner.v1.ActionResult.Outcome.
  */
 export declare const ActionResult_OutcomeSchema: GenEnum<ActionResult_Outcome>;
+
+/**
+ * Server to Runner: one turn of the assistant, run by a coding agent's CLI
+ * on the machine owner's own login. The agent gets no file or shell tools,
+ * only Sling's tools, which `sling-runner mcp` serves to it over stdio.
+ *
+ * @generated from message sling.runner.v1.ChatTurn
+ */
+export declare type ChatTurn = Message<"sling.runner.v1.ChatTurn"> & {
+  /**
+   * @generated from field: string turn_id = 1;
+   */
+  turnId: string;
+
+  /**
+   * "codex" or "claude-code".
+   *
+   * @generated from field: string harness = 2;
+   */
+  harness: string;
+
+  /**
+   * One of the capability's AgentModel ids. Empty means the agent's default.
+   *
+   * @generated from field: string model = 3;
+   */
+  model: string;
+
+  /**
+   * Reasoning effort. Empty means the model's default.
+   *
+   * @generated from field: string effort = 4;
+   */
+  effort: string;
+
+  /**
+   * @generated from field: bool fast = 5;
+   */
+  fast: boolean;
+
+  /**
+   * The assistant's instructions, sent every turn. The Runner passes them as
+   * the system prompt where the agent takes one.
+   *
+   * @generated from field: string instructions = 6;
+   */
+  instructions: string;
+
+  /**
+   * What the assistant answers this turn: the user's message, or an update.
+   *
+   * @generated from field: string prompt = 7;
+   */
+  prompt: string;
+
+  /**
+   * The agent's session from an earlier turn on this machine. Empty starts
+   * a new one.
+   *
+   * @generated from field: string session_id = 8;
+   */
+  sessionId: string;
+
+  /**
+   * Where `sling-runner mcp` lists and calls Sling's tools, and the bearer
+   * token that allows that for this turn only.
+   *
+   * @generated from field: string tools_url = 9;
+   */
+  toolsUrl: string;
+
+  /**
+   * @generated from field: string tools_token = 10;
+   */
+  toolsToken: string;
+
+  /**
+   * The conversation so far, as text. Used to start a new session when
+   * session_id is empty or can't be resumed.
+   *
+   * @generated from field: string history = 11;
+   */
+  history: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChatTurn.
+ * Use `create(ChatTurnSchema)` to create a new message.
+ */
+export declare const ChatTurnSchema: GenMessage<ChatTurn>;
+
+/**
+ * Server to Runner: stop a turn.
+ *
+ * @generated from message sling.runner.v1.ChatCancel
+ */
+export declare type ChatCancel = Message<"sling.runner.v1.ChatCancel"> & {
+  /**
+   * @generated from field: string turn_id = 1;
+   */
+  turnId: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChatCancel.
+ * Use `create(ChatCancelSchema)` to create a new message.
+ */
+export declare const ChatCancelSchema: GenMessage<ChatCancel>;
+
+/**
+ * Runner to server, while a turn runs. Not stored or resent after a
+ * reconnect: a turn cut off by a disconnect fails.
+ *
+ * @generated from message sling.runner.v1.ChatEvent
+ */
+export declare type ChatEvent = Message<"sling.runner.v1.ChatEvent"> & {
+  /**
+   * @generated from field: string turn_id = 1;
+   */
+  turnId: string;
+
+  /**
+   * @generated from oneof sling.runner.v1.ChatEvent.kind
+   */
+  kind: {
+    /**
+     * @generated from field: sling.runner.v1.ChatDelta delta = 2;
+     */
+    value: ChatDelta;
+    case: "delta";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ChatToolUse tool_use = 3;
+     */
+    value: ChatToolUse;
+    case: "toolUse";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ChatDone done = 4;
+     */
+    value: ChatDone;
+    case: "done";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message sling.runner.v1.ChatEvent.
+ * Use `create(ChatEventSchema)` to create a new message.
+ */
+export declare const ChatEventSchema: GenMessage<ChatEvent>;
+
+/**
+ * Reply text as it arrives.
+ *
+ * @generated from message sling.runner.v1.ChatDelta
+ */
+export declare type ChatDelta = Message<"sling.runner.v1.ChatDelta"> & {
+  /**
+   * @generated from field: string text = 1;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChatDelta.
+ * Use `create(ChatDeltaSchema)` to create a new message.
+ */
+export declare const ChatDeltaSchema: GenMessage<ChatDelta>;
+
+/**
+ * The agent called one of Sling's tools.
+ *
+ * @generated from message sling.runner.v1.ChatToolUse
+ */
+export declare type ChatToolUse = Message<"sling.runner.v1.ChatToolUse"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChatToolUse.
+ * Use `create(ChatToolUseSchema)` to create a new message.
+ */
+export declare const ChatToolUseSchema: GenMessage<ChatToolUse>;
+
+/**
+ * @generated from message sling.runner.v1.ChatDone
+ */
+export declare type ChatDone = Message<"sling.runner.v1.ChatDone"> & {
+  /**
+   * The whole reply.
+   *
+   * @generated from field: string text = 1;
+   */
+  text: string;
+
+  /**
+   * The agent's session, to resume next turn.
+   *
+   * @generated from field: string session_id = 2;
+   */
+  sessionId: string;
+
+  /**
+   * Empty when the turn worked.
+   *
+   * @generated from field: string error = 3;
+   */
+  error: string;
+
+  /**
+   * @generated from field: uint64 input_tokens = 4;
+   */
+  inputTokens: bigint;
+
+  /**
+   * @generated from field: uint64 output_tokens = 5;
+   */
+  outputTokens: bigint;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChatDone.
+ * Use `create(ChatDoneSchema)` to create a new message.
+ */
+export declare const ChatDoneSchema: GenMessage<ChatDone>;
 
 /**
  * @generated from enum sling.runner.v1.PermissionMode

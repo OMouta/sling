@@ -33,6 +33,7 @@ message Envelope {
     Inventory inventory = 3;
     TaskEvent task_event = 4;
     RepoChangeResult repo_change_result = 5;
+    ChatEvent chat_event = 6;
 
     // Server to Runner.
     Challenge challenge = 20;
@@ -45,6 +46,8 @@ message Envelope {
     Error error = 27;
     RepoChange repo_change = 28;
     RepoScan repo_scan = 29;
+    ChatTurn chat_turn = 30;
+    ChatCancel chat_cancel = 31;
   }
 }
 
@@ -388,4 +391,72 @@ message ActionResult {
   string message = 4;
   // PR URL, or a compare URL when no PR could be opened.
   string url = 5;
+}
+
+// ---------------------------------------------------------------- chat
+
+// Server to Runner: one turn of the assistant, run by a coding agent's CLI
+// on the machine owner's own login. The agent gets no file or shell tools,
+// only Sling's tools, which `sling-runner mcp` serves to it over stdio.
+message ChatTurn {
+  string turn_id = 1;
+  // "codex" or "claude-code".
+  string harness = 2;
+  // One of the capability's AgentModel ids. Empty means the agent's default.
+  string model = 3;
+  // Reasoning effort. Empty means the model's default.
+  string effort = 4;
+  bool fast = 5;
+  // The assistant's instructions, sent every turn. The Runner passes them as
+  // the system prompt where the agent takes one.
+  string instructions = 6;
+  // What the assistant answers this turn: the user's message, or an update.
+  string prompt = 7;
+  // The agent's session from an earlier turn on this machine. Empty starts
+  // a new one.
+  string session_id = 8;
+  // Where `sling-runner mcp` lists and calls Sling's tools, and the bearer
+  // token that allows that for this turn only.
+  string tools_url = 9;
+  string tools_token = 10;
+  // The conversation so far, as text. Used to start a new session when
+  // session_id is empty or can't be resumed.
+  string history = 11;
+}
+
+// Server to Runner: stop a turn.
+message ChatCancel {
+  string turn_id = 1;
+}
+
+// Runner to server, while a turn runs. Not stored or resent after a
+// reconnect: a turn cut off by a disconnect fails.
+message ChatEvent {
+  string turn_id = 1;
+  oneof kind {
+    ChatDelta delta = 2;
+    ChatToolUse tool_use = 3;
+    ChatDone done = 4;
+  }
+}
+
+// Reply text as it arrives.
+message ChatDelta {
+  string text = 1;
+}
+
+// The agent called one of Sling's tools.
+message ChatToolUse {
+  string name = 1;
+}
+
+message ChatDone {
+  // The whole reply.
+  string text = 1;
+  // The agent's session, to resume next turn.
+  string session_id = 2;
+  // Empty when the turn worked.
+  string error = 3;
+  uint64 input_tokens = 4;
+  uint64 output_tokens = 5;
 }
