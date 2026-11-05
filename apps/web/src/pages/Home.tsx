@@ -1,5 +1,4 @@
 import type {
-  AgentChoice,
   AssistantChoice,
   ConversationView,
   PermissionMode,
@@ -47,21 +46,16 @@ export function HomePage() {
   const catalog = useModelCatalog();
   // Unset means "the workspace default", so a default changed elsewhere still applies.
   const [assistant, setAssistant] = useState<AssistantChoice | undefined>();
-  const [agent, setAgent] = useState<AgentChoice | undefined>();
   const [mode, setMode] = useState<PermissionMode | undefined>();
   const modeChange = useModeChange(setMode);
 
   const start = useMutation({
     mutationFn: async (message: string) => {
       const c = await api.post<ConversationView>("/api/conversations");
-      const settings = {
-        ...(assistant ? { assistant } : {}),
-        ...(agent ? { agent } : {}),
-      };
-      if (mode || assistant || agent) {
+      if (mode || assistant) {
         await api.patch(`/api/conversations/${c.id}`, {
           ...(mode ? { mode } : {}),
-          ...(assistant || agent ? { settings } : {}),
+          ...(assistant ? { settings: { assistant } } : {}),
         });
       }
       await api.post(`/api/conversations/${c.id}/messages`, { text: message });
@@ -73,8 +67,10 @@ export function HomePage() {
     },
   });
 
-  const hasModel = Boolean(settings.data?.model);
-  const hasMachine = machinesOnly(runners.data ?? []).length > 0;
+  const machines = machinesOnly(runners.data ?? []);
+  const hasMachine = machines.length > 0;
+  // A machine's logged-in CLI is enough to chat; an API key is the other way.
+  const hasModel = Boolean(catalog.data?.defaults.assistant) || Boolean(settings.data?.model);
   const ready = hasModel && hasMachine;
   const recent = (tasks.data ?? []).slice(0, 5);
 
@@ -101,18 +97,25 @@ export function HomePage() {
             </p>
             {!ready && settings.isSuccess && runners.isSuccess && (
               <Card className="mt-6 w-full max-w-xl divide-y divide-border text-left">
-                <Step done={hasModel} n={1} icon={Cpu} title="Connect a model" to="/settings">
-                  Sling's assistant needs an OpenAI, Anthropic, or OpenAI-compatible model.
-                </Step>
                 <Step
                   done={hasMachine}
-                  n={2}
+                  n={1}
                   icon={Laptop}
                   title="Pair a machine"
                   to="/machines"
                   search={{ pair: true }}
                 >
-                  Install sling-runner on the computer that has your repos and Codex or Claude Code.
+                  The computer that has your repos, with Codex or Claude Code logged in. Sling chats
+                  and codes through them, on your own subscription.
+                </Step>
+                <Step
+                  done={hasModel}
+                  n={2}
+                  icon={Cpu}
+                  title="Log in to a coding agent"
+                  to="/machines"
+                >
+                  Run codex login or claude auth login on that machine. No API key needed.
                 </Step>
               </Card>
             )}
@@ -157,17 +160,7 @@ export function HomePage() {
                   className="min-w-0 flex-1"
                   catalog={catalog.data}
                   assistant={assistant ?? catalog.data?.defaults.assistant ?? null}
-                  agent={
-                    agent ??
-                    catalog.data?.defaults.agent ?? {
-                      harness: "codex",
-                      model: null,
-                      effort: null,
-                      fast: false,
-                    }
-                  }
                   onAssistant={setAssistant}
-                  onAgent={setAgent}
                   mode={mode ?? settings.data?.defaultMode ?? "auto"}
                   onMode={modeChange.change}
                 />

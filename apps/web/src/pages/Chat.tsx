@@ -1,5 +1,4 @@
 import {
-  type AgentChoice,
   type AssistantChoice,
   type ChatSettings,
   MODE_POLICY,
@@ -132,8 +131,6 @@ export function ChatPage() {
 
   const assistant: AssistantChoice | null =
     conversation.settings?.assistant ?? catalog.data?.defaults.assistant ?? null;
-  const agent: AgentChoice = conversation.settings?.agent ??
-    catalog.data?.defaults.agent ?? { harness: "codex", model: null, effort: null, fast: false };
 
   return (
     <Page
@@ -214,9 +211,7 @@ export function ChatPage() {
                   className="min-w-0 flex-1"
                   catalog={catalog.data}
                   assistant={assistant}
-                  agent={agent}
                   onAssistant={(choice) => setSettings.mutate({ assistant: choice })}
-                  onAgent={(choice) => setSettings.mutate({ agent: choice })}
                   mode={conversation.mode}
                   onMode={modeChange.change}
                 />

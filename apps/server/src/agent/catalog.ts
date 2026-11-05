@@ -1,5 +1,6 @@
 import {
   type AgentModelsView,
+  canChatOn,
   HARNESS_LABELS,
   HARNESSES,
   harnessCapability,
@@ -168,7 +169,7 @@ async function providerModels(
   provider: ModelProviderId,
 ): Promise<ProviderModelsView> {
   const info = MODEL_PROVIDERS[provider];
-  const base = { provider, label: info.label };
+  const base = { provider, kind: "api" as const, label: info.label, readyMachines: 0 };
   const cfg = await providerConfig(ctx, workspaceId, provider);
   const connected = Boolean(
     cfg && (cfg.credentialId || (provider === "openai-compatible" && cfg.baseUrl)),
@@ -252,10 +253,36 @@ export async function modelCatalog(
   workspaceId: string,
 ): Promise<ModelCatalogView> {
   const providers = Object.keys(MODEL_PROVIDERS) as ModelProviderId[];
-  const [assistant, agents, defaults] = await Promise.all([
+  const [api, agents, defaults] = await Promise.all([
     Promise.all(providers.map((p) => providerModels(ctx, workspaceId, p))),
     agentModels(ctx, workspaceId),
     chatDefaults(ctx, workspaceId),
   ]);
-  return { assistant, agents, defaults };
+  // The CLIs come first: they run on the user's own login, with no key.
+  const runners = await ctx.db
+    .select({ capabilities: schema.runners.capabilities })
+    .from(schema.runners)
+    .where(
+      and(
+        eq(schema.runners.workspaceId, workspaceId),
+        eq(schema.runners.ephemeral, false),
+        isNull(schema.runners.revokedAt),
+      ),
+    );
+  const cli: ProviderModelsView[] = agents.map((a) => {
+    const chatMachines = runners.filter((r) => canChatOn(r.capabilities, a.harness)).length;
+    return {
+      provider: a.harness,
+      kind: "cli",
+      label: a.label,
+      connected: chatMachines > 0,
+      readyMachines: chatMachines,
+      error:
+        a.readyMachines > 0 && chatMachines === 0
+          ? `Update sling-runner on your machines to chat through ${a.label}.`
+          : null,
+      models: a.models,
+    };
+  });
+  return { assistant: [...cli, ...api], agents, defaults };
 }

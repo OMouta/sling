@@ -1,4 +1,5 @@
 import {
+  CHAT_CAPABILITY,
   cloneUrlFor,
   HARNESS_LABELS,
   HARNESSES,
@@ -386,7 +387,7 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
             </span>
           ))}
           {runner.capabilities
-            .filter((c) => !isAgentCapability(c.name))
+            .filter((c) => !isAgentCapability(c.name) && c.name !== CHAT_CAPABILITY)
             .map((c) => (
               <span key={c.name} title={c.detail || undefined}>
                 <Badge tone={c.ready ? "neutral" : "warn"}>

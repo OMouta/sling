@@ -173,9 +173,12 @@ afterAll(async () => {
 });
 
 describe("provider keys and model lists", () => {
-  it("lists nothing until a key is stored", async () => {
+  it("lists nothing until a key is stored or a machine is paired", async () => {
     const catalog = await api<ModelCatalogView>("GET", "/api/models");
+    // No machine yet, so the CLIs aren't ready either.
     expect(catalog.assistant.map((p) => [p.provider, p.connected])).toEqual([
+      ["codex", false],
+      ["claude-code", false],
       ["openai", false],
       ["anthropic", false],
       ["openai-compatible", false],
@@ -461,5 +464,74 @@ describe("two-factor without a password right after sign-in", () => {
     const [user] = await server.ctx.db.select().from(schema.users);
     expect(user?.twoFactorEnabled).toBe(false);
     expect(await server.ctx.db.select().from(schema.twoFactors)).toEqual([]);
+  });
+});
+
+describe("chat on a coding agent's CLI", () => {
+  async function reply(convId: string, after: number) {
+    return until("assistant reply", async () => {
+      const d = await api<{ messages: { role: string; text: string }[] }>(
+        "GET",
+        `/api/conversations/${convId}`,
+      );
+      const replies = d.messages.filter((m) => m.role === "assistant");
+      return replies.length > after ? replies.at(-1) : null;
+    });
+  }
+
+  it("runs the turn on the machine's CLI, then resumes its session", async () => {
+    const conv = await api<{ id: string }>("POST", "/api/conversations");
+    await api("PATCH", `/api/conversations/${conv.id}`, {
+      settings: {
+        assistant: { provider: "codex", model: "gpt-5.6-sol", effort: "high", fast: false },
+      },
+    });
+    const before = runner?.chatTurns.length ?? 0;
+    await api("POST", `/api/conversations/${conv.id}/messages`, { text: "What can you do?" });
+    expect((await reply(conv.id, 0)).text).toBe("Fake reply to: What can you do?");
+    const first = runner?.chatTurns[before];
+    expect(first).toMatchObject({
+      harness: "codex",
+      model: "gpt-5.6-sol",
+      effort: "high",
+      prompt: "What can you do?",
+      sessionId: "",
+      history: "",
+    });
+    expect(first?.instructions).toContain("Coding agents you can delegate to");
+    expect(first?.instructions).toContain("gpt-6-luna");
+    expect(first?.toolsUrl).toBe(`${origin}/api/agent/tools`);
+
+    await api("POST", `/api/conversations/${conv.id}/messages`, { text: "And then?" });
+    await reply(conv.id, 1);
+    const second = runner?.chatTurns[before + 1];
+    // Same machine, same agent: the CLI resumes, so only the new message goes over.
+    expect(second?.sessionId).toBe(first ? `fake-session-${before + 1}` : "");
+    expect(second?.prompt).toBe("And then?");
+    expect(second?.history).toBe("");
+  });
+
+  it("serves Sling's tools to the CLI for that turn only", async () => {
+    const conv = await api<{ id: string }>("POST", "/api/conversations");
+    await api("PATCH", `/api/conversations/${conv.id}`, {
+      settings: { assistant: { provider: "claude-code", model: "", effort: null, fast: false } },
+    });
+    await api("POST", `/api/conversations/${conv.id}/messages`, { text: "[fake:tool] machines?" });
+    const r = await reply(conv.id, 0);
+    expect(r.text).toBe(
+      "Tools: list_machines, delegate_coding_task, get_task, cancel_task. Machines: devbox.",
+    );
+    const res = await realFetch(`${origin}/api/agent/tools`, {
+      headers: { authorization: "Bearer not-a-turn-token" },
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("lists the CLIs first as models to chat with", async () => {
+    const catalog = await api<ModelCatalogView>("GET", "/api/models");
+    expect(catalog.assistant.slice(0, 2).map((p) => [p.provider, p.kind, p.connected])).toEqual([
+      ["codex", "cli", true],
+      ["claude-code", "cli", true],
+    ]);
   });
 });

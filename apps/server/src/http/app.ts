@@ -8,6 +8,7 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
+import { agentToolRoutes } from "../agent/tool-routes.ts";
 import type { Config } from "../config.ts";
 import type { AppContext } from "../context.ts";
 import { conversationRoutes } from "../conversations/routes.ts";
@@ -57,6 +58,7 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
 
   await app.register(async (scope) => authRoutes(scope, ctx));
   await app.register(async (scope) => installRoutes(scope, ctx));
+  await app.register(async (scope) => agentToolRoutes(scope, ctx));
   await app.register(async (scope) => hubRoutes(scope, ctx));
   await app.register(async (scope) => {
     ctx.runners.register(scope);

@@ -1,6 +1,7 @@
 import {
   type AgentChoice,
   type AssistantChoice,
+  type AssistantProvider,
   effortLabel,
   type Harness,
   type ModelCatalogView,
@@ -35,7 +36,7 @@ export function useSaveProviderKey() {
   };
 }
 
-export function providerModels(catalog: ModelCatalogView | undefined, provider: ModelProviderId) {
+export function providerModels(catalog: ModelCatalogView | undefined, provider: AssistantProvider) {
   return catalog?.assistant.find((p) => p.provider === provider);
 }
 

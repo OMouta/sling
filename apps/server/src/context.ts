@@ -3,6 +3,7 @@ import type { LanguageModel } from "ai";
 import type { FastifyBaseLogger } from "fastify";
 import type { PgBoss } from "pg-boss";
 import type { Agent } from "./agent/agent.ts";
+import type { CliChat } from "./agent/cli-chat.ts";
 import type { Auth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./realtime/hub.ts";
@@ -28,6 +29,8 @@ export interface AppContext {
   tasks: TaskService;
   sandboxes: SandboxService;
   agent: Agent;
+  /** Assistant turns run on a coding agent's CLI on one of the user's machines. */
+  cliChat: CliChat;
   /** Node types the workflow engine can run, and the connectors that brought some. */
   registry: NodeRegistry;
   engine: Engine;

@@ -17,6 +17,17 @@ export function harnessCapability(harness: Harness): string {
   return `coding.${harness}`;
 }
 
+/** A Runner that can run assistant turns on its coding agents' CLIs reports this. */
+export const CHAT_CAPABILITY = "chat";
+
+/** Whether a machine's reported capabilities let the assistant chat on this agent there. */
+export function canChatOn(capabilities: { name: string; ready: boolean }[], harness: Harness) {
+  return (
+    capabilities.some((c) => c.name === CHAT_CAPABILITY && c.ready) &&
+    capabilities.some((c) => c.name === harnessCapability(harness) && c.ready)
+  );
+}
+
 /**
  * Environment variables a sandbox image is started with. The Runner's
  * `sling-runner sandbox` command reads these.

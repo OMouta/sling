@@ -1,4 +1,4 @@
-import type { Harness } from "./harness.ts";
+import { type Harness, isHarness } from "./harness.ts";
 
 /** Providers the assistant can run on. */
 export const MODEL_PROVIDER_IDS = ["openai", "anthropic", "openai-compatible"] as const;
@@ -6,6 +6,17 @@ export type ModelProviderId = (typeof MODEL_PROVIDER_IDS)[number];
 
 export function isModelProviderId(value: unknown): value is ModelProviderId {
   return typeof value === "string" && (MODEL_PROVIDER_IDS as readonly string[]).includes(value);
+}
+
+/**
+ * What the assistant can run on: a coding agent's CLI on a paired machine,
+ * on that machine's own login, or a provider's API with a stored key.
+ */
+export type AssistantProvider = Harness | ModelProviderId;
+
+/** True for the CLIs, which run on a machine rather than through an API key. */
+export function isCliProvider(provider: AssistantProvider): provider is Harness {
+  return isHarness(provider);
 }
 
 /** Reasoning effort names, lowest first. Each model takes a subset. */
@@ -42,7 +53,7 @@ export const EFFORT_PATTERN = /^[a-z]{2,16}$/;
 
 /** The assistant's model for a conversation. */
 export interface AssistantChoice {
-  provider: ModelProviderId;
+  provider: AssistantProvider;
   model: string;
   /** Null takes the model's default. */
   effort: string | null;
@@ -76,10 +87,14 @@ export interface ModelOption {
 }
 
 export interface ProviderModelsView {
-  provider: ModelProviderId;
+  provider: AssistantProvider;
+  /** A CLI on the user's machines, or an API with a key. */
+  kind: "cli" | "api";
   label: string;
-  /** An API key (or base URL) is stored. */
+  /** For a CLI, a machine has it ready. For an API, a key (or base URL) is stored. */
   connected: boolean;
+  /** For a CLI: machines where it's installed and logged in. */
+  readyMachines: number;
   /** Why the model list couldn't be fetched, when it couldn't. */
   error: string | null;
   models: ModelOption[];

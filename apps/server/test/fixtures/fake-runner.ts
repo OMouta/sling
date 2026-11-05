@@ -9,6 +9,8 @@ import type { MessageInitShape } from "@bufbuild/protobuf";
 import {
   ActionResult_Outcome,
   authPayload,
+  type ChatEventSchema,
+  type ChatTurn,
   create,
   decodeEnvelope,
   type Envelope,
@@ -76,6 +78,8 @@ export class FakeRunner {
   readonly repoChanges: { op: number; path: string; name: string }[] = [];
   /** How many times the server asked for a rescan. */
   scans = 0;
+  /** Chat turns the server sent, in order. */
+  readonly chatTurns: ChatTurn[] = [];
   #ws: WebSocket | null = null;
   #seq = new Map<string, number>();
   #heartbeat: NodeJS.Timeout | null = null;
@@ -164,21 +168,24 @@ export class FakeRunner {
   #inventory() {
     const o = this.options;
     return {
-      capabilities: (o.harnesses ?? ["codex"]).map((h) => ({
-        name: `coding.${h}`,
-        version: "1.0.0",
-        ready: true,
-        detail: "",
-        models: (o.models?.[h] ?? []).map((m) => ({
-          id: m.id,
-          displayName: m.id.toUpperCase(),
-          description: "",
-          efforts: m.efforts ?? [],
-          defaultEffort: m.efforts?.[0] ?? "",
-          fast: m.fast ?? false,
-          isDefault: m.isDefault ?? false,
+      capabilities: [
+        { name: "chat", version: "1", ready: true, detail: "", models: [] },
+        ...(o.harnesses ?? ["codex"]).map((h) => ({
+          name: `coding.${h}`,
+          version: "1.0.0",
+          ready: true,
+          detail: "",
+          models: (o.models?.[h] ?? []).map((m) => ({
+            id: m.id,
+            displayName: m.id.toUpperCase(),
+            description: "",
+            efforts: m.efforts ?? [],
+            defaultEffort: m.efforts?.[0] ?? "",
+            fast: m.fast ?? false,
+            isDefault: m.isDefault ?? false,
+          })),
         })),
-      })),
+      ],
       repos: o.repos.map((r) => ({
         name: r.name,
         defaultBranch: r.defaultBranch ?? "main",
@@ -196,6 +203,43 @@ export class FakeRunner {
       })),
       remoteRepos: o.remoteRepos ?? true,
     };
+  }
+
+  /** Plays one chat turn: streams a reply, and with [fake:tool] calls Sling's tools first. */
+  async #chat(t: ChatTurn) {
+    const chat = (kind: MessageInitShape<typeof ChatEventSchema>["kind"]) =>
+      this.#send(
+        create(EnvelopeSchema, { body: { case: "chatEvent", value: { turnId: t.turnId, kind } } }),
+      );
+    let text = `Fake reply to: ${t.prompt.split("\n")[0]}`;
+    if (t.prompt.includes("[fake:tool]")) {
+      const auth = { authorization: `Bearer ${t.toolsToken}` };
+      const list = (await (await fetch(t.toolsUrl, { headers: auth })).json()) as {
+        tools: { name: string }[];
+      };
+      chat({ case: "toolUse", value: { name: "list_machines" } });
+      const res = (await (
+        await fetch(`${t.toolsUrl}/list_machines`, {
+          method: "POST",
+          headers: { ...auth, "content-type": "application/json" },
+          body: JSON.stringify({ arguments: {} }),
+        })
+      ).json()) as { content: string };
+      const machines = (JSON.parse(res.content) as { name: string }[]).map((m) => m.name);
+      text = `Tools: ${list.tools.map((x) => x.name).join(", ")}. Machines: ${machines.join(", ")}.`;
+    }
+    for (const part of text.match(/.{1,12}/gs) ?? [])
+      chat({ case: "delta", value: { text: part } });
+    chat({
+      case: "done",
+      value: {
+        text,
+        sessionId: t.sessionId || `fake-session-${this.chatTurns.length}`,
+        error: "",
+        inputTokens: 11n,
+        outputTokens: 7n,
+      },
+    });
   }
 
   #sendInventory() {
@@ -269,6 +313,12 @@ export class FakeRunner {
           }),
         );
         if (ok) this.#sendInventory();
+        return;
+      }
+      case "chatTurn": {
+        const t = body.value;
+        this.chatTurns.push(t);
+        void this.#chat(t);
         return;
       }
       case "repoScan":

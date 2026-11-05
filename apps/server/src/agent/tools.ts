@@ -1,4 +1,4 @@
-import { DELIVERY_KINDS, HARNESSES, type RoutingView } from "@sling/core";
+import { AGENT_MODEL_PATTERN, DELIVERY_KINDS, HARNESSES, type RoutingView } from "@sling/core";
 import { schema } from "@sling/db";
 import { tool } from "ai";
 import { and, eq, or } from "drizzle-orm";
@@ -91,8 +91,12 @@ export function agentTools(ctx: AppContext, scope: ToolScope) {
               return [
                 h,
                 cap
-                  ? { ready: cap.ready, detail: cap.detail }
-                  : { ready: false, detail: "not installed" },
+                  ? {
+                      ready: cap.ready,
+                      detail: cap.detail,
+                      models: (cap.models ?? []).map((m) => m.id),
+                    }
+                  : { ready: false, detail: "not installed", models: [] },
               ];
             }),
           );
@@ -147,7 +151,20 @@ export function agentTools(ctx: AppContext, scope: ToolScope) {
           .enum(HARNESSES)
           .optional()
           .describe(
-            "Only when the user names the coding agent: codex or claude-code. Otherwise the workspace default is used.",
+            "The coding agent: codex or claude-code. Pick the one that suits the task, or the one the user names. Leave it out for the workspace default.",
+          ),
+        model: z
+          .string()
+          .regex(AGENT_MODEL_PATTERN)
+          .optional()
+          .describe(
+            "The agent's model, one of the ids listed for it in your instructions or by list_machines. Leave it out for the agent's own default.",
+          ),
+        effort: z
+          .enum(["low", "medium", "high", "xhigh", "max"])
+          .optional()
+          .describe(
+            "Reasoning effort for the agent. Higher for hard or wide changes, lower for small edits. Leave it out for the model's default.",
           ),
         labels: z
           .array(z.string().min(1).max(64))
@@ -181,6 +198,17 @@ export function agentTools(ctx: AppContext, scope: ToolScope) {
             environment: input.environment,
             machineId: input.machineId ?? null,
             harness: input.harness ?? null,
+            // A model or effort the assistant picked replaces the conversation's default.
+            ...(input.harness && (input.model || input.effort)
+              ? {
+                  agent: {
+                    harness: input.harness,
+                    model: input.model ?? null,
+                    effort: input.effort ?? null,
+                    fast: false,
+                  },
+                }
+              : {}),
             labels: input.labels ?? [],
             providerInstallationId: await resolveProvider(
               ctx,

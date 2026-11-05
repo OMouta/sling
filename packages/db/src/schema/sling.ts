@@ -213,6 +213,12 @@ export const conversations = pgTable(
     mode: text("mode").$type<PermissionMode>().notNull(),
     /** Model choices made in this conversation. */
     settings: jsonb("settings").$type<ChatSettings>(),
+    /** The coding agent CLI session the assistant's turns resume, and the machine it lives on. */
+    agentSession: jsonb("agent_session").$type<{
+      harness: Harness;
+      runnerId: string;
+      sessionId: string;
+    }>(),
     /** Workflow that owns this conversation. Follow-ups go back through it. */
     workflowId: text("workflow_id"),
     /** Stable key for conversations bound to an outside channel, e.g. `discord:<installation>:<channel>`. */

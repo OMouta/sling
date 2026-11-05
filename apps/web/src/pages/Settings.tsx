@@ -1,5 +1,4 @@
 import {
-  type AgentChoice,
   type AssistantChoice,
   HARNESS_LABELS,
   HARNESSES,
@@ -145,19 +144,59 @@ function Section({
 }
 
 function ModelSection({ settings }: { settings: Settings }) {
+  const catalog = useModelCatalog();
+  const clis = (catalog.data?.assistant ?? []).filter((p) => p.kind === "cli");
+  const anyKey = settings.providers.some((p) => p.connected);
   return (
     <Section
       id="model"
       title="Models"
-      description="The assistant runs on any provider you connect, and each chat can switch from the composer. Coding agents use their own login on each machine."
+      description="Sling chats through Codex or Claude Code on your machines, on the login you already have, so it uses your subscription. The assistant picks the coding agent and model for each task."
     >
       <div className="space-y-6 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-6">
-        <ul aria-label="Model providers" className="space-y-4">
-          {settings.providers.map((p) => (
-            <ProviderRow key={p.id} provider={p} />
+        <ChatDefaults />
+        <ul aria-label="Coding agents for chat" className="space-y-2">
+          {clis.map((p) => (
+            <li key={p.provider} className="flex items-center gap-3">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 shadow-raised">
+                <ProviderIcon provider={p.provider} size={17} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-medium">{p.label}</p>
+                <p className="text-xs text-muted">
+                  {p.readyMachines > 0
+                    ? `Ready on ${plural(p.readyMachines, "machine")}, ${plural(p.models.length, "model")}.`
+                    : "Not logged in on any paired machine."}
+                </p>
+              </div>
+              {p.readyMachines > 0 ? (
+                <Badge tone="ok" dot>
+                  Ready
+                </Badge>
+              ) : (
+                <Link
+                  to="/machines"
+                  className="text-xs text-subtle transition-colors duration-150 hover:text-text"
+                >
+                  Machines
+                </Link>
+              )}
+            </li>
           ))}
         </ul>
-        <ChatDefaults />
+        <details className="group" open={anyKey}>
+          <summary className="flex cursor-pointer items-center gap-2 text-[13px] font-medium select-none marker:text-subtle">
+            API keys
+            <span className="text-xs font-normal text-subtle">
+              Optional. For chatting when no machine is on, or with another provider.
+            </span>
+          </summary>
+          <ul aria-label="Model providers" className="mt-4 space-y-4">
+            {settings.providers.map((p) => (
+              <ProviderRow key={p.id} provider={p} />
+            ))}
+          </ul>
+        </details>
       </div>
     </Section>
   );
@@ -285,7 +324,7 @@ function ChatDefaults() {
   const qc = useQueryClient();
   const catalog = useModelCatalog();
   const save = useMutation({
-    mutationFn: (patch: Partial<{ assistant: AssistantChoice; agent: AgentChoice }>) =>
+    mutationFn: (patch: { assistant: AssistantChoice }) =>
       api.put<ModelCatalogView["defaults"]>("/api/settings/chat-defaults", patch),
     onSuccess: (defaults) => {
       qc.setQueryData<ModelCatalogView>(modelsKey, (c) => (c ? { ...c, defaults } : c));
@@ -301,18 +340,13 @@ function ChatDefaults() {
           <ChatControls
             catalog={catalog.data}
             assistant={defaults.assistant}
-            agent={defaults.agent}
             onAssistant={(assistant) => save.mutate({ assistant })}
-            onAgent={(agent) => save.mutate({ agent })}
           />
         ) : (
           <Spinner className="m-1 size-4" />
         )}
       </div>
-      <p className="text-xs text-subtle">
-        Any chat can switch from its composer. The coding agent here is also the default for
-        sandboxes.
-      </p>
+      <p className="text-xs text-subtle">Any chat can switch from its composer.</p>
       <ErrorText error={save.error} />
     </div>
   );

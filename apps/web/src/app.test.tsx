@@ -216,9 +216,9 @@ describe("web app", () => {
     expect(await screen.findByText("Sign in to Sling")).toBeTruthy();
   });
 
-  it("asks for a model before the first conversation", async () => {
+  it("asks for a logged-in coding agent before the first conversation", async () => {
     renderAt("/");
-    expect(await screen.findByText("Connect a model")).toBeTruthy();
+    expect(await screen.findByText("Log in to a coding agent")).toBeTruthy();
     expect(screen.getAllByText("Fix the footer").length).toBeGreaterThan(0);
   });
 

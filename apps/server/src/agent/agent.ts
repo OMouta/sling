@@ -1,14 +1,26 @@
-import { type AgentStatus, HARNESS_LABELS, MODE_POLICY, newId } from "@sling/core";
+import {
+  type AgentStatus,
+  type AssistantChoice,
+  HARNESS_LABELS,
+  HARNESSES,
+  type Harness,
+  harnessCapability,
+  isCliProvider,
+  MODE_POLICY,
+  newId,
+} from "@sling/core";
 import { schema, type TokenUsage } from "@sling/db";
 import { SLING_EVENTS } from "@sling/workflow";
 import { isStepCount, type LanguageModel, type ModelMessage, streamText } from "ai";
-import { and, asc, desc, eq, gt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
+import { workspaceSettings } from "../sandboxes/settings.ts";
 import type { SettleReason } from "../tasks/service.ts";
 import { taskView, taskWhere, toConversationView } from "../views.ts";
 import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
 import { effectiveChat } from "./chat-settings.ts";
-import { textOf, toMessageView, toModelMessages } from "./history.ts";
+import { NoChatMachine } from "./cli-chat.ts";
+import { textOf, toMessageView, toModelMessages, UPDATE_PREFIX } from "./history.ts";
 import { NoModelConfigured, resolveAssistant } from "./models.ts";
 import { agentTools } from "./tools.ts";
 
@@ -22,7 +34,7 @@ How you work:
 - You coordinate. You never write or edit code yourself. Coding work goes to a coding agent (Codex or Claude Code) through delegate_coding_task.
 - You don't need to pick the machine. Sling routes each task to a machine that's online, has the repo, has the coding agent ready, and allows this conversation's mode, and says why it picked it.
 - Pass machineId only when the user names a machine. Call list_machines to find its id, or to answer questions about machines.
-- When the user names the coding agent ("use Claude Code", "with Codex"), pass harness. Otherwise leave it out and the workspace default runs.
+- You pick the coding agent, its model, and its effort for each task, from the list at the end. Use the one the user names when they name one.
 - When the work needs something only some machines have, such as an iOS build, pass it as a label, for example labels: ["ios"].
 - Pass environment "sandbox" only when the user asks for a fresh sandbox. Never choose a sandbox on your own.
 - If delegate_coding_task returns an error with reasons, no machine or sandbox can take the task. Tell the user the reasons plainly, machine by machine, and stop. Don't try to do the work another way.
@@ -242,13 +254,22 @@ export class Agent {
     this.#setStatus(conv.workspaceId, conv.id, "thinking");
     try {
       const chat = await effectiveChat(ctx, conv.workspaceId, conv.id);
+      const agents = await codingAgentsNote(ctx, conv.workspaceId);
+      // A scripted test model stands in for the workspace default, but not for a
+      // CLI the conversation picked itself.
+      const cli = chat.assistant && isCliProvider(chat.assistant.provider);
+      if (cli && chat.assistant && (!this.#model || conv.settings?.assistant)) {
+        const reply = await this.#cliTurn(conv, chat.assistant, rows, agents, opts.signal);
+        this.#setStatus(conv.workspaceId, conv.id, "idle");
+        return { reply };
+      }
       const { model, providerOptions } = this.#model
         ? { model: this.#model, providerOptions: {} }
         : await resolveAssistant(ctx, conv.workspaceId, chat.assistant);
       const result = streamText({
         model,
         providerOptions,
-        instructions: instructions(conv.mode, new Date()),
+        instructions: `${instructions(conv.mode, new Date())}\n\n${agents}`,
         messages: toModelMessages(rows),
         tools: agentTools(ctx, {
           workspaceId: conv.workspaceId,
@@ -291,7 +312,7 @@ export class Agent {
         throw err;
       }
       const message =
-        err instanceof NoModelConfigured
+        err instanceof NoModelConfigured || err instanceof NoChatMachine
           ? err.message
           : `The assistant hit an error: ${err instanceof Error ? err.message : String(err)}`;
       ctx.log.warn({ err, conversationId }, "agent turn error");
@@ -300,6 +321,130 @@ export class Agent {
       return { reply: message };
     }
   }
+
+  /**
+   * One turn on a coding agent's CLI, on a machine and its owner's login.
+   * The CLI resumes its own session when the same machine still has it, so
+   * only the new message goes over; otherwise it gets the history as text.
+   */
+  async #cliTurn(
+    conv: typeof schema.conversations.$inferSelect,
+    choice: AssistantChoice,
+    rows: (typeof schema.messages.$inferSelect)[],
+    agents: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const ctx = this.#ctx;
+    const harness = choice.provider as Harness;
+    const { prompt, history } = cliTranscript(rows);
+    const result = await ctx.cliChat.run({
+      workspaceId: conv.workspaceId,
+      ownerId: conv.ownerId,
+      conversationId: conv.id,
+      choice,
+      label: HARNESS_LABELS[harness],
+      instructions: `${instructions(conv.mode, new Date())}\n\n${CLI_NOTE}\n\n${agents}`,
+      prompt,
+      history,
+      session: conv.agentSession ?? null,
+      ...(signal ? { signal } : {}),
+      onDelta: (text) =>
+        ctx.hub.publish(conv.workspaceId, { type: "agent.delta", conversationId: conv.id, text }),
+    });
+    if (result.sessionId) {
+      await ctx.db
+        .update(schema.conversations)
+        .set({ agentSession: { harness, runnerId: result.runnerId, sessionId: result.sessionId } })
+        .where(eq(schema.conversations.id, conv.id));
+    }
+    const reply = result.text.trim();
+    await this.addMessage(conv, "assistant", { role: "assistant", content: reply }, null, {
+      inputTokens: result.usage.input,
+      outputTokens: result.usage.output,
+    });
+    return reply;
+  }
+}
+
+/** Told to the assistant when it runs on a CLI, which has its own tools by default. */
+const CLI_NOTE = `You're running inside a coding agent's CLI on one of the user's machines, as Sling's assistant. Your only tools are Sling's, from the MCP server named "sling": list_machines, delegate_coding_task, get_task, and cancel_task. You have no file or shell access here. Never try to read, edit, or run anything yourself; delegate coding work with delegate_coding_task.`;
+
+/** The latest messages to answer, and everything before them as text. */
+export function cliTranscript(rows: (typeof schema.messages.$inferSelect)[]): {
+  prompt: string;
+  history: string;
+} {
+  const line = (r: typeof schema.messages.$inferSelect) => {
+    const text = textOf((r.content as ModelMessage).content).trim();
+    if (!text) return "";
+    if (r.role === "system") return `${UPDATE_PREFIX} ${text}`;
+    return r.role === "assistant" ? `Assistant: ${text}` : r.role === "user" ? `User: ${text}` : "";
+  };
+  let lastAnswer = -1;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i]?.role === "assistant") {
+      lastAnswer = i;
+      break;
+    }
+  }
+  const pending = rows
+    .slice(lastAnswer + 1)
+    .filter((r) => r.role === "user" || r.role === "system");
+  const prompt = pending
+    .map((r) => {
+      const text = textOf((r.content as ModelMessage).content).trim();
+      return r.role === "system" ? `${UPDATE_PREFIX} ${text}` : text;
+    })
+    .filter(Boolean)
+    .join("\n\n");
+  const earlier = rows
+    .slice(Math.max(0, lastAnswer + 1 - 40), lastAnswer + 1)
+    .map(line)
+    .filter(Boolean);
+  let history = earlier.join("\n\n");
+  if (history.length > 30_000) history = history.slice(-30_000);
+  return {
+    prompt,
+    history: history ? `The conversation so far:\n\n${history}` : "",
+  };
+}
+
+/**
+ * The coding agents on the user's machines, with their models, so the
+ * assistant can pick one for each task.
+ */
+async function codingAgentsNote(ctx: AppContext, workspaceId: string): Promise<string> {
+  const rows = await ctx.db
+    .select({ capabilities: schema.runners.capabilities })
+    .from(schema.runners)
+    .where(
+      and(
+        eq(schema.runners.workspaceId, workspaceId),
+        eq(schema.runners.ephemeral, false),
+        isNull(schema.runners.revokedAt),
+      ),
+    );
+  const { defaultHarness } = await workspaceSettings(ctx, workspaceId);
+  const lines: string[] = [];
+  for (const h of HARNESSES) {
+    const caps = rows.flatMap((r) =>
+      r.capabilities.filter((c) => c.name === harnessCapability(h) && c.ready),
+    );
+    if (caps.length === 0) continue;
+    const models = new Map<string, string>();
+    let def: string | null = null;
+    for (const c of caps) {
+      for (const m of c.models ?? []) {
+        models.set(m.id, m.efforts.length ? `${m.id} (efforts: ${m.efforts.join(", ")})` : m.id);
+        if (m.isDefault) def = m.id;
+      }
+    }
+    lines.push(
+      `- ${h} (${HARNESS_LABELS[h]}) on ${caps.length} machine${caps.length === 1 ? "" : "s"}${h === defaultHarness ? ", the default" : ""}. Models: ${[...models.values()].join("; ") || "its own default"}${def ? `. Its default model is ${def}` : ""}.`,
+    );
+  }
+  if (lines.length === 0) return "No coding agent is ready on the user's machines right now.";
+  return `Coding agents you can delegate to. Pick the agent, model, and effort for each task with delegate_coding_task's harness, model, and effort. Match the model to the job: a strong model at higher effort for hard or wide changes, a fast one at lower effort for small edits. Use what the user asks for when they name one.\n${lines.join("\n")}`;
 }
 
 function lastReply(rows: (typeof schema.messages.$inferSelect)[]): string {

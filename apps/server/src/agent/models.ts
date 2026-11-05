@@ -1,7 +1,7 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { AssistantChoice } from "@sling/core";
+import { type AssistantChoice, isCliProvider } from "@sling/core";
 import { type ModelProviderId, schema } from "@sling/db";
 import type { LanguageModel } from "ai";
 import { and, desc, eq } from "drizzle-orm";
@@ -144,9 +144,12 @@ export async function resolveAssistant(
   choice: AssistantChoice | null,
 ): Promise<{ model: LanguageModel; providerOptions: ProviderOptions }> {
   if (!choice) return { model: await resolveModel(ctx, workspaceId), providerOptions: {} };
-  const cfg = await providerConfig(ctx, workspaceId, choice.provider);
-  if (!cfg) throw new NoModelConfigured(MODEL_PROVIDERS[choice.provider].label);
-  const model = MODEL_PROVIDERS[choice.provider].create({
+  const provider = choice.provider;
+  if (isCliProvider(provider))
+    throw new Error(`${provider} runs on a machine, not through an API.`);
+  const cfg = await providerConfig(ctx, workspaceId, provider);
+  if (!cfg) throw new NoModelConfigured(MODEL_PROVIDERS[provider].label);
+  const model = MODEL_PROVIDERS[provider].create({
     model: choice.model,
     apiKey: await apiKeyFor(ctx, workspaceId, cfg),
     baseUrl: cfg.baseUrl,

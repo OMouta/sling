@@ -3,22 +3,26 @@ import {
   type AgentChoice,
   type AssistantChoice,
   type ChatSettings,
+  canChatOn,
   DEFAULT_HARNESS,
   EFFORT_PATTERN,
   HARNESSES,
+  type Harness,
+  harnessCapability,
   isHarness,
   MODEL_ID_PATTERN,
   MODEL_PROVIDER_IDS,
 } from "@sling/core";
 import { schema } from "@sling/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
 import { defaultModelConfig } from "./models.ts";
 
 export const AssistantChoiceSchema = z.object({
-  provider: z.enum(MODEL_PROVIDER_IDS),
-  model: z.string().regex(MODEL_ID_PATTERN),
+  provider: z.enum([...HARNESSES, ...MODEL_PROVIDER_IDS]),
+  /** Empty for a CLI means the agent's own default. */
+  model: z.string().regex(MODEL_ID_PATTERN).or(z.literal("")),
   effort: z.string().regex(EFFORT_PATTERN).nullable().default(null),
   fast: z.boolean().default(false),
 });
@@ -58,14 +62,46 @@ export async function chatDefaults(
     })
     .from(schema.workspaces)
     .where(eq(schema.workspaces.id, workspaceId));
-  let assistant = ws?.chatDefaults?.assistant ?? null;
+  const harness = isHarness(ws?.defaultHarness) ? ws.defaultHarness : DEFAULT_HARNESS;
+  // An explicit default, then a CLI a machine has ready, then a stored API key.
+  let assistant = ws?.chatDefaults?.assistant ?? (await cliDefault(ctx, workspaceId, harness));
   if (!assistant) {
     const cfg = await defaultModelConfig(ctx, workspaceId);
     if (cfg) assistant = { provider: cfg.provider, model: cfg.model, effort: null, fast: false };
   }
-  const harness = isHarness(ws?.defaultHarness) ? ws.defaultHarness : DEFAULT_HARNESS;
   const agent = ws?.chatDefaults?.agent ?? { harness, model: null, effort: null, fast: false };
   return { assistant, agent };
+}
+
+/**
+ * The coding agent CLI the assistant can run on, with its default model,
+ * when a machine has one ready. `preferred` goes first.
+ */
+export async function cliDefault(
+  ctx: Pick<AppContext, "db">,
+  workspaceId: string,
+  preferred: Harness,
+): Promise<AssistantChoice | null> {
+  const rows = await ctx.db
+    .select({ capabilities: schema.runners.capabilities })
+    .from(schema.runners)
+    .where(
+      and(
+        eq(schema.runners.workspaceId, workspaceId),
+        eq(schema.runners.ephemeral, false),
+        isNull(schema.runners.revokedAt),
+      ),
+    );
+  const order = [preferred, ...HARNESSES.filter((h) => h !== preferred)];
+  for (const harness of order) {
+    for (const r of rows) {
+      if (!canChatOn(r.capabilities, harness)) continue;
+      const cap = r.capabilities.find((c) => c.name === harnessCapability(harness));
+      const model = cap?.models?.find((m) => m.isDefault) ?? cap?.models?.[0];
+      return { provider: harness, model: model?.id ?? "", effort: null, fast: false };
+    }
+  }
+  return null;
 }
 
 /** The choices in effect for a conversation: its own, then the workspace defaults. */
