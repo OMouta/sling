@@ -154,3 +154,108 @@ async fn cancel_stops_a_hanging_run() {
     reader.finish(code).await;
     assert!(started.elapsed() < Duration::from_secs(5));
 }
+
+mod chat {
+    use super::BIN;
+    use sling_harness_codex::Run;
+    use sling_harness_codex::chat::{ChatOptions, ChatOutcome, McpServer};
+    use sling_runner_protocol::chat_event::Kind;
+    use tokio::sync::mpsc;
+
+    fn opts(dir: &std::path::Path, prompt: &str, resume: Option<String>) -> ChatOptions {
+        ChatOptions {
+            bin: BIN.into(),
+            dir: dir.to_path_buf(),
+            prompt: prompt.into(),
+            instructions: "You are Sling's assistant.".into(),
+            mcp: McpServer {
+                command: "/nonexistent/sling-runner".into(),
+                args: vec!["mcp".into()],
+                env_vars: vec!["SLING_TOOLS_TOKEN".into()],
+            },
+            env: None,
+            model: Some("fake-mini".into()),
+            effort: Some("low".into()),
+            fast: false,
+            resume,
+        }
+    }
+
+    async fn turn(o: &ChatOptions) -> (Vec<Kind>, ChatOutcome) {
+        let (tx, mut rx) = mpsc::channel(64);
+        let (mut run, reader) = Run::start_chat(o, tx).await.unwrap();
+        let mut events = Vec::new();
+        while let Some(ev) = rx.recv().await {
+            events.push(ev);
+        }
+        let code = run.wait().await.unwrap();
+        (events, reader.finish(code).await)
+    }
+
+    #[tokio::test]
+    async fn replies_and_resumes_its_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let (events, first) = turn(&opts(dir.path(), "hello", None)).await;
+        assert!(first.failure.is_none(), "{:?}", first.failure);
+        let deltas: String = events
+            .iter()
+            .filter_map(|e| match e {
+                Kind::Delta(d) => Some(d.text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas, first.text);
+        assert!(first.text.contains("new session, with instructions"));
+        assert!(first.text.ends_with("You said: hello"));
+        assert!(!first.session_id.is_empty());
+        assert_eq!((first.input_tokens, first.output_tokens), (1200, 90));
+
+        let (_, second) = turn(&opts(dir.path(), "again", Some(first.session_id.clone()))).await;
+        assert!(second.failure.is_none(), "{:?}", second.failure);
+        assert!(second.text.contains("resumed session"));
+        assert_eq!(second.session_id, first.session_id);
+    }
+
+    #[tokio::test]
+    async fn a_session_that_isnt_here_is_reported_as_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let o = opts(
+            dir.path(),
+            "hello",
+            Some("00000000-dead-7000-8000-000000000000".into()),
+        );
+        let (events, out) = turn(&o).await;
+        assert!(events.is_empty());
+        assert!(out.session_missing);
+        assert!(out.failure.unwrap().contains("no rollout found"));
+    }
+
+    #[tokio::test]
+    async fn refuses_a_session_id_that_looks_like_a_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let o = opts(
+            dir.path(),
+            "hello",
+            Some("--dangerously-bypass-approvals-and-sandbox".into()),
+        );
+        let (tx, _rx) = mpsc::channel(1);
+        let err = Run::start_chat(&o, tx).await.err().expect("refused");
+        assert!(err.to_string().contains("refusing session ID"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn cancel_ends_a_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::channel(64);
+        let (mut run, reader) = Run::start_chat(&opts(dir.path(), "[fake:hang]", None), tx)
+            .await
+            .unwrap();
+        assert!(matches!(rx.recv().await, Some(Kind::Delta(_))));
+        let started = std::time::Instant::now();
+        run.cancel(std::time::Duration::from_secs(2)).await;
+        while rx.recv().await.is_some() {}
+        let code = run.wait().await.unwrap();
+        reader.finish(code).await;
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+}

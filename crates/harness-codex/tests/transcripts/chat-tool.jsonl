@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a1ad9f-9d0e-7ee1-87ec-cdbfe6bf3b6f"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Model metadata for `gpt-stub` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."}}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item_1","type":"mcp_tool_call","server":"sling","tool":"list_machines","arguments":{},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"sling","tool":"list_machines","arguments":{},"result":{"content":[{"type":"text","text":"You have 2 machines: laptop, desktop."}],"structured_content":null},"error":null,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"Tool said: [{\"type\": \"input_text\", \"text\": \"Wall time: 0.0061 seconds\\nOutput:\"}, {\"type\": \"input_text\", \"text\": \"You have 2 machines: laptop, desktop.\"}]"}}
+{"type":"turn.completed","usage":{"input_tokens":40,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":14,"reasoning_output_tokens":0}}

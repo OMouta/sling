@@ -12,8 +12,10 @@ use sling_runner_protocol::{
     file_change, log_line, plan_update, task_event::Kind,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::sync::mpsc;
+
+pub mod chat;
 
 /// Command output kept per event. The tail matters more than the head.
 pub const MAX_OUTPUT_BYTES: usize = 8 * 1024;
@@ -271,39 +273,76 @@ pub fn args_for(opts: &RunOptions) -> Vec<String> {
     args
 }
 
+/// A started process with its output streams.
+pub(crate) struct Spawned {
+    pub child: Child,
+    pub pid: Option<u32>,
+    pub stdout: ChildStdout,
+    pub stderr: ChildStderr,
+}
+
+/// Starts `bin` in its own process group with `stdin_text` on stdin.
+pub(crate) async fn spawn(
+    bin: &str,
+    args: &[String],
+    cwd: &Path,
+    env: Option<&[(String, String)]>,
+    stdin_text: &str,
+) -> Result<Spawned> {
+    let mut cmd = Command::new(bin);
+    cmd.args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    if let Some(env) = env {
+        cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+    }
+    #[cfg(unix)]
+    cmd.process_group(0);
+    let mut child = cmd.spawn().with_context(|| format!("starting {bin}"))?;
+    let mut stdin = child.stdin.take().context("no stdin")?;
+    stdin.write_all(stdin_text.as_bytes()).await?;
+    stdin.shutdown().await?;
+    drop(stdin);
+    Ok(Spawned {
+        stdout: child.stdout.take().context("no stdout")?,
+        stderr: child.stderr.take().context("no stderr")?,
+        pid: child.id(),
+        child,
+    })
+}
+
+/// Refuses a model or effort that isn't safe to put in a TOML override.
+pub(crate) fn check_settings(model: &Option<String>, effort: &Option<String>) -> Result<()> {
+    for value in [model, effort].into_iter().flatten() {
+        anyhow::ensure!(
+            valid_setting(value),
+            "refusing model setting {value:?}: use letters, digits, '.', '_', ':' and '-'"
+        );
+    }
+    Ok(())
+}
+
 impl Run {
     /// Starts Codex. Events arrive on `tx` until the process exits; then call
     /// `wait`.
     pub async fn start(opts: &RunOptions, tx: mpsc::Sender<Event>) -> Result<(Run, Reader)> {
-        for value in [&opts.model, &opts.effort].into_iter().flatten() {
-            anyhow::ensure!(
-                valid_setting(value),
-                "refusing model setting {value:?}: use letters, digits, '.', '_', ':' and '-'"
-            );
-        }
-        let mut cmd = Command::new(&opts.bin);
-        cmd.args(args_for(opts))
-            .current_dir(&opts.cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        if let Some(env) = &opts.env {
-            cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
-        }
-        #[cfg(unix)]
-        cmd.process_group(0);
-        let mut child = cmd
-            .spawn()
-            .with_context(|| format!("starting {}", opts.bin))?;
-        let mut stdin = child.stdin.take().context("no stdin")?;
-        stdin.write_all(opts.prompt.as_bytes()).await?;
-        stdin.shutdown().await?;
-        drop(stdin);
-
-        let stdout = child.stdout.take().context("no stdout")?;
-        let stderr = child.stderr.take().context("no stderr")?;
-        let pid = child.id();
+        check_settings(&opts.model, &opts.effort)?;
+        let Spawned {
+            child,
+            pid,
+            stdout,
+            stderr,
+        } = spawn(
+            &opts.bin,
+            &args_for(opts),
+            &opts.cwd,
+            opts.env.as_deref(),
+            &opts.prompt,
+        )
+        .await?;
 
         let err_tx = tx.clone();
         let stderr_task = tokio::spawn(async move {
@@ -411,6 +450,11 @@ impl Parser {
             }
             return vec![log(line)];
         };
+        self.value(&v)
+    }
+
+    /// Like `line`, for a line that's already parsed.
+    pub fn value(&mut self, v: &Value) -> Vec<Event> {
         let ty = v["type"].as_str().unwrap_or_default();
         match ty {
             "thread.started" => {

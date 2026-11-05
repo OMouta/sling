@@ -1255,6 +1255,7 @@ dependencies = [
  "sling-runner-protocol",
  "tempfile",
  "tokio",
+ "toml",
 ]
 
 [[package]]
