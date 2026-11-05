@@ -96,7 +96,6 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
 
     // 2. Hello
     let mut inv = inventory::build(cfg).await;
-    let codex_ready = inventory::ready(&inv, inventory::CODEX);
     let ts = now_ms();
     let hello = Hello {
         runner_id: runner_id.to_string(),
@@ -136,7 +135,7 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
     let mut refresh = tokio::time::interval(INVENTORY_REFRESH);
     refresh.tick().await;
     let mut last_ack = Instant::now();
-    let mut codex_ready = codex_ready;
+    let mut ready = inventory::ready_harnesses(&inv);
 
     flush(mgr, &mut sink).await?;
 
@@ -151,7 +150,8 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                             Some(Body::HeartbeatAck(_)) => last_ack = Instant::now(),
                             Some(Body::TaskAssign(a)) => {
                                 let mgr = mgr.clone();
-                                tokio::spawn(async move { mgr.assign(a, codex_ready).await });
+                                let ready = ready.clone();
+                                tokio::spawn(async move { mgr.assign(a, &ready).await });
                             }
                             Some(Body::TaskCancel(c)) => mgr.cancel(&c.task_id),
                             Some(Body::ActionRequest(r)) => {
@@ -183,7 +183,7 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
             }
             _ = refresh.tick() => {
                 if let Some(next) = refresh_inventory(mgr, &inv).await {
-                    codex_ready = inventory::ready(&next, inventory::CODEX);
+                    ready = inventory::ready_harnesses(&next);
                     send(&mut sink, Body::Inventory(next.clone())).await?;
                     inv = next;
                 }

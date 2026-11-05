@@ -1,6 +1,7 @@
-//! Policy tests for the task manager against real git repos and a scripted
-//! stand-in for Codex. These cover the Runner-side guards that hold even if
-//! the control plane misbehaves.
+//! Policy tests for the task manager against real git repos and scripted
+//! stand-ins for Codex and Claude Code. These cover the Runner-side guards
+//! that hold even if the control plane misbehaves, and run once per agent,
+//! since everything but the agent itself is shared.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -12,14 +13,24 @@ use sling_runner_protocol::{
 };
 
 use crate::config::{Config, Mode, Paths, RepoEntry};
+use crate::spool::{SpoolState, TaskMeta, TaskSpool};
 use crate::tasks::Manager;
 
+/// Reports the sensitive variables it can see as an agent message.
+const ENV_REPORT: &str = r#"seen=$(env | cut -d= -f1 | grep -E '^(SLING_|GH_TOKEN$|GITHUB_TOKEN$|OPENAI_API_KEY$|ANTHROPIC_API_KEY$)' | sort | tr '\n' ' ')"#;
+
+/// Writes CHANGED.md (reported) and build.log (not reported) unless the run
+/// is read-only, like a test run that leaves build output behind.
 const FAKE_CODEX: &str = r#"#!/bin/sh
 case "$1" in
   --version) echo "codex-cli 0.166.0" ;;
   login) echo "Logged in using test" ;;
   exec)
-    cat > /dev/null
+    prompt=$(cat)
+    case "$prompt" in *"[hang]"*)
+      echo '{"type":"thread.started","thread_id":"t1"}'
+      while true; do sleep 0.05; done ;;
+    esac
     sandbox=""; dir="."
     while [ $# -gt 0 ]; do
       case "$1" in -s) sandbox="$2"; shift ;; -C) dir="$2"; shift ;; esac
@@ -30,13 +41,56 @@ case "$1" in
       echo "build output" > "$dir/build.log"
       echo "{\"type\":\"item.completed\",\"item\":{\"id\":\"f1\",\"type\":\"file_change\",\"changes\":[{\"path\":\"$dir/CHANGED.md\",\"kind\":\"add\"}],\"status\":\"completed\"}}"
     fi
-    seen=$(env | cut -d= -f1 | grep -E '^(SLING_|GH_TOKEN$|GITHUB_TOKEN$|OPENAI_API_KEY$)' | sort | tr '\n' ' ')
+    ENV_REPORT
     echo "{\"type\":\"item.completed\",\"item\":{\"id\":\"e1\",\"type\":\"agent_message\",\"text\":\"env: $seen\"}}"
     echo '{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"done"}}'
     echo '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
     ;;
 esac
 "#;
+
+/// The same behavior in Claude Code's stream-json shape. Claude Code runs in
+/// the worktree, so the paths come from the working directory.
+const FAKE_CLAUDE: &str = r#"#!/bin/sh
+case "$1" in
+  --version) echo "2.1.318 (Claude Code)" ;;
+  auth) echo '{"loggedIn":true,"authMethod":"claude.ai"}' ;;
+  -p)
+    prompt=$(cat)
+    case "$prompt" in *"[hang]"*)
+      # Like Claude Code: an interrupt ends the run with an error result and exit 0.
+      trap 'echo "{\"type\":\"result\",\"subtype\":\"error_during_execution\",\"is_error\":true}"; exit 0' INT
+      echo '{"type":"system","subtype":"init","session_id":"s1","model":"m"}'
+      while true; do sleep 0.05; done ;;
+    esac
+    mode=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --permission-mode) mode="$2"; shift ;;
+        --dangerously-skip-permissions) mode="bypassPermissions" ;;
+      esac
+      shift
+    done
+    dir="$PWD"
+    echo "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"model\":\"m\",\"permissionMode\":\"$mode\"}"
+    if [ "$mode" != "plan" ]; then
+      echo "changed" >> "$dir/CHANGED.md"
+      echo "build output" > "$dir/build.log"
+      echo "{\"type\":\"assistant\",\"message\":{\"id\":\"m1\",\"content\":[{\"type\":\"tool_use\",\"id\":\"w1\",\"name\":\"Write\",\"input\":{\"file_path\":\"$dir/CHANGED.md\",\"content\":\"changed\"}}]},\"parent_tool_use_id\":null}"
+      echo "{\"type\":\"user\",\"message\":{\"content\":[{\"tool_use_id\":\"w1\",\"type\":\"tool_result\",\"content\":\"ok\"}]},\"parent_tool_use_id\":null,\"tool_use_result\":{\"type\":\"create\",\"filePath\":\"$dir/CHANGED.md\"}}"
+    fi
+    ENV_REPORT
+    echo "{\"type\":\"assistant\",\"message\":{\"id\":\"m2\",\"content\":[{\"type\":\"text\",\"text\":\"env: $seen\"}]},\"parent_tool_use_id\":null}"
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"done","usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}'
+    ;;
+esac
+"#;
+
+const AGENTS: [&str; 2] = ["codex", "claude-code"];
+
+fn all_ready() -> Vec<String> {
+    AGENTS.iter().map(|a| a.to_string()).collect()
+}
 
 struct Env {
     _dir: tempfile::TempDir,
@@ -54,6 +108,15 @@ fn git(dir: &Path, args: &[&str]) {
         .status
         .success();
     assert!(ok, "git {args:?}");
+}
+
+fn script(path: &Path, body: &str) {
+    std::fs::write(path, body.replace("ENV_REPORT", ENV_REPORT)).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
 }
 
 fn setup(max_mode: Mode) -> Env {
@@ -84,12 +147,9 @@ fn setup(max_mode: Mode) -> Env {
     git(&repo, &["push", "-q", "-u", "origin", "main"]);
 
     let codex = root.join("fake-codex.sh");
-    std::fs::write(&codex, FAKE_CODEX).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    script(&codex, FAKE_CODEX);
+    let claude = root.join("fake-claude.sh");
+    script(&claude, FAKE_CLAUDE);
 
     let paths = Paths {
         config_dir: root.join("home"),
@@ -99,7 +159,9 @@ fn setup(max_mode: Mode) -> Env {
         server_url: Some("http://localhost".into()),
         runner_id: Some("rnr_test".into()),
         max_mode,
+        max_concurrent_tasks: 4,
         codex_bin: Some(codex.display().to_string()),
+        claude_bin: Some(claude.display().to_string()),
         repos: vec![RepoEntry {
             name: "site".into(),
             path: std::fs::canonicalize(&repo).unwrap(),
@@ -115,14 +177,14 @@ fn setup(max_mode: Mode) -> Env {
     }
 }
 
-fn assign(id: &str, mode: PermissionMode, branch: &str, repo: &str) -> TaskAssign {
+fn assign(agent: &str, id: &str, mode: PermissionMode, branch: &str, repo: &str) -> TaskAssign {
     TaskAssign {
         task_id: id.into(),
         repo: repo.into(),
         title: "Change something".into(),
         objective: "Edit a file.".into(),
         mode: mode as i32,
-        harness: "codex".into(),
+        harness: agent.into(),
         branch: branch.into(),
     }
 }
@@ -151,176 +213,287 @@ async fn wait_for(
     );
 }
 
-fn rejected_reason(events: &[TaskEvent]) -> Option<task_rejected::Reason> {
+fn rejected(events: &[TaskEvent]) -> Option<(task_rejected::Reason, String)> {
     events.iter().find_map(|e| match &e.kind {
-        Some(Kind::Rejected(r)) => Some(r.reason()),
+        Some(Kind::Rejected(r)) => Some((r.reason(), r.message.clone())),
         _ => None,
     })
+}
+
+fn rejected_reason(events: &[TaskEvent]) -> Option<task_rejected::Reason> {
+    rejected(events).map(|(r, _)| r)
+}
+
+fn finished(events: &[TaskEvent]) -> sling_runner_protocol::TaskFinished {
+    events
+        .iter()
+        .find_map(|e| match &e.kind {
+            Some(Kind::Finished(f)) => Some(f.clone()),
+            _ => None,
+        })
+        .expect("a finished event")
 }
 
 #[tokio::test]
 async fn refuses_a_branch_that_is_the_default_branch() {
     let env = setup(Mode::FullAccess);
-    env.mgr
-        .assign(
-            assign("t1", PermissionMode::FullAccess, "main", "site"),
-            true,
-        )
-        .await;
-    let events = wait_for(&env.mgr, "t1", |k| matches!(k, Kind::Rejected(_))).await;
-    assert_eq!(
-        rejected_reason(&events),
-        Some(task_rejected::Reason::Invalid)
-    );
+    for agent in AGENTS {
+        let id = format!("{agent}-t1");
+        env.mgr
+            .assign(
+                assign(agent, &id, PermissionMode::FullAccess, "main", "site"),
+                &all_ready(),
+            )
+            .await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Rejected(_))).await;
+        assert_eq!(
+            rejected_reason(&events),
+            Some(task_rejected::Reason::Invalid),
+            "{agent}"
+        );
+    }
 }
 
 #[tokio::test]
 async fn refuses_a_mode_above_the_local_cap() {
     let env = setup(Mode::Supervised);
-    env.mgr
-        .assign(
-            assign("t2", PermissionMode::FullAccess, "sling/t2", "site"),
-            true,
-        )
-        .await;
-    let events = wait_for(&env.mgr, "t2", |k| matches!(k, Kind::Rejected(_))).await;
-    assert_eq!(
-        rejected_reason(&events),
-        Some(task_rejected::Reason::ModeAboveCap)
-    );
+    for agent in AGENTS {
+        let id = format!("{agent}-t2");
+        env.mgr
+            .assign(
+                assign(agent, &id, PermissionMode::FullAccess, "sling/t2", "site"),
+                &all_ready(),
+            )
+            .await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Rejected(_))).await;
+        assert_eq!(
+            rejected_reason(&events),
+            Some(task_rejected::Reason::ModeAboveCap),
+            "{agent}"
+        );
+    }
 }
 
 #[tokio::test]
 async fn refuses_a_repo_that_is_not_in_the_local_config() {
     let env = setup(Mode::FullAccess);
+    for agent in AGENTS {
+        let id = format!("{agent}-t3");
+        env.mgr
+            .assign(
+                assign(agent, &id, PermissionMode::Auto, "sling/t3", "secrets"),
+                &all_ready(),
+            )
+            .await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Rejected(_))).await;
+        assert_eq!(
+            rejected_reason(&events),
+            Some(task_rejected::Reason::UnknownRepo),
+            "{agent}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn refuses_an_agent_that_is_not_ready_or_unknown() {
+    let env = setup(Mode::FullAccess);
     env.mgr
         .assign(
-            assign("t3", PermissionMode::Auto, "sling/t3", "secrets"),
-            true,
+            assign(
+                "claude-code",
+                "t8",
+                PermissionMode::Auto,
+                "sling/t8",
+                "site",
+            ),
+            &["codex".to_string()],
         )
         .await;
-    let events = wait_for(&env.mgr, "t3", |k| matches!(k, Kind::Rejected(_))).await;
+    let events = wait_for(&env.mgr, "t8", |k| matches!(k, Kind::Rejected(_))).await;
+    let (reason, message) = rejected(&events).unwrap();
+    assert_eq!(reason, task_rejected::Reason::HarnessUnavailable);
+    assert_eq!(
+        message,
+        "Claude Code is not installed or not logged in on this machine."
+    );
+
+    env.mgr
+        .assign(
+            assign("opencode", "t9", PermissionMode::Auto, "sling/t9", "site"),
+            &all_ready(),
+        )
+        .await;
+    let events = wait_for(&env.mgr, "t9", |k| matches!(k, Kind::Rejected(_))).await;
     assert_eq!(
         rejected_reason(&events),
-        Some(task_rejected::Reason::UnknownRepo)
+        Some(task_rejected::Reason::HarnessUnavailable)
     );
 }
 
 #[tokio::test]
 async fn commits_and_pushes_the_task_branch() {
-    let env = setup(Mode::FullAccess);
-    env.mgr
-        .assign(
-            assign("t4", PermissionMode::Auto, "sling/t4-change", "site"),
-            true,
-        )
-        .await;
-    let events = wait_for(&env.mgr, "t4", |k| matches!(k, Kind::Finished(_))).await;
-    let finished = events
-        .iter()
-        .find_map(|e| match &e.kind {
-            Some(Kind::Finished(f)) => Some(f.clone()),
-            _ => None,
-        })
-        .unwrap();
-    assert_eq!(
-        finished.outcome(),
-        task_finished::Outcome::Succeeded,
-        "{finished:?}"
-    );
-    assert!(!finished.commit_sha.is_empty());
-    // CHANGED.md was reported by the harness; build.log wasn't, so it stays out.
-    assert_eq!(finished.diff_stats.unwrap().files_changed, 1);
-    let left_out_logged = events
-        .iter()
-        .any(|e| matches!(&e.kind, Some(Kind::Log(l)) if l.text.contains("build.log")));
-    assert!(left_out_logged, "the left-out file is mentioned in the log");
+    for agent in AGENTS {
+        let env = setup(Mode::FullAccess);
+        let id = format!("{agent}-t4");
+        let branch = format!("sling/t4-{agent}");
+        env.mgr
+            .assign(
+                assign(agent, &id, PermissionMode::Auto, &branch, "site"),
+                &all_ready(),
+            )
+            .await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Finished(_))).await;
+        let done = finished(&events);
+        assert_eq!(
+            done.outcome(),
+            task_finished::Outcome::Succeeded,
+            "{agent}: {done:?}"
+        );
+        assert_eq!(done.summary, "done", "{agent}");
+        assert!(!done.commit_sha.is_empty(), "{agent}");
+        // CHANGED.md was reported by the agent; build.log wasn't, so it stays out.
+        assert_eq!(done.diff_stats.unwrap().files_changed, 1, "{agent}");
+        let left_out_logged = events
+            .iter()
+            .any(|e| matches!(&e.kind, Some(Kind::Log(l)) if l.text.contains("build.log")));
+        assert!(left_out_logged, "{agent}: the left-out file is in the log");
+        let started = events
+            .iter()
+            .find_map(|e| match &e.kind {
+                Some(Kind::Started(s)) => Some(s.clone()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(started.harness, agent);
+        assert!(!started.harness_version.is_empty(), "{agent}");
 
-    env.mgr
-        .action(ActionRequest {
-            action_id: "a1".into(),
-            task_id: "t4".into(),
-            kind: action_request::Kind::Push as i32,
-            ..Default::default()
-        })
-        .await;
-    let events = wait_for(&env.mgr, "t4", |k| matches!(k, Kind::ActionResult(_))).await;
-    let result = events
-        .iter()
-        .find_map(|e| match &e.kind {
-            Some(Kind::ActionResult(r)) => Some(r.clone()),
-            _ => None,
-        })
-        .unwrap();
-    assert_eq!(
-        result.outcome(),
-        action_result::Outcome::Succeeded,
-        "{result:?}"
-    );
-    let branches = std::process::Command::new("git")
-        .args(["branch", "--list", "sling/t4-change"])
-        .current_dir(&env.remote)
-        .output()
-        .unwrap();
-    assert!(String::from_utf8_lossy(&branches.stdout).contains("sling/t4-change"));
-    // The default branch on the remote is untouched.
-    let main = std::process::Command::new("git")
-        .args(["log", "--oneline", "main"])
-        .current_dir(&env.remote)
-        .output()
-        .unwrap();
-    assert_eq!(String::from_utf8_lossy(&main.stdout).lines().count(), 1);
+        env.mgr
+            .action(ActionRequest {
+                action_id: "a1".into(),
+                task_id: id.clone(),
+                kind: action_request::Kind::Push as i32,
+                ..Default::default()
+            })
+            .await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::ActionResult(_))).await;
+        let result = events
+            .iter()
+            .find_map(|e| match &e.kind {
+                Some(Kind::ActionResult(r)) => Some(r.clone()),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            result.outcome(),
+            action_result::Outcome::Succeeded,
+            "{agent}: {result:?}"
+        );
+        let branches = std::process::Command::new("git")
+            .args(["branch", "--list", &branch])
+            .current_dir(&env.remote)
+            .output()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&branches.stdout).contains(&branch));
+        // The default branch on the remote is untouched.
+        let main = std::process::Command::new("git")
+            .args(["log", "--oneline", "main"])
+            .current_dir(&env.remote)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&main.stdout).lines().count(), 1);
+    }
 }
 
 #[tokio::test]
 async fn read_only_tasks_change_nothing_and_cannot_push() {
     let env = setup(Mode::FullAccess);
-    env.mgr
-        .assign(
-            assign("t5", PermissionMode::ReadOnly, "sling/t5", "site"),
-            true,
-        )
-        .await;
-    let events = wait_for(&env.mgr, "t5", |k| matches!(k, Kind::Finished(_))).await;
-    let finished = events
-        .iter()
-        .find_map(|e| match &e.kind {
-            Some(Kind::Finished(f)) => Some(f.clone()),
-            _ => None,
-        })
-        .unwrap();
-    assert_eq!(finished.outcome(), task_finished::Outcome::Succeeded);
-    assert!(finished.commit_sha.is_empty());
+    for agent in AGENTS {
+        let id = format!("{agent}-t5");
+        env.mgr
+            .assign(
+                assign(
+                    agent,
+                    &id,
+                    PermissionMode::ReadOnly,
+                    &format!("sling/t5-{agent}"),
+                    "site",
+                ),
+                &all_ready(),
+            )
+            .await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Finished(_))).await;
+        let done = finished(&events);
+        assert_eq!(done.outcome(), task_finished::Outcome::Succeeded, "{agent}");
+        assert!(done.commit_sha.is_empty(), "{agent}");
 
-    env.mgr
-        .action(ActionRequest {
-            action_id: "a2".into(),
-            task_id: "t5".into(),
-            kind: action_request::Kind::Push as i32,
-            ..Default::default()
-        })
-        .await;
-    let events = wait_for(&env.mgr, "t5", |k| matches!(k, Kind::ActionResult(_))).await;
-    let outcome = events.iter().find_map(|e| match &e.kind {
-        Some(Kind::ActionResult(r)) => Some(r.outcome()),
-        _ => None,
-    });
-    assert_eq!(outcome, Some(action_result::Outcome::Refused));
+        env.mgr
+            .action(ActionRequest {
+                action_id: "a2".into(),
+                task_id: id.clone(),
+                kind: action_request::Kind::Push as i32,
+                ..Default::default()
+            })
+            .await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::ActionResult(_))).await;
+        let outcome = events.iter().find_map(|e| match &e.kind {
+            Some(Kind::ActionResult(r)) => Some(r.outcome()),
+            _ => None,
+        });
+        assert_eq!(outcome, Some(action_result::Outcome::Refused), "{agent}");
+    }
 }
 
 #[tokio::test]
 async fn a_cancel_that_arrives_first_still_wins() {
     let env = setup(Mode::FullAccess);
-    env.mgr.cancel("t6");
-    env.mgr
-        .assign(assign("t6", PermissionMode::Auto, "sling/t6", "site"), true)
+    for agent in AGENTS {
+        let id = format!("{agent}-t6");
+        env.mgr.cancel(&id);
+        env.mgr
+            .assign(
+                assign(agent, &id, PermissionMode::Auto, "sling/t6", "site"),
+                &all_ready(),
+            )
+            .await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Finished(_))).await;
+        assert_eq!(
+            finished(&events).outcome(),
+            task_finished::Outcome::Cancelled,
+            "{agent}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn cancelling_a_running_task_stops_the_agent() {
+    let env = setup(Mode::FullAccess);
+    for agent in AGENTS {
+        let id = format!("{agent}-t10");
+        let mut a = assign(
+            agent,
+            &id,
+            PermissionMode::Auto,
+            &format!("sling/t10-{agent}"),
+            "site",
+        );
+        a.objective = "[hang]".into();
+        env.mgr.assign(a, &all_ready()).await;
+        wait_for(
+            &env.mgr,
+            &id,
+            |k| matches!(k, Kind::Log(l) if l.text.contains("session")),
+        )
         .await;
-    let events = wait_for(&env.mgr, "t6", |k| matches!(k, Kind::Finished(_))).await;
-    let outcome = events.iter().find_map(|e| match &e.kind {
-        Some(Kind::Finished(f)) => Some(f.outcome()),
-        _ => None,
-    });
-    assert_eq!(outcome, Some(task_finished::Outcome::Cancelled));
+        env.mgr.cancel(&id);
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Finished(_))).await;
+        let done = finished(&events);
+        assert_eq!(
+            done.outcome(),
+            task_finished::Outcome::Cancelled,
+            "{agent}: {done:?}"
+        );
+        assert!(done.commit_sha.is_empty(), "{agent}");
+    }
 }
 
 #[tokio::test]
@@ -331,19 +504,92 @@ async fn the_agent_never_sees_sling_variables_or_tokens() {
         std::env::set_var("SLING_TEST_ONLY", "1");
         std::env::set_var("GH_TOKEN", "gh-test-token-value");
         std::env::set_var("OPENAI_API_KEY", "sk-test-only-value");
+        std::env::set_var("ANTHROPIC_API_KEY", "sk-ant-test-only-value");
     }
     let env = setup(Mode::FullAccess);
     env.mgr.remove_from_agent_env("codex", "OPENAI_API_KEY");
+    env.mgr.remove_from_agent_env("codex", "ANTHROPIC_API_KEY");
     env.mgr
-        .assign(assign("t7", PermissionMode::Auto, "sling/t7", "site"), true)
-        .await;
-    let events = wait_for(&env.mgr, "t7", |k| matches!(k, Kind::Finished(_))).await;
-    let seen = events
-        .iter()
-        .find_map(|e| match &e.kind {
-            Some(Kind::AgentMessage(m)) if m.text.starts_with("env:") => Some(m.text.clone()),
-            _ => None,
-        })
-        .expect("the fake reports its environment");
-    assert_eq!(seen.trim(), "env:", "{seen}");
+        .remove_from_agent_env("claude-code", "OPENAI_API_KEY");
+    for (agent, want) in [("codex", "env:"), ("claude-code", "env: ANTHROPIC_API_KEY")] {
+        let id = format!("{agent}-t7");
+        env.mgr
+            .assign(
+                assign(
+                    agent,
+                    &id,
+                    PermissionMode::Auto,
+                    &format!("sling/t7-{agent}"),
+                    "site",
+                ),
+                &all_ready(),
+            )
+            .await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Finished(_))).await;
+        let seen = events
+            .iter()
+            .find_map(|e| match &e.kind {
+                Some(Kind::AgentMessage(m)) if m.text.starts_with("env:") => Some(m.text.clone()),
+                _ => None,
+            })
+            .expect("the fake reports its environment");
+        assert_eq!(seen.trim(), want, "{agent}");
+    }
+}
+
+#[tokio::test]
+async fn a_restart_stops_an_agent_left_running() {
+    for (agent, marker) in [("codex", "codex"), ("claude-code", "claude")] {
+        let dir = tempfile::tempdir().unwrap();
+        // A process whose command line names the agent, in its own group.
+        let bin = dir.path().join(format!("fake-{marker}-sleep"));
+        std::fs::copy("/bin/sleep", &bin).unwrap();
+        let mut child = {
+            use std::os::unix::process::CommandExt;
+            std::process::Command::new(&bin)
+                .arg("30")
+                .process_group(0)
+                .spawn()
+                .unwrap()
+        };
+        let paths = Paths {
+            config_dir: dir.path().join("home"),
+            data_dir: dir.path().join("home/data"),
+        };
+        let meta = TaskMeta {
+            task_id: format!("{agent}-orphan"),
+            repo: "site".into(),
+            title: "t".into(),
+            objective: "o".into(),
+            mode: Mode::Auto,
+            harness: agent.into(),
+            branch: "sling/x".into(),
+            default_branch: "main".into(),
+            worktree: None,
+            base_sha: None,
+            harness_pid: Some(child.id()),
+            state: SpoolState::Running,
+            created_ms: 0,
+        };
+        TaskSpool::create(&paths.spool_dir(), meta).unwrap();
+
+        let mgr = Manager::new(paths, Config::default()).unwrap();
+        let mut status = None;
+        for _ in 0..100 {
+            status = child.try_wait().unwrap();
+            if status.is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(status.is_some(), "{agent}: the leftover process was killed");
+        let events: Vec<_> = mgr.unsent();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(&e.kind, Some(Kind::Finished(f))
+                if f.outcome() == task_finished::Outcome::Interrupted)),
+            "{agent}"
+        );
+    }
 }

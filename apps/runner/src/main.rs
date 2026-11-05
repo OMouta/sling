@@ -5,6 +5,7 @@ mod config;
 mod connection;
 mod gc;
 mod git;
+mod harness;
 mod identity;
 mod inventory;
 mod pair;
@@ -73,7 +74,7 @@ enum RepoCommand {
         path: PathBuf,
         #[arg(long)]
         name: Option<String>,
-        /// Let Codex use the network in this repo (off by default).
+        /// Let coding agents use the network in this repo (off by default).
         #[arg(long)]
         network: bool,
     },
@@ -93,7 +94,7 @@ enum ServiceCommand {
 #[derive(Subcommand)]
 enum ConfigCommand {
     Show,
-    /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, worktree-root.
+    /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, claude-bin, worktree-root.
     Set {
         key: String,
         value: String,
@@ -215,6 +216,7 @@ async fn real_main() -> Result<()> {
                     "name" => cfg.name = value,
                     "labels" => cfg.labels = config::parse_labels(&value)?,
                     "codex-bin" => cfg.codex_bin = Some(value),
+                    "claude-bin" => cfg.claude_bin = Some(value),
                     "worktree-root" => cfg.worktree_root = Some(PathBuf::from(value)),
                     _ => bail!("unknown key {key:?}"),
                 }
@@ -271,28 +273,36 @@ async fn real_main() -> Result<()> {
 async fn doctor(paths: &Paths) -> Result<()> {
     let cfg = Config::load(paths)?;
     let mark = |ok: bool| if ok { "ok  " } else { "FAIL" };
-    println!("config     {}", paths.config_file().display());
+    println!("     {:<18} {}", "config", paths.config_file().display());
     println!(
-        "{} paired    {}",
+        "{} {:<18} {}",
         mark(cfg.runner_id.is_some()),
+        "paired",
         cfg.server_url.as_deref().unwrap_or("not paired")
     );
     println!(
-        "{} key       {}",
+        "{} {:<18} {}",
         mark(paths.key_file().exists()),
+        "key",
         paths.key_file().display()
     );
     let inv = inventory::build(&cfg).await;
     for c in &inv.capabilities {
-        println!("{} {:<9} {} {}", mark(c.ready), c.name, c.version, c.detail);
+        println!(
+            "{} {:<18} {} {}",
+            mark(c.ready),
+            c.name,
+            c.version,
+            c.detail
+        );
     }
     for r in &inv.repos {
         println!(
-            "ok   repo      {} (default branch {})",
-            r.name, r.default_branch
+            "ok   {:<18} {} (default branch {})",
+            "repo", r.name, r.default_branch
         );
     }
-    println!("     max mode  {}", cfg.max_mode.as_str());
-    println!("     labels    {}", inv.labels.join(", "));
+    println!("     {:<18} {}", "max mode", cfg.max_mode.as_str());
+    println!("     {:<18} {}", "labels", inv.labels.join(", "));
     Ok(())
 }

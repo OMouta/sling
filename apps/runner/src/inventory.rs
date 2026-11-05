@@ -5,9 +5,9 @@ use sling_runner_protocol::{Capability, Inventory, Repo};
 
 use crate::config::Config;
 use crate::git;
+use crate::harness;
 use crate::sys::run;
 
-pub const CODEX: &str = "coding.codex";
 pub const GIT: &str = "git";
 pub const GITHUB_PR: &str = "git.pr.github";
 
@@ -37,13 +37,15 @@ pub async fn build(cfg: &Config) -> Inventory {
         },
     });
 
-    let codex = sling_harness_codex::detect(&cfg.codex_bin()).await;
-    capabilities.push(Capability {
-        name: CODEX.into(),
-        version: codex.version.clone(),
-        ready: codex.ready(),
-        detail: codex.detail.clone(),
-    });
+    for agent in harness::all() {
+        let d = agent.detect(&agent.bin(cfg)).await;
+        capabilities.push(Capability {
+            name: agent.capability().into(),
+            version: d.version,
+            ready: d.ready,
+            detail: d.detail,
+        });
+    }
 
     let gh = run("gh", &["--version"], None)
         .await
@@ -85,4 +87,13 @@ pub async fn build(cfg: &Config) -> Inventory {
 
 pub fn ready(inv: &Inventory, name: &str) -> bool {
     inv.capabilities.iter().any(|c| c.name == name && c.ready)
+}
+
+/// Names of the coding agents that are installed and logged in.
+pub fn ready_harnesses(inv: &Inventory) -> Vec<String> {
+    harness::all()
+        .into_iter()
+        .filter(|h| ready(inv, h.capability()))
+        .map(|h| h.name().to_string())
+        .collect()
 }

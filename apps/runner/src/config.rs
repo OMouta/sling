@@ -58,15 +58,6 @@ impl Mode {
         }
     }
 
-    /// Codex sandbox for this mode.
-    pub fn sandbox(self) -> &'static str {
-        match self {
-            Mode::ReadOnly => "read-only",
-            Mode::Supervised | Mode::Auto => "workspace-write",
-            Mode::FullAccess => "danger-full-access",
-        }
-    }
-
     pub fn writes(self) -> bool {
         self != Mode::ReadOnly
     }
@@ -93,6 +84,8 @@ pub struct Config {
     pub worktree_root: Option<PathBuf>,
     /// Path to the codex binary. Defaults to `codex` on PATH.
     pub codex_bin: Option<String>,
+    /// Path to the Claude Code binary. Defaults to `claude` on PATH.
+    pub claude_bin: Option<String>,
     /// Labels tasks can require, for example `ios` or `gpu`. The Runner adds
     /// `os:` and `arch:` labels itself.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -119,6 +112,7 @@ impl Default for Config {
             max_concurrent_tasks: default_concurrency(),
             worktree_root: None,
             codex_bin: None,
+            claude_bin: None,
             labels: Vec::new(),
             repos: Vec::new(),
         }
@@ -158,6 +152,10 @@ impl Config {
 
     pub fn codex_bin(&self) -> String {
         self.codex_bin.clone().unwrap_or_else(|| "codex".into())
+    }
+
+    pub fn claude_bin(&self) -> String {
+        self.claude_bin.clone().unwrap_or_else(|| "claude".into())
     }
 
     /// Labels sent in the inventory: the configured ones plus `os:<os>` and

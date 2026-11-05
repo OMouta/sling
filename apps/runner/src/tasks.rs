@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use sling_harness_codex as codex;
 use sling_runner_protocol::{
     ActionRequest, ActionResult, DiffStats, HeldTask, LogLine, TaskAccepted, TaskAssign, TaskEvent,
     TaskFinished, TaskRejected, TaskStarted, action_request, action_result, log_line,
@@ -19,6 +18,7 @@ use tokio::sync::{Notify, mpsc, watch};
 
 use crate::config::{Config, Mode, Paths};
 use crate::git;
+use crate::harness::{self, HarnessEvent, RunSpec};
 use crate::spool::{SpoolState, TaskMeta, TaskSpool, open_all};
 use crate::sys::now_ms;
 
@@ -54,7 +54,10 @@ impl Manager {
             if spool.meta.state == SpoolState::Running {
                 tracing::warn!(task = spool.task_id(), "task was interrupted by a restart");
                 if let Some(pid) = spool.meta.harness_pid {
-                    crate::sys::kill_orphan_group(pid, "codex");
+                    let marker = harness::find(&spool.meta.harness)
+                        .map(|h| h.process_marker())
+                        .unwrap_or("codex");
+                    crate::sys::kill_orphan_group(pid, marker);
                 }
                 spool.append(Kind::Finished(TaskFinished {
                     outcome: task_finished::Outcome::Interrupted as i32,
@@ -188,13 +191,15 @@ impl Manager {
     }
 
     /// Handles TaskAssign. Accepted tasks start running in the background.
-    pub async fn assign(self: &Arc<Self>, a: TaskAssign, codex_ready: bool) {
+    /// `ready` names the harnesses that are installed and logged in.
+    pub async fn assign(self: &Arc<Self>, a: TaskAssign, ready: &[String]) {
         if self.spool(&a.task_id).is_some() {
             // Already known, for example a re-send after a reconnect.
             return;
         }
         let cfg = self.config();
         let mode = Mode::from_proto(a.mode());
+        let agent = harness::find(&a.harness);
         let repo = cfg.repo(&a.repo).cloned();
         let default_branch = match &repo {
             Some(r) => git::default_branch(&r.path).await,
@@ -218,13 +223,16 @@ impl Manager {
                     mode.as_str()
                 ),
             )),
-            _ if a.harness != "codex" => Some((
+            _ if agent.is_none() => Some((
                 task_rejected::Reason::HarnessUnavailable,
-                format!("Unknown harness {:?}.", a.harness),
+                format!("Unknown coding agent {:?}.", a.harness),
             )),
-            _ if !codex_ready => Some((
+            _ if !ready.contains(&a.harness) => Some((
                 task_rejected::Reason::HarnessUnavailable,
-                "Codex is not installed or not logged in on this machine.".into(),
+                format!(
+                    "{} is not installed or not logged in on this machine.",
+                    agent.map(|h| h.label()).unwrap_or_default()
+                ),
             )),
             _ if !git::valid_task_branch(&a.branch, &default_branch) => Some((
                 task_rejected::Reason::Invalid,
@@ -290,10 +298,19 @@ impl Manager {
 
         let me = self.clone();
         let repo = repo.expect("checked above");
+        let agent = agent.expect("checked above");
         tokio::spawn(async move {
             let task_id = a.task_id.clone();
             let finished = match me
-                .run(&spool, &a, mode, repo.path.clone(), repo.network, cancel_rx)
+                .run(
+                    &spool,
+                    &a,
+                    agent,
+                    mode,
+                    repo.path.clone(),
+                    repo.network,
+                    cancel_rx,
+                )
                 .await
             {
                 Ok(f) => f,
@@ -313,10 +330,12 @@ impl Manager {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run(
         self: &Arc<Self>,
         spool: &SharedSpool,
         a: &TaskAssign,
+        agent: &'static dyn harness::Harness,
         mode: Mode,
         repo_path: PathBuf,
         network: bool,
@@ -345,30 +364,32 @@ impl Manager {
             m.base_sha = Some(base_sha.clone());
         })?;
 
-        let detection = codex::detect(&cfg.codex_bin()).await;
+        let bin = agent.bin(&cfg);
+        let detection = agent.detect(&bin).await;
         self.emit(
             spool,
             Kind::Started(TaskStarted {
                 branch: a.branch.clone(),
                 base_sha: base_sha.clone(),
                 worktree_path: worktree.display().to_string(),
-                harness: "codex".into(),
+                harness: agent.name().into(),
                 harness_version: detection.version.clone(),
             }),
         );
         self.log(spool, format!("Branched {} from {base_ref}", a.branch));
 
-        let opts = codex::RunOptions {
-            bin: cfg.codex_bin(),
+        let spec = RunSpec {
+            bin,
             cwd: worktree.clone(),
-            prompt: codex::build_prompt(&a.title, &a.objective, mode.writes()),
-            sandbox: mode.sandbox().into(),
+            title: a.title.clone(),
+            objective: a.objective.clone(),
+            mode,
             network,
-            env: Some(self.agent_env("codex")),
+            env: self.agent_env(agent.name()),
         };
         let mut reported: Vec<PathBuf> = Vec::new();
         let (tx, mut rx) = mpsc::channel(256);
-        let (mut run, reader) = codex::Run::start(&opts, tx).await?;
+        let mut run = agent.start(&spec, tx).await?;
         spool
             .lock()
             .unwrap()
@@ -377,28 +398,26 @@ impl Manager {
         loop {
             tokio::select! {
                 ev = rx.recv() => match ev {
-                    Some(codex::Event::Task(kind)) => {
+                    Some(HarnessEvent::Task(kind)) => {
                         if let Kind::FileChange(fc) = &kind {
                             reported.extend(fc.changes.iter().map(|c| PathBuf::from(&c.path)));
                         }
                         self.emit(spool, kind)
                     }
-                    Some(codex::Event::ThreadStarted(id)) => {
-                        self.log(spool, format!("Codex session {id}"))
-                    }
+                    Some(HarnessEvent::Note(text)) => self.log(spool, text),
                     None => break,
                 },
                 changed = cancel.changed(), if !cancelled => {
                     if changed.is_ok() && *cancel.borrow() {
                         cancelled = true;
-                        self.log(spool, "Cancelling Codex");
+                        self.log(spool, format!("Cancelling {}", agent.label()));
                         run.cancel(CANCEL_GRACE).await;
                     }
                 }
             }
         }
-        let exit = run.wait().await?;
-        let outcome = reader.finish(exit).await;
+        let outcome = run.finish().await?;
+        let exit = outcome.exit_code;
 
         let base = TaskFinished {
             branch: a.branch.clone(),
@@ -412,7 +431,7 @@ impl Manager {
                 ..base
             });
         }
-        if let Some(failure) = outcome.failure.clone().filter(|_| exit != Some(0)) {
+        if let Some(failure) = outcome.failure.clone() {
             return Ok(TaskFinished {
                 outcome: task_finished::Outcome::Failed as i32,
                 error: failure,
@@ -422,7 +441,7 @@ impl Manager {
         if exit != Some(0) {
             return Ok(TaskFinished {
                 outcome: task_finished::Outcome::Failed as i32,
-                error: format!("Codex exited with code {exit:?}."),
+                error: format!("{} exited with code {exit:?}.", agent.label()),
                 ..base
             });
         }
@@ -444,8 +463,9 @@ impl Manager {
                 self.log(
                     spool,
                     format!(
-                        "Left {} untracked file(s) out of the commit because Codex didn't report creating them: {}",
+                        "Left {} untracked file(s) out of the commit because {} didn't report creating them: {}",
                         result.left_out.len(),
+                        agent.label(),
                         shown.join(", ")
                     ),
                 );

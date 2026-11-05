@@ -20,6 +20,7 @@ getrandom = "0.4.3"
 prost = "0.14.4"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sling-harness-claude-code = { path = "../../crates/harness-claude-code" }
 sling-harness-codex = { version = "0.1.0", path = "../../crates/harness-codex" }
 sling-runner-protocol = { path = "../../crates/runner-protocol" }
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "process", "fs", "signal", "time", "sync", "io-util"] }
