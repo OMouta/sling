@@ -18,7 +18,12 @@ export function ApprovalsPage() {
     queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
   });
   const byTask = new Map<string, ApprovalView[]>();
+  const workflow: ApprovalView[] = [];
   for (const a of approvals.data ?? []) {
+    if (a.kind === "workflow" || !a.taskId) {
+      workflow.push(a);
+      continue;
+    }
     byTask.set(a.taskId, [...(byTask.get(a.taskId) ?? []), a]);
   }
 
@@ -34,6 +39,9 @@ export function ApprovalsPage() {
       {[...byTask.entries()].map(([taskId, list]) => (
         <ApprovalGroup key={taskId} taskId={taskId} approvals={list} />
       ))}
+      {workflow.map((a) => (
+        <WorkflowApproval key={a.id} approval={a} />
+      ))}
     </div>
   );
 }
@@ -46,7 +54,7 @@ function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: Appro
       api.post(`/api/tasks/${taskId}/approval`, { decision }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["approvals"] }),
   });
-  if (!first) return null;
+  if (!first?.task) return null;
   const t = first.task;
   const pr = approvals.find((a) => a.actionKind === "open_pr");
 
@@ -64,7 +72,7 @@ function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: Appro
         <ul className="space-y-1 text-sm">
           {approvals.map((a) => (
             <li key={a.id}>
-              <span className="font-medium">{LABEL[a.actionKind]}</span>
+              <span className="font-medium">{a.actionKind ? LABEL[a.actionKind] : a.title}</span>
               <span className="text-muted">
                 {a.actionKind === "push" ? ` to ${t.remoteUrl || "origin"}` : ""} · expires{" "}
                 {ago(a.expiresAt)}
@@ -84,6 +92,42 @@ function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: Appro
             <p className="font-medium">{pr.prTitle}</p>
             <p className="mt-1 whitespace-pre-wrap text-muted">{pr.prBody}</p>
           </div>
+        )}
+      </div>
+      <div className="flex items-center justify-end gap-2 border-t border-border bg-surface-2/50 px-4 py-3">
+        <ErrorText error={decide.error} />
+        <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
+          Reject
+        </Button>
+        <Button
+          size="sm"
+          variant="primary"
+          busy={decide.isPending}
+          onClick={() => decide.mutate("approve")}
+        >
+          Approve
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+function WorkflowApproval({ approval }: { approval: ApprovalView }) {
+  const qc = useQueryClient();
+  const decide = useMutation({
+    mutationFn: (decision: "approve" | "reject") =>
+      api.post(`/api/approvals/${approval.id}`, { decision }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["approvals"] }),
+  });
+  return (
+    <Card className="overflow-hidden">
+      <div className="space-y-2 p-4">
+        <p className="font-medium">{approval.title}</p>
+        <p className="text-sm text-muted">From a workflow · expires {ago(approval.expiresAt)}</p>
+        {approval.payload && (
+          <pre className="max-h-60 overflow-auto rounded-lg bg-surface-2 p-3 font-mono text-xs whitespace-pre-wrap">
+            {JSON.stringify(approval.payload, null, 2)}
+          </pre>
         )}
       </div>
       <div className="flex items-center justify-end gap-2 border-t border-border bg-surface-2/50 px-4 py-3">

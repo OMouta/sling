@@ -56,6 +56,9 @@ export class TaskService implements GatewayHandlers {
   readonly #ctx: AppContext;
   /** Set by the agent so it can report back in the conversation. */
   onSettled: ((taskId: string, reason: SettleReason) => Promise<void>) | null = null;
+  /** Set by the workflow engine. Called when a `workflow` approval is decided or expires. */
+  onWorkflowApproval: ((approval: typeof schema.approvals.$inferSelect) => Promise<void>) | null =
+    null;
 
   constructor(ctx: AppContext) {
     this.#ctx = ctx;
@@ -747,18 +750,23 @@ export class TaskService implements GatewayHandlers {
 
   // ------------------------------------------------------------- approvals
 
-  /** Approves or rejects one approval. */
+  /**
+   * Approves or rejects one approval. `via` is set when the decision came from
+   * outside the web app, for example a Discord button.
+   */
   async decide(
     workspaceId: string,
     approvalId: string,
     userId: string,
     approve: boolean,
+    via?: { via: string; externalUserId: string },
   ): Promise<boolean> {
     const [approval] = await this.#db
       .update(schema.approvals)
       .set({
         state: approve ? "approved" : "rejected",
         decidedBy: userId,
+        decidedVia: via?.via ?? null,
         decidedAt: new Date(),
       })
       .where(
@@ -770,19 +778,6 @@ export class TaskService implements GatewayHandlers {
       )
       .returning();
     if (!approval) return false;
-    await this.#db
-      .update(schema.actions)
-      .set(
-        approve
-          ? { state: "ready" }
-          : { state: "rejected", message: "Rejected.", finishedAt: new Date() },
-      )
-      .where(
-        and(
-          eq(schema.actions.id, approval.actionId),
-          eq(schema.actions.state, "awaiting_approval"),
-        ),
-      );
     await audit(this.#ctx, {
       workspaceId,
       actorType: "user",
@@ -790,11 +785,32 @@ export class TaskService implements GatewayHandlers {
       verb: approve ? "approval.approved" : "approval.rejected",
       subjectType: "approval",
       subjectId: approval.id,
-      details: { taskId: approval.taskId, actionId: approval.actionId },
+      details: {
+        kind: approval.kind,
+        taskId: approval.taskId,
+        actionId: approval.actionId,
+        runId: approval.runId,
+        ...(via ? { via: via.via, externalUserId: via.externalUserId } : {}),
+      },
     });
     await this.#publishApproval(workspaceId, approval.id);
-    const reason = await this.#advanceActions(approval.taskId);
-    if (reason && reason !== "approval_needed") await this.#settle(approval.taskId, reason);
+
+    if (approval.kind === "workflow") {
+      await this.onWorkflowApproval?.(approval);
+      return true;
+    }
+    const { actionId, taskId } = approval;
+    if (!actionId || !taskId) return true;
+    await this.#db
+      .update(schema.actions)
+      .set(
+        approve
+          ? { state: "ready" }
+          : { state: "rejected", message: "Rejected.", finishedAt: new Date() },
+      )
+      .where(and(eq(schema.actions.id, actionId), eq(schema.actions.state, "awaiting_approval")));
+    const reason = await this.#advanceActions(taskId);
+    if (reason && reason !== "approval_needed") await this.#settle(taskId, reason);
     return true;
   }
 
@@ -853,13 +869,18 @@ export class TaskService implements GatewayHandlers {
       .where(and(eq(schema.approvals.state, "pending"), lt(schema.approvals.expiresAt, new Date())))
       .returning();
     for (const a of expired) {
+      await this.#publishApproval(a.workspaceId, a.id);
+      if (a.kind === "workflow") {
+        await this.onWorkflowApproval?.(a);
+        continue;
+      }
+      if (!a.actionId || !a.taskId) continue;
       await db
         .update(schema.actions)
         .set({ state: "expired", message: "The approval expired.", finishedAt: new Date() })
         .where(
           and(eq(schema.actions.id, a.actionId), eq(schema.actions.state, "awaiting_approval")),
         );
-      await this.#publishApproval(a.workspaceId, a.id);
       const reason = await this.#advanceActions(a.taskId);
       if (reason) await this.#settle(a.taskId, reason);
     }

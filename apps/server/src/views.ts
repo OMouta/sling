@@ -198,31 +198,43 @@ export async function approvalView(
       remoteUrl: schema.repos.remoteUrl,
     })
     .from(schema.approvals)
-    .innerJoin(schema.actions, eq(schema.actions.id, schema.approvals.actionId))
-    .innerJoin(schema.tasks, eq(schema.tasks.id, schema.approvals.taskId))
-    .innerJoin(schema.runners, eq(schema.runners.id, schema.tasks.runnerId))
-    .innerJoin(schema.repos, eq(schema.repos.id, schema.tasks.repoId))
+    .leftJoin(schema.actions, eq(schema.actions.id, schema.approvals.actionId))
+    .leftJoin(schema.tasks, eq(schema.tasks.id, schema.approvals.taskId))
+    .leftJoin(schema.runners, eq(schema.runners.id, schema.tasks.runnerId))
+    .leftJoin(schema.repos, eq(schema.repos.id, schema.tasks.repoId))
     .where(eq(schema.approvals.id, approvalId));
   if (!row) return null;
+  const { approval, action, task } = row;
+  const title =
+    approval.title ??
+    (action && task
+      ? `${action.kind === "open_pr" ? "Open a pull request" : "Push"}: ${task.title}`
+      : "Approval");
   return {
-    id: row.approval.id,
-    taskId: row.task.id,
-    actionId: row.action.id,
-    actionKind: row.action.kind,
-    state: row.approval.state,
-    expiresAt: row.approval.expiresAt.toISOString(),
-    createdAt: row.approval.createdAt.toISOString(),
-    task: {
-      title: row.task.title,
-      repoName: row.task.repoName,
-      runnerName: row.runnerName,
-      branch: row.task.branch,
-      remoteUrl: row.remoteUrl,
-      diffStats: row.task.diffStats ?? null,
-      summary: row.task.summary,
-      conversationId: row.task.conversationId,
-    },
-    prTitle: row.action.prTitle,
-    prBody: row.action.prBody,
+    id: approval.id,
+    kind: approval.kind,
+    title,
+    state: approval.state,
+    expiresAt: approval.expiresAt.toISOString(),
+    createdAt: approval.createdAt.toISOString(),
+    taskId: task?.id ?? null,
+    actionId: action?.id ?? null,
+    actionKind: action?.kind ?? null,
+    task: task
+      ? {
+          title: task.title,
+          repoName: task.repoName,
+          runnerName: row.runnerName ?? "unknown",
+          branch: task.branch,
+          remoteUrl: row.remoteUrl ?? "",
+          diffStats: task.diffStats ?? null,
+          summary: task.summary,
+          conversationId: task.conversationId,
+        }
+      : null,
+    prTitle: action?.prTitle ?? null,
+    prBody: action?.prBody ?? null,
+    runId: approval.runId,
+    payload: approval.payload ?? null,
   };
 }
