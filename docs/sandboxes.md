@@ -43,7 +43,7 @@ If nothing can take a task, the assistant tells you why, machine by machine, and
 
 ## Allowing a repo in sandboxes
 
-A repo goes to a sandbox only if you allow it. On the **Machines** page, a repo with a GitHub remote has an **Allow in sandboxes** switch. Turning it on adds the repo to your workspace's sandbox list:
+A repo goes to a sandbox only if you allow it. On the **Machines** page, each allowed repo with a GitHub remote has a switch in the **Sandboxes** column. Turning it on adds the repo to your workspace's sandbox list:
 
 - its remote, such as `github.com/acme/site`
 - the HTTPS URL to clone it from

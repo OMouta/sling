@@ -21,12 +21,6 @@ import { machinesOnly } from "../lib/machines.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
 import type { Settings } from "../lib/types.ts";
 
-const SUGGESTIONS = [
-  "Fix the failing test in CI and open a PR",
-  "Add a dark mode toggle to the settings page",
-  "Bump dependencies and make sure the build passes",
-];
-
 export function HomePage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -120,21 +114,6 @@ export function HomePage() {
               </Card>
             )}
           </div>
-
-          {ready && !text && (
-            <div className="mb-3 flex flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setText(s)}
-                  className="pressable h-[26px] cursor-pointer rounded-full bg-surface-2 px-2.5 text-xs text-muted shadow-raised hover:text-text hover:shadow-raised-hover"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          )}
 
           <form onSubmit={submit}>
             <div

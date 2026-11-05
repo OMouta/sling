@@ -473,13 +473,20 @@ describe("machines", () => {
     runners = [devbox, buildbox];
     renderAt("/machines");
     const dev = await machineCard("devbox");
-    expect(dev.getByText("Codex 0.166.0")).toBeTruthy();
-    expect(dev.getByText("Claude Code 2.1.4 · not ready")).toBeTruthy();
-    expect(dev.getByText(/Claude Code: Not logged in/)).toBeTruthy();
+    const tiles = (card: typeof dev, name: string) =>
+      within(card.getByRole("list", { name: `Coding agents on ${name}` }))
+        .getAllByRole("listitem")
+        .map((li) => li.textContent);
+    expect(tiles(dev, "devbox")).toEqual([
+      "Codex0.166.0Ready",
+      "Claude Code2.1.4Not logged in. Run claude and sign in.Not ready",
+    ]);
     expect(dev.getByText("git 2.47.1")).toBeTruthy();
     const build = await machineCard("buildbox");
-    expect(build.getByText("Codex · not installed")).toBeTruthy();
-    expect(build.getByText("Claude Code 2.1.4")).toBeTruthy();
+    expect(tiles(build, "buildbox")).toEqual([
+      "CodexNot installed on this machine.Missing",
+      "Claude Code2.1.4Ready",
+    ]);
   });
 
   it("allows a repo in sandboxes by its remote, and disallows it", async () => {
@@ -495,7 +502,7 @@ describe("machines", () => {
     const dev = await machineCard("devbox");
     const site = dev.getByRole("switch", { name: "Allow site in sandboxes" });
     expect(site.getAttribute("aria-checked")).toBe("false");
-    expect(dev.getByText(/clones the repo from its remote, so local files/)).toBeTruthy();
+    expect(dev.getByText(/clones the repo from its remote when no machine/)).toBeTruthy();
 
     fireEvent.click(site);
     const path = "/api/sandbox-repos/github.com%2Fa%2Fsite";
@@ -519,7 +526,7 @@ describe("machines", () => {
     renderAt("/machines");
     const dev = await machineCard("devbox");
     expect(dev.getByText("notes")).toBeTruthy();
-    expect(dev.getByText("No remote, so a sandbox has nothing to clone")).toBeTruthy();
+    expect(dev.getByTitle("No remote, so a sandbox has nothing to clone.")).toBeTruthy();
     expect(dev.queryByRole("switch", { name: "Allow notes in sandboxes" })).toBeNull();
   });
 });

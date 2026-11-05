@@ -40,6 +40,12 @@ const runner: RunnerView = {
       defaultBranch: "main",
       remoteUrl: "git@github.com:a/api.git",
     },
+    {
+      path: "/Users/me/code/web",
+      name: "web",
+      defaultBranch: "main",
+      remoteUrl: "git@github.com:a/web.git",
+    },
   ],
   remoteRepos: true,
 };
@@ -236,7 +242,7 @@ describe("web app", () => {
     renderAt("/machines");
     expect(await screen.findByText("devbox")).toBeTruthy();
     expect(screen.getByText("site")).toBeTruthy();
-    expect(screen.getByText(/Codex 0.166.0/)).toBeTruthy();
+    expect(screen.getByText("0.166.0")).toBeTruthy();
   });
 
   it("pairs a machine with one command", async () => {
@@ -251,13 +257,34 @@ describe("web app", () => {
     expect(within(dialog).getByText(/irm http:\/\/localhost\/install\.ps1/)).toBeTruthy();
   });
 
-  it("allows a repo the machine found", async () => {
+  it("allows a repo the machine found, in place", async () => {
     renderAt("/machines");
-    fireEvent.click(await screen.findByRole("button", { name: "Allow api" }));
+    const list = within(await screen.findByRole("list", { name: "Repo list for devbox" }));
+    const names = () =>
+      list.getAllByRole("listitem").map((li) => li.querySelector("p")?.textContent);
+    // Allowed first, then the rest, by name.
+    expect(names()).toEqual(["site", "api", "web"]);
+    fireEvent.click(list.getByRole("switch", { name: "Allow api" }));
     await waitFor(() =>
       expect(
         posts.find((p) => p.method === "POST" && p.path === "/api/runners/rnr_1/repos")?.body,
       ).toBe(JSON.stringify({ path: "/Users/me/code/api" })),
+    );
+    // The switch flips where it is and waits there for the machine.
+    const api = list.getByRole("switch", { name: "Stop allowing api" });
+    expect(api.getAttribute("aria-checked")).toBe("true");
+    expect(names()).toEqual(["site", "api", "web"]);
+  });
+
+  it("allows every found repo at once, after asking", async () => {
+    renderAt("/machines");
+    fireEvent.click(await screen.findByRole("button", { name: "Allow all" }));
+    const dialog = await screen.findByRole("dialog", { name: "Allow 2 repos on devbox?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Allow 2 repos" }));
+    await waitFor(() =>
+      expect(
+        posts.find((p) => p.method === "POST" && p.path === "/api/runners/rnr_1/repos")?.body,
+      ).toBe(JSON.stringify({ paths: ["/Users/me/code/api", "/Users/me/code/web"] })),
     );
   });
 
