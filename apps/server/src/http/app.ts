@@ -17,6 +17,8 @@ import { settingsRoutes } from "../routes/settings.ts";
 import { setupRoutes } from "../routes/setup.ts";
 import { runnerRoutes } from "../runners/routes.ts";
 import { taskRoutes } from "../tasks/routes.ts";
+import { connectorRoutes } from "../workflows/connectors/routes.ts";
+import { webhookRoutes, workflowRoutes } from "../workflows/routes.ts";
 
 export function createServer(config: Config): FastifyInstance {
   const app = Fastify({
@@ -70,6 +72,15 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   await app.register(async (scope) => {
     await conversationRoutes(scope, ctx);
   });
+  await app.register(async (scope) => {
+    await workflowRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await connectorRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await webhookRoutes(scope, ctx);
+  });
 
   serveWebApp(app, ctx.config);
 }
@@ -86,7 +97,7 @@ function serveWebApp(app: FastifyInstance, config: Config) {
   app.get("/", sendIndex);
   app.get("/*", (request, reply) => {
     const path = request.url.split("?")[0] ?? "/";
-    if (path.startsWith("/api/") || path.startsWith("/runner/")) {
+    if (path.startsWith("/api/") || path.startsWith("/runner/") || path.startsWith("/hooks/")) {
       return reply.code(404).send({ error: "not found" });
     }
     const file = path.slice(1);
