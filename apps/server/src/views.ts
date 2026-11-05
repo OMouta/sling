@@ -3,6 +3,9 @@ import type {
   ApprovalView,
   ConversationView,
   RunnerView,
+  SandboxState,
+  SandboxView,
+  TaskEnvironmentView,
   TaskEventType,
   TaskEventView,
   TaskView,
@@ -11,6 +14,7 @@ import { isHarness, remoteKey } from "@sling/core";
 import { schema } from "@sling/db";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { AppContext } from "./context.ts";
+import { effectiveLabels } from "./runners/labels.ts";
 
 type RunnerRow = typeof schema.runners.$inferSelect;
 type RepoRow = typeof schema.repos.$inferSelect;
@@ -18,6 +22,7 @@ type TaskRow = typeof schema.tasks.$inferSelect;
 type ActionRow = typeof schema.actions.$inferSelect;
 type EventRow = typeof schema.taskEvents.$inferSelect;
 type ConversationRow = typeof schema.conversations.$inferSelect;
+type SandboxRow = typeof schema.sandboxes.$inferSelect;
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 
@@ -44,19 +49,26 @@ export function toRunnerView(r: RunnerRow, repos: RepoRow[]): RunnerView {
         defaultBranch: p.defaultBranch,
         remoteUrl: p.remoteUrl,
         network: p.network,
-        remoteKey: remoteKey(p.remoteUrl),
+        remoteKey: p.remoteKey ?? remoteKey(p.remoteUrl),
       })),
-    labels: [],
-    ephemeral: false,
-    sandboxId: null,
+    labels: effectiveLabels(r),
+    ephemeral: r.ephemeral,
+    sandboxId: r.sandboxId,
   };
 }
 
+/** The workspace's machines. Sandbox Runners are listed with their sandboxes instead. */
 export async function runnerViews(ctx: AppContext, workspaceId: string): Promise<RunnerView[]> {
   const rows = await ctx.db
     .select()
     .from(schema.runners)
-    .where(and(eq(schema.runners.workspaceId, workspaceId), isNull(schema.runners.revokedAt)))
+    .where(
+      and(
+        eq(schema.runners.workspaceId, workspaceId),
+        isNull(schema.runners.revokedAt),
+        eq(schema.runners.ephemeral, false),
+      ),
+    )
     .orderBy(asc(schema.runners.pairedAt));
   if (rows.length === 0) return [];
   const repos = await ctx.db
@@ -119,15 +131,34 @@ async function actionsFor(ctx: AppContext, taskIds: string[]): Promise<Map<strin
   return out;
 }
 
-function toTaskView(t: TaskRow, runnerName: string | null, actions: ActionView[]): TaskView {
+interface SandboxSummary {
+  state: SandboxState;
+  providerName: string;
+}
+
+function toTaskView(
+  t: TaskRow,
+  runnerName: string | null,
+  actions: ActionView[],
+  sandbox: SandboxSummary | null,
+): TaskView {
+  const target = t.routing?.target;
+  const environment: TaskEnvironmentView = {
+    kind: t.environment,
+    sandboxId: t.sandboxId,
+    sandboxState: sandbox?.state ?? null,
+    providerName:
+      sandbox?.providerName ??
+      (t.environment === "sandbox" && target?.kind === "sandbox" ? target.providerName : null),
+  };
   return {
     id: t.id,
     conversationId: t.conversationId,
     runnerId: t.runnerId,
     runnerName,
     harness: isHarness(t.harness) ? t.harness : "codex",
-    environment: { kind: "machine", sandboxId: null, sandboxState: null, providerName: null },
-    routing: null,
+    environment,
+    routing: t.routing ?? null,
     repoName: t.repoName,
     title: t.title,
     objective: t.objective,
@@ -163,13 +194,44 @@ export async function taskViews(ctx: AppContext, rows: TaskRow[]): Promise<TaskV
     ctx,
     rows.map((t) => t.id),
   );
+  const sandboxIds = [...new Set(rows.flatMap((t) => (t.sandboxId ? [t.sandboxId] : [])))];
+  const sandboxes = new Map<string, SandboxSummary>();
+  if (sandboxIds.length) {
+    const found = await ctx.db
+      .select({
+        id: schema.sandboxes.id,
+        state: schema.sandboxes.state,
+        providerName: schema.connectorInstallations.name,
+      })
+      .from(schema.sandboxes)
+      .leftJoin(
+        schema.connectorInstallations,
+        eq(schema.connectorInstallations.id, schema.sandboxes.providerInstallationId),
+      )
+      .where(inArray(schema.sandboxes.id, sandboxIds));
+    for (const s of found) {
+      sandboxes.set(s.id, { state: s.state, providerName: s.providerName ?? "a deleted provider" });
+    }
+  }
   return rows.map((t) =>
     toTaskView(
       t,
       t.runnerId ? (names.get(t.runnerId) ?? "unknown") : null,
       actions.get(t.id) ?? [],
+      t.sandboxId ? (sandboxes.get(t.sandboxId) ?? null) : null,
     ),
   );
+}
+
+/**
+ * Where a task runs, for sentences: the machine's name, or "a sandbox on
+ * docker-host".
+ */
+export function taskPlace(t: Pick<TaskView, "runnerName" | "environment">): string {
+  if (t.environment.kind === "sandbox") {
+    return `a sandbox on ${t.environment.providerName ?? "a sandbox provider"}`;
+  }
+  return t.runnerName ?? "no machine yet";
 }
 
 export async function taskView(ctx: AppContext, taskId: string): Promise<TaskView | null> {
@@ -208,17 +270,17 @@ export async function approvalView(
       approval: schema.approvals,
       action: schema.actions,
       task: schema.tasks,
-      runnerName: schema.runners.name,
       remoteUrl: schema.repos.remoteUrl,
     })
     .from(schema.approvals)
     .leftJoin(schema.actions, eq(schema.actions.id, schema.approvals.actionId))
     .leftJoin(schema.tasks, eq(schema.tasks.id, schema.approvals.taskId))
-    .leftJoin(schema.runners, eq(schema.runners.id, schema.tasks.runnerId))
     .leftJoin(schema.repos, eq(schema.repos.id, schema.tasks.repoId))
     .where(eq(schema.approvals.id, approvalId));
   if (!row) return null;
   const { approval, action, task } = row;
+  const [tv] = task ? await taskViews(ctx, [task]) : [];
+  const fallback = approval.kind === "sandbox_fallback" ? approval.payload : null;
   const title =
     approval.title ??
     (action && task
@@ -238,9 +300,10 @@ export async function approvalView(
       ? {
           title: task.title,
           repoName: task.repoName,
-          runnerName: row.runnerName ?? "unknown",
+          runnerName: tv ? taskPlace(tv) : "unknown",
           branch: task.branch,
-          remoteUrl: row.remoteUrl ?? "",
+          remoteUrl:
+            row.remoteUrl ?? (typeof fallback?.cloneUrl === "string" ? fallback.cloneUrl : ""),
           diffStats: task.diffStats ?? null,
           summary: task.summary,
           conversationId: task.conversationId,
@@ -251,4 +314,67 @@ export async function approvalView(
     runId: approval.runId,
     payload: approval.payload ?? null,
   };
+}
+
+/** Billable minutes so far: ready to destroyed, or ready to now while it runs. */
+export function sandboxMinutes(s: SandboxRow, now: Date = new Date()): number {
+  if (s.destroyedAt) return s.minutes;
+  if (!s.readyAt) return 0;
+  return Math.max(0, (now.getTime() - s.readyAt.getTime()) / 60_000);
+}
+
+export async function sandboxViews(ctx: AppContext, rows: SandboxRow[]): Promise<SandboxView[]> {
+  if (rows.length === 0) return [];
+  const installIds = [...new Set(rows.map((s) => s.providerInstallationId))];
+  const installs = await ctx.db
+    .select({
+      id: schema.connectorInstallations.id,
+      name: schema.connectorInstallations.name,
+      connectorId: schema.connectorInstallations.connectorId,
+    })
+    .from(schema.connectorInstallations)
+    .where(inArray(schema.connectorInstallations.id, installIds));
+  const byInstall = new Map(installs.map((i) => [i.id, i]));
+  const taskIds = [...new Set(rows.flatMap((s) => (s.taskId ? [s.taskId] : [])))];
+  const titles = new Map(
+    taskIds.length
+      ? (
+          await ctx.db
+            .select({ id: schema.tasks.id, title: schema.tasks.title })
+            .from(schema.tasks)
+            .where(inArray(schema.tasks.id, taskIds))
+        ).map((t) => [t.id, t.title])
+      : [],
+  );
+  const now = new Date();
+  return rows.map((s) => {
+    const install = byInstall.get(s.providerInstallationId);
+    return {
+      id: s.id,
+      state: s.state,
+      providerInstallationId: s.providerInstallationId,
+      providerName: install?.name ?? "a deleted provider",
+      connectorId: install?.connectorId ?? "",
+      taskId: s.taskId,
+      taskTitle: s.taskId ? (titles.get(s.taskId) ?? null) : null,
+      image: s.image,
+      externalId: s.externalId,
+      failure: s.failure,
+      runnerId: s.runnerId,
+      requestedAt: s.requestedAt.toISOString(),
+      readyAt: iso(s.readyAt),
+      destroyedAt: iso(s.destroyedAt),
+      minutes: Math.round(sandboxMinutes(s, now) * 100) / 100,
+    };
+  });
+}
+
+export async function sandboxView(ctx: AppContext, sandboxId: string): Promise<SandboxView | null> {
+  const [row] = await ctx.db
+    .select()
+    .from(schema.sandboxes)
+    .where(eq(schema.sandboxes.id, sandboxId));
+  if (!row) return null;
+  const [view] = await sandboxViews(ctx, [row]);
+  return view ?? null;
 }

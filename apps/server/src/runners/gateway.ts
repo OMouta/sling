@@ -1,6 +1,6 @@
 import { createPublicKey, randomBytes, verify } from "node:crypto";
 import { toBinary } from "@bufbuild/protobuf";
-import { newId } from "@sling/core";
+import { newId, remoteKey } from "@sling/core";
 import { schema } from "@sling/db";
 import {
   authPayload,
@@ -21,6 +21,7 @@ import type { WebSocket } from "ws";
 import type { AppContext } from "../context.ts";
 import { runnerView } from "../views.ts";
 import { modeFromProto } from "./convert.ts";
+import { normalizeLabels } from "./labels.ts";
 
 export const HEARTBEAT_SECONDS = 15;
 const OFFLINE_AFTER_MS = 45_000;
@@ -44,6 +45,8 @@ export interface GatewayHandlers {
   ready(session: RunnerSession, hello: Hello): Promise<void>;
   disconnected(session: RunnerSession): Promise<void>;
   taskEvent(session: RunnerSession, event: TaskEvent): Promise<void>;
+  /** The Runner sent a new inventory after connecting. */
+  inventoryUpdated?(session: RunnerSession): Promise<void>;
 }
 
 export function ed25519KeyFromRaw(raw: Buffer) {
@@ -247,6 +250,7 @@ export class RunnerGateway {
       case "inventory":
         await this.#applyInventory(session, envelope.body.value);
         await this.#publishRunner(session);
+        await this.handlers?.inventoryUpdated?.(session);
         return;
       case "taskEvent":
         await this.handlers?.taskEvent(session, envelope.body.value);
@@ -269,6 +273,7 @@ export class RunnerGateway {
         })),
         maxMode: modeFromProto(inv.maxMode),
         maxConcurrentTasks: Math.max(1, Math.min(inv.maxConcurrentTasks || 1, 16)),
+        labels: normalizeLabels(inv.labels),
       })
       .where(eq(schema.runners.id, session.runnerId));
 
@@ -284,6 +289,7 @@ export class RunnerGateway {
           name: repo.name,
           defaultBranch: repo.defaultBranch || "main",
           remoteUrl: repo.remoteUrl,
+          remoteKey: remoteKey(repo.remoteUrl),
           network: repo.network,
         })
         .onConflictDoUpdate({
@@ -291,6 +297,7 @@ export class RunnerGateway {
           set: {
             defaultBranch: repo.defaultBranch || "main",
             remoteUrl: repo.remoteUrl,
+            remoteKey: remoteKey(repo.remoteUrl),
             network: repo.network,
             removedAt: null,
           },
