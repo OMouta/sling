@@ -5,7 +5,7 @@
 - Node.js 24 and pnpm 12 (`packageManager` in `package.json` pins the version)
 - Rust stable
 - Docker, for Postgres and the end-to-end tests
-- Optional: Codex, for real runs. `fake-codex` covers everything else.
+- Optional: Codex or Claude Code, for real runs. `fake-codex` and `fake-claude` cover everything else.
 
 ## First run
 
@@ -21,15 +21,16 @@ Open http://localhost:5173. Vite forwards `/api` and `/runner` to the server, wh
 A Runner against the dev server, with a fake Codex and its own home directory:
 
 ```sh
-cargo build -p sling-runner -p sling-harness-codex
+cargo build -p sling-runner -p sling-harness-codex -p sling-harness-claude-code
 export SLING_RUNNER_HOME=/tmp/sling-dev-runner
 ./target/debug/sling-runner repo add ~/code/some-repo
 ./target/debug/sling-runner config set codex-bin "$PWD/target/debug/fake-codex"
+./target/debug/sling-runner config set claude-bin "$PWD/target/debug/fake-claude"
 ./target/debug/sling-runner pair http://localhost:5173 <code>
 ./target/debug/sling-runner run
 ```
 
-`fake-codex` behaves like `codex exec --json`. Put `[fake:fail]`, `[fake:hang]`, `[fake:crash]`, or `[fake:noop]` in a task objective to pick a scenario.
+`fake-codex` behaves like `codex exec --json`, and `fake-claude` like `claude -p --output-format stream-json`. Put `[fake:fail]`, `[fake:hang]`, `[fake:crash]`, `[fake:noop]`, or `[fake:env]` in a task objective to pick a scenario. `env` reports which `SLING_*` variables, tokens, and API keys the agent can see.
 
 The routing and sandbox end-to-end tests (`apps/server/test/stage3.e2e.test.ts`) register two test execution providers from `test/fixtures/providers.ts`. `test-fake` boots a TypeScript Runner in the test process that pairs with the sandbox's code. `test-process` runs the real `target/debug/sling-runner sandbox` as a child process with the sandbox's environment, cloning from a local bare repo and running `fake-codex`; its test skips itself when the Runner build has no `sandbox` command. The server's `testing` config passes `SLING_CODEX_BIN` to sandboxes and allows `file://` clone URLs.
 
@@ -49,7 +50,8 @@ The routing and sandbox end-to-end tests (`apps/server/test/stage3.e2e.test.ts`)
 | `packages/runner-protocol` | `.proto` source of truth and generated TS |
 | `crates/runner-protocol` | Generated Rust (prost) |
 | `crates/harness-codex` | Codex adapter and `fake-codex` |
-| `deploy` | Dockerfile and compose files |
+| `crates/harness-claude-code` | Claude Code adapter and `fake-claude` |
+| `deploy` | Dockerfile and compose files. `deploy/sandbox` builds the sandbox image |
 | `plan` | Spec, decisions log, Stage 1 plan, spike notes |
 
 The server runs TypeScript directly with Node's type stripping, so there's no build step. That means no TS enums or parameter properties (`erasableSyntaxOnly` catches them).
@@ -63,6 +65,16 @@ pnpm test            # unit tests, all TS packages
 pnpm test:e2e        # builds the Runner, then runs Postgres + server + Runner + fake-codex, and the workflow engine tests
 cargo clippy --all-targets -- -D warnings
 cargo test --all
+```
+
+Two more Rust checks need something outside the repo:
+
+```sh
+# Real Claude Code runs with each mode's flags. Uses your Claude Code login.
+SLING_LIVE_CLAUDE=1 cargo test -p sling-harness-claude-code --test live -- --ignored
+# The sandbox boot tests inside the sandbox image.
+docker build -f deploy/sandbox/Dockerfile -t sling-sandbox:dev .
+SLING_SANDBOX_IMAGE=sling-sandbox:dev cargo test -p sling-runner --test sandbox
 ```
 
 ## Changing things
