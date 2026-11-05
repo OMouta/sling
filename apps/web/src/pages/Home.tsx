@@ -48,7 +48,7 @@ export function HomePage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">What should we work on?</h1>
           <p className="text-sm text-muted">
-            Sling hands coding work to Codex on your own machines.
+            Sling hands coding work to Codex or Claude Code, on your machines or in a fresh sandbox.
           </p>
         </div>
       </div>
@@ -59,7 +59,7 @@ export function HomePage() {
             Sling's assistant needs an OpenAI, Anthropic, or OpenAI-compatible model.
           </Step>
           <Step done={hasMachine} n={2} title="Pair a machine" to="/machines">
-            Install sling-runner on the computer that has your repos and Codex.
+            Install sling-runner on the computer that has your repos and Codex or Claude Code.
           </Step>
         </Card>
       )}
