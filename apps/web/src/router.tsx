@@ -14,6 +14,7 @@ import { ConnectorsPage } from "./pages/Connectors.tsx";
 import { HomePage } from "./pages/Home.tsx";
 import { LoginPage } from "./pages/Login.tsx";
 import { MachinesPage } from "./pages/Machines.tsx";
+import { SandboxesPage } from "./pages/Sandboxes.tsx";
 import { SettingsPage } from "./pages/Settings.tsx";
 import { SetupPage } from "./pages/Setup.tsx";
 import { TaskPage } from "./pages/Task.tsx";
@@ -46,6 +47,11 @@ const machinesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/machines",
   component: MachinesPage,
+});
+const sandboxesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/sandboxes",
+  component: SandboxesPage,
 });
 const approvalsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -107,6 +113,7 @@ const routeTree = rootRoute.addChildren([
     homeRoute,
     chatRoute,
     machinesRoute,
+    sandboxesRoute,
     approvalsRoute,
     settingsRoute,
     taskRoute,

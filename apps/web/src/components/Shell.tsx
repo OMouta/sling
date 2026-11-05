@@ -155,6 +155,7 @@ function Sidebar({ email }: { email: string | null }) {
         <NavLink to="/workflows">Workflows</NavLink>
         <NavLink to="/connectors">Connectors</NavLink>
         <NavLink to="/machines">Machines</NavLink>
+        <NavLink to="/sandboxes">Sandboxes</NavLink>
         <NavLink to="/settings">Settings</NavLink>
       </nav>
       <div className="mt-5 px-6 text-xs font-medium tracking-wide text-muted uppercase">

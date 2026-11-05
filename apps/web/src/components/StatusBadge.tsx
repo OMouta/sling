@@ -1,4 +1,4 @@
-import type { InstallationStatus, NodeRunStatus, RunStatus } from "@sling/core";
+import type { InstallationStatus, NodeRunStatus, RunStatus, SandboxState } from "@sling/core";
 import { Badge, Dot } from "./ui.tsx";
 
 type Tone = "neutral" | "ok" | "warn" | "danger" | "accent";
@@ -32,4 +32,18 @@ export function InstallationStatusLabel({ status }: { status: InstallationStatus
       {status}
     </span>
   );
+}
+
+export const SANDBOX_TONE: Record<SandboxState, Tone> = {
+  requested: "neutral",
+  provisioning: "warn",
+  ready: "ok",
+  busy: "accent",
+  releasing: "neutral",
+  destroyed: "neutral",
+  failed: "danger",
+};
+
+export function SandboxStateBadge({ state }: { state: SandboxState }) {
+  return <Badge tone={SANDBOX_TONE[state] ?? "neutral"}>{state}</Badge>;
 }
