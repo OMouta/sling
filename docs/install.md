@@ -23,6 +23,7 @@ Fill in `.env`:
 | `POSTGRES_PASSWORD` | Password for the bundled Postgres. |
 | `SLING_PORT` | Host port to publish. Default `8080`. |
 | `LOG_LEVEL` | `info` by default. |
+| `SLING_RELEASE_REPO` | Optional. The GitHub repo, as `owner/name`, whose releases the Runner install command downloads. Without it, the command works only on machines that already have `sling-runner`. |
 
 Start it:
 

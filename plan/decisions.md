@@ -193,6 +193,15 @@ The orphan sweep destroys anything carrying Sling's label that isn't a live sand
 ### D53. A named machine is a preference, unless the environment is `machine`
 `machineId` on its own tells the router which machine to try first. If that machine can't take the task, the router falls back the usual way. `environment: "machine"` (or the older `runnerId`) restricts the task to that machine and refuses otherwise.
 
+### D54. The chat picks the assistant's model and the coding agent's
+The composer has one picker for both, like T3 Code. The assistant's models come from each provider's model list, with effort levels and the fast tier. The agent's models come from what each machine's Codex or Claude Code reports. Choices are stored per conversation, with workspace defaults for new chats, and each provider keeps its own key. Asked 2026-11-05.
+
+### D55. Repos can be allowed from the web app
+The Runner scans for git repos and reports the ones not yet allowed. Sling can ask it to add one or remove one. The Runner adds only paths from its own scan, and `remote-repos off` restores the local-only list. This widens what a compromised control plane can do, from nothing to "allow a repo the machine found". Pairing is one install command that pairs and starts the Runner. Asked 2026-11-05.
+
+### D56. Two-factor changes skip the password right after sign-in
+Within 10 minutes of signing in, turning two-factor on or off needs no password. Otherwise the dialog asks for the password or a passkey sign-in. A small Better Auth plugin stores the secret exactly as the two-factor plugin does. Asked 2026-11-05.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.

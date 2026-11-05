@@ -26,7 +26,7 @@ The assistant never picks the mode. It isn't a tool parameter, and the server re
 
 **On the Runner** (holds even if the control plane is compromised)
 - `max-mode` in the local config. Tasks above it are refused.
-- Only repos listed in the local config exist. There's no message that adds one.
+- Only repos listed in the local config exist. Sling can ask the Runner to add one, but only a git repo the Runner found on the machine itself, and only while `remote-repos` is on. `sling-runner config set remote-repos off` makes the local list final.
 - Branch names must start with `sling/` and can't be the default branch.
 - Pushes never force, and only push the task's own branch.
 - Read-only tasks can't push at all.
