@@ -36,6 +36,18 @@ pub fn ws_url(server: &str) -> Result<String> {
     Ok(format!("{url}{RUNNER_WS_PATH}"))
 }
 
+/// The server refused this Runner for good (revoked or unknown).
+#[derive(Debug)]
+pub struct Refused(pub String);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Refused {}
+
 enum Ended {
     /// Try again after a pause.
     Retry(String),
@@ -49,7 +61,7 @@ pub async fn run_forever(mgr: Arc<Manager>, identity: Identity) -> Result<()> {
         let cfg = mgr.config();
         let started = Instant::now();
         match connect_once(&mgr, &identity, &cfg).await {
-            Ok(Ended::Fatal(msg)) => bail!("{msg}"),
+            Ok(Ended::Fatal(msg)) => return Err(Refused(msg).into()),
             Ok(Ended::Retry(msg)) => tracing::warn!("disconnected: {msg}"),
             Err(e) => tracing::warn!("connection failed: {e:#}"),
         }

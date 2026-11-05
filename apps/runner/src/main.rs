@@ -2,11 +2,14 @@
 
 mod config;
 mod connection;
+mod gc;
 mod git;
 mod identity;
 mod inventory;
 mod pair;
+mod redact;
 mod repos;
+mod service;
 mod spool;
 mod sys;
 mod tasks;
@@ -51,6 +54,13 @@ enum Command {
     },
     /// Connect and run tasks in the foreground.
     Run,
+    /// Run the Runner in the background as your user (launchd, systemd, or a logon task).
+    Service {
+        #[command(subcommand)]
+        command: ServiceCommand,
+    },
+    /// Remove worktrees of finished tasks older than 7 days.
+    Gc,
     /// Check that everything this Runner needs is in place.
     Doctor,
 }
@@ -73,6 +83,13 @@ enum RepoCommand {
 }
 
 #[derive(Subcommand)]
+enum ServiceCommand {
+    Install,
+    Uninstall,
+    Status,
+}
+
+#[derive(Subcommand)]
 enum ConfigCommand {
     Show,
     /// Keys: max-mode, max-concurrent-tasks, name, codex-bin, worktree-root.
@@ -84,17 +101,56 @@ enum ConfigCommand {
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("SLING_RUNNER_LOG")
-                .unwrap_or_else(|_| "info".into()),
-        )
-        .with_target(false)
-        .init();
+    init_logging();
     if let Err(e) = real_main().await {
+        tracing::error!("{e:#}");
         eprintln!("error: {e:#}");
+        if e.downcast_ref::<connection::Refused>().is_some() {
+            // launchd only skips the restart on a clean exit; systemd skips 78.
+            let code =
+                if cfg!(target_os = "macos") && std::env::var_os(service::SERVICE_ENV).is_some() {
+                    0
+                } else {
+                    service::EXIT_REVOKED
+                };
+            std::process::exit(code);
+        }
         std::process::exit(1);
     }
+}
+
+/// Logs go to stderr, or to `runner.log` (rotated at 10 MB) when running as a
+/// service.
+fn init_logging() {
+    let filter = tracing_subscriber::EnvFilter::try_from_env("SLING_RUNNER_LOG")
+        .unwrap_or_else(|_| "info".into());
+    let builder = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false);
+    if std::env::var_os(service::SERVICE_ENV).is_some()
+        && let Ok(paths) = Paths::resolve()
+    {
+        let file = paths.log_file();
+        let _ = std::fs::create_dir_all(&paths.data_dir);
+        if std::fs::metadata(&file)
+            .map(|m| m.len() > 10 * 1024 * 1024)
+            .unwrap_or(false)
+        {
+            let _ = std::fs::rename(&file, file.with_extension("log.1"));
+        }
+        if let Ok(f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file)
+        {
+            builder
+                .with_ansi(false)
+                .with_writer(std::sync::Mutex::new(f))
+                .init();
+            return;
+        }
+    }
+    builder.init();
 }
 
 async fn real_main() -> Result<()> {
@@ -169,13 +225,42 @@ async fn real_main() -> Result<()> {
                 bail!("not paired yet. Run `sling-runner pair <url> <code>` first.");
             }
             let identity = identity::Identity::load(&paths)?;
-            let mgr = tasks::Manager::new(paths, cfg)?;
+            let mgr = tasks::Manager::new(paths.clone(), cfg)?;
+            let gc_mgr = mgr.clone();
+            tokio::spawn(async move {
+                loop {
+                    match gc::collect(&gc_mgr.config(), &gc_mgr.paths, gc::KEEP_FOR).await {
+                        Ok(n) if n > 0 => tracing::info!("removed {n} old worktrees"),
+                        Ok(_) => {}
+                        Err(e) => tracing::warn!("worktree cleanup failed: {e:#}"),
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60)).await;
+                }
+            });
             tokio::select! {
                 r = connection::run_forever(mgr, identity) => r?,
                 _ = tokio::signal::ctrl_c() => tracing::info!("stopping"),
             }
         }
         Command::Doctor => doctor(&paths).await?,
+        Command::Service { command } => {
+            let msg = match command {
+                ServiceCommand::Install => {
+                    if Config::load(&paths)?.runner_id.is_none() {
+                        bail!("pair this machine first: sling-runner pair <url> <code>");
+                    }
+                    service::install(&paths).await?
+                }
+                ServiceCommand::Uninstall => service::uninstall().await?,
+                ServiceCommand::Status => service::status().await?,
+            };
+            println!("{msg}");
+        }
+        Command::Gc => {
+            let cfg = Config::load(&paths)?;
+            let n = gc::collect(&cfg, &paths, gc::KEEP_FOR).await?;
+            println!("Removed {n} worktrees.");
+        }
     }
     Ok(())
 }
