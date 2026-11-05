@@ -28,6 +28,7 @@ export async function startJobs(
 
   await boss.work(QUEUES.sweep, async () => {
     await ctx.tasks.sweep();
+    await ctx.sandboxes.sweep();
   });
   await boss.work(QUEUES.pruneEvents, async () => {
     const n = await ctx.tasks.pruneEvents();

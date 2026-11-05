@@ -3,13 +3,14 @@ import {
   APPROVAL_TTL_MS,
   canTransitionTask,
   type Delivery,
+  type Harness,
   isTerminalAction,
   isTerminalTask,
   MODE_POLICY,
-  modeWithinCap,
   needsApproval,
   newId,
   type PermissionMode,
+  type RoutingView,
   type TaskState,
   taskBranch,
 } from "@sling/core";
@@ -18,8 +19,11 @@ import { create, type Envelope, EnvelopeSchema, type TaskEvent } from "@sling/ru
 import { and, asc, count, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
+import { loadRouterInput } from "../routing/inputs.ts";
+import { type Environment, route } from "../routing/router.ts";
 import { modeToProto } from "../runners/convert.ts";
 import type { GatewayHandlers, RunnerSession } from "../runners/gateway.ts";
+import { workspaceSettings } from "../sandboxes/settings.ts";
 import { approvalView, taskView, toEventView } from "../views.ts";
 import { ACTION_KIND_TO_PROTO, DROPPABLE, FINISHED_STATE, toStoredEvent } from "./events.ts";
 
@@ -37,16 +41,46 @@ const ACTIVE: TaskState[] = ["dispatched", "running"];
 
 export class TaskInputError extends Error {}
 
+/** No machine or sandbox can take the task. Nothing was created. */
+export class TaskRoutingError extends TaskInputError {
+  readonly routing: RoutingView;
+  /** Why, one line per machine, plus why a sandbox can't take it. */
+  readonly reasons: string[];
+
+  constructor(message: string, routing: RoutingView, reasons: string[]) {
+    super(message);
+    this.routing = routing;
+    this.reasons = reasons;
+  }
+}
+
 export interface CreateTaskInput {
   workspaceId: string;
   ownerId: string;
   conversationId: string | null;
-  runnerId: string;
-  repoName: string;
+  /** A repo name, a remote key such as `github.com/a/site`, or a remote URL. */
+  repo: string;
   title: string;
   objective: string;
   mode: PermissionMode;
   deliver: Delivery;
+  /** `auto` picks a machine and offers a sandbox when none can take it. */
+  environment?: Environment;
+  /** Preferred machine for `auto`; the only one for `machine`. */
+  machineId?: string | null;
+  /** Sandbox provider installation. Defaults to the first enabled one. */
+  providerInstallationId?: string | null;
+  /** Defaults to the workspace's default agent. */
+  harness?: Harness | null;
+  /** Labels the machine must have. */
+  labels?: string[];
+}
+
+export interface CreatedTask {
+  task: TaskRow;
+  routing: RoutingView;
+  /** Set when no machine could take it and a sandbox needs approval first. */
+  approvalId: string | null;
 }
 
 /** Why a task reached a point where the conversation should hear about it. */
@@ -70,53 +104,47 @@ export class TaskService implements GatewayHandlers {
 
   // ------------------------------------------------------------- creating
 
-  async create(input: CreateTaskInput): Promise<TaskRow> {
+  /**
+   * Routes and creates a task. It goes to a machine right away, to a sandbox
+   * when one was asked for, or waits for a sandbox approval when no machine
+   * can take it. Throws TaskRoutingError when nothing can.
+   */
+  async create(input: CreateTaskInput): Promise<CreatedTask> {
     const db = this.#db;
     const title = input.title.trim().slice(0, 120);
     const objective = input.objective.trim();
     if (!title || !objective) throw new TaskInputError("A task needs a title and an objective.");
+    const repo = input.repo.trim();
+    if (!repo) throw new TaskInputError("A task needs a repo.");
 
-    const [runner] = await db
-      .select()
-      .from(schema.runners)
-      .where(
-        and(
-          eq(schema.runners.id, input.runnerId),
-          eq(schema.runners.workspaceId, input.workspaceId),
-          isNull(schema.runners.revokedAt),
-        ),
-      );
-    if (!runner) throw new TaskInputError(`No machine with id ${input.runnerId}.`);
-    if (!this.#ctx.runners.isOnline(runner.id)) {
-      throw new TaskInputError(`${runner.name} is offline.`);
-    }
-    const codex = runner.capabilities.find((c) => c.name === "coding.codex");
-    if (!codex?.ready) {
-      throw new TaskInputError(
-        `Codex isn't ready on ${runner.name}: ${codex?.detail || "not installed"}.`,
-      );
-    }
-    if (!modeWithinCap(input.mode, runner.maxMode)) {
-      throw new TaskInputError(
-        `${runner.name} allows at most ${runner.maxMode} mode, and this conversation is in ${input.mode}. Switch the conversation to a lower mode or raise the cap on that machine.`,
-      );
-    }
-    const [repo] = await db
-      .select()
-      .from(schema.repos)
-      .where(
-        and(
-          eq(schema.repos.runnerId, runner.id),
-          eq(schema.repos.name, input.repoName),
-          isNull(schema.repos.removedAt),
-        ),
-      );
-    if (!repo) {
-      throw new TaskInputError(`${runner.name} has no repo named ${input.repoName}.`);
+    const { defaultHarness } = await workspaceSettings(this.#ctx, input.workspaceId);
+    const harness = input.harness ?? defaultHarness;
+    const started = performance.now();
+    const routerInput = await loadRouterInput(
+      this.#ctx,
+      input.workspaceId,
+      {
+        repo,
+        harness,
+        labels: input.labels ?? [],
+        environment: input.environment ?? "auto",
+        machineId: input.machineId ?? null,
+        providerInstallationId: input.providerInstallationId ?? null,
+      },
+      input.mode,
+    );
+    const { decision, routing } = route(routerInput);
+    this.#ctx.log.debug(
+      { ms: Math.round((performance.now() - started) * 100) / 100, decision: decision.kind },
+      "routed task",
+    );
+    if (decision.kind === "refused") {
+      throw new TaskRoutingError(decision.message, routing, decision.reasons);
     }
 
     const id = newId("tsk");
     const deliver: Delivery = MODE_POLICY[input.mode].writes ? input.deliver : "local";
+    const machine = decision.kind === "machine" ? decision : null;
     const [task] = await db
       .insert(schema.tasks)
       .values({
@@ -124,13 +152,16 @@ export class TaskService implements GatewayHandlers {
         workspaceId: input.workspaceId,
         ownerId: input.ownerId,
         conversationId: input.conversationId,
-        runnerId: runner.id,
-        repoId: repo.id,
-        repoName: repo.name,
+        runnerId: machine?.runnerId ?? null,
+        repoId: machine?.repoId ?? null,
+        repoName: decision.repoName,
         title,
         objective,
         mode: input.mode,
         deliver,
+        harness,
+        environment: machine ? "machine" : "sandbox",
+        routing,
         branch: taskBranch(id, title),
       })
       .returning();
@@ -142,11 +173,32 @@ export class TaskService implements GatewayHandlers {
       verb: "task.created",
       subjectType: "task",
       subjectId: id,
-      details: { runner: runner.name, repo: repo.name, mode: input.mode, deliver },
+      details: {
+        runner: machine?.runnerName ?? null,
+        repo: decision.repoName,
+        mode: input.mode,
+        deliver,
+        harness,
+        environment: task.environment,
+        routing: routing.reason,
+      },
     });
-    await this.publish(id);
-    await this.dispatch(id);
-    return task;
+
+    let approvalId: string | null = null;
+    if (decision.kind === "machine") {
+      await this.publish(id);
+      await this.dispatch(id);
+    } else if (decision.fallback) {
+      approvalId = await this.#ctx.sandboxes.offerFallback(task, decision);
+      await this.publish(id);
+      await this.#publishApproval(task.workspaceId, approvalId);
+      await this.settle(id, "approval_needed");
+    } else {
+      await this.publish(id);
+      await this.#ctx.sandboxes.request(task, decision.provider.id, decision.repo.remoteKey);
+    }
+    const [fresh] = await db.select().from(schema.tasks).where(eq(schema.tasks.id, id));
+    return { task: fresh ?? task, routing, approvalId };
   }
 
   /** Sends a queued task to its Runner if the Runner has room. */
@@ -181,7 +233,9 @@ export class TaskService implements GatewayHandlers {
         .where(eq(schema.tasks.id, task.id));
       return task;
     });
-    if (sent) await this.publish(taskId);
+    if (!sent) return;
+    if (sent.sandboxId) await this.#ctx.sandboxes.taskDispatched(sent.sandboxId);
+    await this.publish(taskId);
   }
 
   async dispatchQueued(runnerId: string): Promise<void> {
@@ -226,7 +280,8 @@ export class TaskService implements GatewayHandlers {
       await this.#setState(task.id, "queued", "cancelled", {
         error: "Cancelled before it started.",
       });
-      await this.#settle(task.id, "finished");
+      await this.#expireTaskApprovals(task.id);
+      await this.settle(task.id, "finished");
     } else {
       await this.#db
         .update(schema.tasks)
@@ -289,6 +344,8 @@ export class TaskService implements GatewayHandlers {
     session: RunnerSession,
     hello: { heldTasks: { taskId: string; running: boolean }[] },
   ): Promise<void> {
+    // A sandbox's Runner gets its waiting task bound here, then dispatched below.
+    await this.#ctx.sandboxes.runnerConnected(session.runnerId);
     const held = new Map(hello.heldTasks.map((h) => [h.taskId, h]));
     const active = await this.#db
       .select()
@@ -304,7 +361,7 @@ export class TaskService implements GatewayHandlers {
           await this.#setState(t.id, t.state, "interrupted", {
             error: "The machine came back without this task. It was probably lost in a crash.",
           });
-          await this.#settle(t.id, "finished");
+          await this.settle(t.id, "finished");
         }
         continue;
       }
@@ -345,6 +402,11 @@ export class TaskService implements GatewayHandlers {
     await this.dispatchQueued(session.runnerId);
   }
 
+  async inventoryUpdated(session: RunnerSession): Promise<void> {
+    await this.#ctx.sandboxes.runnerConnected(session.runnerId);
+    await this.dispatchQueued(session.runnerId);
+  }
+
   async disconnected(session: RunnerSession): Promise<void> {
     const rows = await this.#db
       .update(schema.tasks)
@@ -373,7 +435,7 @@ export class TaskService implements GatewayHandlers {
     for (const t of rows) {
       const to: TaskState = t.state === "queued" ? "cancelled" : "interrupted";
       await this.#setState(t.id, t.state, to, { error: "The machine was revoked." });
-      await this.#settle(t.id, "finished");
+      await this.settle(t.id, "finished");
     }
     const pending = await this.#db
       .select({ id: schema.actions.id, taskId: schema.actions.taskId })
@@ -495,7 +557,7 @@ export class TaskService implements GatewayHandlers {
         }
         return async () => {
           await this.publish(task.id);
-          await this.#settle(task.id, "finished");
+          await this.settle(task.id, "finished");
           if (task.runnerId) await this.dispatchQueued(task.runnerId);
         };
       case "started":
@@ -567,9 +629,9 @@ export class TaskService implements GatewayHandlers {
           await this.publish(task.id);
           if (createdActions) {
             const reason = await this.#advanceActions(task.id);
-            if (reason) await this.#settle(task.id, reason);
+            if (reason) await this.settle(task.id, reason);
           } else {
-            await this.#settle(task.id, "finished");
+            await this.settle(task.id, "finished");
           }
           if (task.runnerId) await this.dispatchQueued(task.runnerId);
         };
@@ -620,7 +682,7 @@ export class TaskService implements GatewayHandlers {
         }
         return async () => {
           const reason = await this.#advanceActions(task.id);
-          if (reason) await this.#settle(task.id, reason);
+          if (reason) await this.settle(task.id, reason);
         };
       }
       default:
@@ -803,6 +865,10 @@ export class TaskService implements GatewayHandlers {
       await this.onWorkflowApproval?.(approval);
       return true;
     }
+    if (approval.kind === "sandbox_fallback") {
+      await this.#ctx.sandboxes.fallbackDecided(approval, approve ? "approved" : "rejected");
+      return true;
+    }
     const { actionId, taskId } = approval;
     if (!actionId || !taskId) return true;
     await this.#db
@@ -814,7 +880,7 @@ export class TaskService implements GatewayHandlers {
       )
       .where(and(eq(schema.actions.id, actionId), eq(schema.actions.state, "awaiting_approval")));
     const reason = await this.#advanceActions(taskId);
-    if (reason && reason !== "approval_needed") await this.#settle(taskId, reason);
+    if (reason && reason !== "approval_needed") await this.settle(taskId, reason);
     return true;
   }
 
@@ -823,15 +889,16 @@ export class TaskService implements GatewayHandlers {
     const pending = await this.#db
       .select({ id: schema.approvals.id })
       .from(schema.approvals)
-      .innerJoin(schema.actions, eq(schema.actions.id, schema.approvals.actionId))
+      .leftJoin(schema.actions, eq(schema.actions.id, schema.approvals.actionId))
       .where(
         and(
           eq(schema.approvals.taskId, taskId),
           eq(schema.approvals.workspaceId, workspaceId),
           eq(schema.approvals.state, "pending"),
+          inArray(schema.approvals.kind, ["task_action", "sandbox_fallback"]),
         ),
       )
-      .orderBy(asc(schema.actions.position));
+      .orderBy(sql`${schema.actions.position} asc nulls first`);
     let n = 0;
     for (const p of pending) {
       if (await this.decide(workspaceId, p.id, userId, approve)) n++;
@@ -864,7 +931,7 @@ export class TaskService implements GatewayHandlers {
       await this.#setState(t.id, t.state, "interrupted", {
         error: "The machine stayed offline for more than 30 minutes.",
       });
-      await this.#settle(t.id, "finished");
+      await this.settle(t.id, "finished");
     }
 
     const expired = await db
@@ -878,6 +945,10 @@ export class TaskService implements GatewayHandlers {
         await this.onWorkflowApproval?.(a);
         continue;
       }
+      if (a.kind === "sandbox_fallback") {
+        await this.#ctx.sandboxes.fallbackDecided(a, "expired");
+        continue;
+      }
       if (!a.actionId || !a.taskId) continue;
       await db
         .update(schema.actions)
@@ -886,7 +957,7 @@ export class TaskService implements GatewayHandlers {
           and(eq(schema.actions.id, a.actionId), eq(schema.actions.state, "awaiting_approval")),
         );
       const reason = await this.#advanceActions(a.taskId);
-      if (reason) await this.#settle(a.taskId, reason);
+      if (reason) await this.settle(a.taskId, reason);
     }
 
     const queued = await db
@@ -907,6 +978,54 @@ export class TaskService implements GatewayHandlers {
       .where(lt(schema.taskEvents.at, new Date(Date.now() - EVENT_RETENTION_MS)))
       .returning({ taskId: schema.taskEvents.taskId });
     return rows.length;
+  }
+
+  /**
+   * Ends a task from outside its Runner, for example when its sandbox is
+   * destroyed. A queued task becomes `queuedTo`, a running one interrupted,
+   * and delivery steps that can't run any more are skipped. Settles it.
+   */
+  async end(
+    taskId: string,
+    error: string,
+    queuedTo: "failed" | "cancelled" = "failed",
+  ): Promise<void> {
+    const [task] = await this.#db.select().from(schema.tasks).where(eq(schema.tasks.id, taskId));
+    if (!task) return;
+    if (!isTerminalTask(task.state)) {
+      const to: TaskState = task.state === "queued" ? queuedTo : "interrupted";
+      if (!(await this.#setState(task.id, task.state, to, { error }))) return;
+      await this.#expireTaskApprovals(task.id);
+      await this.settle(task.id, "finished");
+      return;
+    }
+    const open = await this.#db
+      .update(schema.actions)
+      .set({ state: "failed", message: error, finishedAt: new Date() })
+      .where(and(eq(schema.actions.taskId, task.id), eq(schema.actions.state, "sent")))
+      .returning({ id: schema.actions.id });
+    const pending = await this.#db
+      .select({ id: schema.actions.id })
+      .from(schema.actions)
+      .where(
+        and(
+          eq(schema.actions.taskId, task.id),
+          inArray(schema.actions.state, ["awaiting_approval", "ready"]),
+        ),
+      );
+    if (open.length === 0 && pending.length === 0) return;
+    await this.#skipRemaining(task.id, error);
+    await this.publish(task.id);
+    await this.settle(task.id, "delivered");
+  }
+
+  async #expireTaskApprovals(taskId: string) {
+    const rows = await this.#db
+      .update(schema.approvals)
+      .set({ state: "expired" })
+      .where(and(eq(schema.approvals.taskId, taskId), eq(schema.approvals.state, "pending")))
+      .returning();
+    for (const a of rows) await this.#publishApproval(a.workspaceId, a.id);
   }
 
   // ------------------------------------------------------------- helpers
@@ -931,7 +1050,8 @@ export class TaskService implements GatewayHandlers {
     return rows.length > 0;
   }
 
-  async #settle(taskId: string, reason: SettleReason) {
+  /** Tells the conversation, the workflows, and the sandbox service that a task reached a settle point. */
+  async settle(taskId: string, reason: SettleReason) {
     try {
       await this.onSettled?.(taskId, reason);
     } catch (err) {

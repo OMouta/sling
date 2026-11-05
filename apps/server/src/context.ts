@@ -7,6 +7,7 @@ import type { Auth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./realtime/hub.ts";
 import type { RunnerGateway } from "./runners/gateway.ts";
+import type { SandboxService } from "./sandboxes/service.ts";
 import type { TaskService } from "./tasks/service.ts";
 import type { ConnectorRuntime } from "./workflows/connectors/runtime.ts";
 import type { Engine } from "./workflows/engine.ts";
@@ -25,6 +26,7 @@ export interface AppContext {
   hub: Hub;
   runners: RunnerGateway;
   tasks: TaskService;
+  sandboxes: SandboxService;
   agent: Agent;
   /** Node types the workflow engine can run, and the connectors that brought some. */
   registry: NodeRegistry;

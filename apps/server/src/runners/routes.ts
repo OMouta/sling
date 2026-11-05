@@ -13,17 +13,22 @@ import { runnerView, runnerViews } from "../views.ts";
 
 const ENROLLMENT_TTL_MS = 10 * 60 * 1000;
 
-/** Small fixed-window limiter for the unauthenticated pairing endpoint. */
-const attempts = new Map<string, { count: number; resetAt: number }>();
-function allowAttempt(ip: string): boolean {
+/**
+ * Small fixed-window limiter for the unauthenticated pairing endpoint. Only
+ * failed attempts count: guessing codes fails, while several sandboxes behind
+ * one address pairing at once succeed.
+ */
+const failures = new Map<string, { count: number; resetAt: number }>();
+function blocked(ip: string): boolean {
+  const entry = failures.get(ip);
+  if (!entry || entry.resetAt < Date.now()) return false;
+  return entry.count >= 10;
+}
+function recordFailure(ip: string) {
   const now = Date.now();
-  const entry = attempts.get(ip);
-  if (!entry || entry.resetAt < now) {
-    attempts.set(ip, { count: 1, resetAt: now + 60_000 });
-    return true;
-  }
-  entry.count += 1;
-  return entry.count <= 10;
+  const entry = failures.get(ip);
+  if (!entry || entry.resetAt < now) failures.set(ip, { count: 1, resetAt: now + 60_000 });
+  else entry.count += 1;
 }
 
 export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
@@ -48,7 +53,7 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
       },
     },
     async (request, reply) => {
-      if (!allowAttempt(request.ip)) {
+      if (blocked(request.ip)) {
         return reply.code(429).send({ error: "Too many attempts. Wait a minute." });
       }
       const body = request.body;
@@ -67,16 +72,26 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
           )
           .returning();
         if (!enrollment) return null;
+        if (enrollment.sandboxId) {
+          // A sandbox's code is only good while that sandbox is starting.
+          const [sbx] = await tx
+            .select({ state: schema.sandboxes.state })
+            .from(schema.sandboxes)
+            .where(eq(schema.sandboxes.id, enrollment.sandboxId));
+          if (sbx?.state !== "provisioning") return null;
+        }
         await tx.insert(schema.runners).values({
           id: runnerId,
           workspaceId: enrollment.workspaceId,
           ownerId: enrollment.ownerId,
-          name: body.name,
+          name: enrollment.sandboxId ? `sandbox-${enrollment.sandboxId.slice(-6)}` : body.name,
           publicKey: body.publicKey,
           os: body.os,
           arch: body.arch,
           hostname: body.hostname,
           version: body.version,
+          ephemeral: enrollment.sandboxId !== null,
+          sandboxId: enrollment.sandboxId,
         });
         await tx
           .update(schema.runnerEnrollments)
@@ -85,6 +100,7 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
         return enrollment;
       });
       if (!result) {
+        recordFailure(request.ip);
         return reply.code(400).send({ error: "That code is invalid, used, or expired." });
       }
       await audit(ctx, {
@@ -94,8 +110,14 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
         verb: "runner.paired",
         subjectType: "runner",
         subjectId: runnerId,
-        details: { name: body.name, hostname: body.hostname, os: body.os },
+        details: {
+          name: body.name,
+          hostname: body.hostname,
+          os: body.os,
+          ...(result.sandboxId ? { sandboxId: result.sandboxId } : {}),
+        },
       });
+      if (result.sandboxId) await ctx.sandboxes.paired(result.sandboxId, runnerId);
       const view = await runnerView(ctx, runnerId);
       if (view) ctx.hub.publish(result.workspaceId, { type: "runner.updated", runner: view });
       return { runnerId };

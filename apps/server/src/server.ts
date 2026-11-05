@@ -13,6 +13,7 @@ import { createServer, registerRoutes } from "./http/app.ts";
 import { startJobs } from "./jobs.ts";
 import { Hub } from "./realtime/hub.ts";
 import { RunnerGateway } from "./runners/gateway.ts";
+import { SandboxService } from "./sandboxes/service.ts";
 import { TaskService } from "./tasks/service.ts";
 import { ConnectorRuntime } from "./workflows/connectors/runtime.ts";
 import { Engine } from "./workflows/engine.ts";
@@ -80,6 +81,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     // Filled in right below; each service needs the finished context.
     runners: undefined as unknown as RunnerGateway,
     tasks: undefined as unknown as TaskService,
+    sandboxes: undefined as unknown as SandboxService,
     agent: undefined as unknown as Agent,
     engine: undefined as unknown as Engine,
     events: undefined as unknown as EventBus,
@@ -88,6 +90,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   };
   ctx.runners = new RunnerGateway(ctx);
   ctx.tasks = new TaskService(ctx);
+  ctx.sandboxes = new SandboxService(ctx);
   ctx.agent = new Agent(ctx, opts.model);
   ctx.engine = new Engine(ctx);
   ctx.events = new EventBus(ctx);
@@ -95,6 +98,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   ctx.connectors = new ConnectorRuntime(ctx);
   ctx.runners.handlers = ctx.tasks;
   ctx.tasks.onSettled = async (taskId, reason) => {
+    // First, so a failing hook below can't keep a sandbox alive.
+    await ctx.sandboxes.onTaskSettled(taskId);
     await ctx.agent.onTaskSettled(taskId, reason);
     await emitTaskSettled(ctx, taskId, reason);
   };
@@ -129,6 +134,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     async close() {
       await ctx.connectors.stopAll();
       await ctx.engine.stop();
+      await Promise.race([ctx.sandboxes.idle(), new Promise((ok) => setTimeout(ok, 10_000))]);
       ctx.runners.stop();
       await boss?.stop({ graceful: true, timeout: 10_000 });
       await app.close();

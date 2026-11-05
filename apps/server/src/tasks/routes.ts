@@ -1,4 +1,4 @@
-import { DELIVERY_KINDS, isPermissionMode } from "@sling/core";
+import { DELIVERY_KINDS, HARNESSES, isPermissionMode } from "@sling/core";
 import { schema } from "@sling/db";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -6,8 +6,9 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
+import { ENVIRONMENTS } from "../routing/router.ts";
 import { approvalView, taskViews, toEventView } from "../views.ts";
-import { TaskInputError } from "./service.ts";
+import { TaskInputError, TaskRoutingError } from "./service.ts";
 
 const Decision = z.object({ decision: z.enum(["approve", "reject"]) });
 
@@ -67,13 +68,20 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
     {
       schema: {
         body: z.object({
-          runnerId: z.string(),
-          repo: z.string(),
+          repo: z.string().min(1),
           title: z.string().min(1).max(120),
           objective: z.string().min(1).max(20_000),
           deliver: z.enum(DELIVERY_KINDS).default("pr"),
           conversationId: z.string().optional(),
           mode: z.string().optional(),
+          /** Defaults to `machine` when a machine is named, otherwise `auto`. */
+          environment: z.enum(ENVIRONMENTS).optional(),
+          machineId: z.string().optional(),
+          /** The same as `machineId` with `environment: "machine"`. Kept for older clients. */
+          runnerId: z.string().optional(),
+          providerInstallationId: z.string().optional(),
+          harness: z.enum(HARNESSES).optional(),
+          labels: z.array(z.string().min(1).max(64)).max(16).optional(),
         }),
       },
     },
@@ -102,20 +110,36 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
         mode = w?.mode ?? "supervised";
       }
       if (!isPermissionMode(mode)) return reply.code(400).send({ error: "bad mode" });
+      const machineId = body.machineId ?? body.runnerId ?? null;
       try {
-        const task = await ctx.tasks.create({
+        const created = await ctx.tasks.create({
           workspaceId: actor.workspaceId,
           ownerId: actor.userId,
           conversationId: body.conversationId ?? null,
-          runnerId: body.runnerId,
-          repoName: body.repo,
+          repo: body.repo,
           title: body.title,
           objective: body.objective,
           mode,
           deliver: body.deliver,
+          environment: body.environment ?? (machineId ? "machine" : "auto"),
+          machineId,
+          providerInstallationId: body.providerInstallationId ?? null,
+          harness: body.harness ?? null,
+          labels: body.labels ?? [],
         });
-        return { id: task.id };
+        return {
+          id: created.task.id,
+          state: created.task.state,
+          environment: created.task.environment,
+          routing: created.routing,
+          approvalId: created.approvalId,
+        };
       } catch (err) {
+        if (err instanceof TaskRoutingError) {
+          return reply
+            .code(400)
+            .send({ error: err.message, reasons: err.reasons, routing: err.routing });
+        }
         if (err instanceof TaskInputError) return reply.code(400).send({ error: err.message });
         throw err;
       }

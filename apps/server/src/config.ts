@@ -11,6 +11,8 @@ const Env = z.object({
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
   /** Directory with the built web app. Unset in development, where Vite serves it. */
   SLING_WEB_DIST: z.string().optional(),
+  /** Image sandboxes run when their provider doesn't name one. */
+  SLING_SANDBOX_IMAGE: z.string().min(1).optional(),
 });
 
 export interface Config {
@@ -21,6 +23,17 @@ export interface Config {
   port: number;
   logLevel: z.infer<typeof Env>["LOG_LEVEL"];
   webDist: string | undefined;
+  /** Image sandboxes run when their provider doesn't name one. Defaults to `sling-sandbox:latest`. */
+  sandboxImage?: string | undefined;
+  /** Only set by tests. */
+  testing?: {
+    /** Passed to sandboxes as SLING_CODEX_BIN, so they run a fake Codex. */
+    sandboxCodexBin?: string;
+    /** Passed to sandboxes as SLING_CLAUDE_BIN. */
+    sandboxClaudeBin?: string;
+    /** Allows `file://` URLs and local paths as sandbox clone URLs. */
+    allowLocalCloneUrls?: boolean;
+  };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -38,5 +51,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: e.PORT,
     logLevel: e.LOG_LEVEL,
     webDist: e.SLING_WEB_DIST,
+    sandboxImage: e.SLING_SANDBOX_IMAGE,
   };
 }
