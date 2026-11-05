@@ -1,9 +1,8 @@
 /**
- * Stage 3 end to end: routing between machines and sandboxes, with real
- * Postgres, the control plane in-process, two real sling-runner machines with
- * fake-codex, a TypeScript Runner for labels and Claude Code, and execution
- * providers from test/fixtures/providers.ts. A scripted mock model plays the
- * assistant.
+ * Routing and sandboxes end to end, with real Postgres, the control plane
+ * in-process, two real sling-runner machines with fake-codex, a TypeScript
+ * Runner for labels and Claude Code, and the execution providers from
+ * test/fixtures/providers.ts. A scripted mock model plays the assistant.
  *
  * Needs Docker, and the Rust binaries built first:
  *   cargo build -p sling-runner -p sling-harness-codex
@@ -36,6 +35,8 @@ import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.ts";
+import { loadRouterInput } from "../src/routing/inputs.ts";
+import { route } from "../src/routing/router.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
 import { FakeRunner } from "./fixtures/fake-runner.ts";
 import { calls, recordNode } from "./fixtures/nodes.ts";
@@ -404,6 +405,27 @@ describe("routing between machines", () => {
     for (const t of [first, second, third]) {
       await until("cancelled", async () => (await task(t.id)).state === "cancelled");
     }
+  });
+
+  it("decides in well under 20 ms, database reads included", async () => {
+    const { workspaceId } = await workspace();
+    const request = {
+      repo: "site",
+      harness: "codex" as const,
+      labels: [],
+      environment: "auto" as const,
+      machineId: null,
+      providerInstallationId: null,
+    };
+    await loadRouterInput(server.ctx, workspaceId, request, "auto");
+    const times: number[] = [];
+    for (let i = 0; i < 20; i++) {
+      const started = performance.now();
+      route(await loadRouterInput(server.ctx, workspaceId, request, "auto"));
+      times.push(performance.now() - started);
+    }
+    times.sort((a, b) => a - b);
+    expect(times[Math.floor(times.length * 0.95)]).toBeLessThan(20);
   });
 
   it("puts a named machine first, and keeps runnerId working", async () => {
@@ -798,6 +820,7 @@ describe("sandboxes", () => {
         "sandbox.created",
         "sandbox.paired",
         "sandbox.ready",
+        "sandbox.busy",
         "sandbox.releasing",
         "sandbox.destroyed",
       ]),
