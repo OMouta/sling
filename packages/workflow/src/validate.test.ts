@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { NodeSpecView } from "./api.ts";
 import { data, definition, exec, node, registry } from "./fixtures.test-util.ts";
+import { specLookup } from "./ports.ts";
 import { parseDefinition, validate } from "./validate.ts";
 
 const codes = (issues: { code: string }[]) => issues.map((i) => i.code).sort();
@@ -291,5 +293,63 @@ describe("input defaults", () => {
       registry,
     );
     expect(notListed.map((i) => i.code)).toEqual(["invalid_config"]);
+  });
+});
+
+describe("editor catalog", () => {
+  it("validates against NodeSpecView entries from GET /api/workflow-nodes", () => {
+    const views: NodeSpecView[] = [
+      {
+        type: "core.manual",
+        version: 1,
+        title: "Manual run",
+        description: "",
+        category: "trigger",
+        connector: null,
+        inputs: [],
+        outputs: [{ name: "input", type: "json" }],
+        execInput: false,
+        execOutputs: [{ name: "next" }],
+        dynamicExecOutputs: null,
+        configSchema: { type: "object", properties: {} },
+        expressionFields: [],
+        installationFields: [],
+        idempotent: true,
+        isTrigger: true,
+      },
+      {
+        type: "ai.classify",
+        version: 1,
+        title: "AI classify",
+        description: "",
+        category: "ai",
+        connector: null,
+        inputs: [{ name: "context", type: "json" }],
+        outputs: [{ name: "label", type: "string" }],
+        execInput: true,
+        execOutputs: [],
+        dynamicExecOutputs: { fromConfig: "labels", field: "label" },
+        configSchema: { type: "object" },
+        expressionFields: ["prompt"],
+        installationFields: [],
+        idempotent: true,
+        isTrigger: false,
+      },
+    ];
+    const lookup = specLookup(views);
+    const def = definition(
+      [
+        node("t", "core.manual"),
+        node("c", "ai.classify", { labels: [{ label: "urgent" }, { label: "later" }] }),
+        node("u", "ai.classify", { labels: [{ label: "x" }] }),
+      ],
+      [exec("t.next", "c"), exec("c.urgent", "u"), data("t.input", "c.context")],
+    );
+    expect(validate(def, lookup)).toEqual([]);
+    const bad = definition(
+      [node("t", "core.manual"), node("c", "ai.classify", { labels: [{ label: "urgent" }] })],
+      [exec("t.next", "c"), exec("c.later", "t")],
+    );
+    expect(validate(bad, lookup).map((i) => i.code)).toEqual(["unknown_port", "unknown_port"]);
   });
 });
