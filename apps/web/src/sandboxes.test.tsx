@@ -116,6 +116,10 @@ function route(method: string, path: string, body: unknown): unknown {
       settings = { ...settings, secrets: next };
       return settings;
     }
+    case "POST /api/installations": {
+      const b = body as { connectorId: string; name: string; config: Record<string, unknown> };
+      return { ...dockerInstallation, id: "ins_new", ...b };
+    }
     case "POST /api/approvals/apv_fb":
       approvals = approvals.filter((a) => a.id !== "apv_fb");
       return { ok: true };
@@ -643,5 +647,82 @@ describe("sandbox fallback approval", () => {
     renderAt("/c/cnv_1");
     expect(await screen.findByText("Codex task")).toBeTruthy();
     expect(screen.queryByText(plan)).toBeNull();
+  });
+});
+
+describe("connectors: sandbox providers", () => {
+  async function providerSection() {
+    const heading = await screen.findByRole("heading", { name: "Sandbox providers" });
+    return within(heading.closest("section") as HTMLElement);
+  }
+
+  it("lists providers apart from workflow connectors", async () => {
+    installations = [...integrationInstallations, dockerInstallation];
+    renderAt("/connectors");
+    const providers = await providerSection();
+    expect(providers.getByText(/Where Sling creates a fresh sandbox/)).toBeTruthy();
+    expect(await providers.findByText("Docker host")).toBeTruthy();
+    expect(providers.getByRole("button", { name: "Add Docker" })).toBeTruthy();
+    expect(providers.getByRole("button", { name: "Add Railway" })).toBeTruthy();
+    expect(providers.queryByRole("button", { name: "Add Discord" })).toBeNull();
+    // An idle provider isn't waiting on a workflow.
+    expect(providers.queryByText(/no enabled workflow uses it/)).toBeNull();
+
+    const available = within(
+      screen.getByRole("heading", { name: "Available" }).closest("section") as HTMLElement,
+    );
+    expect(available.getByRole("button", { name: "Add Discord" })).toBeTruthy();
+    expect(available.queryByRole("button", { name: "Add Docker" })).toBeNull();
+    const installed = within(
+      screen.getByRole("heading", { name: "Installed" }).closest("section") as HTMLElement,
+    );
+    expect(installed.getByText("Sling bot")).toBeTruthy();
+    expect(installed.queryByText("Docker host")).toBeNull();
+  });
+
+  it("says what a provider still needs to be useful", async () => {
+    sandboxRepos = allowedRepos;
+    settings = sandboxSettings;
+    renderAt("/connectors");
+    const providers = await providerSection();
+    const setup = providers.getByRole("list", { name: "Sandbox setup" });
+    await waitFor(() =>
+      expect(
+        within(setup)
+          .getAllByRole("listitem")
+          .map((li) => li.textContent),
+      ).toEqual([
+        "Done: 1 repo allowed in sandboxesMachines",
+        "Done: An OpenAI or Anthropic API key for the coding agentSettings",
+        "Still needed: A GitHub token to clone, push, and open pull requestsSettings",
+      ]),
+    );
+  });
+
+  it("installs a provider with its schema form", async () => {
+    renderAt("/connectors");
+    const providers = await providerSection();
+    fireEvent.click(providers.getByRole("button", { name: "Add Docker" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByText(/Point it at the Docker socket/)).toBeTruthy();
+    fireEvent.change(dialog.getByLabelText(/^Host/), {
+      target: { value: "unix:///var/run/docker.sock" },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(callsTo("POST", "/api/installations")).toHaveLength(1));
+    expect(callsTo("POST", "/api/installations")[0]?.body).toEqual({
+      connectorId: "docker",
+      name: "Docker",
+      credentials: { host: "unix:///var/run/docker.sock" },
+      config: { image: "ghcr.io/sling/sling-sandbox:latest" },
+    });
+  });
+
+  it("has no provider group, and asks nothing about sandboxes, without providers", async () => {
+    connectors = integrationConnectors;
+    renderAt("/connectors");
+    expect(await screen.findByRole("button", { name: "Add Discord" })).toBeTruthy();
+    expect(screen.queryByText("Sandbox providers")).toBeNull();
+    expect(callsTo("GET", "/api/sandbox-repos")).toHaveLength(0);
   });
 });
