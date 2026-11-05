@@ -1,9 +1,13 @@
 import type {
   ActionKind,
   ActionState,
+  AgentModelView,
   ApprovalState,
+  ChatSettings,
   Delivery,
+  FoundRepoView,
   Harness,
+  ModelProviderId,
   PermissionMode,
   RoutingView,
   SandboxState,
@@ -60,6 +64,8 @@ export const workspaces = pgTable("workspaces", {
   /** Coding agent for tasks that don't name one. */
   defaultHarness: text("default_harness").$type<Harness>().notNull().default("codex"),
   sandboxSettings: jsonb("sandbox_settings").$type<SandboxSettings>().notNull().default({}),
+  /** What new conversations start with: the assistant's model and the coding agent. */
+  chatDefaults: jsonb("chat_defaults").$type<ChatSettings>(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -101,7 +107,7 @@ export const credentials = pgTable("credentials", {
   updatedAt: updatedAt(),
 });
 
-export type ModelProviderId = "openai" | "anthropic" | "openai-compatible";
+export type { ModelProviderId };
 
 export const modelConfigs = pgTable("model_configs", {
   id: text("id").primaryKey(),
@@ -122,6 +128,7 @@ export interface RunnerCapability {
   version: string;
   ready: boolean;
   detail: string;
+  models?: AgentModelView[];
 }
 
 export const runners = pgTable(
@@ -143,6 +150,10 @@ export const runners = pgTable(
     maxConcurrentTasks: integer("max_concurrent_tasks").notNull().default(2),
     /** Labels from the machine's own config, as its inventory reports them. */
     labels: jsonb("labels").$type<string[]>().notNull().default([]),
+    /** Git repos the machine found that aren't allowed yet, from its inventory. */
+    foundRepos: jsonb("found_repos").$type<FoundRepoView[]>().notNull().default([]),
+    /** Whether the machine accepts repo changes from Sling. */
+    remoteRepos: boolean("remote_repos").notNull().default(false),
     /** A sandbox's Runner: hidden from Machines and revoked with its sandbox. */
     ephemeral: boolean("ephemeral").notNull().default(false),
     sandboxId: text("sandbox_id").references((): AnyPgColumn => sandboxes.id, {
@@ -200,6 +211,8 @@ export const conversations = pgTable(
     ...owned(),
     title: text("title").notNull().default("New conversation"),
     mode: text("mode").$type<PermissionMode>().notNull(),
+    /** Model choices made in this conversation. */
+    settings: jsonb("settings").$type<ChatSettings>(),
     /** Workflow that owns this conversation. Follow-ups go back through it. */
     workflowId: text("workflow_id"),
     /** Stable key for conversations bound to an outside channel, e.g. `discord:<installation>:<channel>`. */
@@ -279,6 +292,10 @@ export const tasks = pgTable(
     summary: text("summary"),
     error: text("error"),
     harnessVersion: text("harness_version"),
+    /** The agent's model, effort level, and fast tier. Null means the agent's defaults. */
+    agentModel: text("agent_model"),
+    agentEffort: text("agent_effort"),
+    agentFast: boolean("agent_fast").notNull().default(false),
     usage: jsonb("usage").$type<TokenUsage>(),
     /** Highest event seq stored for this task. */
     lastSeq: bigint("last_seq", { mode: "number" }).notNull().default(0),

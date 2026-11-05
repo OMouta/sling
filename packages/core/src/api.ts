@@ -1,3 +1,4 @@
+import type { ChatSettings } from "./models.ts";
 import type { Harness } from "./harness.ts";
 import type { ActionKind, PermissionMode } from "./modes.ts";
 import type { ActionState, ApprovalState, Delivery, TaskState } from "./states.ts";
@@ -12,6 +13,26 @@ export interface CapabilityView {
   version: string;
   ready: boolean;
   detail: string;
+  /** For coding agents: the models the agent reports. */
+  models?: AgentModelView[];
+}
+
+export interface AgentModelView {
+  id: string;
+  displayName: string;
+  description: string;
+  efforts: string[];
+  defaultEffort: string;
+  fast: boolean;
+  isDefault: boolean;
+}
+
+/** A git repo the Runner found on the machine and that isn't allowed yet. */
+export interface FoundRepoView {
+  path: string;
+  name: string;
+  defaultBranch: string;
+  remoteUrl: string;
 }
 
 export interface RepoView {
@@ -44,6 +65,10 @@ export interface RunnerView {
   /** A sandbox's Runner. Hidden from the Machines page. */
   ephemeral: boolean;
   sandboxId: string | null;
+  /** Git repos the machine found that aren't allowed yet. */
+  foundRepos: FoundRepoView[];
+  /** Whether repos can be allowed and removed from Sling. Turned off on the machine. */
+  remoteRepos: boolean;
 }
 
 export interface DiffStatsView {
@@ -103,6 +128,10 @@ export interface TaskView {
   summary: string | null;
   error: string | null;
   harnessVersion: string | null;
+  /** The agent's model, effort, and fast tier, when the task named them. */
+  model: string | null;
+  effort: string | null;
+  fast: boolean;
   runnerOffline: boolean;
   cancelRequested: boolean;
   createdAt: string;
@@ -196,6 +225,8 @@ export interface ConversationView {
   id: string;
   title: string;
   mode: PermissionMode;
+  /** Model choices made in this conversation. Null parts use the workspace defaults. */
+  settings: ChatSettings;
   createdAt: string;
   updatedAt: string;
 }
