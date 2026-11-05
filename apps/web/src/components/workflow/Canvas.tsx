@@ -1,3 +1,4 @@
+import { Maximize, Minus, Plus, Redo2, Undo2 } from "lucide-react";
 import "@xyflow/react/dist/base.css";
 import {
   Background,
@@ -79,16 +80,6 @@ function ConnectionHint({ flash }: { flash: string | null }) {
   );
 }
 
-const ICON = {
-  viewBox: "0 0 20 20",
-  className: "size-4",
-  fill: "none",
-  stroke: "currentColor",
-  strokeWidth: 1.8,
-  strokeLinecap: "round",
-  strokeLinejoin: "round",
-} as const;
-
 function ToolButton({
   label,
   onClick,
@@ -107,7 +98,7 @@ function ToolButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="grid size-8 place-items-center text-muted hover:bg-surface-2 hover:text-text disabled:opacity-40"
+      className="grid size-7 cursor-pointer place-items-center rounded-full text-muted transition-colors duration-150 hover:bg-surface-3 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
     >
       {children}
     </button>
@@ -121,7 +112,7 @@ function Toolbar({ editable }: { editable: boolean }) {
   const canRedo = useGraph((s) => s.graph.future.length > 0);
   return (
     <Panel position="bottom-left">
-      <div className="flex divide-x divide-border overflow-hidden rounded-lg border border-border bg-surface shadow-sm">
+      <div className="flex overflow-hidden rounded-full bg-surface-2 p-0.5 shadow-raised">
         {editable && (
           <>
             <ToolButton
@@ -129,40 +120,28 @@ function Toolbar({ editable }: { editable: boolean }) {
               disabled={!canUndo}
               onClick={() => store.update(g.undo)}
             >
-              <svg {...ICON} aria-hidden="true">
-                <path d="M8 5 4 9l4 4" />
-                <path d="M4 9h8a4 4 0 0 1 0 8h-2" />
-              </svg>
+              <Undo2 aria-hidden="true" />
             </ToolButton>
             <ToolButton
               label="Redo (Ctrl+Shift+Z)"
               disabled={!canRedo}
               onClick={() => store.update(g.redo)}
             >
-              <svg {...ICON} aria-hidden="true">
-                <path d="m12 5 4 4-4 4" />
-                <path d="M16 9H8a4 4 0 0 0 0 8h2" />
-              </svg>
+              <Redo2 aria-hidden="true" />
             </ToolButton>
           </>
         )}
         <ToolButton label="Zoom in" onClick={() => void rf.zoomIn({ duration: 150 })}>
-          <svg {...ICON} aria-hidden="true">
-            <path d="M10 4v12M4 10h12" />
-          </svg>
+          <Plus aria-hidden="true" />
         </ToolButton>
         <ToolButton label="Zoom out" onClick={() => void rf.zoomOut({ duration: 150 })}>
-          <svg {...ICON} aria-hidden="true">
-            <path d="M4 10h12" />
-          </svg>
+          <Minus aria-hidden="true" />
         </ToolButton>
         <ToolButton
           label="Fit view"
           onClick={() => void rf.fitView({ padding: 0.2, duration: 200 })}
         >
-          <svg {...ICON} aria-hidden="true">
-            <path d="M4 8V4h4M16 8V4h-4M4 12v4h4M16 12v4h-4" />
-          </svg>
+          <Maximize aria-hidden="true" />
         </ToolButton>
       </div>
     </Panel>

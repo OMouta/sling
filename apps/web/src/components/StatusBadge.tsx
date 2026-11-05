@@ -27,7 +27,7 @@ export const INSTALLATION_TONE: Record<InstallationStatus, Tone> = {
 
 export function InstallationStatusLabel({ status }: { status: InstallationStatus }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-sm">
+    <span className="inline-flex items-center gap-1.5 text-xs text-soft">
       <Dot tone={INSTALLATION_TONE[status] ?? "neutral"} />
       {status}
     </span>

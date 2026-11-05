@@ -32,7 +32,7 @@ function Scalar({ value }: { value: unknown }) {
   if (typeof value === "string") {
     return <span className="break-all whitespace-pre-wrap text-ok">{JSON.stringify(value)}</span>;
   }
-  if (typeof value === "number") return <span className="text-accent">{value}</span>;
+  if (typeof value === "number") return <span className="text-accent-text">{value}</span>;
   if (typeof value === "boolean") return <span className="text-warn">{String(value)}</span>;
   return <span className="text-muted">{String(value)}</span>;
 }
@@ -78,10 +78,10 @@ export function JsonView({
 }) {
   const text = JSON.stringify(value, null, 2) ?? "undefined";
   return (
-    <div className={cx("rounded-lg bg-surface-2", className)}>
+    <div className={cx("rounded-lg bg-field shadow-field", className)}>
       {title && (
         <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5">
-          <span className="text-xs font-medium tracking-wide text-muted uppercase">{title}</span>
+          <span className="section-label">{title}</span>
           <CopyButton text={text} />
         </div>
       )}

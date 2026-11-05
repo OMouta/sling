@@ -7,8 +7,10 @@ import type {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
+import { CircleCheck, Play, Upload, X } from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
 import { CopyButton } from "../components/JsonView.tsx";
+import { Page } from "../components/Page.tsx";
 import { JsonInput } from "../components/SchemaForm.tsx";
 import {
   Badge,
@@ -17,6 +19,7 @@ import {
   Dialog,
   ErrorText,
   Input,
+  Skeleton,
   Spinner,
   Switch,
   Tabs,
@@ -52,19 +55,26 @@ export function WorkflowEditorPage() {
 
   if (detail.isPending || catalog.isPending) {
     return (
-      <div className="grid h-full place-items-center text-muted">
-        <Spinner className="size-6" />
-      </div>
+      <Page
+        title={<Skeleton className="h-4 w-48" />}
+        crumb={{ label: "Workflows", to: "/workflows" }}
+      >
+        <div className="grid h-full place-items-center">
+          <Spinner className="size-5" />
+        </div>
+      </Page>
     );
   }
   if (!detail.data || !catalog.index) {
     return (
-      <div className="space-y-2 p-6">
-        <ErrorText error={detail.error ?? catalog.error ?? "Workflow not found."} />
-        <Link to="/workflows" className="text-sm text-muted hover:text-text">
-          ← Workflows
-        </Link>
-      </div>
+      <Page title="Workflow" crumb={{ label: "Workflows", to: "/workflows" }}>
+        <div className="space-y-2 p-5">
+          <ErrorText error={detail.error ?? catalog.error ?? "Workflow not found."} />
+          <Link to="/workflows" className="text-xs text-muted hover:text-text">
+            Back to workflows
+          </Link>
+        </div>
+      </Page>
     );
   }
   return (
@@ -157,46 +167,74 @@ function EditorSession({
 
   return (
     <GraphStoreContext.Provider value={store}>
-      <div className="flex h-full min-h-0 flex-col">
-        <header className="space-y-2 border-b border-border bg-surface px-4 py-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <Link to="/workflows" className="text-sm text-muted hover:text-text">
-              ← Workflows
-            </Link>
-            <NameField
-              value={live.name}
-              onSave={(name) => {
-                store.update((s) => g.setMeta(s, { name }));
-                patch.mutate({ name });
-              }}
-            />
+      <Page
+        crumb={{ label: "Workflows", to: "/workflows" }}
+        title={
+          <NameField
+            value={live.name}
+            onSave={(name) => {
+              store.update((s) => g.setMeta(s, { name }));
+              patch.mutate({ name });
+            }}
+          />
+        }
+        badge={
+          <span className="flex items-center gap-1.5 max-md:hidden">
             {live.activeVersion !== null ? (
-              <Badge tone="ok">v{live.activeVersion} active</Badge>
+              <Badge tone="ok" dot>
+                v{live.activeVersion} active
+              </Badge>
             ) : (
               <Badge>Not published</Badge>
             )}
             {live.hasUnpublishedChanges && <Badge tone="warn">Unpublished changes</Badge>}
-            <span className="flex items-center gap-2 text-sm text-muted">
-              <Switch
-                size="sm"
-                checked={live.enabled}
-                label={live.enabled ? "Disable workflow" : "Enable workflow"}
-                disabled={patch.isPending}
-                onChange={(enabled) => patch.mutate({ enabled })}
-              />
-              {live.enabled ? "Enabled" : "Disabled"}
-            </span>
-            <div className="ml-auto flex flex-wrap items-center gap-2">
+          </span>
+        }
+        tabs={
+          <div className="flex flex-wrap items-center gap-x-4">
+            <Tabs
+              value={tab}
+              onChange={setTab}
+              tabs={[
+                { id: "canvas", label: "Canvas" },
+                { id: "runs", label: "Runs" },
+                { id: "versions", label: "Versions" },
+              ]}
+            />
+            {notice && (
+              <p role="status" className="flex items-center gap-1.5 text-xs text-ok">
+                <CircleCheck aria-hidden="true" />
+                {notice}
+              </p>
+            )}
+            <ErrorText error={patch.error ?? validate.error} />
+            <div className="ml-auto flex flex-wrap items-center gap-2 py-2.5">
               <SaveIndicator autosave={autosave} />
-              <Button size="sm" busy={validate.isPending} onClick={() => validate.mutate()}>
+              <span className="flex items-center gap-2 pr-1 text-xs text-muted">
+                <Switch
+                  size="sm"
+                  checked={live.enabled}
+                  label={live.enabled ? "Disable workflow" : "Enable workflow"}
+                  disabled={patch.isPending}
+                  onChange={(enabled) => patch.mutate({ enabled })}
+                />
+                {live.enabled ? "Enabled" : "Disabled"}
+              </span>
+              <Button
+                size="sm"
+                icon={CircleCheck}
+                busy={validate.isPending}
+                onClick={() => validate.mutate()}
+              >
                 Validate
               </Button>
-              <Button size="sm" onClick={() => setPublishing(true)}>
+              <Button size="sm" icon={Upload} onClick={() => setPublishing(true)}>
                 Publish
               </Button>
               <Button
                 size="sm"
                 variant="primary"
+                icon={Play}
                 disabled={live.activeVersion === null}
                 title={
                   live.activeVersion === null
@@ -209,54 +247,36 @@ function EditorSession({
               </Button>
             </div>
           </div>
-          <ErrorText error={patch.error ?? validate.error} />
-          <div className="flex items-center gap-3">
-            <Tabs
-              value={tab}
-              onChange={setTab}
-              tabs={[
-                { id: "canvas", label: "Canvas" },
-                { id: "runs", label: "Runs" },
-                { id: "versions", label: "Versions" },
-              ]}
-            />
-            {notice && (
-              <p role="status" className="text-sm text-ok">
-                {notice}
-              </p>
-            )}
-          </div>
-        </header>
-
-        <div className="min-h-0 flex-1">
-          {tab === "canvas" && (
-            <CanvasTab
-              detail={live}
-              issuesOpen={issuesOpen}
-              onCloseIssues={() => setIssuesOpen(false)}
-              onPatch={(body) => patch.mutate(body)}
-            />
-          )}
-          {tab === "runs" && <RunsTab workflowId={id} catalog={catalog} />}
-          {tab === "versions" && (
-            <VersionsTab
-              workflowId={id}
-              workflowName={live.name}
-              activeVersion={live.activeVersion}
-              catalog={catalog}
-              viewing={search.version ?? null}
-              onView={(n) =>
-                void navigate({
-                  to: "/workflows/$id",
-                  params: { id },
-                  search: n === null ? { tab: "versions" } : { tab: "versions", version: n },
-                })
-              }
-              onRestore={restore}
-            />
-          )}
-        </div>
-      </div>
+        }
+        bodyClassName={tab === "canvas" ? "overflow-hidden" : undefined}
+      >
+        {tab === "canvas" && (
+          <CanvasTab
+            detail={live}
+            issuesOpen={issuesOpen}
+            onCloseIssues={() => setIssuesOpen(false)}
+            onPatch={(body) => patch.mutate(body)}
+          />
+        )}
+        {tab === "runs" && <RunsTab workflowId={id} catalog={catalog} />}
+        {tab === "versions" && (
+          <VersionsTab
+            workflowId={id}
+            workflowName={live.name}
+            activeVersion={live.activeVersion}
+            catalog={catalog}
+            viewing={search.version ?? null}
+            onView={(n) =>
+              void navigate({
+                to: "/workflows/$id",
+                params: { id },
+                search: n === null ? { tab: "versions" } : { tab: "versions", version: n },
+              })
+            }
+            onRestore={restore}
+          />
+        )}
+      </Page>
 
       {publishing && (
         <PublishDialog
@@ -305,7 +325,7 @@ function NameField({ value, onSave }: { value: string; onSave: (name: string) =>
         if (e.key === "Enter") e.currentTarget.blur();
         if (e.key === "Escape") setDraft(null);
       }}
-      className="min-w-0 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-lg font-semibold tracking-tight hover:border-border focus:border-accent focus:outline-none"
+      className="-ml-1.5 h-[30px] min-w-0 rounded-lg bg-transparent px-1.5 text-base font-medium transition-shadow duration-150 outline-none hover:shadow-field focus:shadow-focus focus-visible:outline-none"
       size={Math.max(8, Math.min(40, (draft ?? value).length + 1))}
     />
   );
@@ -328,7 +348,7 @@ function SaveIndicator({ autosave }: { autosave: Autosave }) {
       {status === "error" && (
         <button
           type="button"
-          className="underline"
+          className="cursor-pointer underline underline-offset-2"
           onClick={() => void autosave.flush().catch(() => {})}
         >
           Retry
@@ -359,10 +379,10 @@ function CanvasTab({
     const hook = webhookFor(nodeId);
     return (
       <div className="space-y-1.5">
-        <p className="text-sm font-medium">Webhook URL</p>
+        <p className="text-xs font-medium text-soft">Webhook URL</p>
         {hook ? (
           <div className="flex items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-md bg-surface-2 px-2 py-1.5 text-xs">
+            <code className="min-w-0 flex-1 truncate rounded-lg bg-field px-2 py-1.5 font-mono text-xs shadow-field">
               {hook.url}
             </code>
             <CopyButton text={hook.url} />
@@ -380,7 +400,7 @@ function CanvasTab({
     <ReactFlowProvider>
       <div className="flex h-full min-h-0">
         {!phone && (
-          <aside className="w-60 shrink-0 border-r border-border bg-surface">
+          <aside className="w-60 shrink-0 border-r border-border bg-sidebar">
             <Palette />
           </aside>
         )}
@@ -389,15 +409,20 @@ function CanvasTab({
           {issuesOpen && <IssuesPanel onClose={onCloseIssues} />}
         </div>
         {!phone && (
-          <aside className="w-80 shrink-0 overflow-y-auto border-l border-border bg-surface">
+          <aside className="w-80 shrink-0 overflow-y-auto border-l border-border bg-sidebar">
             <Inspector empty={empty} nodeExtra={nodeExtra} />
           </aside>
         )}
       </div>
       {phone && hasSelection && (
-        <div className="fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto rounded-t-xl border-t border-border bg-surface shadow-2xl">
+        <div className="anim-pop fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto overscroll-contain rounded-t-2xl bg-surface shadow-popover">
           <div className="flex justify-end px-2 pt-2">
-            <Button size="sm" variant="ghost" onClick={() => store.update((s) => g.select(s, []))}>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={X}
+              onClick={() => store.update((s) => g.select(s, []))}
+            >
               Close
             </Button>
           </div>
@@ -421,7 +446,7 @@ function WorkflowPanel({
   return (
     <div className="space-y-5 p-4">
       <div className="space-y-1.5">
-        <label htmlFor="wf-description" className="text-sm font-medium">
+        <label htmlFor="wf-description" className="text-xs font-medium text-soft">
           Description
         </label>
         <Textarea
@@ -436,16 +461,16 @@ function WorkflowPanel({
         />
       </div>
       <section className="space-y-2">
-        <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Triggers</h3>
+        <h3 className="section-label">Triggers</h3>
         {triggers.length === 0 ? (
-          <p className="text-sm text-muted">Add a trigger from the palette to start runs.</p>
+          <p className="text-xs text-muted">Add a trigger from the palette to start runs.</p>
         ) : (
-          <ul className="space-y-1 text-sm">
+          <ul className="space-y-1 text-[13px]">
             {triggers.map((n) => (
               <li key={n.id}>
                 <button
                   type="button"
-                  className="hover:underline"
+                  className="cursor-pointer text-soft hover:text-text hover:underline"
                   onClick={() => store.update((s) => g.select(s, [n.id]))}
                 >
                   {n.data.label || store.spec(n.data.type)?.title}
@@ -457,12 +482,12 @@ function WorkflowPanel({
       </section>
       {detail.webhooks.length > 0 && (
         <section className="space-y-2">
-          <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Webhooks</h3>
+          <h3 className="section-label">Webhooks</h3>
           <ul className="space-y-2">
             {detail.webhooks.map((w) => (
               <li key={w.nodeId} className="flex items-center gap-2">
                 <code
-                  className="min-w-0 flex-1 truncate rounded-md bg-surface-2 px-2 py-1.5 text-xs"
+                  className="min-w-0 flex-1 truncate rounded-lg bg-field px-2 py-1.5 font-mono text-xs shadow-field"
                   title={w.url}
                 >
                   {w.url}
@@ -473,8 +498,8 @@ function WorkflowPanel({
           </ul>
         </section>
       )}
-      <section className="space-y-1 text-xs text-muted">
-        <h3 className="font-medium tracking-wide uppercase">Shortcuts</h3>
+      <section className="space-y-1.5 text-xs leading-4 text-muted">
+        <h3 className="section-label">Shortcuts</h3>
         <p>Drag from a port to connect. Shift-drag to box select.</p>
         <p>Delete removes the selection. Ctrl or ⌘ with C, X, V, D, A, Z, Shift+Z.</p>
       </section>
@@ -514,7 +539,7 @@ function DeleteWorkflow({ workflowId, name }: { workflowId: string; name: string
             </>
           }
         >
-          <p className="text-sm">
+          <p className="text-[13px] leading-5 text-soft">
             {name}, its versions and its run history are deleted. Its triggers stop.
           </p>
         </Dialog>
@@ -548,10 +573,10 @@ function IssuesPanel({ onClose }: { onClose: () => void }) {
   return (
     <section
       aria-label="Problems"
-      className="absolute inset-x-3 bottom-3 z-10 max-h-[40%] overflow-hidden rounded-xl border border-border bg-surface shadow-lg sm:left-auto sm:w-96"
+      className="anim-pop absolute inset-x-3 bottom-3 z-10 max-h-[40%] overflow-hidden rounded-xl bg-surface shadow-popover sm:left-auto sm:w-96"
     >
-      <div className="flex items-center justify-between border-b border-border px-3 py-2">
-        <h2 className="text-sm font-medium">
+      <div className="flex items-center justify-between border-b border-border py-2 pr-2 pl-3">
+        <h2 className="text-[13px] font-medium">
           {issues.length === 0
             ? "No problems"
             : `${issues.length} problem${issues.length === 1 ? "" : "s"}`}
@@ -562,7 +587,7 @@ function IssuesPanel({ onClose }: { onClose: () => void }) {
       </div>
       <ul className="max-h-64 divide-y divide-border overflow-y-auto">
         {issues.length === 0 && (
-          <li className="px-3 py-2 text-sm text-muted">The draft is ready to publish.</li>
+          <li className="px-3 py-2.5 text-xs text-muted">The draft is ready to publish.</li>
         )}
         {issues.map((issue, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: issues can repeat exactly.
@@ -570,9 +595,9 @@ function IssuesPanel({ onClose }: { onClose: () => void }) {
             <button
               type="button"
               onClick={() => focus(issue)}
-              className="w-full px-3 py-2 text-left hover:bg-surface-2"
+              className="w-full cursor-pointer px-3 py-2 text-left transition-colors duration-150 hover:bg-hover"
             >
-              <span className="block text-sm text-danger">{issue.message}</span>
+              <span className="block text-[13px] text-danger">{issue.message}</span>
               <span className="block font-mono text-[11px] text-muted">
                 {[issue.code, issue.nodeId, issue.port, issue.edgeId].filter(Boolean).join(" · ")}
               </span>
@@ -631,12 +656,12 @@ function PublishDialog({
       }
     >
       <div className="space-y-3">
-        <p className="text-sm text-muted">
+        <p className="text-[13px] leading-5 text-muted">
           The server checks the draft, saves it as a new version and makes that version active.
           Triggers switch to it right away.
         </p>
         <div className="space-y-1.5">
-          <label htmlFor="publish-note" className="text-sm font-medium">
+          <label htmlFor="publish-note" className="text-xs font-medium text-soft">
             Note
           </label>
           <Input
@@ -679,7 +704,7 @@ function RunDialog({
   let note: ReactNode = null;
   if (hasUnpublishedChanges) {
     note = (
-      <p className="text-sm text-warn">
+      <p className="text-[13px] text-warn">
         The draft has unpublished changes. This run uses version {activeVersion}.
       </p>
     );
@@ -708,14 +733,14 @@ function RunDialog({
         {note}
         {askInput ? (
           <div className="space-y-1.5">
-            <label htmlFor="run-input" className="text-sm font-medium">
+            <label htmlFor="run-input" className="text-xs font-medium text-soft">
               Input JSON
             </label>
             <JsonInput id="run-input" rows={8} value={input} onChange={setInput} />
             <p className="text-xs text-muted">The Manual run trigger outputs this as `input`.</p>
           </div>
         ) : (
-          <p className="text-sm text-muted">
+          <p className="text-[13px] text-muted">
             This workflow has no Manual run trigger, so it starts with no input.
           </p>
         )}

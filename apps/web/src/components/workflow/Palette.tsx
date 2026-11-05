@@ -63,10 +63,10 @@ export function Palette() {
         />
       </div>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
-        {groups.length === 0 && <p className="text-sm text-muted">No nodes match.</p>}
+        {groups.length === 0 && <p className="text-xs text-muted">No nodes match.</p>}
         {groups.map(({ cat, nodes }) => (
           <section key={cat}>
-            <h3 className="mb-1.5 flex items-center gap-2 text-xs font-medium tracking-wide text-muted uppercase">
+            <h3 className="section-label mb-2 flex items-center gap-2">
               <span
                 className="inline-block size-2 rounded-full"
                 style={{ background: categoryColor(cat) }}
@@ -85,10 +85,10 @@ export function Palette() {
                     }}
                     onClick={() => addAtCenter(spec)}
                     title={`${spec.description || spec.title}\nDrag onto the canvas, or click to add.`}
-                    className="w-full cursor-grab rounded-lg border border-border bg-surface px-2.5 py-1.5 text-left hover:border-accent active:cursor-grabbing"
+                    className="pressable w-full cursor-grab rounded-lg bg-surface-2 px-2.5 py-1.5 text-left shadow-raised hover:shadow-raised-hover active:cursor-grabbing"
                   >
-                    <span className="block truncate text-sm">{spec.title}</span>
-                    <span className="block truncate font-mono text-[11px] text-muted">
+                    <span className="block truncate text-[13px]">{spec.title}</span>
+                    <span className="block truncate font-mono text-[11px] text-subtle">
                       {spec.type}
                     </span>
                   </button>

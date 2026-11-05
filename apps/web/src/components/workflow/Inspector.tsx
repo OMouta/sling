@@ -136,7 +136,7 @@ function NodeInspector({
 
       {spec && (
         <section className="space-y-3">
-          <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Settings</h3>
+          <h3 className="section-label">Settings</h3>
           <SchemaForm
             fields={fields}
             value={data.config}
@@ -214,9 +214,9 @@ function fieldOverride(
           set(expr ? literalFrom(value as string, field) : toExpression(sourceFrom(value)))
         }
         className={cx(
-          "h-6 rounded-md border px-1.5 font-mono text-xs",
+          "h-6 cursor-pointer rounded-md border px-1.5 font-mono text-xs transition-colors duration-150",
           expr
-            ? "border-accent bg-accent/10 text-accent"
+            ? "border-[var(--tag-purple-border)] bg-[var(--tag-purple-bg)] text-[var(--tag-purple-text)]"
             : "border-border text-muted hover:text-text",
         )}
       >
@@ -297,7 +297,7 @@ function ExpressionEditor({
 
   return (
     <div className="space-y-2">
-      <div className="rounded-lg border border-accent/50 bg-surface focus-within:border-accent">
+      <div className="rounded-lg bg-field shadow-[inset_0_0_0_1px_var(--tag-purple-border)] transition-shadow duration-150 focus-within:shadow-focus">
         <div className="flex items-center justify-between border-b border-border px-2 py-1 font-mono text-[11px] text-muted">
           <span>{"={{"}</span>
           <span>JSONata</span>
@@ -333,7 +333,7 @@ function FieldList({
 }) {
   const group = (title: string, list: FieldPath[], empty: string) => (
     <div>
-      <p className="mb-1 text-[11px] font-medium tracking-wide text-muted uppercase">{title}</p>
+      <p className="mb-1 section-label">{title}</p>
       {list.length === 0 ? (
         <p className="text-xs text-muted">{empty}</p>
       ) : (
@@ -345,7 +345,7 @@ function FieldList({
                 disabled={disabled}
                 title={`${f.type}${f.description ? ` · ${f.description}` : ""}`}
                 onClick={() => onPick(f.path)}
-                className="rounded border border-border bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] hover:border-accent"
+                className="cursor-pointer rounded-[5px] bg-surface-3 px-1.5 py-0.5 font-mono text-[11px] text-soft shadow-[0_0_0_0.5px_var(--line-strong)] transition-colors duration-150 hover:text-text"
               >
                 {f.path}
               </button>
@@ -356,7 +356,7 @@ function FieldList({
     </div>
   );
   return (
-    <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg bg-surface-2/60 p-2">
+    <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg bg-field p-2 shadow-field">
       {group("Inputs", fields.inputs, "Connect a data input to use its fields here.")}
       {group("Trigger", fields.trigger, "No trigger yet.")}
       {group(
@@ -390,7 +390,7 @@ function InstallationSelect({
     return (
       <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted">
         No {connector ?? "connector"} installations yet.{" "}
-        <Link to="/connectors" className="text-accent hover:underline">
+        <Link to="/connectors" className="text-accent-text hover:underline">
           Add one under Connectors
         </Link>
         .
@@ -441,7 +441,7 @@ function PortList({
   );
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Data ports</h3>
+      <h3 className="section-label">Data ports</h3>
       {ports.inputs.length > 0 && (
         <ul className="space-y-1">
           {ports.inputs.map((p) => row(p.name, p.type, "in", p.required))}

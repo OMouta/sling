@@ -73,14 +73,23 @@ export function AuthFrame({
   children: React.ReactNode;
 }) {
   return (
-    <div className="grid min-h-full place-items-center px-4 py-10">
-      <div className="w-full max-w-sm">
+    <div className="relative grid min-h-full place-items-center overflow-hidden px-4 py-10">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-48 left-1/2 h-[480px] w-[720px] -translate-x-1/2 rounded-full bg-accent opacity-[0.14] blur-[120px]"
+      />
+      <div className="relative w-full max-w-[360px]">
         <div className="mb-6 flex flex-col items-center text-center">
-          <Logo className="size-10" />
-          <h1 className="mt-4 text-xl font-semibold tracking-tight">{title}</h1>
-          {subtitle && <p className="mt-1.5 text-sm text-muted">{subtitle}</p>}
+          <span className="grid size-11 place-items-center rounded-xl bg-accent text-white shadow-primary">
+            <Logo className="size-6" />
+          </span>
+          <h1 className="mt-4 text-xl font-medium tracking-tight">{title}</h1>
+          {subtitle && (
+            <p className="mt-1.5 text-[13px] leading-5 text-pretty text-muted">{subtitle}</p>
+          )}
         </div>
-        <Card className="p-5">{children}</Card>
+        <Card className="p-5 [&_button]:h-9 [&_input]:h-9">{children}</Card>
+        <p className="mt-6 text-center text-xs text-subtle">Self-hosted Sling</p>
       </div>
     </div>
   );

@@ -1,10 +1,12 @@
 import type { NodeRunView, RunDetailView, RunView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
+import { RotateCcw, Square, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { JsonView } from "../components/JsonView.tsx";
+import { Page } from "../components/Page.tsx";
 import { RUN_TONE, RunStatusBadge } from "../components/StatusBadge.tsx";
-import { Badge, Button, Card, cx, Dot, ErrorText, Spinner } from "../components/ui.tsx";
+import { Badge, Button, cx, Dot, ErrorText, Skeleton, Spinner } from "../components/ui.tsx";
 import { ReadOnlyCanvas, useReadOnlyStore } from "../components/workflow/ReadOnlyCanvas.tsx";
 import { runDuration, triggerTitle } from "../components/workflow/RunsTab.tsx";
 import { api } from "../lib/api.ts";
@@ -27,16 +29,23 @@ export function WorkflowRunPage() {
 
   if (detail.isPending) {
     return (
-      <div className="grid h-full place-items-center text-muted">
-        <Spinner className="size-6" />
-      </div>
+      <Page
+        title={<Skeleton className="h-4 w-40" />}
+        crumb={{ label: "Workflows", to: "/workflows" }}
+      >
+        <div className="grid h-full place-items-center">
+          <Spinner className="size-5" />
+        </div>
+      </Page>
     );
   }
   if (!detail.data) {
     return (
-      <div className="p-6">
-        <ErrorText error={detail.error ?? "Run not found."} />
-      </div>
+      <Page title="Run" crumb={{ label: "Workflows", to: "/workflows" }}>
+        <div className="p-5">
+          <ErrorText error={detail.error ?? "Run not found."} />
+        </div>
+      </Page>
     );
   }
   return (
@@ -93,9 +102,20 @@ function RunDetail({
   };
 
   return (
-    <div className="flex min-h-full flex-col">
-      <RunHeader workflowId={workflowId} run={run} catalog={catalog} onPickNode={pickNode} />
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+    <Page
+      crumb={{ label: run.workflowName, to: "/workflows/$id", params: { id: workflowId } }}
+      title={`Run ${run.id.slice(-8)}`}
+      badge={
+        <span className="flex items-center gap-1.5">
+          <RunStatusBadge status={run.status} />
+          <Badge>v{run.versionNumber}</Badge>
+        </span>
+      }
+      controls={<RunControls workflowId={workflowId} run={run} />}
+      toolbar={<RunSummary run={run} catalog={catalog} onPickNode={pickNode} />}
+      bodyClassName="flex flex-col"
+    >
+      <div className="flex min-h-0 flex-1 flex-col border-t border-border lg:flex-row">
         <div className="h-[55vh] min-w-0 border-b border-border lg:h-auto lg:flex-1 lg:border-r lg:border-b-0">
           {store ? (
             <ReadOnlyCanvas store={store} onNodeClick={pickNode} />
@@ -109,11 +129,9 @@ function RunDetail({
             </div>
           )}
         </div>
-        <aside className="lg:w-[26rem] lg:shrink-0 lg:overflow-y-auto">
-          <h2 className="px-4 pt-4 text-xs font-medium tracking-wide text-muted uppercase">
-            Steps
-          </h2>
-          {ordered.length === 0 && <p className="px-4 py-3 text-sm text-muted">No steps yet.</p>}
+        <aside className="bg-sidebar lg:w-[26rem] lg:shrink-0 lg:overflow-y-auto">
+          <h2 className="section-label px-4 pt-4">Steps</h2>
+          {ordered.length === 0 && <p className="px-4 py-3 text-xs text-muted">No steps yet.</p>}
           <ol className="space-y-1 p-2">
             {ordered.map((nr) => (
               <li key={nr.id} id={`node-run-${nr.id}`}>
@@ -128,21 +146,11 @@ function RunDetail({
           </ol>
         </aside>
       </div>
-    </div>
+    </Page>
   );
 }
 
-function RunHeader({
-  workflowId,
-  run,
-  catalog,
-  onPickNode,
-}: {
-  workflowId: string;
-  run: RunView;
-  catalog: CatalogIndex | null;
-  onPickNode: (nodeId: string) => void;
-}) {
+function RunControls({ workflowId, run }: { workflowId: string; run: RunView }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const active = ACTIVE.has(run.status);
@@ -163,6 +171,32 @@ function RunHeader({
         params: { id: workflowId, runId: runIdOf(res) },
       }),
   });
+  return (
+    <>
+      <ErrorText error={cancel.error ?? retry.error} />
+      {active ? (
+        <Button icon={Square} busy={cancel.isPending} onClick={() => cancel.mutate()}>
+          Cancel
+        </Button>
+      ) : (
+        <Button icon={RotateCcw} busy={retry.isPending} onClick={() => retry.mutate()}>
+          Retry
+        </Button>
+      )}
+    </>
+  );
+}
+
+function RunSummary({
+  run,
+  catalog,
+  onPickNode,
+}: {
+  run: RunView;
+  catalog: CatalogIndex | null;
+  onPickNode: (nodeId: string) => void;
+}) {
+  const active = ACTIVE.has(run.status);
   // Keep "so far" durations moving while the run is active.
   const [, tick] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval>>(undefined);
@@ -173,41 +207,18 @@ function RunHeader({
   }, [active]);
 
   return (
-    <header className="space-y-3 border-b border-border bg-surface px-4 py-3">
-      <Link
-        to="/workflows/$id"
-        params={{ id: workflowId }}
-        search={{ tab: "runs" }}
-        className="text-sm text-muted hover:text-text"
-      >
-        ← {run.workflowName} runs
-      </Link>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h1 className="text-lg font-semibold tracking-tight">Run {run.id.slice(-8)}</h1>
-        <RunStatusBadge status={run.status} />
-        <Badge>v{run.versionNumber}</Badge>
-        <span className="text-sm text-muted">
-          {triggerTitle(catalog, run.triggerType)} ·{" "}
-          <span title={new Date(run.createdAt).toLocaleString()}>{ago(run.createdAt)}</span>
-          {runDuration(run) && ` · ${runDuration(run)}`}
+    <div className="shrink-0 space-y-3 px-5 py-3">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+        <span className="inline-flex items-center gap-1.5">
+          <Zap aria-hidden="true" size={12} className="text-subtle" />
+          {triggerTitle(catalog, run.triggerType)}
         </span>
-        <div className="ml-auto flex gap-2">
-          {active && (
-            <Button size="sm" busy={cancel.isPending} onClick={() => cancel.mutate()}>
-              Cancel
-            </Button>
-          )}
-          {!active && (
-            <Button size="sm" busy={retry.isPending} onClick={() => retry.mutate()}>
-              Retry
-            </Button>
-          )}
-        </div>
-      </div>
-      <ErrorText error={cancel.error ?? retry.error} />
+        <span title={new Date(run.createdAt).toLocaleString()}>{ago(run.createdAt)}</span>
+        {runDuration(run) && <span className="tabular">{runDuration(run)}</span>}
+      </p>
       {run.error && (
-        <Card className="border-danger/40 bg-danger/5 p-3 text-sm">
-          <p className="text-danger">{run.error.message}</p>
+        <div className="rounded-lg border border-[var(--tag-red-border)] bg-[var(--tag-red-bg)] p-3 text-[13px]">
+          <p className="text-[var(--tag-red-text)]">{run.error.message}</p>
           <p className="mt-1 font-mono text-xs text-muted">
             {run.error.code}
             {run.error.nodeId && (
@@ -215,7 +226,7 @@ function RunHeader({
                 {" · "}
                 <button
                   type="button"
-                  className="underline"
+                  className="cursor-pointer underline underline-offset-2"
                   onClick={() => run.error?.nodeId && onPickNode(run.error.nodeId)}
                 >
                   {run.error.nodeId}
@@ -223,15 +234,17 @@ function RunHeader({
               </>
             )}
           </p>
-        </Card>
+        </div>
       )}
       {run.output !== null && run.output !== undefined && (
         <details>
-          <summary className="cursor-pointer text-sm font-medium">Output</summary>
+          <summary className="cursor-pointer text-xs font-medium text-soft select-none">
+            Output
+          </summary>
           <JsonView value={run.output} className="mt-2" />
         </details>
       )}
-    </header>
+    </div>
   );
 }
 
@@ -251,16 +264,19 @@ function NodeRunItem({
     (nr.finishedAt ? new Date(nr.finishedAt).getTime() - new Date(nr.startedAt).getTime() : null);
   return (
     <div
-      className={cx("rounded-lg border", open ? "border-accent bg-surface" : "border-transparent")}
+      className={cx(
+        "rounded-lg transition-shadow duration-150",
+        open ? "bg-surface shadow-[0_0_0_1px_var(--accent-text)]" : "",
+      )}
     >
       <button
         type="button"
         aria-expanded={open}
         onClick={onToggle}
-        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-surface-2"
+        className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors duration-150 hover:bg-hover"
       >
         <Dot tone={RUN_TONE[nr.status] ?? "neutral"} />
-        <span className="min-w-0 flex-1 truncate text-sm">{label}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px]">{label}</span>
         {nr.iteration > 0 && <Badge>#{nr.iteration}</Badge>}
         {nr.attempt > 1 && <Badge tone="warn">try {nr.attempt}</Badge>}
         <span className="text-xs text-muted">{nr.status}</span>
@@ -270,7 +286,7 @@ function NodeRunItem({
         <div className="space-y-3 px-2 pb-3">
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
             <dt className="text-muted">Node</dt>
-            <dd className="font-mono">
+            <dd className="font-mono text-soft">
               {nr.nodeId} · {nr.nodeType}
             </dd>
             <dt className="text-muted">Exec port</dt>

@@ -300,15 +300,16 @@
 }
 .prose-chat code {
   font-family: var(--font-mono);
-  font-size: 0.88em;
-  background: var(--surface-2);
+  font-size: 0.86em;
+  background: var(--surface-3);
   border-radius: 4px;
   padding: 0.1em 0.3em;
 }
 .prose-chat pre {
-  background: var(--surface-2);
-  border-radius: 8px;
-  padding: 0.75em;
+  background: var(--field);
+  box-shadow: var(--sh-field);
+  border-radius: 10px;
+  padding: 0.75em 0.9em;
   overflow-x: auto;
 }
 .prose-chat pre code {
@@ -316,7 +317,7 @@
   padding: 0;
 }
 .prose-chat a {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -324,8 +325,8 @@
 /* Workflow canvas. React Flow's base.css handles layout; this is the look. */
 .sling-canvas .react-flow {
   --xy-background-color: var(--bg);
-  --xy-background-pattern-dots-color: var(--border);
-  --xy-connectionline-stroke: var(--accent);
+  --xy-background-pattern-dots-color: var(--line-strong);
+  --xy-connectionline-stroke: var(--accent-text);
   --xy-connectionline-stroke-width: 2;
   --xy-selection-background-color: color-mix(in srgb, var(--accent) 8%, transparent);
   --xy-selection-border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
@@ -340,48 +341,64 @@
 }
 .react-flow__edge.selected .sling-edge-data,
 .react-flow__edge:focus .sling-edge-data {
-  stroke: var(--accent);
+  stroke: var(--accent-text);
 }
 
 .sling-node {
   width: 228px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
+  border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  box-shadow:
+    var(--sh-card),
+    0 10px 24px -12px rgb(0 0 0 / 0.55);
   font-size: 12px;
   line-height: 1.2;
+  transition: box-shadow 150ms var(--ease-out);
 }
 .sling-node.is-selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--ring);
+  box-shadow:
+    0 0 0 1.5px var(--accent-text),
+    0 0 0 5px var(--ring),
+    0 10px 24px -12px rgb(0 0 0 / 0.55);
 }
 .sling-node.has-issues {
-  border-color: var(--danger);
+  box-shadow:
+    0 0 0 1.5px var(--danger),
+    0 10px 24px -12px rgb(0 0 0 / 0.55);
 }
 .sling-node.is-unknown {
-  border-style: dashed;
+  outline: 1px dashed var(--line-strong);
+  outline-offset: 2px;
 }
 .sling-node.is-idle {
   opacity: 0.5;
 }
 .sling-node[data-status="succeeded"] {
-  border-color: var(--ok);
+  box-shadow:
+    0 0 0 1.5px var(--ok),
+    0 10px 24px -12px rgb(0 0 0 / 0.55);
 }
 .sling-node[data-status="failed"] {
-  border-color: var(--danger);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 30%, transparent);
+  box-shadow:
+    0 0 0 1.5px var(--danger),
+    0 0 0 5px color-mix(in srgb, var(--danger) 25%, transparent);
 }
 .sling-node[data-status="running"] {
-  border-color: var(--accent);
+  box-shadow:
+    0 0 0 1.5px var(--accent-text),
+    0 10px 24px -12px rgb(0 0 0 / 0.55);
   animation: sling-pulse 1.4s ease-in-out infinite;
 }
 .sling-node[data-status="waiting"] {
-  border-color: var(--warn);
+  box-shadow:
+    0 0 0 1.5px var(--warn),
+    0 10px 24px -12px rgb(0 0 0 / 0.55);
 }
 @keyframes sling-pulse {
   50% {
-    box-shadow: 0 0 0 4px var(--ring);
+    box-shadow:
+      0 0 0 1.5px var(--accent-text),
+      0 0 0 6px var(--ring);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -392,23 +409,36 @@
 .sling-node-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 10px 6px;
-  border-radius: 9px 9px 0 0;
-  border-top: 3px solid var(--cat);
-  background: color-mix(in srgb, var(--cat) 10%, var(--surface));
+  gap: 8px;
+  padding: 9px 10px 8px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--cat) 14%, var(--surface)),
+    var(--surface)
+  );
+}
+.sling-node-header::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  background: var(--cat);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cat) 22%, transparent);
 }
 .sling-node-title {
   overflow: hidden;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .sling-node-sub {
   overflow: hidden;
-  margin-top: 1px;
-  color: var(--muted);
+  margin-top: 2px;
+  color: var(--subtle);
   font-family: var(--font-mono);
   font-size: 10px;
   text-overflow: ellipsis;
@@ -426,7 +456,7 @@
   color: #fff;
 }
 .sling-node-badge.is-status {
-  background: var(--surface-2);
+  background: var(--surface-3);
   color: var(--muted);
 }
 .sling-node-badge.status-succeeded {
@@ -436,7 +466,7 @@
   color: var(--danger);
 }
 .sling-node-badge.status-running {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .sling-node-badge.status-waiting {
   color: var(--warn);

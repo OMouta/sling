@@ -5,6 +5,7 @@ import {
   Bell,
   Check,
   ChevronDown,
+  ChevronRight,
   LogOut,
   Menu as MenuIcon,
   Monitor,
@@ -32,6 +33,7 @@ export const ShellContext = createContext<{ openNav: () => void; openSearch: () 
  */
 export function Page({
   title,
+  crumb,
   badge,
   controls,
   tabs,
@@ -40,7 +42,10 @@ export function Page({
   children,
   bodyClassName,
 }: {
+  /** A string becomes the page's heading; anything else is shown as is. */
   title: ReactNode;
+  /** The parent page, shown before the title. */
+  crumb?: { label: string; to: string; params?: Record<string, string> };
   badge?: ReactNode;
   /** Page-specific controls in the header, before search and the account menu. */
   controls?: ReactNode;
@@ -52,7 +57,7 @@ export function Page({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <TopBar title={title} badge={badge} controls={controls} />
+      <TopBar title={title} crumb={crumb} badge={badge} controls={controls} />
       {tabs && <div className="shrink-0 border-b border-border px-5">{tabs}</div>}
       {toolbar}
       <div className={cx("min-h-0 flex-1 overflow-y-auto", bodyClassName)}>{children}</div>
@@ -109,10 +114,12 @@ export function Content({ children, className }: { children: ReactNode; classNam
 
 function TopBar({
   title,
+  crumb,
   badge,
   controls,
 }: {
   title: ReactNode;
+  crumb?: { label: string; to: string; params?: Record<string, string> };
   badge?: ReactNode;
   controls?: ReactNode;
 }) {
@@ -128,7 +135,27 @@ function TopBar({
         onClick={shell.openNav}
       />
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <h1 className="truncate text-base font-medium">{title}</h1>
+        {crumb && (
+          <>
+            <Link
+              to={crumb.to}
+              params={crumb.params as never}
+              className="shrink-0 text-base text-subtle transition-colors duration-150 hover:text-text max-sm:hidden"
+            >
+              {crumb.label}
+            </Link>
+            <ChevronRight
+              aria-hidden="true"
+              size={14}
+              className="shrink-0 text-faint max-sm:hidden"
+            />
+          </>
+        )}
+        {typeof title === "string" ? (
+          <h1 className="truncate text-base font-medium">{title}</h1>
+        ) : (
+          title
+        )}
         {badge}
       </div>
       {controls && <div className="flex shrink-0 items-center gap-2">{controls}</div>}

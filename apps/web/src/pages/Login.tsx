@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Navigate, useNavigate } from "@tanstack/react-router";
+import { KeyRound } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { useStatus } from "../components/Shell.tsx";
 import { Button, ErrorText, Field, Input } from "../components/ui.tsx";
@@ -110,7 +111,12 @@ export function LoginPage() {
         <Button type="submit" variant="primary" className="w-full" busy={busy}>
           Sign in
         </Button>
-        <Button className="w-full" onClick={passkey}>
+        <div className="flex items-center gap-3 text-xs text-subtle">
+          <span className="h-px flex-1 bg-border" />
+          or
+          <span className="h-px flex-1 bg-border" />
+        </div>
+        <Button className="w-full" icon={KeyRound} onClick={passkey}>
           Use a passkey
         </Button>
       </form>

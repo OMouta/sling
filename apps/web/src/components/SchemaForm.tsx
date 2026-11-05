@@ -214,7 +214,7 @@ function Control({
       );
     case "object":
       return (
-        <fieldset className="rounded-lg border border-border p-3">
+        <fieldset className="rounded-xl bg-surface-2/50 p-3 shadow-card">
           <SchemaForm
             compact
             fields={field.fields}
@@ -438,7 +438,7 @@ function ChipList({
     setDraft("");
   };
   return (
-    <div className="rounded-lg border border-border bg-surface p-1.5 focus-within:border-accent">
+    <div className="rounded-lg bg-field p-1.5 shadow-field transition-shadow duration-150 focus-within:shadow-focus">
       <ul className="flex flex-wrap gap-1.5" aria-label={label}>
         {value.map((v, i) => (
           <li
@@ -499,7 +499,7 @@ function RowList({
     <div className="space-y-2">
       {value.map((row, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity of their own.
-        <div key={i} className="flex items-start gap-2 rounded-lg border border-border p-2">
+        <div key={i} className="flex items-start gap-2 rounded-lg bg-surface-2/50 p-2 shadow-card">
           <div className="grid min-w-0 flex-1 gap-2 sm:grid-cols-2">
             {field.fields.map((sub) => (
               <RowCell

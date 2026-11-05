@@ -33,13 +33,13 @@ export function RunsTab({
         <Empty title="No runs yet">Runs appear here when a trigger fires or you press Run.</Empty>
       )}
       {runs.data && runs.data.length > 0 && (
-        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
+        <ul className="divide-y divide-border overflow-hidden rounded-xl bg-surface shadow-card">
           {runs.data.map((r) => (
             <li key={r.id}>
               <Link
                 to="/workflows/$id/runs/$runId"
                 params={{ id: workflowId, runId: r.id }}
-                className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-surface-2"
+                className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 transition-colors duration-150 hover:bg-hover"
               >
                 <span className="w-24 shrink-0">
                   <RunStatusBadge status={r.status} />

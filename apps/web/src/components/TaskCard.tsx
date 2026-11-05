@@ -92,7 +92,16 @@ export function TaskStateBadge({ task }: { task: TaskView }) {
   );
 }
 
-export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean }) {
+export function TaskCard({
+  task,
+  compact,
+  stateInHeader,
+}: {
+  task: TaskView;
+  compact?: boolean;
+  /** The page header already shows the task's state. */
+  stateInHeader?: boolean;
+}) {
   const awaiting = task.actions.filter((a) => a.state === "awaiting_approval");
   const active = task.state === "queued" || task.state === "dispatched" || task.state === "running";
   const running = task.state === "running" && !task.finishedAt;
@@ -124,7 +133,7 @@ export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean 
           <span className="ml-auto flex flex-wrap items-center gap-1.5">
             {task.runnerOffline && <Badge tone="warn">Machine offline</Badge>}
             <ModeBadge mode={task.mode} />
-            <TaskStateBadge task={task} />
+            {!stateInHeader && <TaskStateBadge task={task} />}
           </span>
         </div>
         <div>

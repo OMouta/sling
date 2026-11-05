@@ -44,7 +44,7 @@ export function VersionsTab({
         )}
       >
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-medium tracking-wide text-muted uppercase">Versions</h2>
+          <h2 className="section-label">Versions</h2>
           <Button size="sm" busy={exportJson.isPending} onClick={() => exportJson.mutate()}>
             Export JSON
           </Button>
@@ -62,8 +62,8 @@ export function VersionsTab({
               <li
                 key={v.number}
                 className={cx(
-                  "rounded-xl border bg-surface p-3",
-                  viewing === v.number ? "border-accent" : "border-border",
+                  "rounded-xl bg-surface p-3 transition-shadow duration-150",
+                  viewing === v.number ? "shadow-[0_0_0_1px_var(--accent-text)]" : "shadow-card",
                 )}
               >
                 <div className="flex items-center gap-2">
@@ -130,7 +130,7 @@ function VersionView({
   const store = useReadOnlyStore(version.data?.definition, catalog);
   return (
     <div className="flex h-full min-h-[60vh] flex-col">
-      <div className="flex items-center gap-2 border-b border-border bg-surface px-4 py-2">
+      <div className="flex items-center gap-2 border-b border-border bg-sidebar px-4 py-2">
         <span className="font-medium">Version {n}</span>
         <span className="text-sm text-muted">read-only</span>
         <div className="ml-auto flex gap-2">
