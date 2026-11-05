@@ -35,6 +35,9 @@ pub struct RunSpec {
     pub mode: Mode,
     /// The repo allows network inside the agent's sandbox.
     pub network: bool,
+    /// The Runner lives in a disposable sandbox, which is the isolation
+    /// boundary, so the agent runs without its own.
+    pub disposable: bool,
     pub env: Vec<(String, String)>,
 }
 
@@ -114,9 +117,12 @@ fn forward<E: Send + 'static>(
 pub struct Codex;
 
 impl Codex {
-    /// Codex sandbox for a mode.
-    pub fn sandbox(mode: Mode) -> &'static str {
+    /// Codex sandbox for a mode. In a disposable sandbox Codex's own sandbox
+    /// can't start, so every mode runs without it. Read-only tasks still
+    /// never commit or push there, because the Runner refuses both.
+    pub fn sandbox(mode: Mode, disposable: bool) -> &'static str {
         match mode {
+            _ if disposable => "danger-full-access",
             Mode::ReadOnly => "read-only",
             Mode::Supervised | Mode::Auto => "workspace-write",
             Mode::FullAccess => "danger-full-access",
@@ -162,7 +168,7 @@ impl Harness for Codex {
                 bin: spec.bin.clone(),
                 cwd: spec.cwd.clone(),
                 prompt: codex::build_prompt(&spec.title, &spec.objective, spec.mode.writes()),
-                sandbox: Codex::sandbox(spec.mode).into(),
+                sandbox: Codex::sandbox(spec.mode, spec.disposable).into(),
                 network: spec.network,
                 env: Some(spec.env.clone()),
             };
@@ -211,10 +217,13 @@ impl HarnessRun for CodexRun {
 pub struct ClaudeCode;
 
 impl ClaudeCode {
-    /// Claude Code access for a mode.
-    pub fn access(mode: Mode) -> claude::Access {
+    /// Claude Code access for a mode. In a disposable sandbox Claude Code's
+    /// own sandbox can't start, so Supervised and Auto skip permissions
+    /// there. Read-only stays in plan mode, which doesn't need it.
+    pub fn access(mode: Mode, disposable: bool) -> claude::Access {
         match mode {
             Mode::ReadOnly => claude::Access::ReadOnly,
+            _ if disposable => claude::Access::Full,
             Mode::Supervised | Mode::Auto => claude::Access::Edit,
             Mode::FullAccess => claude::Access::Full,
         }
@@ -259,7 +268,7 @@ impl Harness for ClaudeCode {
                 bin: spec.bin.clone(),
                 cwd: spec.cwd.clone(),
                 prompt: claude::build_prompt(&spec.title, &spec.objective, spec.mode.writes()),
-                access: ClaudeCode::access(spec.mode),
+                access: ClaudeCode::access(spec.mode, spec.disposable),
                 network: spec.network,
                 env: Some(spec.env.clone()),
             };
@@ -321,13 +330,27 @@ mod tests {
     #[test]
     fn modes_map_to_each_agent() {
         use claude::Access;
-        assert_eq!(Codex::sandbox(Mode::ReadOnly), "read-only");
-        assert_eq!(Codex::sandbox(Mode::Supervised), "workspace-write");
-        assert_eq!(Codex::sandbox(Mode::Auto), "workspace-write");
-        assert_eq!(Codex::sandbox(Mode::FullAccess), "danger-full-access");
-        assert_eq!(ClaudeCode::access(Mode::ReadOnly), Access::ReadOnly);
-        assert_eq!(ClaudeCode::access(Mode::Supervised), Access::Edit);
-        assert_eq!(ClaudeCode::access(Mode::Auto), Access::Edit);
-        assert_eq!(ClaudeCode::access(Mode::FullAccess), Access::Full);
+        assert_eq!(Codex::sandbox(Mode::ReadOnly, false), "read-only");
+        assert_eq!(Codex::sandbox(Mode::Supervised, false), "workspace-write");
+        assert_eq!(Codex::sandbox(Mode::Auto, false), "workspace-write");
+        assert_eq!(
+            Codex::sandbox(Mode::FullAccess, false),
+            "danger-full-access"
+        );
+        assert_eq!(ClaudeCode::access(Mode::ReadOnly, false), Access::ReadOnly);
+        assert_eq!(ClaudeCode::access(Mode::Supervised, false), Access::Edit);
+        assert_eq!(ClaudeCode::access(Mode::Auto, false), Access::Edit);
+        assert_eq!(ClaudeCode::access(Mode::FullAccess, false), Access::Full);
+    }
+
+    #[test]
+    fn a_disposable_sandbox_drops_the_agents_own_sandbox() {
+        use claude::Access;
+        for mode in [Mode::ReadOnly, Mode::Supervised, Mode::Auto] {
+            assert_eq!(Codex::sandbox(mode, true), "danger-full-access");
+        }
+        assert_eq!(ClaudeCode::access(Mode::ReadOnly, true), Access::ReadOnly);
+        assert_eq!(ClaudeCode::access(Mode::Supervised, true), Access::Full);
+        assert_eq!(ClaudeCode::access(Mode::Auto, true), Access::Full);
     }
 }

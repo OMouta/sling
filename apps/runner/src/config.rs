@@ -90,6 +90,12 @@ pub struct Config {
     /// `os:` and `arch:` labels itself.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
+    /// Set by `sling-runner sandbox`: this Runner lives in a disposable
+    /// environment that is destroyed after its task. Agents run without their
+    /// own OS sandbox there, because the environment is the isolation boundary
+    /// and their sandboxes can't start inside most containers.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub disposable: bool,
     #[serde(default)]
     pub repos: Vec<RepoEntry>,
 }
@@ -114,6 +120,7 @@ impl Default for Config {
             codex_bin: None,
             claude_bin: None,
             labels: Vec::new(),
+            disposable: false,
             repos: Vec::new(),
         }
     }
@@ -312,6 +319,8 @@ mod tests {
         assert!(back.repos[0].network);
         assert!(back.labels.is_empty());
         assert!(!text.contains("labels"), "left out unless set");
+        assert!(!back.disposable);
+        assert!(!text.contains("disposable"), "left out unless set");
     }
 
     #[test]

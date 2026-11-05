@@ -385,6 +385,7 @@ impl Manager {
             objective: a.objective.clone(),
             mode,
             network,
+            disposable: cfg.disposable,
             env: self.agent_env(agent.name()),
         };
         let mut reported: Vec<PathBuf> = Vec::new();
