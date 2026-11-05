@@ -1,6 +1,9 @@
+import type { AnyConnector } from "@sling/connector-sdk";
 import { createDatabase, runMigrations } from "@sling/db";
+import type { AnyNodeSpec } from "@sling/workflow";
 import type { LanguageModel } from "ai";
 import type { FastifyInstance } from "fastify";
+import type { PgBoss } from "pg-boss";
 import { Agent } from "./agent/agent.ts";
 import { createAuth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
@@ -11,12 +14,28 @@ import { startJobs } from "./jobs.ts";
 import { Hub } from "./realtime/hub.ts";
 import { RunnerGateway } from "./runners/gateway.ts";
 import { TaskService } from "./tasks/service.ts";
+import { ConnectorRuntime } from "./workflows/connectors/runtime.ts";
+import { Engine } from "./workflows/engine.ts";
+import { EventBus } from "./workflows/events.ts";
+import { registerCoreNodes } from "./workflows/nodes/index.ts";
+import { NodeRegistry } from "./workflows/registry.ts";
+import { WorkflowService } from "./workflows/service.ts";
+import { emitTaskSettled } from "./workflows/sling-events.ts";
+import { startScheduleWorker } from "./workflows/triggers.ts";
 
 export interface StartOptions {
   /** Replaces the configured model. Tests use a scripted mock. */
   model?: LanguageModel;
-  /** Skip pg-boss schedules (tests call sweeps directly). */
+  /** Skip the sweep and prune schedules (tests call them directly). */
   jobs?: boolean;
+  /** Connectors to register. */
+  connectors?: AnyConnector[];
+  /** Extra node types to register. Tests use them. */
+  nodes?: AnyNodeSpec[];
+  /** Where bundled workflow templates live. Defaults to the repo's `workflows/`. */
+  templatesDir?: string;
+  /** How many runs one process executes at once. */
+  runConcurrency?: number;
 }
 
 export interface RunningServer {
@@ -34,39 +53,84 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   await runMigrations(database.db);
   app.log.info("database migrated");
 
+  const registry = new NodeRegistry();
+  registerCoreNodes(registry);
+  for (const spec of opts.nodes ?? []) registry.register(spec);
+  for (const c of opts.connectors ?? []) registry.registerConnector(c);
+
   const ctx: AppContext = {
     config,
     db: database.db,
-    auth: createAuth(database.db, config),
+    auth: createAuth(database.db, config, {
+      // The first sign-up creates the workspace; it gets the built-in workflows right away.
+      onWorkspaceCreated: async (workspaceId) => {
+        try {
+          await ctx.workflows.ensureBuiltIns(workspaceId);
+        } catch (err) {
+          app.log.error({ err, workspaceId }, "couldn't install built-in workflows");
+        }
+      },
+    }),
     log: app.log,
     secretsKey: deriveKey(config.secretKey, "credentials-v1"),
     hub: new Hub(),
+    registry,
+    boss: null,
+    modelOverride: opts.model,
     // Filled in right below; each service needs the finished context.
     runners: undefined as unknown as RunnerGateway,
     tasks: undefined as unknown as TaskService,
     agent: undefined as unknown as Agent,
+    engine: undefined as unknown as Engine,
+    events: undefined as unknown as EventBus,
+    workflows: undefined as unknown as WorkflowService,
+    connectors: undefined as unknown as ConnectorRuntime,
   };
   ctx.runners = new RunnerGateway(ctx);
   ctx.tasks = new TaskService(ctx);
   ctx.agent = new Agent(ctx, opts.model);
+  ctx.engine = new Engine(ctx);
+  ctx.events = new EventBus(ctx);
+  ctx.workflows = new WorkflowService(ctx, opts.templatesDir);
+  ctx.connectors = new ConnectorRuntime(ctx);
   ctx.runners.handlers = ctx.tasks;
-  ctx.tasks.onSettled = (taskId, reason) => ctx.agent.onTaskSettled(taskId, reason);
+  ctx.tasks.onSettled = async (taskId, reason) => {
+    await ctx.agent.onTaskSettled(taskId, reason);
+    await emitTaskSettled(ctx, taskId, reason);
+  };
+  ctx.tasks.onWorkflowApproval = (approval) => ctx.engine.onApprovalSettled(approval);
   ctx.runners.start();
-  const boss = opts.jobs === false ? null : await startJobs(ctx, config.databaseUrl);
 
-  await registerRoutes(app, ctx);
-  await app.listen({ host: config.host, port: config.port });
+  let boss: PgBoss | null = null;
+  try {
+    boss = await startJobs(ctx, config.databaseUrl, { schedules: opts.jobs !== false });
+    ctx.boss = boss;
+    await startScheduleWorker(ctx, boss);
+    await ctx.workflows.ensureBuiltIns();
+    await ctx.engine.start(boss, { concurrency: opts.runConcurrency ?? 10 });
+
+    await registerRoutes(app, ctx);
+    await app.listen({ host: config.host, port: config.port });
+    await ctx.connectors.reconcile();
+  } catch (err) {
+    ctx.runners.stop();
+    await boss?.stop({ graceful: false });
+    await app.close();
+    await database.close();
+    throw err;
+  }
   const address = app.server.address();
   const port = typeof address === "object" && address ? address.port : config.port;
-  await ctx.agent.recover();
 
   return {
     app,
     ctx,
     url: `http://127.0.0.1:${port}`,
     async close() {
+      await ctx.connectors.stopAll();
+      await ctx.engine.stop();
       ctx.runners.stop();
-      await boss?.stop();
+      await boss?.stop({ graceful: true, timeout: 10_000 });
       await app.close();
       await database.close();
     },

@@ -394,6 +394,7 @@ describe("Stage 1", () => {
   it("doesn't rerun a turn that already started a task when the server restarts", async () => {
     const { schema } = await import("@sling/db");
     const { newId, taskBranch } = await import("@sling/core");
+    const { advance, initialCursor, recordRun } = await import("@sling/workflow");
     const { eq } = await import("drizzle-orm");
     const db = server.ctx.db;
     const conv = await api<{ id: string }>("POST", "/api/conversations");
@@ -430,8 +431,76 @@ describe("Stage 1", () => {
       state: "cancelled",
       branch: taskBranch(taskId, "x"),
     });
+
+    // The Sling Assistant run as the dead process left it: the assistant node mid-turn.
+    const assistantId = await server.ctx.workflows.assistantId(row.workspaceId);
+    const [wf] = await db
+      .select()
+      .from(schema.workflows)
+      .where(eq(schema.workflows.id, assistantId ?? ""));
+    if (!wf?.activeVersionId) throw new Error("no Sling Assistant");
+    const version = await server.ctx.engine.version(wf.activeVersionId);
+    if (!version) throw new Error("no version");
+    const conversation = { id: row.id, key: row.id, mode: row.mode, title: row.title };
+    let cursor = initialCursor(version.graph, "chat", {
+      conversation,
+      key: row.id,
+      message: "Do the thing.",
+      messageId: "msg_x",
+    });
+    cursor = advance(
+      version.graph,
+      recordRun(cursor, "conversation", { conversation }),
+      "conversation",
+      "next",
+    );
+    expect(cursor.next).toBe("assistant");
+    const runId = newId("run");
+    const nodeRunId = newId("nrn");
+    cursor = { ...cursor, inFlight: { nodeId: "assistant", nodeRunId, iteration: 0, attempt: 1 } };
+    await db.insert(schema.workflowRuns).values({
+      id: runId,
+      workspaceId: row.workspaceId,
+      ownerId: row.ownerId,
+      workflowId: wf.id,
+      versionId: version.id,
+      status: "running",
+      triggerNodeId: "chat",
+      triggerType: "app.chat_message",
+      triggerPayload: { outputs: {}, installationId: null },
+      concurrencyKey: row.id,
+      cursor: cursor as unknown as Record<string, unknown>,
+      startedAt: new Date(),
+    });
+    await db.insert(schema.nodeRuns).values({
+      id: nodeRunId,
+      runId,
+      workspaceId: row.workspaceId,
+      nodeId: "assistant",
+      nodeType: "agent.assistant",
+      status: "running",
+      idempotencyKey: `${runId}:assistant:0`,
+    });
+
     const calls = model.doStreamCalls.length;
-    await server.ctx.agent.recover();
+    await server.ctx.engine.recover();
+    const done = await until("interrupted run finished", async () => {
+      const d = await api<{
+        run: { status: string };
+        nodeRuns: {
+          nodeId: string;
+          attempt: number;
+          status: string;
+          error: { code: string } | null;
+        }[];
+      }>("GET", `/api/runs/${runId}`);
+      return d.run.status === "succeeded" ? d : null;
+    });
+    const assistantRuns = done.nodeRuns.filter((n) => n.nodeId === "assistant");
+    expect(assistantRuns.map((n) => [n.attempt, n.status, n.error?.code ?? null])).toEqual([
+      [1, "failed", "interrupted"],
+      [2, "succeeded", null],
+    ]);
     const d = await api<{ messages: { role: string; text: string }[] }>(
       "GET",
       `/api/conversations/${conv.id}`,

@@ -6,11 +6,20 @@ export const QUEUES = {
   pruneEvents: "prune-events",
 } as const;
 
-/** Durable background jobs. Schedules run once across all server processes. */
-export async function startJobs(ctx: AppContext, connectionString: string): Promise<PgBoss> {
-  const boss = new PgBoss({ connectionString, schema: "pgboss" });
+/**
+ * Durable background jobs. The workflow engine always needs the instance;
+ * `schedules: false` skips the sweep and prune schedules (tests call them
+ * directly). Schedules run once across all server processes.
+ */
+export async function startJobs(
+  ctx: AppContext,
+  connectionString: string,
+  opts: { schedules: boolean },
+): Promise<PgBoss> {
+  const boss = new PgBoss({ connectionString, schema: "pgboss", useListenNotify: true });
   boss.on("error", (err) => ctx.log.error({ err }, "pg-boss error"));
   await boss.start();
+  if (!opts.schedules) return boss;
 
   await boss.createQueue(QUEUES.sweep, { policy: "singleton" });
   await boss.createQueue(QUEUES.pruneEvents, { policy: "singleton" });
@@ -22,7 +31,11 @@ export async function startJobs(ctx: AppContext, connectionString: string): Prom
   });
   await boss.work(QUEUES.pruneEvents, async () => {
     const n = await ctx.tasks.pruneEvents();
-    ctx.log.info({ deleted: n }, "pruned old task events");
+    const payloads = await ctx.engine.prunePayloads();
+    ctx.log.info(
+      { deleted: n, nodeRunPayloads: payloads },
+      "pruned old task events and node run payloads",
+    );
   });
   return boss;
 }

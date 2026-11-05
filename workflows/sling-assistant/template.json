@@ -1,0 +1,7 @@
+{
+  "key": "sling-assistant",
+  "name": "Sling Assistant",
+  "description": "The assistant you chat with in the web app. It delegates coding work to Codex on your machines and reports back when tasks finish.",
+  "builtIn": true,
+  "bindings": []
+}

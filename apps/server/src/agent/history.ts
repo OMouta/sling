@@ -10,7 +10,8 @@ export const HISTORY_LIMIT = 40;
 /** Prefix for notes the server adds when a task changes. */
 export const UPDATE_PREFIX = "[Sling update]";
 
-function textOf(content: unknown): string {
+/** The text parts of a message's content, joined. */
+export function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content

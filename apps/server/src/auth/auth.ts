@@ -9,7 +9,12 @@ import { count } from "drizzle-orm";
 import type { Config } from "../config.ts";
 import { deriveKey } from "../crypto.ts";
 
-export function createAuth(db: Db, config: Config) {
+export interface AuthHooks {
+  /** Called after sign-up creates the user's workspace. */
+  onWorkspaceCreated?(workspaceId: string): Promise<void>;
+}
+
+export function createAuth(db: Db, config: Config, hooks: AuthHooks = {}) {
   const origin = config.publicUrl.origin;
   return betterAuth({
     appName: "Sling",
@@ -48,6 +53,7 @@ export function createAuth(db: Db, config: Config) {
                 .insert(schema.workspaceMembers)
                 .values({ workspaceId, userId: user.id, role: "owner" });
             });
+            await hooks.onWorkspaceCreated?.(workspaceId);
           },
         },
       },

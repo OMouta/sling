@@ -69,7 +69,15 @@ export async function defaultModelConfig(ctx: AppContext, workspaceId: string) {
   return row ?? null;
 }
 
-export async function resolveModel(ctx: AppContext, workspaceId: string): Promise<LanguageModel> {
+/**
+ * The workspace's default model. `modelName` swaps the model while keeping
+ * the provider and its key, for nodes that ask for a different one.
+ */
+export async function resolveModel(
+  ctx: AppContext,
+  workspaceId: string,
+  modelName?: string,
+): Promise<LanguageModel> {
   const cfg = await defaultModelConfig(ctx, workspaceId);
   if (!cfg) throw new NoModelConfigured();
   let apiKey = "";
@@ -85,5 +93,9 @@ export async function resolveModel(ctx: AppContext, workspaceId: string): Promis
       );
     if (cred) apiKey = decryptSecret(ctx.secretsKey, cred.ciphertext);
   }
-  return MODEL_PROVIDERS[cfg.provider].create({ model: cfg.model, apiKey, baseUrl: cfg.baseUrl });
+  return MODEL_PROVIDERS[cfg.provider].create({
+    model: modelName?.trim() || cfg.model,
+    apiKey,
+    baseUrl: cfg.baseUrl,
+  });
 }

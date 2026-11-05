@@ -1,11 +1,13 @@
 import { type AgentStatus, MODE_POLICY, newId } from "@sling/core";
 import { schema, type TokenUsage } from "@sling/db";
+import { SLING_EVENTS } from "@sling/workflow";
 import { isStepCount, type LanguageModel, type ModelMessage, streamText } from "ai";
-import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gt } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import type { SettleReason } from "../tasks/service.ts";
 import { taskView, toConversationView } from "../views.ts";
-import { toMessageView, toModelMessages } from "./history.ts";
+import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
+import { textOf, toMessageView, toModelMessages } from "./history.ts";
 import { NoModelConfigured, resolveModel } from "./models.ts";
 import { agentTools } from "./tools.ts";
 
@@ -37,9 +39,17 @@ function usageOf(u: {
   return { inputTokens: u.inputTokens ?? 0, outputTokens: u.outputTokens ?? 0 };
 }
 
+/** What the chat shows when a turn that already started a task was interrupted. */
+export const INTERRUPTED_TURN_MESSAGE =
+  "The server restarted while I was replying. The task I started is still tracked above, and I'll report when it finishes.";
+
+/**
+ * The master agent. `agent.assistant` nodes call `runTurn` for one turn of a
+ * conversation; ordering between turns comes from the workflow engine's
+ * concurrency keys.
+ */
 export class Agent {
   readonly #ctx: AppContext;
-  readonly #queues = new Map<string, Promise<void>>();
   readonly #status = new Map<string, AgentStatus>();
   readonly #model: LanguageModel | undefined;
 
@@ -52,61 +62,7 @@ export class Agent {
     return this.#status.get(conversationId) ?? "idle";
   }
 
-  /** Runs one turn after any turn already queued for this conversation. */
-  enqueue(conversationId: string): Promise<void> {
-    const prev = this.#queues.get(conversationId) ?? Promise.resolve();
-    const next = prev
-      .then(() => this.#turn(conversationId))
-      .catch((err) => this.#ctx.log.error({ err, conversationId }, "agent turn failed"));
-    this.#queues.set(conversationId, next);
-    void next.finally(() => {
-      if (this.#queues.get(conversationId) === next) this.#queues.delete(conversationId);
-    });
-    return next;
-  }
-
-  /**
-   * After a restart, answers conversations whose last message (from the user
-   * or a task update) never got a reply in the last hour.
-   */
-  async recover(): Promise<void> {
-    const since = new Date(Date.now() - 60 * 60 * 1000);
-    const convs = await this.#ctx.db
-      .select()
-      .from(schema.conversations)
-      .where(
-        and(gt(schema.conversations.updatedAt, since), isNull(schema.conversations.archivedAt)),
-      );
-    for (const c of convs) {
-      const [last] = await this.#ctx.db
-        .select({ role: schema.messages.role, createdAt: schema.messages.createdAt })
-        .from(schema.messages)
-        .where(eq(schema.messages.conversationId, c.id))
-        .orderBy(desc(schema.messages.id))
-        .limit(1);
-      if (!last || (last.role !== "user" && last.role !== "system")) continue;
-      // If the interrupted turn already started a task, running it again would
-      // start a second one. Say what happened instead.
-      const [started] = await this.#ctx.db
-        .select({ id: schema.tasks.id })
-        .from(schema.tasks)
-        .where(
-          and(eq(schema.tasks.conversationId, c.id), gt(schema.tasks.createdAt, last.createdAt)),
-        )
-        .limit(1);
-      if (started) {
-        await this.#addMessage(c, "assistant", {
-          role: "assistant",
-          content:
-            "The server restarted while I was replying. The task I started is still tracked above, and I'll report when it finishes.",
-        });
-        continue;
-      }
-      void this.enqueue(c.id);
-    }
-  }
-
-  /** Task service hook: note what happened in the conversation, then reply. */
+  /** Task service hook: note what happened in the conversation, and tell its workflow. */
   async onTaskSettled(taskId: string, reason: SettleReason): Promise<void> {
     const t = await taskView(this.#ctx, taskId);
     if (!t?.conversationId) return;
@@ -140,12 +96,29 @@ export class Agent {
         `Delivery step ${a.kind}: ${a.state}${a.url ? ` ${a.url}` : ""}${a.message ? ` (${a.message})` : ""}`,
       );
     }
+    const note = lines.join("\n");
+    const row = await this.addMessage(conv, "system", { role: "system", content: note }, taskId);
 
-    await this.#addMessage(conv, "system", { role: "system", content: lines.join("\n") }, taskId);
-    void this.enqueue(conv.id);
+    // Follow-ups go back to the workflow that owns the conversation. Conversations
+    // from before workflows belong to Sling Assistant.
+    const workflowId = conv.workflowId ?? (await this.#ctx.workflows.assistantId(conv.workspaceId));
+    if (!workflowId) return;
+    await this.#ctx.events.emit({
+      type: SLING_EVENTS.conversationUpdate,
+      workspaceId: conv.workspaceId,
+      workflowId,
+      payload: {
+        conversation: conversationObject(conv),
+        key: conversationKey(conv),
+        note,
+        taskId,
+        reason,
+      },
+      ...(row ? { dedupeKey: `note:${row.id}` } : {}),
+    });
   }
 
-  async #addMessage(
+  async addMessage(
     conv: typeof schema.conversations.$inferSelect,
     role: "user" | "assistant" | "tool" | "system",
     content: ModelMessage,
@@ -183,10 +156,26 @@ export class Agent {
     return row;
   }
 
-  async addUserMessage(conv: typeof schema.conversations.$inferSelect, text: string) {
-    const row = await this.#addMessage(conv, "user", { role: "user", content: text });
-    void this.enqueue(conv.id);
-    return row;
+  /**
+   * Saves a user message. With `once`, a message identical to the latest
+   * user message isn't saved again, for re-runs after a restart.
+   */
+  async addUserMessage(
+    conv: typeof schema.conversations.$inferSelect,
+    text: string,
+    opts: { once?: boolean } = {},
+  ) {
+    if (opts.once) {
+      const [last] = await this.#ctx.db
+        .select()
+        .from(schema.messages)
+        .where(and(eq(schema.messages.conversationId, conv.id), eq(schema.messages.role, "user")))
+        .orderBy(desc(schema.messages.id))
+        .limit(1);
+      const content = last?.content as ModelMessage | undefined;
+      if (last && typeof content?.content === "string" && content.content === text) return last;
+    }
+    return this.addMessage(conv, "user", { role: "user", content: text });
   }
 
   #setStatus(workspaceId: string, conversationId: string, status: AgentStatus, error?: string) {
@@ -199,20 +188,48 @@ export class Agent {
     });
   }
 
-  async #turn(conversationId: string): Promise<void> {
+  /**
+   * Runs one turn: answers the conversation's latest user message or task
+   * note, streaming deltas and saving the messages. Returns the reply text.
+   * A conversation that's already answered gets no new turn. With `resumed`,
+   * the turn was interrupted by a restart: if it had already started a task,
+   * running it again would start a second one, so it says so instead.
+   */
+  async runTurn(
+    conversationId: string,
+    opts: { resumed?: boolean; signal?: AbortSignal } = {},
+  ): Promise<{ reply: string }> {
     const ctx = this.#ctx;
     const [conv] = await ctx.db
       .select()
       .from(schema.conversations)
       .where(eq(schema.conversations.id, conversationId));
-    if (!conv) return;
+    if (!conv) return { reply: "" };
     const rows = await ctx.db
       .select()
       .from(schema.messages)
       .where(eq(schema.messages.conversationId, conversationId))
       .orderBy(asc(schema.messages.id));
     const last = rows.at(-1);
-    if (!last || last.role === "assistant" || last.role === "tool") return;
+    if (!last) return { reply: "" };
+    if (last.role === "assistant" || last.role === "tool") return { reply: lastReply(rows) };
+
+    if (opts.resumed) {
+      const [started] = await ctx.db
+        .select({ id: schema.tasks.id })
+        .from(schema.tasks)
+        .where(
+          and(eq(schema.tasks.conversationId, conv.id), gt(schema.tasks.createdAt, last.createdAt)),
+        )
+        .limit(1);
+      if (started) {
+        await this.addMessage(conv, "assistant", {
+          role: "assistant",
+          content: INTERRUPTED_TURN_MESSAGE,
+        });
+        return { reply: INTERRUPTED_TURN_MESSAGE };
+      }
+    }
 
     this.#setStatus(conv.workspaceId, conv.id, "thinking");
     try {
@@ -228,6 +245,7 @@ export class Agent {
         }),
         stopWhen: isStepCount(MAX_STEPS),
         maxRetries: 2,
+        ...(opts.signal ? { abortSignal: opts.signal } : {}),
       });
       let streamError: unknown = null;
       for await (const part of result.fullStream) {
@@ -244,19 +262,41 @@ export class Agent {
       if (streamError) throw streamError;
       const messages = await result.responseMessages;
       const usage = usageOf(await result.totalUsage);
+      let reply = "";
       for (const [i, m] of messages.entries()) {
         const isLast = i === messages.length - 1;
-        await this.#addMessage(conv, m.role, m, null, isLast ? usage : null);
+        await this.addMessage(conv, m.role, m, null, isLast ? usage : null);
+        if (m.role === "assistant") {
+          const text = textOf(m.content).trim();
+          if (text) reply = text;
+        }
       }
       this.#setStatus(conv.workspaceId, conv.id, "idle");
+      return { reply };
     } catch (err) {
+      if (opts.signal?.aborted) {
+        this.#setStatus(conv.workspaceId, conv.id, "idle");
+        throw err;
+      }
       const message =
         err instanceof NoModelConfigured
           ? err.message
           : `The assistant hit an error: ${err instanceof Error ? err.message : String(err)}`;
       ctx.log.warn({ err, conversationId }, "agent turn error");
-      await this.#addMessage(conv, "assistant", { role: "assistant", content: message });
+      await this.addMessage(conv, "assistant", { role: "assistant", content: message });
       this.#setStatus(conv.workspaceId, conv.id, "error", message);
+      return { reply: message };
     }
   }
+}
+
+function lastReply(rows: (typeof schema.messages.$inferSelect)[]): string {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i];
+    if (!r || r.role === "user" || r.role === "system") break;
+    if (r.role !== "assistant") continue;
+    const text = textOf((r.content as ModelMessage).content).trim();
+    if (text) return text;
+  }
+  return "";
 }

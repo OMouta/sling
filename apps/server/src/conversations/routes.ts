@@ -1,5 +1,6 @@
 import { newId, PERMISSION_MODES } from "@sling/core";
 import { schema } from "@sling/db";
+import { SLING_EVENTS } from "@sling/workflow";
 import { and, asc, desc, eq, isNull, sql, sum } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -9,8 +10,12 @@ import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import { taskViews, toConversationView } from "../views.ts";
+import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
 
 const Id = z.object({ id: z.string() });
+
+export const NO_CHAT_WORKFLOW =
+  "No workflow handles chat messages, so nothing will answer. Enable Sling Assistant, or another workflow with a Chat message trigger, under Workflows.";
 
 export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) {
   const r = app.withTypeProvider<ZodTypeProvider>();
@@ -162,7 +167,25 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         if (u) conv = u;
       }
       const row = await ctx.agent.addUserMessage(conv, request.body.text);
-      return { id: row?.id };
+      if (!row) throw new Error("insert failed");
+      const runs = await ctx.events.emit({
+        type: SLING_EVENTS.chatMessage,
+        workspaceId: actor.workspaceId,
+        payload: {
+          conversation: conversationObject(conv),
+          key: conversationKey(conv),
+          message: request.body.text,
+          messageId: row.id,
+        },
+        dedupeKey: row.id,
+      });
+      if (runs.length === 0) {
+        await ctx.agent.addMessage(conv, "assistant", {
+          role: "assistant",
+          content: NO_CHAT_WORKFLOW,
+        });
+      }
+      return { id: row.id };
     },
   );
 }
