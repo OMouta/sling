@@ -101,6 +101,7 @@ function routes(path: string): unknown {
   if (path === "/api/conversations") return [conversation];
   if (path === "/api/approvals") return [];
   if (path === "/api/runners") return [runner];
+  if (path === "/api/sandbox-repos") return [];
   if (path === "/api/settings") {
     return {
       defaultMode: "auto",

@@ -16,12 +16,16 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router.tsx";
 import {
+  sandboxRepos as allowedRepos,
+  buildbox,
   busySandbox,
+  devbox,
   dockerInstallation,
   connectors as integrationConnectors,
   installations as integrationInstallations,
   providerConnectors,
   sandboxList,
+  sandboxRunner,
   sandboxSettings,
 } from "./test/fixtures.ts";
 
@@ -102,6 +106,21 @@ function route(method: string, path: string, body: unknown): unknown {
       };
       return released;
     }
+  }
+  const remote = /^\/api\/sandbox-repos\/([^/]+)$/.exec(path)?.[1];
+  if (remote && method === "PUT") {
+    const b = body as Omit<SandboxRepoView, "remoteKey" | "createdAt">;
+    const repo = {
+      ...b,
+      remoteKey: decodeURIComponent(remote),
+      createdAt: "2026-11-05T12:00:00.000Z",
+    };
+    sandboxRepos = [...sandboxRepos.filter((r) => r.remoteKey !== repo.remoteKey), repo];
+    return repo;
+  }
+  if (remote && method === "DELETE") {
+    sandboxRepos = sandboxRepos.filter((r) => r.remoteKey !== decodeURIComponent(remote));
+    return undefined;
   }
   const task = method === "GET" && /^\/api\/tasks\/([^/]+)$/.exec(path)?.[1];
   const found = task && tasks.find((t) => t.id === task);
@@ -394,5 +413,86 @@ describe("settings: sandboxes", () => {
     const s = await section();
     expect(await s.findByText(/fine-grained token limited to the repos you allow/)).toBeTruthy();
     expect(s.getByText("docs/sandboxes.md")).toBeTruthy();
+  });
+});
+
+describe("machines", () => {
+  async function machineCard(name: string) {
+    const title = await screen.findByText(name);
+    return within(title.closest(".rounded-xl") as HTMLElement);
+  }
+
+  it("shows labels, with the automatic ones set apart", async () => {
+    runners = [devbox, buildbox];
+    renderAt("/machines");
+    const card = await machineCard("devbox");
+    const labels = within(card.getByRole("list", { name: "Labels" }));
+    expect(labels.getByText("ios")).toBeTruthy();
+    expect(labels.getByText("os:macos").getAttribute("title")).toBe("Set automatically");
+    expect(labels.getByText("arch:aarch64").getAttribute("title")).toBe("Set automatically");
+    expect(labels.getByText("ios").getAttribute("title")).toBeNull();
+    expect((await machineCard("buildbox")).getByText("gpu")).toBeTruthy();
+  });
+
+  it("never lists a sandbox's Runner", async () => {
+    runners = [devbox, sandboxRunner, buildbox];
+    renderAt("/machines");
+    expect(await screen.findByText("devbox")).toBeTruthy();
+    expect(screen.getByText("buildbox")).toBeTruthy();
+    expect(screen.queryByText("sandbox-sbx_1")).toBeNull();
+  });
+
+  it("shows which coding agents each machine has, and whether they're ready", async () => {
+    runners = [devbox, buildbox];
+    renderAt("/machines");
+    const dev = await machineCard("devbox");
+    expect(dev.getByText("Codex 0.166.0")).toBeTruthy();
+    expect(dev.getByText("Claude Code 2.1.4 · not ready")).toBeTruthy();
+    expect(dev.getByText(/Claude Code: Not logged in/)).toBeTruthy();
+    expect(dev.getByText("git 2.47.1")).toBeTruthy();
+    const build = await machineCard("buildbox");
+    expect(build.getByText("Codex · not installed")).toBeTruthy();
+    expect(build.getByText("Claude Code 2.1.4")).toBeTruthy();
+  });
+
+  it("allows a repo in sandboxes by its remote, and disallows it", async () => {
+    runners = [devbox, buildbox];
+    sandboxRepos = allowedRepos;
+    renderAt("/machines");
+    const build = await machineCard("buildbox");
+    await waitFor(() =>
+      expect(
+        build.getByRole("switch", { name: "Allow api in sandboxes" }).getAttribute("aria-checked"),
+      ).toBe("true"),
+    );
+    const dev = await machineCard("devbox");
+    const site = dev.getByRole("switch", { name: "Allow site in sandboxes" });
+    expect(site.getAttribute("aria-checked")).toBe("false");
+    expect(dev.getByText(/clones the repo from its remote, so local files/)).toBeTruthy();
+
+    fireEvent.click(site);
+    const path = "/api/sandbox-repos/github.com%2Fa%2Fsite";
+    await waitFor(() => expect(callsTo("PUT", path)).toHaveLength(1));
+    expect(callsTo("PUT", path)[0]?.body).toEqual({
+      cloneUrl: "https://github.com/a/site.git",
+      defaultBranch: "main",
+      network: false,
+    });
+    await waitFor(() => expect(site.getAttribute("aria-checked")).toBe("true"));
+    await waitFor(() => expect((site as HTMLButtonElement).disabled).toBe(false));
+
+    fireEvent.click(site);
+    await waitFor(() => expect(callsTo("DELETE", path)).toHaveLength(1));
+    await waitFor(() => expect(site.getAttribute("aria-checked")).toBe("false"));
+    expect(sandboxRepos.map((r) => r.remoteKey)).toEqual(["github.com/a/api"]);
+  });
+
+  it("explains why a repo without a remote can't go to a sandbox", async () => {
+    runners = [devbox];
+    renderAt("/machines");
+    const dev = await machineCard("devbox");
+    expect(dev.getByText("notes")).toBeTruthy();
+    expect(dev.getByText("No remote, so a sandbox has nothing to clone")).toBeTruthy();
+    expect(dev.queryByRole("switch", { name: "Allow notes in sandboxes" })).toBeNull();
   });
 });
