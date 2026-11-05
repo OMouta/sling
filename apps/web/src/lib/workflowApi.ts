@@ -15,7 +15,7 @@ import type {
   WorkflowVersionView,
 } from "@sling/workflow";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "./api.ts";
+import { ApiError, api } from "./api.ts";
 
 /**
  * React Query keys for workflows and connectors. Pages read these and
@@ -151,8 +151,17 @@ export const workflowApi = {
     api
       .post<ValidationIssue[] | { issues?: ValidationIssue[] }>(`/api/workflows/${id}/validate`)
       .then(issuesOf),
-  publish: (id: string, note: string) =>
-    api.post<PublishResult>(`/api/workflows/${id}/publish`, { note }),
+  /** A draft that fails validation comes back as 422 with the issues in the body. */
+  publish: async (id: string, note: string): Promise<PublishResult> => {
+    try {
+      return await api.post<PublishResult>(`/api/workflows/${id}/publish`, { note });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422 && isPublishResult(err.body)) {
+        return err.body;
+      }
+      throw err;
+    }
+  },
   run: (id: string, input: unknown) =>
     api.post<RunView | { run: RunView }>(`/api/workflows/${id}/run`, { input }).then(runIdOf),
   patch: (id: string, body: { name?: string; description?: string; enabled?: boolean }) =>
@@ -176,4 +185,13 @@ export function downloadJson(fileName: string, data: unknown) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function isPublishResult(value: unknown): value is PublishResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "issues" in value &&
+    Array.isArray((value as { issues: unknown }).issues)
+  );
 }

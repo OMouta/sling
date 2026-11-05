@@ -132,8 +132,12 @@ beforeEach(() => {
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       calls.push({ method, path: url.pathname, body });
       try {
-        return new Response(JSON.stringify(route(method, url.pathname, body)), {
-          status: 200,
+        const data = route(method, url.pathname, body);
+        // Like the server: a publish that fails validation is a 422.
+        const failedPublish =
+          method === "POST" && url.pathname.endsWith("/publish") && !(data as PublishResult).ok;
+        return new Response(JSON.stringify(data), {
+          status: failedPublish ? 422 : 200,
           headers: { "content-type": "application/json" },
         });
       } catch (err) {
