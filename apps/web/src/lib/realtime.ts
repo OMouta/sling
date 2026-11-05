@@ -1,7 +1,18 @@
-import type { RunnerView, ServerEvent, TaskView } from "@sling/core";
+import type {
+  InstallationView,
+  NodeRunView,
+  RunDetailView,
+  RunnerView,
+  RunView,
+  ServerEvent,
+  TaskView,
+  WorkflowSummaryView,
+} from "@sling/core";
+import type { WorkflowDetailView } from "@sling/workflow";
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import type { ConversationDetail, TaskDetail } from "./types.ts";
+import { qk } from "./workflowApi.ts";
 
 /**
  * One WebSocket per tab. Server events patch the React Query cache directly,
@@ -65,6 +76,59 @@ function applyTask(qc: QueryClient, task: TaskView) {
   }
 }
 
+/** Upserts into a cached list, but doesn't create one that was never fetched. */
+function upsertLoaded<T extends { id: string }>(list: T[] | undefined, item: T, prepend = false) {
+  return list ? upsert(list, item, prepend) : list;
+}
+
+/**
+ * Workflow events patch the keys documented in `workflowApi.ts`. The editor
+ * keeps its own copy of the draft, so a summary update only touches the
+ * detail's summary fields. A new active version also changes the detail's
+ * `active` definition and webhooks, which the event doesn't carry, so that
+ * case refetches.
+ */
+function applyWorkflow(qc: QueryClient, wf: WorkflowSummaryView) {
+  qc.setQueryData<WorkflowSummaryView[]>(qk.workflows(), (list) => upsertLoaded(list, wf, true));
+  let newVersion = false;
+  qc.setQueryData<WorkflowDetailView>(qk.workflow(wf.id), (d) => {
+    if (!d) return d;
+    newVersion = d.activeVersion !== wf.activeVersion;
+    return {
+      ...d,
+      name: wf.name,
+      description: wf.description,
+      enabled: wf.enabled,
+      templateKey: wf.templateKey,
+      activeVersion: wf.activeVersion,
+      hasUnpublishedChanges: wf.hasUnpublishedChanges,
+      updatedAt: wf.updatedAt,
+    };
+  });
+  if (newVersion) {
+    void qc.invalidateQueries({ queryKey: qk.workflow(wf.id) });
+    void qc.invalidateQueries({ queryKey: qk.versions(wf.id) });
+  }
+}
+
+function applyRun(qc: QueryClient, run: RunView) {
+  qc.setQueryData<RunView[]>(qk.runs(run.workflowId), (list) => upsertLoaded(list, run, true));
+  qc.setQueryData<RunDetailView>(qk.run(run.id), (d) => (d ? { ...d, run } : d));
+  qc.setQueryData<WorkflowSummaryView[]>(qk.workflows(), (list) =>
+    list?.map((w) =>
+      w.id === run.workflowId && (!w.lastRun || w.lastRun.createdAt <= run.createdAt)
+        ? { ...w, lastRun: { id: run.id, status: run.status, createdAt: run.createdAt } }
+        : w,
+    ),
+  );
+}
+
+function applyNodeRun(qc: QueryClient, nodeRun: NodeRunView) {
+  qc.setQueryData<RunDetailView>(qk.run(nodeRun.runId), (d) =>
+    d ? { ...d, nodeRuns: upsert(d.nodeRuns, nodeRun) } : d,
+  );
+}
+
 export function apply(qc: QueryClient, ev: ServerEvent) {
   switch (ev.type) {
     case "runner.updated":
@@ -110,6 +174,20 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       if (ev.status !== "thinking") setStream(ev.conversationId, null);
       qc.setQueryData<ConversationDetail>(["conversation", ev.conversationId], (d) =>
         d ? { ...d, agentStatus: ev.status } : d,
+      );
+      return;
+    case "workflow.updated":
+      applyWorkflow(qc, ev.workflow);
+      return;
+    case "run.updated":
+      applyRun(qc, ev.run);
+      return;
+    case "node_run.updated":
+      applyNodeRun(qc, ev.nodeRun);
+      return;
+    case "installation.updated":
+      qc.setQueryData<InstallationView[]>(qk.installations(), (list) =>
+        upsertLoaded(list, ev.installation),
       );
       return;
   }
