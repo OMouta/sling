@@ -560,6 +560,7 @@ describe("chat on a coding agent's CLI", () => {
     const trace = messages.filter((m) => m.role === "assistant").at(-1)?.trace;
     expect(trace?.steps).toEqual([
       { kind: "thinking", text: "The user wants their machines." },
+      { kind: "text", text: "Checking." },
       {
         kind: "tool",
         id: expect.any(String),

@@ -141,7 +141,7 @@ describe("chat replies", () => {
     expect(steps.getByText(/"name": "devbox"/)).toBeTruthy();
   });
 
-  it("shows thinking and tool calls live while the reply comes in", async () => {
+  it("shows the work live in order, then folds it away when the answer starts", async () => {
     agentStatus = "thinking";
     open();
     // The header says so too.
@@ -149,33 +149,29 @@ describe("chat replies", () => {
     emit({ type: "agent.thinking", conversationId: "cnv_1", text: "Checking the " });
     emit({ type: "agent.thinking", conversationId: "cnv_1", text: "machines." });
     expect(screen.getByText("Checking the machines.")).toBeTruthy();
-    emit({
-      type: "agent.tool",
-      conversationId: "cnv_1",
-      step: {
-        kind: "tool",
-        id: "t1",
-        name: "list_machines",
-        input: {},
-        status: "running",
-        output: null,
-      },
-    });
-    expect(screen.getAllByText("Listing machines").length).toBeGreaterThan(0);
-    emit({
-      type: "agent.tool",
-      conversationId: "cnv_1",
-      step: {
-        kind: "tool",
-        id: "t1",
-        name: "list_machines",
-        input: {},
-        status: "done",
-        output: "[]",
-      },
-    });
-    expect(screen.getByText("Listed machines")).toBeTruthy();
+    // Said before a tool call: part of the work, inline with it.
+    emit({ type: "agent.delta", conversationId: "cnv_1", text: "I'll look." });
+    const tool = (status: "running" | "done") =>
+      emit({
+        type: "agent.tool",
+        conversationId: "cnv_1",
+        step: { kind: "tool", id: "t1", name: "list_machines", input: {}, status, output: "[]" },
+      });
+    tool("running");
+    const steps = () =>
+      within(screen.getByRole("list", { name: "Steps" }))
+        .getAllByRole("listitem")
+        .map((li) => li.textContent);
+    expect(steps()).toEqual(["Checking the machines.", "I'll look.", "Listing machines"]);
+    tool("done");
+    expect(steps().at(-1)).toBe("Listed machines");
+
     emit({ type: "agent.delta", conversationId: "cnv_1", text: "You have **one**." });
     expect(screen.getByText("one").tagName).toBe("STRONG");
+    expect(screen.queryByRole("list", { name: "Steps" })).toBeNull();
+    const folded = screen.getByRole("button", { name: /^Thought for \ds · Listed machines$/ });
+    expect(folded.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(folded);
+    expect(steps()).toEqual(["Checking the machines.", "I'll look.", "Listed machines"]);
   });
 });

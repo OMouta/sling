@@ -293,11 +293,7 @@ export class Agent {
       let streamError: unknown = null;
       for await (const part of result.fullStream) {
         if (part.type === "text-delta") {
-          ctx.hub.publish(conv.workspaceId, {
-            type: "agent.delta",
-            conversationId: conv.id,
-            text: part.text,
-          });
+          trace.text(part.text);
         } else if (part.type === "reasoning-delta") {
           trace.thinking(part.text);
         } else if (part.type === "tool-call") {
@@ -313,24 +309,26 @@ export class Agent {
       if (streamError) throw streamError;
       const messages = await result.responseMessages;
       const usage = usageOf(await result.totalUsage);
-      let reply = "";
+      let lastText = "";
+      for (const m of messages) {
+        if (m.role === "assistant") lastText = textOf(m.content).trim() || lastText;
+      }
+      // Each model step is its own stored message, for replaying to the model.
+      // The chat shows only the last, with the earlier steps in its trace.
+      const { answer, trace: saved } = trace.finish(lastText);
+      const shown = messages.findLastIndex((m) => m.role === "assistant");
       for (const [i, m] of messages.entries()) {
-        const isLast = i === messages.length - 1;
         await this.addMessage(
           conv,
           m.role,
           m,
           null,
-          isLast ? usage : null,
-          isLast ? trace.result() : null,
+          i === messages.length - 1 ? usage : null,
+          i === shown ? (saved ?? { steps: [], ms: 0 }) : null,
         );
-        if (m.role === "assistant") {
-          const text = textOf(m.content).trim();
-          if (text) reply = text;
-        }
       }
       this.#setStatus(conv.workspaceId, conv.id, "idle");
-      return { reply };
+      return { reply: answer };
     } catch (err) {
       if (opts.signal?.aborted) {
         this.#setStatus(conv.workspaceId, conv.id, "idle");
@@ -374,8 +372,7 @@ export class Agent {
       history,
       session: conv.agentSession ?? null,
       ...(signal ? { signal } : {}),
-      onDelta: (text) =>
-        ctx.hub.publish(conv.workspaceId, { type: "agent.delta", conversationId: conv.id, text }),
+      onDelta: (text) => trace.text(text),
       trace,
     });
     if (result.sessionId) {
@@ -384,16 +381,18 @@ export class Agent {
         .set({ agentSession: { harness, runnerId: result.runnerId, sessionId: result.sessionId } })
         .where(eq(schema.conversations.id, conv.id));
     }
-    const reply = result.text.trim();
+    // Only the answer is kept as the reply. Text before the agent's last tool
+    // call lives in the trace.
+    const { answer, trace: saved } = trace.finish(result.text);
     await this.addMessage(
       conv,
       "assistant",
-      { role: "assistant", content: reply },
+      { role: "assistant", content: answer },
       null,
       { inputTokens: result.usage.input, outputTokens: result.usage.output },
-      trace.result(),
+      saved,
     );
-    return reply;
+    return answer;
   }
 }
 

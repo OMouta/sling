@@ -255,8 +255,14 @@ export interface ToolStep {
   output: string | null;
 }
 
-/** One step of a reply: a stretch of thinking, or a tool call. */
-export type TraceStep = { kind: "thinking"; text: string } | ToolStep;
+/**
+ * One step of a reply: a stretch of thinking, a tool call, or text the
+ * assistant wrote before doing more work.
+ */
+export type TraceStep =
+  | { kind: "thinking"; text: string }
+  | { kind: "text"; text: string }
+  | ToolStep;
 
 /** How the assistant got to a reply, and how long it worked on it. */
 export interface ReplyTrace {

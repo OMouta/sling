@@ -161,7 +161,11 @@ export function ChatPage() {
             {thinking && (
               <AssistantRow
                 trace={
-                  <ReplyTrace steps={live?.steps ?? []} startedAt={live?.startedAt ?? openedAt} />
+                  <ReplyTrace
+                    steps={live?.steps ?? []}
+                    startedAt={live?.startedAt ?? openedAt}
+                    answering={Boolean(live?.text)}
+                  />
                 }
               >
                 {live?.text ? <ChatMarkdown>{live.text}</ChatMarkdown> : null}

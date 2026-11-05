@@ -215,6 +215,8 @@ export class FakeRunner {
     if (t.prompt.includes("[fake:tool]")) {
       chat({ case: "thinking", value: { text: "The user wants " } });
       chat({ case: "thinking", value: { text: "their machines." } });
+      // Said before the tool call, so it belongs to the work, not the answer.
+      chat({ case: "delta", value: { text: "Checking." } });
       const auth = { authorization: `Bearer ${t.toolsToken}` };
       const list = (await (await fetch(t.toolsUrl, { headers: auth })).json()) as {
         tools: { name: string }[];

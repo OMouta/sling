@@ -38,32 +38,39 @@ function summary(steps: TraceStep[], ms: number): string {
 }
 
 /**
- * How the assistant got to a reply: its thinking and the tools it called.
- * While the reply streams it's open and live. Once saved, it folds into one
- * line that opens on a click.
+ * How the assistant got to a reply: its thinking, the tools it called, and
+ * what it said along the way, in order. It stays open while the assistant
+ * works, and folds into one line once the answer starts, and after. A click
+ * opens it again.
  */
 export function ReplyTrace({
   steps,
   ms = 0,
   startedAt,
+  answering = false,
 }: {
   steps: TraceStep[];
   /** How long a saved reply took. */
   ms?: number;
   /** Set while the reply is still coming in. */
   startedAt?: number;
+  /** The answer itself is streaming. */
+  answering?: boolean;
 }) {
   const live = startedAt !== undefined;
-  const [open, setOpen] = useState(live);
+  const working = live && !answering;
+  const [toggled, setToggled] = useState<boolean | null>(null);
   const now = useNow(1000, live);
-  if (!live && steps.length === 0) return null;
+  if (!working && steps.length === 0) return null;
+  const open = steps.length > 0 && (toggled ?? working);
 
   const last = steps.at(-1);
-  const label = live
+  const label = working
     ? last?.kind === "tool" && last.status === "running"
       ? toolLabel(last)
       : "Thinking"
-    : summary(steps, ms);
+    : summary(steps, live && startedAt !== undefined ? now - startedAt : ms);
+  const thought = steps.some((s) => s.kind === "thinking");
 
   return (
     <div className="mb-2">
@@ -71,18 +78,18 @@ export function ReplyTrace({
         type="button"
         aria-expanded={open}
         disabled={steps.length === 0}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setToggled(!open)}
         className="group flex max-w-full cursor-pointer items-center gap-1.5 text-[13px] text-muted transition-colors duration-150 hover:text-soft disabled:cursor-default"
       >
-        {live ? (
+        {working ? (
           <Spinner className="size-3.5" />
-        ) : steps.some((s) => s.kind === "thinking") ? (
+        ) : thought ? (
           <Brain aria-hidden="true" size={14} className="shrink-0 text-subtle" />
         ) : (
           <Wrench aria-hidden="true" size={13} className="shrink-0 text-subtle" />
         )}
-        <span className={cx("truncate", live && "text-shimmer")}>{label}</span>
-        {live && startedAt !== undefined && (
+        <span className={cx("truncate", working && "text-shimmer")}>{label}</span>
+        {working && startedAt !== undefined && (
           <span className="tabular text-subtle">{seconds(now - startedAt)}s</span>
         )}
         {steps.length > 0 && (
@@ -96,16 +103,22 @@ export function ReplyTrace({
           />
         )}
       </button>
-      {open && steps.length > 0 && (
+      {open && (
         <ol aria-label="Steps" className="mt-2 ml-[7px] space-y-2.5 border-l border-border pl-4">
           {steps.map((s, i) =>
-            s.kind === "thinking" ? (
-              // biome-ignore lint/suspicious/noArrayIndexKey: steps only grow at the end.
-              <li key={i} className="prose-chat prose-thinking text-[13px] leading-5 text-muted">
+            s.kind === "tool" ? (
+              <ToolRow key={s.id} step={s} />
+            ) : (
+              <li
+                // biome-ignore lint/suspicious/noArrayIndexKey: steps only grow at the end.
+                key={i}
+                className={cx(
+                  "prose-chat text-[13px] leading-5",
+                  s.kind === "thinking" ? "prose-thinking text-muted" : "text-soft",
+                )}
+              >
                 <ChatMarkdown>{s.text}</ChatMarkdown>
               </li>
-            ) : (
-              <ToolRow key={s.id} step={s} />
             ),
           )}
         </ol>

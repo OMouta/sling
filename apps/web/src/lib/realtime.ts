@@ -69,6 +69,16 @@ function clearStream(conversationId: string) {
   streaming.set(next);
 }
 
+/**
+ * Text followed by more work becomes a step, so only the text after the last
+ * step is the answer. The server builds the same steps (`TraceRecorder`).
+ */
+function settleText(r: LiveReply): LiveReply {
+  const text = r.text.trim();
+  if (!text) return { ...r, text: "" };
+  return { ...r, text: "", steps: [...r.steps, { kind: "text", text }] };
+}
+
 function patchStream(conversationId: string, fn: (r: LiveReply) => LiveReply) {
   const all = streaming.get();
   const current = all[conversationId] ?? { text: "", steps: [], startedAt: Date.now() };
@@ -234,17 +244,24 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       return;
     case "agent.thinking":
       patchStream(ev.conversationId, (r) => {
-        const last = r.steps.at(-1);
+        const settled = settleText(r);
+        const last = settled.steps.at(-1);
         if (last?.kind === "thinking") {
-          return { ...r, steps: [...r.steps.slice(0, -1), { ...last, text: last.text + ev.text }] };
+          return {
+            ...settled,
+            steps: [...settled.steps.slice(0, -1), { ...last, text: last.text + ev.text }],
+          };
         }
-        return { ...r, steps: [...r.steps, { kind: "thinking", text: ev.text }] };
+        return { ...settled, steps: [...settled.steps, { kind: "thinking", text: ev.text }] };
       });
       return;
     case "agent.tool":
       patchStream(ev.conversationId, (r) => {
         const i = r.steps.findIndex((s) => s.kind === "tool" && s.id === ev.step.id);
-        if (i === -1) return { ...r, steps: [...r.steps, ev.step] };
+        if (i === -1) {
+          const settled = settleText(r);
+          return { ...settled, steps: [...settled.steps, ev.step] };
+        }
         const steps = r.steps.slice();
         steps[i] = ev.step;
         return { ...r, steps };

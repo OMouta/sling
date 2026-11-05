@@ -15,23 +15,38 @@ function keptInput(input: unknown): unknown {
 }
 
 /**
- * Collects one reply's thinking and tool calls in the order they happen,
- * and publishes each change so the chat shows it live. The steps are saved
- * with the reply, for the chat to show later. They never go back to a model.
+ * Collects one reply's work in the order it happens: thinking, tool calls,
+ * and the text written between them. It publishes each change so the chat
+ * shows it live. Text followed by more work, such as "I'll check your
+ * machines" before a tool call, becomes a step too, so the answer is only
+ * what comes after the last step. The steps are saved with the reply for the
+ * chat to show, and never go back to a model.
+ *
+ * The browser builds the same steps from the same events, in
+ * `apps/web/src/lib/realtime.ts`.
  */
 export class TraceRecorder {
   readonly #steps: TraceStep[] = [];
   readonly #started = Date.now();
   readonly #publish: (ev: ServerEvent) => void;
   readonly #conversationId: string;
+  /** Text since the last step: the answer, unless more work follows it. */
+  #text = "";
 
   constructor(conversationId: string, publish: (ev: ServerEvent) => void) {
     this.#conversationId = conversationId;
     this.#publish = publish;
   }
 
+  text(delta: string) {
+    if (!delta) return;
+    this.#text += delta;
+    this.#publish({ type: "agent.delta", conversationId: this.#conversationId, text: delta });
+  }
+
   thinking(text: string) {
     if (!text) return;
+    this.#settleText();
     const last = this.#steps.at(-1);
     if (last?.kind === "thinking") last.text += text;
     else this.#steps.push({ kind: "thinking", text });
@@ -39,6 +54,7 @@ export class TraceRecorder {
   }
 
   toolStarted(id: string, name: string, input: unknown) {
+    this.#settleText();
     const step: ToolStep = {
       kind: "tool",
       id,
@@ -60,11 +76,35 @@ export class TraceRecorder {
     this.#emit(step);
   }
 
-  /** What to save with the reply, or null when there was nothing to show. */
-  result(): ReplyTrace | null {
-    const steps = this.#steps.filter((s) => s.kind !== "thinking" || s.text.trim());
-    if (steps.length === 0) return null;
-    return { steps: structuredClone(steps), ms: Date.now() - this.#started };
+  /**
+   * The answer and what led to it. The answer is the text after the last
+   * step. With none, the last text step stands in, and then `fallback`.
+   */
+  finish(fallback: string): { answer: string; trace: ReplyTrace | null } {
+    let answer = this.#text.trim();
+    if (!answer) {
+      const i = this.#steps.findLastIndex((s) => s.kind === "text");
+      const step = this.#steps[i];
+      if (step?.kind === "text") {
+        answer = step.text.trim();
+        this.#steps.splice(i, 1);
+      }
+    }
+    if (!answer) answer = fallback.trim();
+    const steps = this.#steps.filter((s) => s.kind === "tool" || s.text.trim());
+    return {
+      answer,
+      trace: steps.length > 0 ? { steps: structuredClone(steps), ms: Date.now() - this.#started } : null,
+    };
+  }
+
+  #settleText() {
+    if (!this.#text.trim()) {
+      this.#text = "";
+      return;
+    }
+    this.#steps.push({ kind: "text", text: this.#text.trim() });
+    this.#text = "";
   }
 
   #emit(step: ToolStep) {
