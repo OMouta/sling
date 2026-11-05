@@ -25,7 +25,11 @@ case "$1" in
       case "$1" in -s) sandbox="$2"; shift ;; -C) dir="$2"; shift ;; esac
       shift
     done
-    if [ "$sandbox" != "read-only" ]; then echo "changed" >> "$dir/CHANGED.md"; fi
+    if [ "$sandbox" != "read-only" ]; then
+      echo "changed" >> "$dir/CHANGED.md"
+      echo "build output" > "$dir/build.log"
+      echo "{\"type\":\"item.completed\",\"item\":{\"id\":\"f1\",\"type\":\"file_change\",\"changes\":[{\"path\":\"$dir/CHANGED.md\",\"kind\":\"add\"}],\"status\":\"completed\"}}"
+    fi
     echo '{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"done"}}'
     echo '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
     ;;
@@ -223,7 +227,12 @@ async fn commits_and_pushes_the_task_branch() {
         "{finished:?}"
     );
     assert!(!finished.commit_sha.is_empty());
+    // CHANGED.md was reported by the harness; build.log wasn't, so it stays out.
     assert_eq!(finished.diff_stats.unwrap().files_changed, 1);
+    let left_out_logged = events
+        .iter()
+        .any(|e| matches!(&e.kind, Some(Kind::Log(l)) if l.text.contains("build.log")));
+    assert!(left_out_logged, "the left-out file is mentioned in the log");
 
     env.mgr
         .action(ActionRequest {

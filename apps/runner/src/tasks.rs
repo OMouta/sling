@@ -340,6 +340,7 @@ impl Manager {
             sandbox: mode.sandbox().into(),
             network,
         };
+        let mut reported: Vec<PathBuf> = Vec::new();
         let (tx, mut rx) = mpsc::channel(256);
         let (mut run, reader) = codex::Run::start(&opts, tx).await?;
         spool
@@ -350,7 +351,12 @@ impl Manager {
         loop {
             tokio::select! {
                 ev = rx.recv() => match ev {
-                    Some(codex::Event::Task(kind)) => self.emit(spool, kind),
+                    Some(codex::Event::Task(kind)) => {
+                        if let Kind::FileChange(fc) = &kind {
+                            reported.extend(fc.changes.iter().map(|c| PathBuf::from(&c.path)));
+                        }
+                        self.emit(spool, kind)
+                    }
                     Some(codex::Event::ThreadStarted(id)) => {
                         self.log(spool, format!("Codex session {id}"))
                     }
@@ -401,7 +407,24 @@ impl Manager {
         };
         if mode.writes() {
             let message = format!("{}\n\nSling-Task: {}", a.title, a.task_id);
-            if let Some(c) = git::commit_all(&worktree, &message, &base_sha).await? {
+            let result = git::commit_changes(&worktree, &message, &base_sha, &reported).await?;
+            if !result.left_out.is_empty() {
+                let shown: Vec<&str> = result
+                    .left_out
+                    .iter()
+                    .take(10)
+                    .map(String::as_str)
+                    .collect();
+                self.log(
+                    spool,
+                    format!(
+                        "Left {} untracked file(s) out of the commit because Codex didn't report creating them: {}",
+                        result.left_out.len(),
+                        shown.join(", ")
+                    ),
+                );
+            }
+            if let Some(c) = result.committed {
                 self.log(
                     spool,
                     format!("Committed {}", &c.sha[..12.min(c.sha.len())]),

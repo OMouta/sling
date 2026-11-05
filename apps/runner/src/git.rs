@@ -118,16 +118,58 @@ pub struct Committed {
     pub deletions: u32,
 }
 
-/// Commits everything in the worktree. Returns None when nothing changed.
-pub async fn commit_all(
+pub struct CommitResult {
+    pub committed: Option<Committed>,
+    /// Untracked files left out because the harness didn't report creating them.
+    pub left_out: Vec<String>,
+}
+
+/// Commits the task's changes. Stages every change to tracked files, plus new
+/// files the harness reported creating. Other untracked files, such as build
+/// output from running tests, stay out of the commit.
+pub async fn commit_changes(
     worktree: &Path,
     message: &str,
     base_sha: &str,
-) -> Result<Option<Committed>> {
-    git_ok(worktree, &["add", "-A"]).await?;
+    reported: &[PathBuf],
+) -> Result<CommitResult> {
+    git_ok(worktree, &["add", "-u"]).await?;
+    let root = std::fs::canonicalize(worktree)?;
+    for path in reported {
+        let abs = if path.is_absolute() {
+            path.clone()
+        } else {
+            root.join(path)
+        };
+        let Ok(abs) = std::fs::canonicalize(&abs) else {
+            continue;
+        };
+        let Ok(rel) = abs.strip_prefix(&root) else {
+            continue;
+        };
+        if rel
+            .components()
+            .next()
+            .is_some_and(|c| c.as_os_str() == ".git")
+        {
+            continue;
+        }
+        let rel = rel.display().to_string();
+        let _ = git(worktree, &["add", "--", &rel]).await;
+    }
+    let left_out: Vec<String> = git_ok(worktree, &["ls-files", "--others", "--exclude-standard"])
+        .await?
+        .lines()
+        .map(str::to_string)
+        .filter(|l| !l.is_empty())
+        .collect();
+
     let staged = git(worktree, &["diff", "--cached", "--quiet"]).await?;
     if staged.ok() {
-        return Ok(None);
+        return Ok(CommitResult {
+            committed: None,
+            left_out,
+        });
     }
     let mut out = git(
         worktree,
@@ -158,12 +200,15 @@ pub async fn commit_all(
     let sha = git_ok(worktree, &["rev-parse", "HEAD"]).await?;
     let stat = git_ok(worktree, &["diff", "--shortstat", base_sha, &sha]).await?;
     let (files_changed, insertions, deletions) = parse_shortstat(&stat);
-    Ok(Some(Committed {
-        sha,
-        files_changed,
-        insertions,
-        deletions,
-    }))
+    Ok(CommitResult {
+        committed: Some(Committed {
+            sha,
+            files_changed,
+            insertions,
+            deletions,
+        }),
+        left_out,
+    })
 }
 
 /// Parses `3 files changed, 10 insertions(+), 2 deletions(-)`.
