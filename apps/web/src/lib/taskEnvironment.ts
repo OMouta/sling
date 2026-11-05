@@ -16,10 +16,10 @@ export type EnvironmentSummary =
 
 /**
  * Where a task runs, in a few words for its card. A task has no machine until
- * it's bound, so before that this says what it's waiting for.
+ * it's bound, so before that this says what it's waiting for. A task held by
+ * a fallback approval shows that approval instead of its card.
  */
-export function environmentSummary(task: TaskView, awaitingApproval: boolean): EnvironmentSummary {
-  if (awaitingApproval) return { kind: "waiting", text: "waiting for approval" };
+export function environmentSummary(task: TaskView): EnvironmentSummary {
   const env = task.environment;
   const settled = SETTLED.has(task.state);
   if (env.kind === "sandbox") {

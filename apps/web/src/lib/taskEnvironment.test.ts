@@ -4,11 +4,11 @@ import { environmentSummary, sortConsidered } from "./taskEnvironment.ts";
 
 describe("environmentSummary", () => {
   it("names the machine", () => {
-    expect(environmentSummary(machineTask, false)).toEqual({ kind: "machine", text: "on devbox" });
+    expect(environmentSummary(machineTask)).toEqual({ kind: "machine", text: "on devbox" });
   });
 
   it("names the sandbox's provider and state", () => {
-    expect(environmentSummary(sandboxTask, false)).toEqual({
+    expect(environmentSummary(sandboxTask)).toEqual({
       kind: "sandbox",
       text: "in a sandbox on Docker host",
       state: "busy",
@@ -17,17 +17,16 @@ describe("environmentSummary", () => {
   });
 
   it("says what an unbound task waits for", () => {
-    expect(environmentSummary(waitingTask, true).text).toBe("waiting for approval");
-    expect(environmentSummary(waitingTask, false).text).toBe("waiting for a sandbox");
+    expect(environmentSummary(waitingTask).text).toBe("waiting for a sandbox");
     const machine = {
       ...waitingTask,
       environment: { ...waitingTask.environment, kind: "machine" as const },
     };
-    expect(environmentSummary(machine, false).text).toBe("waiting for a machine");
+    expect(environmentSummary(machine).text).toBe("waiting for a machine");
   });
 
   it("doesn't say waiting once an unbound task has settled", () => {
-    expect(environmentSummary({ ...waitingTask, state: "cancelled" }, false)).toEqual({
+    expect(environmentSummary({ ...waitingTask, state: "cancelled" })).toEqual({
       kind: "none",
       text: "no sandbox started",
     });

@@ -1,6 +1,7 @@
 import type { ApprovalView } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { SandboxFallbackCard } from "../components/SandboxFallbackCard.tsx";
 import { Button, Card, Empty, ErrorText, PageHeader, Spinner } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { ago, plural } from "../lib/format.ts";
@@ -20,7 +21,12 @@ export function ApprovalsPage() {
   });
   const byTask = new Map<string, ApprovalView[]>();
   const workflow: ApprovalView[] = [];
+  const fallback: ApprovalView[] = [];
   for (const a of approvals.data ?? []) {
+    if (a.kind === "sandbox_fallback") {
+      fallback.push(a);
+      continue;
+    }
     if (a.kind === "workflow" || !a.taskId) {
       workflow.push(a);
       continue;
@@ -37,6 +43,9 @@ export function ApprovalsPage() {
       {approvals.isPending && <Spinner />}
       <ErrorText error={approvals.error} />
       {approvals.data?.length === 0 && <Empty title="Nothing waiting">You're all caught up.</Empty>}
+      {fallback.map((a) => (
+        <SandboxFallbackCard key={a.id} approval={a} />
+      ))}
       {[...byTask.entries()].map(([taskId, list]) => (
         <ApprovalGroup key={taskId} taskId={taskId} approvals={list} />
       ))}
@@ -67,7 +76,9 @@ function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: Appro
             {t.title}
           </Link>
           <p className="text-sm text-muted">
-            {t.repoName} on {t.runnerName} · <code className="font-mono text-xs">{t.branch}</code>
+            {t.repoName}
+            {t.runnerName ? ` on ${t.runnerName}` : ""} ·{" "}
+            <code className="font-mono text-xs">{t.branch}</code>
           </p>
         </div>
         <ul className="space-y-1 text-sm">

@@ -21,6 +21,7 @@ import {
   busySandbox,
   devbox,
   dockerInstallation,
+  fallbackApproval,
   connectors as integrationConnectors,
   installations as integrationInstallations,
   machineTask,
@@ -115,6 +116,9 @@ function route(method: string, path: string, body: unknown): unknown {
       settings = { ...settings, secrets: next };
       return settings;
     }
+    case "POST /api/approvals/apv_fb":
+      approvals = approvals.filter((a) => a.id !== "apv_fb");
+      return { ok: true };
     case "POST /api/sandboxes/sbx_1/destroy": {
       const released = { ...busySandbox, state: "releasing" as const };
       sandboxes = {
@@ -561,5 +565,83 @@ describe("task card", () => {
     expect(await screen.findByText("waiting for a sandbox")).toBeTruthy();
     expect(screen.queryByText(/null/)).toBeNull();
     expect(screen.getByText("No machine can take it right now.")).toBeTruthy();
+  });
+});
+
+describe("sandbox fallback approval", () => {
+  /** The paragraph that says exactly what approving does. */
+  const plan = (_: string, el: Element | null) =>
+    el?.textContent === "Clone github.com/a/site into a sandbox on Docker host and run Codex.";
+
+  it("says why no machine can take the task and exactly what approving does", async () => {
+    approvals = [fallbackApproval];
+    renderAt("/approvals");
+    const title = await screen.findByText("Update the README badges");
+    expect(title.getAttribute("href")).toBe("/tasks/tsk_wait");
+    expect(screen.getByText("No machine can take this right now.")).toBeTruthy();
+    expect(screen.getByText("devbox: Offline.")).toBeTruthy();
+    expect(screen.getByText("buildbox: Doesn't have site.")).toBeTruthy();
+    expect(screen.getByText(plan)).toBeTruthy();
+  });
+
+  it("approves on the Approvals page", async () => {
+    approvals = [fallbackApproval];
+    renderAt("/approvals");
+    await screen.findByText("Update the README badges");
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(callsTo("POST", "/api/approvals/apv_fb")).toHaveLength(1));
+    expect(callsTo("POST", "/api/approvals/apv_fb")[0]?.body).toEqual({ decision: "approve" });
+    expect(await screen.findByText("Nothing waiting")).toBeTruthy();
+  });
+
+  it("rejects on the Approvals page", async () => {
+    approvals = [fallbackApproval];
+    renderAt("/approvals");
+    await screen.findByText("Update the README badges");
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    await waitFor(() => expect(callsTo("POST", "/api/approvals/apv_fb")).toHaveLength(1));
+    expect(callsTo("POST", "/api/approvals/apv_fb")[0]?.body).toEqual({ decision: "reject" });
+  });
+
+  it("stands in for the task's card in the conversation, and approving brings the card back", async () => {
+    tasks = [waitingTask];
+    approvals = [fallbackApproval];
+    renderAt("/c/cnv_1");
+    expect(await screen.findByText(plan)).toBeTruthy();
+    expect(screen.getByText("waiting for approval")).toBeTruthy();
+    expect(screen.queryByText("Codex task")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(callsTo("POST", "/api/approvals/apv_fb")).toHaveLength(1));
+    expect(callsTo("POST", "/api/approvals/apv_fb")[0]?.body).toEqual({ decision: "approve" });
+    expect(await screen.findByText("Codex task")).toBeTruthy();
+    expect(screen.getByText("waiting for a sandbox")).toBeTruthy();
+    expect(screen.queryByText(plan)).toBeNull();
+  });
+
+  it("rejecting in the conversation cancels the task", async () => {
+    tasks = [waitingTask];
+    approvals = [fallbackApproval];
+    renderAt("/c/cnv_1");
+    await screen.findByText(plan);
+    fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+    await waitFor(() => expect(callsTo("POST", "/api/approvals/apv_fb")).toHaveLength(1));
+    expect(callsTo("POST", "/api/approvals/apv_fb")[0]?.body).toEqual({ decision: "reject" });
+    emit({ type: "task.updated", task: { ...waitingTask, state: "cancelled" } });
+    expect(await screen.findByText("Cancelled")).toBeTruthy();
+    expect(screen.getByText("no sandbox started")).toBeTruthy();
+  });
+
+  it("doesn't hold back a task that already has a machine", async () => {
+    tasks = [machineTask];
+    approvals = [
+      {
+        ...fallbackApproval,
+        taskId: "tsk_1",
+        payload: { ...fallbackApproval.payload, taskId: "tsk_1" },
+      },
+    ];
+    renderAt("/c/cnv_1");
+    expect(await screen.findByText("Codex task")).toBeTruthy();
+    expect(screen.queryByText(plan)).toBeNull();
   });
 });

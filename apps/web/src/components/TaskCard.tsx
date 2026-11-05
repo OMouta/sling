@@ -1,14 +1,16 @@
 import {
   type ActionView,
+  type ApprovalView,
   HARNESS_LABELS,
   type RoutingView,
   type TaskState,
   type TaskView,
 } from "@sling/core";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { api } from "../lib/api.ts";
 import { between, duration, plural, shortSha } from "../lib/format.ts";
+import { pendingFallbackFor } from "../lib/sandbox.ts";
 import {
   type EnvironmentSummary,
   environmentSummary,
@@ -16,6 +18,7 @@ import {
 } from "../lib/taskEnvironment.ts";
 import { useNow } from "../lib/useNow.ts";
 import { ModeBadge } from "./ModeBadge.tsx";
+import { SandboxFallbackCard } from "./SandboxFallbackCard.tsx";
 import { SandboxStateBadge } from "./StatusBadge.tsx";
 import { Badge, Button, Card, Dot, ErrorText, Spinner } from "./ui.tsx";
 
@@ -74,6 +77,14 @@ export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean 
       api.post(`/api/tasks/${task.id}/approval`, { decision }),
   });
   const cancel = useMutation({ mutationFn: () => api.post(`/api/tasks/${task.id}/cancel`) });
+  // Only a task with no machine yet can be waiting on a fallback approval.
+  const approvals = useQuery({
+    queryKey: ["approvals"],
+    queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
+    enabled: task.runnerId === null,
+  });
+  const fallback = task.runnerId === null ? pendingFallbackFor(approvals.data, task.id) : undefined;
+  if (fallback) return <SandboxFallbackCard approval={fallback} />;
 
   return (
     <Card className="overflow-hidden">
@@ -96,7 +107,7 @@ export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean 
           </Link>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
             <span>{task.repoName}</span>
-            <EnvironmentBadge summary={environmentSummary(task, false)} />
+            <EnvironmentBadge summary={environmentSummary(task)} />
             {ran !== null && (
               <span className="tabular-nums">
                 {task.finishedAt ? "ran" : "running"} {duration(ran)}
