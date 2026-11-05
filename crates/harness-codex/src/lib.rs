@@ -227,6 +227,11 @@ impl Run {
         }
     }
 
+    /// Process ID, which is also the process group ID on Unix.
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
+    }
+
     pub async fn wait(&mut self) -> Result<Option<i32>> {
         Ok(self.child.wait().await?.code())
     }

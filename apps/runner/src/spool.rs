@@ -38,6 +38,10 @@ pub struct TaskMeta {
     pub default_branch: String,
     pub worktree: Option<PathBuf>,
     pub base_sha: Option<String>,
+    /// Process group of the running harness, so a restarted Runner can stop
+    /// one that outlived it.
+    #[serde(default)]
+    pub harness_pid: Option<u32>,
     pub state: SpoolState,
     pub created_ms: i64,
 }
@@ -240,6 +244,7 @@ mod tests {
             default_branch: "main".into(),
             worktree: None,
             base_sha: None,
+            harness_pid: None,
             state: SpoolState::Running,
             created_ms: 0,
         }

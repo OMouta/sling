@@ -1255,6 +1255,7 @@ dependencies = [
  "ed25519-dalek",
  "futures-util",
  "getrandom 0.4.3",
+ "libc",
  "prost",
  "serde",
  "serde_json",

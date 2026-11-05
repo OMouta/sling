@@ -80,3 +80,30 @@ pub async fn run_timeout(
         stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
     })
 }
+
+/// Kills a process group left behind by an earlier Runner, but only if its
+/// leader still looks like `expected` (guards against PID reuse).
+pub fn kill_orphan_group(pid: u32, expected: &str) {
+    #[cfg(unix)]
+    {
+        let Ok(out) = std::process::Command::new("ps")
+            .args(["-o", "command=", "-p", &pid.to_string()])
+            .output()
+        else {
+            return;
+        };
+        let command = String::from_utf8_lossy(&out.stdout);
+        if !command.contains(expected) {
+            return;
+        }
+        tracing::warn!(pid, "stopping a harness left over from before the restart");
+        // SAFETY: plain syscall on a process group we started earlier.
+        unsafe {
+            libc::kill(-(pid as i32), libc::SIGKILL);
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (pid, expected);
+    }
+}

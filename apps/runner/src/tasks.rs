@@ -3,7 +3,7 @@
 //! the repo allowlist (D17), the mode cap (D14), branch naming, and the push
 //! guard.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -31,6 +31,8 @@ pub struct Manager {
     config: Mutex<Config>,
     spools: Mutex<HashMap<String, SharedSpool>>,
     running: Mutex<HashMap<String, watch::Sender<bool>>>,
+    /// Cancels that arrived before their task started.
+    early_cancels: Mutex<HashSet<String>>,
     /// Wakes the connection to flush new events.
     pub outbox: Notify,
 }
@@ -44,6 +46,9 @@ impl Manager {
         for mut spool in open_all(&paths.spool_dir()) {
             if spool.meta.state == SpoolState::Running {
                 tracing::warn!(task = spool.task_id(), "task was interrupted by a restart");
+                if let Some(pid) = spool.meta.harness_pid {
+                    crate::sys::kill_orphan_group(pid, "codex");
+                }
                 spool.append(Kind::Finished(TaskFinished {
                     outcome: task_finished::Outcome::Interrupted as i32,
                     error: "The Runner stopped while this task was running.".into(),
@@ -59,6 +64,7 @@ impl Manager {
             config: Mutex::new(config),
             spools: Mutex::new(spools),
             running: Mutex::new(HashMap::new()),
+            early_cancels: Mutex::new(HashSet::new()),
             outbox: Notify::new(),
         }))
     }
@@ -212,6 +218,7 @@ impl Manager {
             default_branch,
             worktree: None,
             base_sha: None,
+            harness_pid: None,
             state: if reject.is_some() {
                 SpoolState::Finished
             } else {
@@ -243,7 +250,8 @@ impl Manager {
             return;
         }
 
-        let (cancel_tx, cancel_rx) = watch::channel(false);
+        let cancelled_early = self.early_cancels.lock().unwrap().remove(&a.task_id);
+        let (cancel_tx, cancel_rx) = watch::channel(cancelled_early);
         self.running
             .lock()
             .unwrap()
@@ -284,6 +292,14 @@ impl Manager {
         network: bool,
         mut cancel: watch::Receiver<bool>,
     ) -> Result<TaskFinished> {
+        if *cancel.borrow() {
+            return Ok(TaskFinished {
+                outcome: task_finished::Outcome::Cancelled as i32,
+                error: "Cancelled before it started.".into(),
+                branch: a.branch.clone(),
+                ..Default::default()
+            });
+        }
         let cfg = self.config();
         if let Err(e) = git::fetch(&repo_path).await {
             self.log(spool, format!("git fetch failed, using local refs: {e:#}"));
@@ -321,6 +337,10 @@ impl Manager {
         };
         let (tx, mut rx) = mpsc::channel(256);
         let (mut run, reader) = codex::Run::start(&opts, tx).await?;
+        spool
+            .lock()
+            .unwrap()
+            .set_meta(|m| m.harness_pid = run.pid())?;
         let mut cancelled = false;
         loop {
             tokio::select! {
@@ -397,6 +417,11 @@ impl Manager {
     pub fn cancel(&self, task_id: &str) {
         if let Some(tx) = self.running.lock().unwrap().get(task_id) {
             let _ = tx.send(true);
+        } else if self.spool(task_id).is_none() {
+            self.early_cancels
+                .lock()
+                .unwrap()
+                .insert(task_id.to_string());
         }
     }
 
