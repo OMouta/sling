@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { api } from "../lib/api.ts";
 import { between, duration, plural, shortSha } from "../lib/format.ts";
+import { agentModels, useModelCatalog } from "../lib/models.ts";
 import { pendingFallbackFor } from "../lib/sandbox.ts";
 import {
   type EnvironmentSummary,
@@ -105,6 +106,11 @@ export function TaskCard({
   stateInHeader?: boolean;
 }) {
   const awaiting = task.actions.filter((a) => a.state === "awaiting_approval");
+  const catalog = useModelCatalog();
+  const modelLabel = task.model
+    ? (agentModels(catalog.data, task.harness)?.models.find((m) => m.id === task.model)?.label ??
+      task.model)
+    : null;
   const active = task.state === "queued" || task.state === "dispatched" || task.state === "running";
   const running = task.state === "running" && !task.finishedAt;
   const now = useNow(1000, running);
@@ -134,7 +140,7 @@ export function TaskCard({
           <Kicker icon={SquareTerminal}>{HARNESS_LABELS[task.harness] ?? task.harness} task</Kicker>
           {(task.model || task.effort || task.fast) && (
             <span className="inline-flex items-center gap-1 text-xs text-subtle">
-              {[task.model, task.effort && effortLabel(task.effort)].filter(Boolean).join(" · ")}
+              {[modelLabel, task.effort && effortLabel(task.effort)].filter(Boolean).join(" · ")}
               {task.fast && <Zap aria-label="Fast" size={12} className="text-warn" />}
             </span>
           )}

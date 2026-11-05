@@ -190,7 +190,7 @@ function CodeLine({ children, copy }: { children: ReactNode; copy?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="flex items-center gap-2 rounded-lg bg-field py-1 pr-1 pl-3 shadow-field">
-      <pre className="min-w-0 flex-1 overflow-x-auto py-1 font-mono text-xs text-soft">
+      <pre className="min-w-0 flex-1 py-1 font-mono text-xs leading-5 break-all whitespace-pre-wrap text-soft">
         {children}
       </pre>
       {copy !== undefined && (
@@ -514,8 +514,12 @@ function RepoSection({ runner, access }: { runner: RunnerView; access: SandboxAc
                 <FolderGit2 aria-hidden="true" className="shrink-0 text-faint" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] text-soft">{f.name}</p>
-                  <p className="truncate font-mono text-[11px] text-subtle" title={f.path}>
-                    {f.path}
+                  {/* Truncates from the start, so the end of the path stays visible. */}
+                  <p
+                    className="truncate text-left font-mono text-[11px] text-subtle [direction:rtl]"
+                    title={f.path}
+                  >
+                    <bdi>{f.path}</bdi>
                   </p>
                 </div>
                 {f.remoteUrl && (

@@ -456,6 +456,34 @@ export function ModelPicker({
         />
       </div>
 
+      {current && current.efforts.length > 0 && (
+        <div
+          role="radiogroup"
+          aria-label="Reasoning level"
+          className="flex gap-1 overflow-x-auto border-t border-border px-3 py-2 sm:hidden"
+        >
+          {current.efforts.map((e) => {
+            const selected = (currentChoice?.effort ?? current.defaultEffort) === e;
+            return (
+              // biome-ignore lint/a11y/useSemanticElements: styled radios inside a radiogroup.
+              <button
+                key={e}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setEffort(e === current.defaultEffort ? null : e)}
+                className={cx(
+                  "h-[26px] shrink-0 cursor-pointer rounded-full px-2.5 text-xs transition-colors duration-150",
+                  selected ? "bg-surface-3 text-text shadow-active" : "text-subtle",
+                )}
+              >
+                {effortLabel(e)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="flex items-center gap-2 border-t border-border px-3 py-2">
         <div
           role="radiogroup"
@@ -522,7 +550,7 @@ function RailButton({
       )}
     >
       {active && (
-        <span className="absolute top-2 bottom-2 -left-[7px] w-[2px] rounded-full bg-accent-text" />
+        <span className="absolute top-2.5 bottom-2.5 -left-[6px] w-[2px] rounded-full bg-accent-text" />
       )}
       {children}
     </button>
