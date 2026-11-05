@@ -14,6 +14,8 @@ export default defineConfig({
       "/api": { target: server, ws: true },
       "/runner": { target: server, ws: true },
       "/healthz": server,
+      "/install.sh": server,
+      "/install.ps1": server,
     },
   },
   build: {

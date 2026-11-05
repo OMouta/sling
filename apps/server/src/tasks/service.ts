@@ -1,5 +1,6 @@
 import {
   type ActionKind,
+  type AgentChoice,
   APPROVAL_TTL_MS,
   canTransitionTask,
   type Delivery,
@@ -17,6 +18,7 @@ import {
 import { type Db, schema } from "@sling/db";
 import { create, type Envelope, EnvelopeSchema, type TaskEvent } from "@sling/runner-protocol";
 import { and, asc, count, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { effectiveChat } from "../agent/chat-settings.ts";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { loadRouterInput } from "../routing/inputs.ts";
@@ -70,8 +72,13 @@ export interface CreateTaskInput {
   machineId?: string | null;
   /** Sandbox provider installation. Defaults to the first enabled one. */
   providerInstallationId?: string | null;
-  /** Defaults to the workspace's default agent. */
+  /** Defaults to the conversation's agent, then the workspace's. */
   harness?: Harness | null;
+  /**
+   * Model, effort, and fast tier for the agent. Undefined takes the
+   * conversation's choice; they apply only when it names the same agent.
+   */
+  agent?: AgentChoice | null;
   /** Labels the machine must have. */
   labels?: string[];
 }
@@ -118,7 +125,12 @@ export class TaskService implements GatewayHandlers {
     if (!repo) throw new TaskInputError("A task needs a repo.");
 
     const { defaultHarness } = await workspaceSettings(this.#ctx, input.workspaceId);
-    const harness = input.harness ?? defaultHarness;
+    const choice =
+      input.agent !== undefined
+        ? input.agent
+        : (await effectiveChat(this.#ctx, input.workspaceId, input.conversationId)).agent;
+    const harness = input.harness ?? choice?.harness ?? defaultHarness;
+    const agent = choice?.harness === harness ? choice : null;
     const started = performance.now();
     const routerInput = await loadRouterInput(
       this.#ctx,
@@ -160,6 +172,9 @@ export class TaskService implements GatewayHandlers {
         mode: input.mode,
         deliver,
         harness,
+        agentModel: agent?.model ?? null,
+        agentEffort: agent?.effort ?? null,
+        agentFast: agent?.fast ?? false,
         environment: machine ? "machine" : "sandbox",
         routing,
         branch: taskBranch(id, title),
@@ -179,6 +194,7 @@ export class TaskService implements GatewayHandlers {
         mode: input.mode,
         deliver,
         harness,
+        model: agent?.model ?? null,
         environment: task.environment,
         routing: routing.reason,
       },
@@ -266,6 +282,9 @@ export class TaskService implements GatewayHandlers {
           mode: modeToProto(task.mode),
           harness: task.harness,
           branch: task.branch,
+          model: task.agentModel ?? "",
+          effort: task.agentEffort ?? "",
+          fast: task.agentFast,
         },
       },
     });

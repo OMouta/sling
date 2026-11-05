@@ -44,6 +44,8 @@ COPY integrations integrations
 COPY apps/server apps/server
 # Bundled workflow templates. The server reads them from the repo root.
 COPY workflows workflows
+# Runner install scripts, served at /install.sh and /install.ps1.
+COPY scripts/install.sh scripts/install.ps1 scripts/
 COPY --from=web /app/apps/web/dist /app/web
 RUN rm -rf packages/*/src/*.test.ts packages/*/src/*.test-util.ts apps/server/src/*.test.ts \
     integrations/*/src/*.test.ts integrations/*/test

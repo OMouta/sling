@@ -7,8 +7,9 @@ import type { AppContext } from "../context.ts";
 import type { SettleReason } from "../tasks/service.ts";
 import { taskView, taskWhere, toConversationView } from "../views.ts";
 import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
+import { effectiveChat } from "./chat-settings.ts";
 import { textOf, toMessageView, toModelMessages } from "./history.ts";
-import { NoModelConfigured, resolveModel } from "./models.ts";
+import { NoModelConfigured, resolveAssistant } from "./models.ts";
 import { agentTools } from "./tools.ts";
 
 const MAX_STEPS = 8;
@@ -240,9 +241,13 @@ export class Agent {
 
     this.#setStatus(conv.workspaceId, conv.id, "thinking");
     try {
-      const model = this.#model ?? (await resolveModel(ctx, conv.workspaceId));
+      const chat = await effectiveChat(ctx, conv.workspaceId, conv.id);
+      const { model, providerOptions } = this.#model
+        ? { model: this.#model, providerOptions: {} }
+        : await resolveAssistant(ctx, conv.workspaceId, chat.assistant);
       const result = streamText({
         model,
+        providerOptions,
         instructions: instructions(conv.mode, new Date()),
         messages: toModelMessages(rows),
         tools: agentTools(ctx, {

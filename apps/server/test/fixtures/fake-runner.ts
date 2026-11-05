@@ -15,6 +15,7 @@ import {
   EnvelopeSchema,
   encodeEnvelope,
   PermissionMode,
+  RepoChange_Op,
   RUNNER_WS_PATH,
   type TaskAssign,
   TaskEventSchema,
@@ -42,6 +43,15 @@ export interface FakeRunnerOptions {
   maxConcurrentTasks?: number;
   os?: string;
   arch?: string;
+  /** Models each coding agent reports, by harness name. */
+  models?: Record<
+    string,
+    { id: string; efforts?: string[]; fast?: boolean; isDefault?: boolean }[]
+  >;
+  /** Git repos the machine "found" and that Sling may allow. */
+  foundRepos?: { path: string; name: string; remoteUrl?: string }[];
+  /** Whether it accepts repo changes from Sling. Defaults to true. */
+  remoteRepos?: boolean;
 }
 
 /** What a task does: finish with a commit, fail, or wait to be cancelled. */
@@ -62,6 +72,10 @@ export class FakeRunner {
   readonly actions: { actionId: string; taskId: string; kind: number }[] = [];
   /** Error codes the server sent, for example REVOKED. */
   readonly errors: number[] = [];
+  /** Repo changes the server asked for, in order. */
+  readonly repoChanges: { op: number; path: string; name: string }[] = [];
+  /** How many times the server asked for a rescan. */
+  scans = 0;
   #ws: WebSocket | null = null;
   #seq = new Map<string, number>();
   #heartbeat: NodeJS.Timeout | null = null;
@@ -155,6 +169,15 @@ export class FakeRunner {
         version: "1.0.0",
         ready: true,
         detail: "",
+        models: (o.models?.[h] ?? []).map((m) => ({
+          id: m.id,
+          displayName: m.id.toUpperCase(),
+          description: "",
+          efforts: m.efforts ?? [],
+          defaultEffort: m.efforts?.[0] ?? "",
+          fast: m.fast ?? false,
+          isDefault: m.isDefault ?? false,
+        })),
       })),
       repos: o.repos.map((r) => ({
         name: r.name,
@@ -165,7 +188,18 @@ export class FakeRunner {
       maxMode: o.maxMode ?? PermissionMode.FULL_ACCESS,
       maxConcurrentTasks: o.maxConcurrentTasks ?? 2,
       labels: o.labels ?? [],
+      foundRepos: (o.foundRepos ?? []).map((f) => ({
+        path: f.path,
+        name: f.name,
+        defaultBranch: "main",
+        remoteUrl: f.remoteUrl ?? "",
+      })),
+      remoteRepos: o.remoteRepos ?? true,
     };
+  }
+
+  #sendInventory() {
+    this.#send(create(EnvelopeSchema, { body: { case: "inventory", value: this.#inventory() } }));
   }
 
   async #handle(env: Envelope) {
@@ -205,6 +239,41 @@ export class FakeRunner {
       case "taskAssign":
         this.assigned.push(body.value);
         await this.#run(body.value);
+        return;
+      case "repoChange": {
+        const c = body.value;
+        this.repoChanges.push({ op: c.op, path: c.path, name: c.name });
+        const o = this.options;
+        let ok = false;
+        let message: string;
+        if (o.remoteRepos === false) {
+          message = "Repo changes from Sling are off on this machine.";
+        } else if (c.op === RepoChange_Op.ADD) {
+          const found = o.foundRepos?.find((f) => f.path === c.path);
+          if (found) {
+            ok = true;
+            message = `Allowed ${c.name || found.name}.`;
+            o.foundRepos = o.foundRepos?.filter((f) => f !== found);
+            o.repos.push({ name: c.name || found.name, remoteUrl: found.remoteUrl ?? "" });
+          } else {
+            message = "That path isn't one this machine found.";
+          }
+        } else {
+          ok = o.repos.some((r) => r.name === c.name);
+          message = ok ? `Removed ${c.name}.` : `No repo named ${c.name}.`;
+          o.repos = o.repos.filter((r) => r.name !== c.name);
+        }
+        this.#send(
+          create(EnvelopeSchema, {
+            body: { case: "repoChangeResult", value: { requestId: c.requestId, ok, message } },
+          }),
+        );
+        if (ok) this.#sendInventory();
+        return;
+      }
+      case "repoScan":
+        this.scans++;
+        this.#sendInventory();
         return;
       case "taskCancel":
         this.#event(body.value.taskId, {

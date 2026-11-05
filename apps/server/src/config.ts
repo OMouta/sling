@@ -13,6 +13,11 @@ const Env = z.object({
   SLING_WEB_DIST: z.string().optional(),
   /** Image sandboxes run when their provider doesn't name one. */
   SLING_SANDBOX_IMAGE: z.string().min(1).optional(),
+  /** GitHub repo, as owner/name, whose releases the Runner install script downloads. */
+  SLING_RELEASE_REPO: z
+    .string()
+    .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "SLING_RELEASE_REPO must look like owner/name")
+    .optional(),
 });
 
 export interface Config {
@@ -25,6 +30,8 @@ export interface Config {
   webDist: string | undefined;
   /** Image sandboxes run when their provider doesn't name one. Defaults to `sling-sandbox:latest`. */
   sandboxImage?: string | undefined;
+  /** GitHub repo the Runner install script downloads releases from. */
+  releaseRepo?: string | undefined;
   /** Only set by tests. */
   testing?: {
     /** Passed to sandboxes as SLING_CODEX_BIN, so they run a fake Codex. */
@@ -52,5 +59,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: e.LOG_LEVEL,
     webDist: e.SLING_WEB_DIST,
     sandboxImage: e.SLING_SANDBOX_IMAGE,
+    releaseRepo: e.SLING_RELEASE_REPO,
   };
 }

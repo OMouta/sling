@@ -130,6 +130,9 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
         return {
           id: created.task.id,
           state: created.task.state,
+          harness: created.task.harness,
+          model: created.task.agentModel,
+          effort: created.task.agentEffort,
           environment: created.task.environment,
           routing: created.routing,
           approvalId: created.approvalId,

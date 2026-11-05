@@ -8,6 +8,7 @@ import { twoFactor } from "better-auth/plugins";
 import { count } from "drizzle-orm";
 import type { Config } from "../config.ts";
 import { deriveKey } from "../crypto.ts";
+import { freshTwoFactor } from "./fresh-two-factor.ts";
 
 export interface AuthHooks {
   /** Called after sign-up creates the user's workspace. */
@@ -33,6 +34,7 @@ export function createAuth(db: Db, config: Config, hooks: AuthHooks = {}) {
     },
     plugins: [
       twoFactor({ issuer: "Sling" }),
+      freshTwoFactor(),
       passkey({ rpID: config.publicUrl.hostname, rpName: "Sling", origin }),
     ],
     databaseHooks: {

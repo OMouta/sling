@@ -5,6 +5,7 @@ import { and, asc, desc, eq, isNull, sql, sum } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
+import { ChatSettingsPatch, mergeSettings } from "../agent/chat-settings.ts";
 import { toMessageView } from "../agent/history.ts";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
@@ -106,6 +107,8 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         body: z.object({
           title: z.string().min(1).max(120).optional(),
           mode: z.enum(PERMISSION_MODES).optional(),
+          /** The assistant's model and the coding agent for this conversation. */
+          settings: ChatSettingsPatch.optional(),
         }),
       },
     },
@@ -118,6 +121,9 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         .set({
           ...(request.body.title ? { title: request.body.title } : {}),
           ...(request.body.mode ? { mode: request.body.mode } : {}),
+          ...(request.body.settings
+            ? { settings: mergeSettings(conv.settings, request.body.settings) }
+            : {}),
         })
         .where(eq(schema.conversations.id, conv.id))
         .returning();

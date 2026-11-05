@@ -54,6 +54,8 @@ export function toRunnerView(r: RunnerRow, repos: RepoRow[]): RunnerView {
     labels: effectiveLabels(r),
     ephemeral: r.ephemeral,
     sandboxId: r.sandboxId,
+    foundRepos: r.foundRepos,
+    remoteRepos: r.remoteRepos,
   };
 }
 
@@ -171,6 +173,9 @@ function toTaskView(
     summary: t.summary,
     error: t.error,
     harnessVersion: t.harnessVersion,
+    model: t.agentModel,
+    effort: t.agentEffort,
+    fast: t.agentFast,
     runnerOffline: t.runnerOfflineSince !== null,
     cancelRequested: t.cancelRequestedAt !== null,
     createdAt: t.createdAt.toISOString(),
@@ -261,6 +266,7 @@ export function toConversationView(c: ConversationRow): ConversationView {
     id: c.id,
     title: c.title,
     mode: c.mode,
+    settings: c.settings ?? { assistant: null, agent: null },
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
   };

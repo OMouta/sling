@@ -32,6 +32,21 @@ function recordFailure(ip: string) {
 }
 
 export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
+  async function ownedRunner(workspaceId: string, id: string) {
+    const [row] = await ctx.db
+      .select()
+      .from(schema.runners)
+      .where(
+        and(
+          eq(schema.runners.id, id),
+          eq(schema.runners.workspaceId, workspaceId),
+          eq(schema.runners.ephemeral, false),
+          isNull(schema.runners.revokedAt),
+        ),
+      );
+    return row ?? null;
+  }
+
   const r = app.withTypeProvider<ZodTypeProvider>();
 
   // Called by `sling-runner pair`. Authenticated by the one-time code only.
@@ -145,9 +160,104 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
       return {
         code,
         expiresAt: expiresAt.toISOString(),
+        /** For a machine that already has sling-runner. */
         command: `sling-runner pair ${url} ${code}`,
+        /** Installs, pairs, and starts the Runner in one go. */
+        installCommand: `curl -fsSL ${url}/install.sh | SLING_CODE=${code} sh`,
+        windowsInstallCommand: `$env:SLING_CODE='${code}'; irm ${url}/install.ps1 | iex`,
       };
     });
+
+    /** Allows one of the repos a machine found. The machine checks the path itself. */
+    s.post(
+      "/api/runners/:id/repos",
+      {
+        schema: {
+          params: z.object({ id: z.string() }),
+          body: z.object({
+            path: z.string().min(1).max(1024),
+            name: z
+              .string()
+              .regex(/^[A-Za-z0-9._-]{1,64}$/)
+              .optional(),
+          }),
+        },
+      },
+      async (request, reply) => {
+        const actor = actorOf(request);
+        const runner = await ownedRunner(actor.workspaceId, request.params.id);
+        if (!runner) return reply.code(404).send({ error: "not found" });
+        if (!runner.remoteRepos) {
+          return reply.code(409).send({
+            error: "This machine doesn't accept repo changes from Sling.",
+          });
+        }
+        const found = runner.foundRepos.find((f) => f.path === request.body.path);
+        if (!found)
+          return reply.code(404).send({ error: "That repo isn't on the machine's list." });
+        const result = await ctx.runners.changeRepo(runner.id, {
+          op: "add",
+          path: found.path,
+          ...(request.body.name ? { name: request.body.name } : {}),
+        });
+        await audit(ctx, {
+          workspaceId: actor.workspaceId,
+          actorType: "user",
+          actorId: actor.userId,
+          verb: result.ok ? "runner.repo_allowed" : "runner.repo_change_refused",
+          subjectType: "runner",
+          subjectId: runner.id,
+          details: {
+            path: found.path,
+            name: request.body.name ?? found.name,
+            message: result.message,
+          },
+        });
+        if (!result.ok) return reply.code(409).send({ error: result.message });
+        return { ok: true, message: result.message };
+      },
+    );
+
+    /** Stops allowing a repo on a machine. */
+    s.delete(
+      "/api/runners/:id/repos/:name",
+      { schema: { params: z.object({ id: z.string(), name: z.string().min(1).max(64) }) } },
+      async (request, reply) => {
+        const actor = actorOf(request);
+        const runner = await ownedRunner(actor.workspaceId, request.params.id);
+        if (!runner) return reply.code(404).send({ error: "not found" });
+        const result = await ctx.runners.changeRepo(runner.id, {
+          op: "remove",
+          name: request.params.name,
+        });
+        await audit(ctx, {
+          workspaceId: actor.workspaceId,
+          actorType: "user",
+          actorId: actor.userId,
+          verb: result.ok ? "runner.repo_removed" : "runner.repo_change_refused",
+          subjectType: "runner",
+          subjectId: runner.id,
+          details: { name: request.params.name, message: result.message },
+        });
+        if (!result.ok) return reply.code(409).send({ error: result.message });
+        return { ok: true, message: result.message };
+      },
+    );
+
+    /** Asks a machine to look for repos again. */
+    s.post(
+      "/api/runners/:id/scan",
+      { schema: { params: z.object({ id: z.string() }) } },
+      async (request, reply) => {
+        const actor = actorOf(request);
+        const runner = await ownedRunner(actor.workspaceId, request.params.id);
+        if (!runner) return reply.code(404).send({ error: "not found" });
+        if (!ctx.runners.scanRepos(runner.id)) {
+          return reply.code(409).send({ error: "The machine is offline." });
+        }
+        return { ok: true };
+      },
+    );
 
     s.delete(
       "/api/runners/:id",

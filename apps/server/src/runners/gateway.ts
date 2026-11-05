@@ -1,8 +1,15 @@
 import { createPublicKey, randomBytes, verify } from "node:crypto";
 import { toBinary } from "@bufbuild/protobuf";
-import { newId, remoteKey } from "@sling/core";
+import {
+  AGENT_MODEL_PATTERN,
+  type AgentModelView,
+  EFFORT_PATTERN,
+  newId,
+  remoteKey,
+} from "@sling/core";
 import { schema } from "@sling/db";
 import {
+  type AgentModel,
   authPayload,
   create,
   decodeEnvelope,
@@ -12,6 +19,7 @@ import {
   type Hello,
   type Inventory,
   MAX_CLOCK_SKEW_MS,
+  RepoChange_Op,
   RUNNER_WS_PATH,
   type TaskEvent,
 } from "@sling/runner-protocol";
@@ -58,6 +66,11 @@ export function ed25519KeyFromRaw(raw: Buffer) {
 
 export class RunnerGateway {
   readonly #sessions = new Map<string, RunnerSession>();
+  /** Repo changes sent to a Runner and waiting for its RepoChangeResult. */
+  readonly #repoChanges = new Map<
+    string,
+    { runnerId: string; resolve: (r: { ok: boolean; message: string }) => void }
+  >();
   readonly #ctx: AppContext;
   handlers: GatewayHandlers | null = null;
   #sweeper: NodeJS.Timeout | null = null;
@@ -72,6 +85,50 @@ export class RunnerGateway {
 
   send(runnerId: string, envelope: Envelope): boolean {
     return this.#sessions.get(runnerId)?.send(envelope) ?? false;
+  }
+
+  /**
+   * Asks a Runner to allow one of its found repos, or to stop allowing one.
+   * The Runner decides: it refuses when the machine turned this off, and adds
+   * only paths it found itself.
+   */
+  changeRepo(
+    runnerId: string,
+    change: { op: "add"; path: string; name?: string } | { op: "remove"; name: string },
+    timeoutMs = 15_000,
+  ): Promise<{ ok: boolean; message: string }> {
+    const requestId = newId("rqc");
+    const value =
+      change.op === "add"
+        ? { requestId, op: RepoChange_Op.ADD, path: change.path, name: change.name ?? "" }
+        : { requestId, op: RepoChange_Op.REMOVE, path: "", name: change.name };
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.#repoChanges.delete(requestId);
+        resolve({ ok: false, message: "The machine didn't answer in time." });
+      }, timeoutMs);
+      this.#repoChanges.set(requestId, {
+        runnerId,
+        resolve: (r) => {
+          clearTimeout(timer);
+          this.#repoChanges.delete(requestId);
+          resolve(r);
+        },
+      });
+      const sent = this.send(
+        runnerId,
+        create(EnvelopeSchema, { body: { case: "repoChange", value } }),
+      );
+      if (!sent)
+        this.#repoChanges
+          .get(requestId)
+          ?.resolve({ ok: false, message: "The machine is offline." });
+    });
+  }
+
+  /** Asks a Runner to look for repos again. Its fresh inventory arrives as usual. */
+  scanRepos(runnerId: string): boolean {
+    return this.send(runnerId, create(EnvelopeSchema, { body: { case: "repoScan", value: {} } }));
   }
 
   /** Sends an Error and closes the connection, for example on revoke. */
@@ -255,6 +312,14 @@ export class RunnerGateway {
       case "taskEvent":
         await this.handlers?.taskEvent(session, envelope.body.value);
         return;
+      case "repoChangeResult": {
+        const r = envelope.body.value;
+        const pending = this.#repoChanges.get(r.requestId);
+        if (pending?.runnerId === session.runnerId) {
+          pending.resolve({ ok: r.ok, message: r.message.slice(0, 500) });
+        }
+        return;
+      }
       default:
         return;
     }
@@ -270,7 +335,15 @@ export class RunnerGateway {
           version: c.version,
           ready: c.ready,
           detail: c.detail,
+          ...(c.models.length ? { models: agentModels(c.models) } : {}),
         })),
+        foundRepos: inv.foundRepos.slice(0, 300).map((f) => ({
+          path: f.path.slice(0, 1024),
+          name: f.name.slice(0, 120),
+          defaultBranch: f.defaultBranch.slice(0, 200),
+          remoteUrl: f.remoteUrl.slice(0, 1024),
+        })),
+        remoteRepos: inv.remoteRepos,
         maxMode: modeFromProto(inv.maxMode),
         maxConcurrentTasks: Math.max(1, Math.min(inv.maxConcurrentTasks || 1, 16)),
         labels: normalizeLabels(inv.labels),
@@ -315,4 +388,21 @@ export class RunnerGateway {
     const view = await runnerView(this.#ctx, session.runnerId);
     if (view) this.#ctx.hub.publish(session.workspaceId, { type: "runner.updated", runner: view });
   }
+}
+
+/** Agent models as the Runner reports them, bounded and limited to safe IDs. */
+function agentModels(models: AgentModel[]): AgentModelView[] {
+  const effort = (e: string) => EFFORT_PATTERN.test(e);
+  return models
+    .filter((m) => AGENT_MODEL_PATTERN.test(m.id))
+    .slice(0, 50)
+    .map((m) => ({
+      id: m.id,
+      displayName: (m.displayName || m.id).slice(0, 80),
+      description: m.description.slice(0, 300),
+      efforts: m.efforts.filter(effort).slice(0, 10),
+      defaultEffort: effort(m.defaultEffort) ? m.defaultEffort : "",
+      fast: m.fast,
+      isDefault: m.isDefault,
+    }));
 }

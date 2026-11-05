@@ -15,6 +15,7 @@ import { hubRoutes } from "../realtime/hub.ts";
 import { authRoutes } from "../routes/auth.ts";
 import { settingsRoutes } from "../routes/settings.ts";
 import { setupRoutes } from "../routes/setup.ts";
+import { installRoutes } from "../runners/install.ts";
 import { runnerRoutes } from "../runners/routes.ts";
 import { sandboxRoutes } from "../sandboxes/routes.ts";
 import { taskRoutes } from "../tasks/routes.ts";
@@ -55,6 +56,7 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get("/healthz", { logLevel: "silent" }, async () => ({ ok: true }));
 
   await app.register(async (scope) => authRoutes(scope, ctx));
+  await app.register(async (scope) => installRoutes(scope, ctx));
   await app.register(async (scope) => hubRoutes(scope, ctx));
   await app.register(async (scope) => {
     ctx.runners.register(scope);
