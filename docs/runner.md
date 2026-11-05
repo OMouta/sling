@@ -1,6 +1,6 @@
 # Sling Runner
 
-`sling-runner` runs on each machine that Sling may work on. It connects out to the control plane, runs a coding agent (Codex or Claude Code) in a fresh git worktree per task, commits the result, and pushes or opens a PR when the permission mode allows it.
+`sling-runner` runs on each machine that Sling may work on. It connects out to the control plane, runs a coding agent (Codex or Claude Code) in a fresh git worktree per task, commits the result, and pushes or opens a PR when the permission mode allows it. It also runs Sling's chat assistant on those agents, with your own login. See [Chat](#chat).
 
 ## Install
 
@@ -114,7 +114,7 @@ The Runner adds `os:<os>` and `arch:<arch>` itself, for example `os:macos` and `
 
 Neither agent may commit or push. The Runner commits changes to tracked files, plus new files the agent reported creating. Other untracked files, such as build output from running tests, stay out of the commit, and the task log lists them.
 
-Both agents load your own settings, such as `~/.codex/config.toml`, `~/.claude/settings.json`, `CLAUDE.md`, hooks, and MCP servers, so two machines can behave differently for the same task.
+For tasks, both agents load your own settings, such as `~/.codex/config.toml`, `~/.claude/settings.json`, `CLAUDE.md`, hooks, and MCP servers, so two machines can behave differently for the same task. Chat turns load less; see [Chat](#chat).
 
 The agent's environment never includes `SLING_*` variables, `GH_TOKEN`, or `GITHUB_TOKEN`.
 
@@ -124,7 +124,7 @@ A task can pick the agent's model and reasoning effort, and for Codex the fast t
 
 | | Codex | Claude Code |
 |---|---|---|
-| Models offered | The ones `codex debug models` lists in Codex's own picker. The first by Codex's priority is the default. | The `--model` aliases `fable`, `opus`, `sonnet`, and `haiku` |
+| Models offered | The ones `codex debug models` lists in Codex's own picker. The first by Codex's priority is the default. | `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`, by their full names. Opus 5.5 is the default. Opus 5.5 and Haiku 5.5 default to medium effort, the other two to high. |
 | Model | `-m <model>` | `--model <model>` |
 | Effort | `-c model_reasoning_effort="<effort>"` | `--effort <effort>` |
 | Fast | `-c service_tier="fast"` | Claude Code has no fast tier, so the Runner ignores it |
@@ -145,6 +145,28 @@ Repos added from Sling start with network off, so use these commands on the mach
 For Codex that opens the whole network. Claude Code's sandbox only takes a list of hosts, so for Claude Code it opens package registries and code hosts: GitHub, GitLab, Bitbucket, npm, Yarn, JSR, Deno, PyPI, crates.io, the Go module proxy, RubyGems, Maven, Gradle, Packagist, NuGet, pub.dev, and Hex. Full access has no sandbox, so network is on there for both.
 
 A running Runner picks up config changes within a minute.
+
+## Chat
+
+Sling's assistant runs on a machine's Codex or Claude Code, with the login that's already there. If that login is a ChatGPT or Claude subscription, chat runs on the subscription, and Sling needs no API key for it.
+
+Each message to the assistant is one turn. Sling sends the turn to a machine, and the Runner runs one turn of the agent's CLI in a new, empty directory under `~/.local/share/sling/chat/`, outside every repo. The reply streams back to Sling as it comes, and the Runner deletes the directory when the turn ends. Up to four turns run at once. They run alongside tasks and don't count toward `max-concurrent-tasks`. If the connection to Sling drops, the Runner stops its running turns, and Sling shows them as failed.
+
+The assistant's only tools are Sling's own: starting a task, listing machines, and getting or cancelling a task. The agent's CLI starts `sling-runner mcp`, a small MCP server that sends each tool call to Sling with a token Sling made for that one turn. The token never appears on a command line. Claude Code reads it from an MCP config file in the turn's directory that only you can read. Codex gets it in its environment and passes it to the MCP server through `env_vars`.
+
+A turn's model and effort follow the same rules as a task's. The agent keeps its own session, in `~/.claude/projects` or `~/.codex/sessions`, and the next turn on the same machine resumes it. When the session isn't on this machine, for example because the last turn ran on another one, the Runner starts a new session and gives it the conversation so far.
+
+### What the assistant can reach
+
+| | Claude Code | Codex |
+|---|---|---|
+| Built-in tools | None, with `--tools ""` | Read-only sandbox, with its shell, image viewer, browser, web search, sub-agents, apps, and plugins turned off |
+| MCP servers | Only Sling's, with `--strict-mcp-config` | Only Sling's |
+| Sling's tools | Allowed without asking. Everything else is denied, with `--permission-mode dontAsk`. | Approved up front |
+| Your settings | Still loaded, for example `~/.claude/CLAUDE.md` and hooks. Slash commands and skills are off. | `~/.codex/config.toml` is skipped, so a provider, profile, or MCP server set there doesn't apply to chat |
+| Sling's instructions | Appended to the system prompt | Developer instructions |
+
+Codex has a gap. Its read-only sandbox stops writes, not reads, so a Codex tool may still read any file you can read and run commands that don't write. Codex 0.166 has no such tool left once the Runner turns the shell and image viewer off. A later Codex could add a tool the Runner doesn't know to turn off, and through it the assistant could read files on this machine. Claude Code starts with no built-in tools at all, so it doesn't have this gap.
 
 ## Running it
 
@@ -167,6 +189,7 @@ On Linux, `loginctl enable-linger $USER` keeps the service running while you're 
 | `~/.config/sling/runner.key` | The machine's private key, readable only by you |
 | `~/.local/share/sling/spool/` | Task events not yet acknowledged by the server |
 | `~/.local/share/sling/worktrees/` | One git worktree per task |
+| `~/.local/share/sling/chat/` | One empty directory per running chat turn, deleted when the turn ends |
 | `~/.local/share/sling/runner.log` | Log when running as a service |
 
 On Windows these live under `%APPDATA%\Sling` and `%LOCALAPPDATA%\Sling`. `SLING_RUNNER_HOME` puts everything in one directory, which lets you run two Runners on one machine.
