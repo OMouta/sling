@@ -44,16 +44,9 @@ pub async fn detect(bin: &str) -> Detection {
             ..Default::default()
         };
     };
-    let version = version
-        .split_whitespace()
-        .last()
-        .unwrap_or_default()
-        .to_string();
+    let version = parse_version(&version);
     let (logged_in, detail) = match quick(bin, &["login", "status"]).await {
-        Ok(text) => {
-            let line = text.lines().next().unwrap_or_default().trim().to_string();
-            (line.to_lowercase().starts_with("logged in"), line)
-        }
+        Ok(text) => login_state(&text),
         Err(e) => (false, format!("not logged in: {e}")),
     };
     let mut detail = detail;
@@ -66,6 +59,30 @@ pub async fn detect(bin: &str) -> Detection {
         logged_in,
         detail,
     }
+}
+
+/// The version from `codex --version`, which prints `codex-cli 0.166.0`,
+/// sometimes after a warning.
+pub fn parse_version(text: &str) -> String {
+    text.lines()
+        .find_map(|l| l.trim().strip_prefix("codex-cli "))
+        .or_else(|| text.split_whitespace().last())
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+/// Reads the output of a successful `codex login status`. It prints, for
+/// example, `Logged in using ChatGPT`, or `API key configured - ***` after a
+/// login with an API key. Warning lines come first sometimes.
+pub fn login_state(text: &str) -> (bool, String) {
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with("WARNING"))
+        .unwrap_or_default()
+        .to_string();
+    (!line.to_lowercase().starts_with("not logged in"), line)
 }
 
 async fn quick(bin: &str, args: &[&str]) -> Result<String> {
@@ -498,6 +515,27 @@ mod tests {
         assert_eq!(f.changes[1].kind(), file_change::Kind::Add);
         p.line(r#"{"type":"turn.failed","error":{"message":"rate limited"}}"#);
         assert_eq!(p.failure.as_deref(), Some("rate limited"));
+    }
+
+    #[test]
+    fn reads_version_and_login_with_warnings() {
+        let warning = "WARNING: proceeding, even though we could not create PATH aliases\n";
+        assert_eq!(parse_version("codex-cli 0.166.0\n"), "0.166.0");
+        assert_eq!(
+            parse_version(&format!("{warning}codex-cli 0.166.0\n")),
+            "0.166.0"
+        );
+        assert_eq!(
+            login_state("Logged in using ChatGPT\n"),
+            (true, "Logged in using ChatGPT".to_string())
+        );
+        assert_eq!(
+            login_state(&format!(
+                "{warning}API key configured - ***\nAuthentication is checked when you send a request.\n"
+            )),
+            (true, "API key configured - ***".to_string())
+        );
+        assert!(!login_state("Not logged in\n").0);
     }
 
     #[test]
