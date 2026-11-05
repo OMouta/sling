@@ -6,6 +6,7 @@ import {
   MODE_POLICY,
   type ModelCatalogView,
   type PermissionMode,
+  type ProviderModelsView,
   type SandboxSettingsView,
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -143,68 +144,44 @@ function Section({
   );
 }
 
+/** The subscriptions a CLI brings: Codex runs on ChatGPT, Claude Code on Claude. */
+const SUBSCRIPTIONS = {
+  openai: { cli: "codex", plan: "ChatGPT" },
+  anthropic: { cli: "claude-code", plan: "Claude" },
+} as const;
+
 function ModelSection({ settings }: { settings: Settings }) {
   const catalog = useModelCatalog();
-  const clis = (catalog.data?.assistant ?? []).filter((p) => p.kind === "cli");
-  const anyKey = settings.providers.some((p) => p.connected);
+  const cliFor = (id: ProviderInfo["id"]) => {
+    if (id === "openai-compatible") return undefined;
+    return catalog.data?.assistant.find((p) => p.provider === SUBSCRIPTIONS[id].cli);
+  };
   return (
     <Section
       id="model"
       title="Models"
-      description="Sling chats through Codex or Claude Code on your machines, on the login you already have, so it uses your subscription. The assistant picks the coding agent and model for each task."
+      description="Sling chats through Codex or Claude Code on your machines, on the login that's already there, so your ChatGPT or Claude subscription covers it. The assistant picks the coding agent and model for each task."
     >
       <div className="space-y-6 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-6">
         <ChatDefaults />
-        <ul aria-label="Coding agents for chat" className="space-y-2">
-          {clis.map((p) => (
-            <li key={p.provider} className="flex items-center gap-3">
-              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 shadow-raised">
-                <ProviderIcon provider={p.provider} size={17} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium">{p.label}</p>
-                <p className="text-xs text-muted">
-                  {p.readyMachines > 0
-                    ? `Ready on ${plural(p.readyMachines, "machine")}, ${plural(p.models.length, "model")}.`
-                    : "Not logged in on any paired machine."}
-                </p>
-              </div>
-              {p.readyMachines > 0 ? (
-                <Badge tone="ok" dot>
-                  Ready
-                </Badge>
-              ) : (
-                <Link
-                  to="/machines"
-                  className="text-xs text-subtle transition-colors duration-150 hover:text-text"
-                >
-                  Machines
-                </Link>
-              )}
-            </li>
+        <ul aria-label="Model providers" className="space-y-5">
+          {settings.providers.map((p) => (
+            <ProviderRow key={p.id} provider={p} cli={cliFor(p.id)} />
           ))}
         </ul>
-        <details className="group" open={anyKey}>
-          <summary className="flex cursor-pointer items-center gap-2 text-[13px] font-medium select-none marker:text-subtle">
-            API keys
-            <span className="text-xs font-normal text-subtle">
-              Optional. For chatting when no machine is on, or with another provider.
-            </span>
-          </summary>
-          <ul aria-label="Model providers" className="mt-4 space-y-4">
-            {settings.providers.map((p) => (
-              <ProviderRow key={p.id} provider={p} />
-            ))}
-          </ul>
-        </details>
       </div>
     </Section>
   );
 }
 
-function ProviderRow({ provider: p }: { provider: ProviderInfo }) {
+/**
+ * One provider, however it's reached: the subscription through a machine's
+ * CLI first, an API key as the alternative.
+ */
+function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: ProviderModelsView }) {
   const qc = useQueryClient();
   const saveKey = useSaveProviderKey();
+  const [editing, setEditing] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(p.baseUrl ?? "");
   const save = useMutation({
@@ -213,13 +190,17 @@ function ProviderRow({ provider: p }: { provider: ProviderInfo }) {
         ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
         ...(p.needsBaseUrl ? { baseUrl: baseUrl.trim() || null } : {}),
       }),
-    onSuccess: () => setApiKey(""),
+    onSuccess: () => {
+      setApiKey("");
+      setEditing(false);
+    },
   });
   const remove = useMutation({
     mutationFn: () => api.del<ModelCatalogView>(`/api/settings/providers/${p.id}`),
     onSuccess: (catalog) => {
       if (catalog) qc.setQueryData(modelsKey, catalog);
       void qc.invalidateQueries({ queryKey: ["settings"] });
+      setEditing(false);
     },
   });
   const test = useMutation({
@@ -231,32 +212,117 @@ function ProviderRow({ provider: p }: { provider: ProviderInfo }) {
   const id = useId();
   const canSave = p.needsBaseUrl ? Boolean(baseUrl.trim()) : Boolean(apiKey.trim());
 
+  const sub = p.id === "openai-compatible" ? null : SUBSCRIPTIONS[p.id];
+  const viaCli = Boolean(cli?.connected);
+  const title = sub ? p.label : "Local or other";
+  let status: string;
+  if (cli && viaCli) {
+    status = `Through ${cli.label} on ${cli.machines.join(", ")}.${cli.login ? ` ${cli.login}.` : ""}`;
+  } else if (cli && sub) {
+    status =
+      cli.error ?? `Log in to ${cli.label} on a paired machine to use your ${sub.plan} plan.`;
+  } else {
+    status = "Ollama, LM Studio, OpenRouter, or any OpenAI-compatible server.";
+  }
+  const keyNote = !p.connected
+    ? null
+    : !sub
+      ? p.baseUrl
+      : viaCli
+        ? "API key saved. Chat uses it when no machine is on."
+        : "Chatting with your API key.";
+
   return (
     <li className="flex gap-3">
       <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-icon shadow-raised">
         <ProviderIcon provider={p.id} size={17} />
       </span>
-      <form
-        className="min-w-0 flex-1 space-y-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (canSave) save.mutate();
-        }}
-      >
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor={id} className="text-[13px] font-medium">
-            {p.label}
-          </label>
-          {p.connected ? (
-            <Badge tone="ok" dot>
-              Connected
-            </Badge>
-          ) : (
-            <Badge>Not connected</Badge>
-          )}
-          <span className="ml-auto flex items-center gap-1">
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+          <div className="min-w-0 flex-1">
+            <p className="flex items-center gap-2 text-[13px] font-medium">
+              {title}
+              {viaCli ? (
+                <Badge tone="ok" dot>
+                  Ready
+                </Badge>
+              ) : p.connected ? (
+                <Badge tone="ok" dot>
+                  {sub ? "API key" : "Connected"}
+                </Badge>
+              ) : null}
+            </p>
+            <p className="mt-0.5 text-xs leading-[18px] text-muted">{status}</p>
+            {keyNote && <p className="text-xs leading-[18px] text-subtle">{keyNote}</p>}
+          </div>
+          <span className="flex shrink-0 items-center gap-1">
+            {sub && !viaCli && !cli?.error && (
+              <Link
+                to="/machines"
+                search={{ pair: true }}
+                className="flex h-7 items-center rounded-lg px-2.5 text-xs font-medium text-soft transition-colors duration-150 hover:bg-surface-2 hover:text-text"
+              >
+                Pair a machine
+              </Link>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-expanded={editing}
+              aria-controls={`${id}-form`}
+              onClick={() => setEditing((e) => !e)}
+            >
+              {p.connected
+                ? sub
+                  ? "API key"
+                  : "Edit"
+                : sub
+                  ? viaCli
+                    ? "Add API key"
+                    : "Use an API key"
+                  : "Set up"}
+            </Button>
+          </span>
+        </div>
+        {editing && (
+          <form
+            id={`${id}-form`}
+            className="anim-pop space-y-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (canSave) save.mutate();
+            }}
+          >
+            {p.needsBaseUrl && (
+              <Input
+                aria-label={`Base URL for ${p.label}`}
+                placeholder="http://host.docker.internal:11434/v1"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+              />
+            )}
+            <div className="flex gap-2">
+              <Input
+                id={id}
+                type="password"
+                aria-label={`API key for ${p.label}`}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={
+                  p.hasKey
+                    ? "Stored. Paste a new key to replace it."
+                    : p.needsBaseUrl
+                      ? "API key, if the server needs one"
+                      : `Paste an ${p.label} API key`
+                }
+                autoComplete="off"
+              />
+              <Button type="submit" busy={save.isPending} disabled={!canSave}>
+                Save
+              </Button>
+            </div>
             {p.connected && (
-              <>
+              <div className="flex items-center gap-1">
                 <Button
                   size="sm"
                   variant="ghost"
@@ -273,48 +339,20 @@ function ProviderRow({ provider: p }: { provider: ProviderInfo }) {
                 >
                   Remove
                 </Button>
-              </>
+              </div>
             )}
-          </span>
-        </div>
-        {p.needsBaseUrl && (
-          <Input
-            aria-label={`Base URL for ${p.label}`}
-            placeholder="http://host.docker.internal:11434/v1"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
-          />
+            {test.data &&
+              (test.data.ok ? (
+                <p className="text-xs text-ok">
+                  Works. {plural(test.data.models ?? 0, "model")} available, in {test.data.ms} ms.
+                </p>
+              ) : (
+                <p className="text-xs text-danger">{test.data.error}</p>
+              ))}
+            <ErrorText error={save.error ?? remove.error ?? test.error} />
+          </form>
         )}
-        <div className="flex gap-2">
-          <Input
-            id={id}
-            type="password"
-            aria-label={`API key for ${p.label}`}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={
-              p.hasKey
-                ? "Stored. Paste a new key to replace it."
-                : p.needsBaseUrl
-                  ? "API key, if the server needs one"
-                  : "Paste an API key"
-            }
-            autoComplete="off"
-          />
-          <Button type="submit" busy={save.isPending} disabled={!canSave}>
-            {p.connected ? "Replace" : "Connect"}
-          </Button>
-        </div>
-        {test.data &&
-          (test.data.ok ? (
-            <p className="text-xs text-ok">
-              Works. {plural(test.data.models ?? 0, "model")} available, in {test.data.ms} ms.
-            </p>
-          ) : (
-            <p className="text-xs text-danger">{test.data.error}</p>
-          ))}
-        <ErrorText error={save.error ?? remove.error ?? test.error} />
-      </form>
+      </div>
     </li>
   );
 }

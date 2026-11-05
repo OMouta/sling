@@ -7,7 +7,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { type ReactNode, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatControls } from "./components/ModelPicker.tsx";
@@ -49,7 +49,7 @@ const claudeModels = [
     fast: false,
   },
 ];
-const off = { connected: false, error: null, models: [], readyMachines: 0 };
+const off = { connected: false, error: null, models: [], machines: [], login: null };
 const catalog: ModelCatalogView = {
   assistant: [
     {
@@ -57,7 +57,8 @@ const catalog: ModelCatalogView = {
       kind: "cli",
       label: "Codex",
       connected: true,
-      readyMachines: 1,
+      machines: ["devbox"],
+      login: "Logged in using ChatGPT",
       error: null,
       models: codexModels,
     },
@@ -66,7 +67,8 @@ const catalog: ModelCatalogView = {
       kind: "cli",
       label: "Claude Code",
       connected: true,
-      readyMachines: 1,
+      machines: ["devbox"],
+      login: "Logged in using claude.ai",
       error: null,
       models: claudeModels,
     },
@@ -197,10 +199,8 @@ describe("model picker", () => {
     wrap(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
     const dialog = screen.getByRole("dialog", { name: "Choose a model" });
-    expect(within(dialog).getByRole("button", { name: "Codex on your machines" })).toBeTruthy();
-    expect(
-      within(dialog).getByRole("button", { name: "Claude Code on your machines" }),
-    ).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Codex on devbox" })).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Claude Code on devbox" })).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: /OpenAI API/ })).toBeNull();
     // It opens on the current model's provider.
     expect(
@@ -213,13 +213,39 @@ describe("model picker", () => {
     ]);
   });
 
+  it("shows one entry per provider, the subscription first", () => {
+    const withKey = {
+      ...catalog,
+      assistant: catalog.assistant.map((p) =>
+        p.provider === "openai" ? { ...p, connected: true, models: codexModels } : p,
+      ),
+    };
+    wrap(<ChatControls catalog={withKey} assistant={null} onAssistant={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    const dialog = screen.getByRole("dialog", { name: "Choose a model" });
+    expect(within(dialog).getByRole("button", { name: "Codex on devbox" })).toBeTruthy();
+    expect(within(dialog).queryByRole("button", { name: "OpenAI API key" })).toBeNull();
+    cleanup();
+
+    // With no machine on, the key takes its place.
+    const offline = {
+      ...withKey,
+      assistant: withKey.assistant.map((p) =>
+        p.provider === "codex" ? { ...p, connected: false, machines: [] } : p,
+      ),
+    };
+    wrap(<ChatControls catalog={offline} assistant={null} onAssistant={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    expect(screen.getByRole("button", { name: "OpenAI API key" })).toBeTruthy();
+  });
+
   it("picks a model and a reasoning level without typing", () => {
     wrap(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
     const reasoning = screen.getByRole("radiogroup", { name: "Reasoning" });
     fireEvent.click(within(reasoning).getByRole("radio", { name: /Extra High/ }));
     expect(screen.getByRole("button", { name: "Model: Opus 5.5, Extra High" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Codex on your machines" }));
+    fireEvent.click(screen.getByRole("button", { name: "Codex on devbox" }));
     fireEvent.click(screen.getByRole("option", { name: /GPT-6\.1-Sol/ }));
     // GPT-6.1-Sol takes Extra High too, so the level carries over.
     expect(screen.getByRole("button", { name: "Model: GPT-6.1-Sol, Extra High" })).toBeTruthy();
@@ -242,7 +268,7 @@ describe("model picker", () => {
         name: /Fast/,
       }) as HTMLButtonElement;
     expect(fast().disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Codex on your machines" }));
+    fireEvent.click(screen.getByRole("button", { name: "Codex on devbox" }));
     fireEvent.click(screen.getByRole("option", { name: /GPT-6\.1-Sol/ }));
     fireEvent.click(fast());
     expect(screen.getAllByLabelText("Fast").length).toBeGreaterThan(0);

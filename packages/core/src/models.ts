@@ -19,6 +19,13 @@ export function isCliProvider(provider: AssistantProvider): provider is Harness 
   return isHarness(provider);
 }
 
+/** Whose models a provider serves: Codex runs OpenAI's, Claude Code Anthropic's. */
+export function providerVendor(provider: AssistantProvider): ModelProviderId {
+  if (provider === "codex") return "openai";
+  if (provider === "claude-code") return "anthropic";
+  return provider;
+}
+
 /** Reasoning effort names, lowest first. Each model takes a subset. */
 export const EFFORT_ORDER = [
   "none",
@@ -91,11 +98,13 @@ export interface ProviderModelsView {
   /** A CLI on the user's machines, or an API with a key. */
   kind: "cli" | "api";
   label: string;
-  /** For a CLI, a machine has it ready. For an API, a key (or base URL) is stored. */
+  /** For a CLI, an online machine can chat through it. For an API, a key (or base URL) is stored. */
   connected: boolean;
-  /** For a CLI: machines where it's installed and logged in. */
-  readyMachines: number;
-  /** Why the model list couldn't be fetched, when it couldn't. */
+  /** For a CLI: the online machines that can chat through it. */
+  machines: string[];
+  /** For a CLI: how it's logged in there, as the CLI reports it. */
+  login: string | null;
+  /** Why it can't be used, or why the model list couldn't be fetched. */
   error: string | null;
   models: ModelOption[];
 }

@@ -533,5 +533,7 @@ describe("chat on a coding agent's CLI", () => {
       ["codex", "cli", true],
       ["claude-code", "cli", true],
     ]);
+    // Named, so the web app can say which machine a chat runs on.
+    expect(catalog.assistant[0]).toMatchObject({ machines: ["devbox"], error: null });
   });
 });

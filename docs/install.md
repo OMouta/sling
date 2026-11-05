@@ -50,12 +50,12 @@ With Tailscale or Cloudflare Tunnel you get TLS from them instead. See [remote-a
 
 The assistant chats through Codex or Claude Code on a paired machine, on the login that's already there, so a ChatGPT or Claude subscription covers it and you don't need an API key. Pick the model from the chat's model picker. See [runner.md](runner.md#chat).
 
-API keys are optional, for chatting when no machine is on or through another provider. Add them under **Settings**, in **API keys**:
+API keys are optional, for chatting when no machine is on or through another provider. Under **Settings**, each provider has one row showing how it's connected, with **Add API key** next to it:
 
 - **OpenAI** or **Anthropic** with an API key.
 - **OpenAI-compatible** for Ollama, OpenRouter, LM Studio, and similar. For Ollama on the Docker host, use `http://host.docker.internal:11434/v1`.
 
-The key is encrypted at rest with AES-256-GCM. **Test connection** makes one small call.
+The key is encrypted at rest with AES-256-GCM. **Test** makes one small call.
 
 ## Connectors
 

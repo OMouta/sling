@@ -169,7 +169,7 @@ async function providerModels(
   provider: ModelProviderId,
 ): Promise<ProviderModelsView> {
   const info = MODEL_PROVIDERS[provider];
-  const base = { provider, kind: "api" as const, label: info.label, readyMachines: 0 };
+  const base = { provider, kind: "api" as const, label: info.label, machines: [], login: null };
   const cfg = await providerConfig(ctx, workspaceId, provider);
   const connected = Boolean(
     cfg && (cfg.credentialId || (provider === "openai-compatible" && cfg.baseUrl)),
@@ -248,6 +248,11 @@ async function agentModels(ctx: AppContext, workspaceId: string): Promise<AgentM
   });
 }
 
+function listNames(names: string[]) {
+  if (names.length <= 2) return names.join(" and ");
+  return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
+}
+
 export async function modelCatalog(
   ctx: AppContext,
   workspaceId: string,
@@ -260,7 +265,11 @@ export async function modelCatalog(
   ]);
   // The CLIs come first: they run on the user's own login, with no key.
   const runners = await ctx.db
-    .select({ capabilities: schema.runners.capabilities })
+    .select({
+      id: schema.runners.id,
+      name: schema.runners.name,
+      capabilities: schema.runners.capabilities,
+    })
     .from(schema.runners)
     .where(
       and(
@@ -270,17 +279,25 @@ export async function modelCatalog(
       ),
     );
   const cli: ProviderModelsView[] = agents.map((a) => {
-    const chatMachines = runners.filter((r) => canChatOn(r.capabilities, a.harness)).length;
+    const name = harnessCapability(a.harness);
+    const loggedIn = runners.filter((r) => r.capabilities.some((c) => c.name === name && c.ready));
+    const canChat = loggedIn.filter((r) => canChatOn(r.capabilities, a.harness));
+    const online = canChat.filter((r) => ctx.runners.isOnline(r.id));
+    const login = (online[0] ?? loggedIn[0])?.capabilities.find((c) => c.name === name)?.detail;
+    let error: string | null = null;
+    if (online.length === 0 && canChat.length > 0) {
+      error = `${listNames(canChat.map((r) => r.name))} ${canChat.length === 1 ? "is" : "are"} offline.`;
+    } else if (online.length === 0 && loggedIn.length > 0) {
+      error = `Update sling-runner on ${listNames(loggedIn.map((r) => r.name))} to chat through ${a.label}.`;
+    }
     return {
       provider: a.harness,
       kind: "cli",
       label: a.label,
-      connected: chatMachines > 0,
-      readyMachines: chatMachines,
-      error:
-        a.readyMachines > 0 && chatMachines === 0
-          ? `Update sling-runner on your machines to chat through ${a.label}.`
-          : null,
+      connected: online.length > 0,
+      machines: online.map((r) => r.name),
+      login: login || null,
+      error,
       models: a.models,
     };
   });

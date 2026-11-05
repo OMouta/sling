@@ -13,6 +13,7 @@ import type {
 import type { WorkflowDetailView } from "@sling/workflow";
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
+import { modelsKey } from "./models.ts";
 import type { ConversationDetail, TaskDetail } from "./types.ts";
 import { qk } from "./workflowApi.ts";
 
@@ -181,6 +182,8 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
         }
         return upsert(list, ev.runner);
       });
+      // A machine coming online, going away, or logging in changes what chat can use.
+      void qc.invalidateQueries({ queryKey: modelsKey });
       return;
     case "task.updated":
       applyTask(qc, ev.task);

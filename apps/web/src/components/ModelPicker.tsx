@@ -7,6 +7,7 @@ import {
   type ModelOption,
   PERMISSION_MODES,
   type PermissionMode,
+  providerVendor,
 } from "@sling/core";
 import { Link } from "@tanstack/react-router";
 import { Check, ChevronUp, Laptop, Search, Shield, ShieldAlert, Star, Zap } from "lucide-react";
@@ -38,9 +39,17 @@ interface Row {
 
 type Rail = "favorites" | AssistantProvider;
 
-/** The providers a chat can use now: CLIs on a ready machine, and APIs with a key. */
+/**
+ * The providers a chat can use now, one per vendor: the subscription through a
+ * machine's CLI when one is on, else the API key.
+ */
 function usable(catalog: ModelCatalogView | undefined) {
-  return (catalog?.assistant ?? []).filter((p) => p.connected);
+  const seen = new Set<string>();
+  return (catalog?.assistant ?? []).filter((p) => {
+    if (!p.connected || seen.has(providerVendor(p.provider))) return false;
+    seen.add(providerVendor(p.provider));
+    return true;
+  });
 }
 
 export function modelLabel(catalog: ModelCatalogView | undefined, choice: AssistantChoice | null) {
@@ -296,7 +305,9 @@ export function ModelPicker({
             <RailButton
               key={p.provider}
               active={rail === p.provider}
-              label={p.kind === "cli" ? `${p.label} on your machines` : `${p.label} API`}
+              label={
+                p.kind === "cli" ? `${p.label} on ${p.machines.join(", ")}` : `${p.label} API key`
+              }
               onClick={() => setRail(p.provider)}
             >
               <ProviderIcon provider={p.provider} size={20} />
