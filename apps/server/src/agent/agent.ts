@@ -5,7 +5,7 @@ import { isStepCount, type LanguageModel, type ModelMessage, streamText } from "
 import { and, asc, desc, eq, gt } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import type { SettleReason } from "../tasks/service.ts";
-import { taskPlace, taskView, toConversationView } from "../views.ts";
+import { taskView, taskWhere, toConversationView } from "../views.ts";
 import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
 import { textOf, toMessageView, toModelMessages } from "./history.ts";
 import { NoModelConfigured, resolveModel } from "./models.ts";
@@ -79,9 +79,7 @@ export class Agent {
     // The tool result already told the assistant a sandbox needs approval.
     if (reason === "approval_needed" && t.state === "queued") return;
 
-    const lines = [
-      `Task "${t.title}" (${t.id}) on ${taskPlace(t)}, repo ${t.repoName}: ${t.state}.`,
-    ];
+    const lines = [`Task "${t.title}" (${t.id}) ${taskWhere(t)}, repo ${t.repoName}: ${t.state}.`];
     if (t.error) lines.push(`Error: ${t.error}`);
     if (t.diffStats) {
       lines.push(

@@ -228,7 +228,7 @@ export const approvalRequestedTrigger = defineNode({
   version: 1,
   title: "Approval requested",
   description:
-    "A new pending approval: a push or pull request in Supervised mode, or a workflow's Approval node.",
+    "A new pending approval: a push or pull request in Supervised mode, running a task in a sandbox because no machine could take it, or a workflow's Approval node.",
   category: "trigger",
   configSchema: z.object({}),
   inputs: [],

@@ -234,6 +234,11 @@ export function taskPlace(t: Pick<TaskView, "runnerName" | "environment">): stri
   return t.runnerName ?? "no machine yet";
 }
 
+/** "on laptop", or "in a sandbox on docker-host". */
+export function taskWhere(t: Pick<TaskView, "runnerName" | "environment">): string {
+  return `${t.environment.kind === "sandbox" ? "in" : "on"} ${taskPlace(t)}`;
+}
+
 export async function taskView(ctx: AppContext, taskId: string): Promise<TaskView | null> {
   const [row] = await ctx.db.select().from(schema.tasks).where(eq(schema.tasks.id, taskId));
   if (!row) return null;
