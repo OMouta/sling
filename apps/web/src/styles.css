@@ -1,92 +1,287 @@
 @import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-:root {
-  --bg: #f7f7f5;
-  --surface: #ffffff;
-  --surface-2: #f0efec;
-  --border: #e3e2de;
-  --text: #1c1c1a;
-  --muted: #6b6a66;
-  --accent: #2f5bd8;
-  --accent-fg: #ffffff;
-  --ok: #1f8a4c;
-  --warn: #b46b00;
-  --danger: #c2372f;
-  --ring: rgba(47, 91, 216, 0.35);
-  --edge-exec: #8a8984;
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #111110;
-    --surface: #1a1a18;
-    --surface-2: #232321;
-    --border: #2e2e2b;
-    --text: #ecebe7;
-    --muted: #9b9a94;
-    --accent: #7b9cff;
-    --accent-fg: #0d0d0c;
-    --ok: #4cc27f;
-    --warn: #e0a23b;
-    --danger: #f06b62;
-    --ring: rgba(123, 156, 255, 0.4);
-    --edge-exec: #9b9a94;
-    color-scheme: dark;
-  }
-}
-
+/*
+ * Design tokens. Dark is the default theme; light is the same system with
+ * inverted surfaces. Components only ever use these names.
+ *
+ * Surfaces, from back to front:
+ *   bg (page) → sidebar → surface (cards, panels) → surface-2 (raised
+ *   controls, inputs) → surface-3 (active items, neutral tags)
+ * Text, from strongest to weakest: text → soft → muted → subtle → faint
+ */
+:root,
 :root[data-theme="dark"] {
-  --bg: #111110;
-  --surface: #1a1a18;
-  --surface-2: #232321;
-  --border: #2e2e2b;
-  --text: #ecebe7;
-  --muted: #9b9a94;
-  --accent: #7b9cff;
-  --accent-fg: #0d0d0c;
-  --ok: #4cc27f;
-  --warn: #e0a23b;
-  --danger: #f06b62;
-  --ring: rgba(123, 156, 255, 0.4);
-  --edge-exec: #9b9a94;
+  --bg: #161616;
+  --sidebar: #171717;
+  --surface: #1b1b1c;
+  --surface-2: #1e1e1e;
+  --surface-3: #2a2a2a;
+  --hover: #1c1c1c;
+  --border: #232323;
+  --line-strong: #393939;
+  --text: #f9fbff;
+  --soft: #a4a4a4;
+  --muted: #7f7f7f;
+  --subtle: #676767;
+  --faint: #454545;
+  --icon: #d0d4dd;
+
+  --accent: #4124fb;
+  --accent-fg: #f9fbff;
+  --accent-text: #8b7dff;
+  --ok: #22c55e;
+  --status: #16c89e;
+  --warn: #fbbf24;
+  --danger: #f97373;
+  --ring: color-mix(in srgb, #8b7dff 70%, transparent);
+  --edge-exec: #7f7f7f;
+
+  --tag-neutral-bg: #2a2a2a;
+  --tag-neutral-border: #363636;
+  --tag-neutral-text: #cfcfcf;
+  --tag-blue-bg: #1d2b3e;
+  --tag-blue-border: #23354c;
+  --tag-blue-text: #bfdbfe;
+  --tag-green-bg: #1f3a2d;
+  --tag-green-border: #275137;
+  --tag-green-text: #b1ebc5;
+  --tag-purple-bg: #231f3a;
+  --tag-purple-border: #4b437b;
+  --tag-purple-text: #b7aee9;
+  --tag-amber-bg: #31221b;
+  --tag-amber-border: #6c4830;
+  --tag-amber-text: #fed7aa;
+  --tag-red-bg: #3e1d1e;
+  --tag-red-border: #4c2324;
+  --tag-red-text: #febfc6;
+  --tag-teal-bg: #102a27;
+  --tag-teal-border: #1f4a41;
+  --tag-teal-text: #8ce0c6;
+  --tag-yellow-bg: #33301a;
+  --tag-yellow-border: #5a5228;
+  --tag-yellow-text: #fde68a;
+
+  /* Raised controls: a dark outer ring plus a lit top edge. */
+  --sh-raised:
+    0 0 0 1px rgb(0 0 0 / 0.4), inset 0 1px 0 0 rgb(255 255 255 / 0.1),
+    inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  --sh-raised-hover:
+    0 0 0 1px rgb(0 0 0 / 0.4), inset 0 1px 0 0 rgb(255 255 255 / 0.14),
+    inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  --sh-primary:
+    0 4px 4px 0 rgb(42 42 42 / 0.32), 0 0 0 1px #0e0e0e, inset 0 4px 6px 0 rgb(255 255 255 / 0.2),
+    inset 0 0 0 1px rgb(255 255 255 / 0.15), inset 0 -8px 14px 0 rgb(0 0 0 / 0.15);
+  --sh-active: 0 0 0 1px rgb(0 0 0 / 0.4), inset 0 1px 0 0 rgb(255 255 255 / 0.06);
+  --field: #141414;
+  --sh-field: inset 0 0 0 1px rgb(255 255 255 / 0.07);
+  --sh-field-hover: inset 0 0 0 1px rgb(255 255 255 / 0.11);
+  --sh-card: 0 0 0 1px rgb(255 255 255 / 0.06);
+  --sh-card-hover: 0 0 0 1px rgb(255 255 255 / 0.1);
+  --sh-popover: 0 0 0 1px rgb(255 255 255 / 0.08), 0 16px 40px -8px rgb(0 0 0 / 0.6);
   color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #fbfbfb;
+  --sidebar: #f6f6f6;
+  --surface: #ffffff;
+  --surface-2: #ffffff;
+  --surface-3: #efefef;
+  --hover: #f5f5f5;
+  --border: #ebebeb;
+  --line-strong: #d6d6d6;
+  --text: #111113;
+  --soft: #4a4a4a;
+  --muted: #6b6b6b;
+  --subtle: #858585;
+  --faint: #ababab;
+  --icon: #3f3f46;
+
+  --accent: #4124fb;
+  --accent-fg: #ffffff;
+  --accent-text: #4124fb;
+  --ok: #15803d;
+  --status: #0f9f7d;
+  --warn: #b45309;
+  --danger: #dc2626;
+  --ring: color-mix(in srgb, #4124fb 45%, transparent);
+  --edge-exec: #8a8a8a;
+
+  --tag-neutral-bg: #f4f4f5;
+  --tag-neutral-border: #e4e4e7;
+  --tag-neutral-text: #3f3f46;
+  --tag-blue-bg: #eff6ff;
+  --tag-blue-border: #dbeafe;
+  --tag-blue-text: #1d4ed8;
+  --tag-green-bg: #f0fdf4;
+  --tag-green-border: #dcfce7;
+  --tag-green-text: #15803d;
+  --tag-purple-bg: #f5f3ff;
+  --tag-purple-border: #e9e5ff;
+  --tag-purple-text: #5b21b6;
+  --tag-amber-bg: #fffbeb;
+  --tag-amber-border: #fde9c3;
+  --tag-amber-text: #b45309;
+  --tag-red-bg: #fef2f2;
+  --tag-red-border: #fde2e2;
+  --tag-red-text: #b91c1c;
+  --tag-teal-bg: #f0fdfa;
+  --tag-teal-border: #ccfbf1;
+  --tag-teal-text: #0f766e;
+  --tag-yellow-bg: #fefce8;
+  --tag-yellow-border: #fdf3b4;
+  --tag-yellow-text: #a16207;
+
+  --sh-raised:
+    0 0 0 1px rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08), 0 2px 4px 0 rgb(0 0 0 / 0.04);
+  --sh-raised-hover:
+    0 0 0 1px rgb(0 0 0 / 0.12), 0 1px 2px -1px rgb(0 0 0 / 0.1), 0 2px 4px 0 rgb(0 0 0 / 0.06);
+  --sh-primary:
+    0 1px 2px 0 rgb(65 36 251 / 0.3), 0 0 0 1px #3417e0, inset 0 4px 6px 0 rgb(255 255 255 / 0.2),
+    inset 0 0 0 1px rgb(255 255 255 / 0.15), inset 0 -8px 14px 0 rgb(0 0 0 / 0.12);
+  --sh-active: 0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px 0 rgb(0 0 0 / 0.06);
+  --field: #ffffff;
+  --sh-field: inset 0 0 0 1px rgb(0 0 0 / 0.1), 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --sh-field-hover: inset 0 0 0 1px rgb(0 0 0 / 0.16), 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --sh-card:
+    0 0 0 1px rgb(0 0 0 / 0.06), 0 1px 2px -1px rgb(0 0 0 / 0.06), 0 2px 4px 0 rgb(0 0 0 / 0.04);
+  --sh-card-hover:
+    0 0 0 1px rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08), 0 2px 4px 0 rgb(0 0 0 / 0.06);
+  --sh-popover: 0 0 0 1px rgb(0 0 0 / 0.08), 0 16px 40px -8px rgb(0 0 0 / 0.18);
+  color-scheme: light;
 }
 
 @theme inline {
   --color-bg: var(--bg);
+  --color-sidebar: var(--sidebar);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-hover: var(--hover);
+  --color-field: var(--field);
   --color-border: var(--border);
+  --color-line-strong: var(--line-strong);
   --color-text: var(--text);
+  --color-soft: var(--soft);
   --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-faint: var(--faint);
+  --color-icon: var(--icon);
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
+  --color-accent-text: var(--accent-text);
   --color-ok: var(--ok);
+  --color-status: var(--status);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  --shadow-raised: var(--sh-raised);
+  --shadow-raised-hover: var(--sh-raised-hover);
+  --shadow-primary: var(--sh-primary);
+  --shadow-active: var(--sh-active);
+  --shadow-field: var(--sh-field);
+  --shadow-field-hover: var(--sh-field-hover);
+  --shadow-focus: inset 0 0 0 1px var(--accent-text), 0 0 0 3px var(--ring);
+  --shadow-card: var(--sh-card);
+  --shadow-card-hover: var(--sh-card-hover);
+  --shadow-popover: var(--sh-popover);
+
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Strong ease-out for UI: starts fast, settles softly. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 }
 
-html,
-body,
-#root {
-  height: 100%;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
 }
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-}
+@layer components {
+  /* Tabular figures wherever numbers line up in columns or tick over. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
 
-:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  /* Small uppercase labels for sidebar sections and table groups. */
+  .section-label {
+    color: var(--faint);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    line-height: 12px;
+    text-transform: uppercase;
+  }
+
+  /* A pressed control scales slightly so the press registers. Never when disabled. */
+  .pressable {
+    transition-property: scale, background-color, box-shadow, color;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-out);
+  }
+  .pressable:not(:disabled):active {
+    scale: 0.96;
+  }
+
+  /* Overlays enter with a short fade and lift; exits are instant. */
+  @keyframes sling-pop {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+  }
+  @keyframes sling-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  .anim-pop {
+    animation: sling-fade 150ms var(--ease-out) both;
+  }
+  .anim-fade {
+    animation: sling-fade 150ms var(--ease-out) both;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .anim-pop {
+      animation-name: sling-pop;
+      animation-duration: 180ms;
+    }
+  }
 }
 
 .prose-chat p + p,

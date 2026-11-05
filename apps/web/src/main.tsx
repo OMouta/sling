@@ -1,10 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
+import { LucideProvider } from "lucide-react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { ApiError } from "./lib/api.ts";
+import { applyTheme, storedTheme } from "./lib/theme.ts";
 import { router } from "./router.tsx";
 import "./styles.css";
+
+applyTheme(storedTheme());
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,7 +25,9 @@ if (root) {
   createRoot(root).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} context={{ queryClient }} />
+        <LucideProvider size={14} strokeWidth={1.5} absoluteStrokeWidth>
+          <RouterProvider router={router} context={{ queryClient }} />
+        </LucideProvider>
       </QueryClientProvider>
     </StrictMode>,
   );
