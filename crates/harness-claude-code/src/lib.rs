@@ -70,29 +70,30 @@ pub struct Detection {
     pub version: String,
     pub logged_in: bool,
     pub detail: String,
-    /// Model aliases `--model` takes.
+    /// Models `--model` takes.
     pub models: Vec<AgentModel>,
 }
 
 /// Effort levels `--effort` takes, lowest first.
 pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 
-/// The `--model` aliases, which always point at the latest model of each
-/// family. Claude Code has no command that lists models, so this list is
-/// fixed. None is marked as the default, because that depends on the
-/// account.
+/// Models by their full names, which `--model` takes as well as the
+/// `opus`-style aliases. Claude Code has no command that lists models, so
+/// this list is fixed.
 pub fn models() -> Vec<AgentModel> {
     [
-        ("fable", "Fable"),
-        ("opus", "Opus"),
-        ("sonnet", "Sonnet"),
-        ("haiku", "Haiku"),
+        ("claude-fable-5-1", "Claude Fable 5.1", "high", false),
+        ("claude-opus-5-5", "Claude Opus 5.5", "medium", true),
+        ("claude-sonnet-5-5", "Claude Sonnet 5.5", "high", false),
+        ("claude-haiku-5-5", "Claude Haiku 5.5", "medium", false),
     ]
     .into_iter()
-    .map(|(id, name)| AgentModel {
+    .map(|(id, name, default_effort, is_default)| AgentModel {
         id: id.into(),
         display_name: name.into(),
         efforts: EFFORTS.iter().map(|e| e.to_string()).collect(),
+        default_effort: default_effort.into(),
+        is_default,
         ..Default::default()
     })
     .collect()
@@ -203,7 +204,7 @@ pub struct RunOptions {
     pub network: bool,
     /// Environment for Claude Code. `None` inherits the Runner's.
     pub env: Option<Vec<(String, String)>>,
-    /// `--model`, such as `opus`. `None` uses Claude Code's default.
+    /// `--model`, such as `claude-opus-5-5`. `None` uses Claude Code's default.
     pub model: Option<String>,
     /// `--effort`, such as `high`. `None` uses the model's default.
     pub effort: Option<String>,
@@ -873,13 +874,47 @@ mod tests {
     }
 
     #[test]
-    fn lists_the_model_aliases() {
+    fn lists_models_by_full_name() {
         let models = models();
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, ["fable", "opus", "sonnet", "haiku"]);
-        assert_eq!(models[1].display_name, "Opus");
-        assert!(models.iter().all(|m| !m.fast && !m.is_default));
-        assert_eq!(models[0].efforts, ["low", "medium", "high", "xhigh", "max"]);
+        assert_eq!(
+            ids,
+            [
+                "claude-fable-5-1",
+                "claude-opus-5-5",
+                "claude-sonnet-5-5",
+                "claude-haiku-5-5"
+            ]
+        );
+        let names: Vec<&str> = models.iter().map(|m| m.display_name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "Claude Fable 5.1",
+                "Claude Opus 5.5",
+                "Claude Sonnet 5.5",
+                "Claude Haiku 5.5"
+            ]
+        );
+        let defaults: Vec<&str> = models.iter().map(|m| m.default_effort.as_str()).collect();
+        assert_eq!(defaults, ["high", "medium", "high", "medium"]);
+        let default: Vec<&str> = models
+            .iter()
+            .filter(|m| m.is_default)
+            .map(|m| m.id.as_str())
+            .collect();
+        assert_eq!(default, ["claude-opus-5-5"]);
+        assert!(models.iter().all(|m| !m.fast));
+        assert!(
+            models
+                .iter()
+                .all(|m| m.efforts == ["low", "medium", "high", "xhigh", "max"])
+        );
+        assert!(
+            models
+                .iter()
+                .all(|m| m.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
+        );
     }
 
     #[test]
