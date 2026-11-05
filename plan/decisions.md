@@ -137,6 +137,18 @@ You create the bot in the Discord developer portal and paste its token into the 
 ### D35. One durable job per run, persisted after every node
 A pg-boss job runs a workflow run's nodes in a loop and saves the cursor after each one. Waiting runs hold no job. A node that was running when the process died is re-run only if it's idempotent; otherwise it fails as "interrupted, outcome unknown".
 
+### D36. Node-run writes commit asynchronously, except before side effects
+Writing each node run with `synchronous_commit = on` put the engine's overhead at about 6 ms per node at p95, over the 5 ms budget. Node-run writes now use `synchronous_commit = off`, except the write right before a node with side effects, which waits for the WAL flush. If Postgres itself crashes, the worst case is an idempotent node running again, or a side-effect node reported as "interrupted, outcome unknown". Measured after the change: about 1.7 to 1.95 ms at p95.
+
+### D37. One server process per database, for now
+On startup the server clears run jobs left active, retrying, or failed by the last process, because a failed job on a per-key queue would block that key forever. Cancel also only reaches runs in the current process. Running two control-plane processes against one database needs a lease or heartbeat on runs first.
+
+### D38. Webhook tokens are derived, not random
+A webhook token is an HMAC of the server secret, the workflow ID, and the trigger node ID, and only its hash is stored. The URL stays the same across republishing. Rotating it means giving the trigger node a new ID. Changing `SLING_SECRET_KEY` changes every webhook URL.
+
+### D39. Template wiring follows the port rules
+A data input takes one edge, so in the Discord assistant both triggers rejoin at **Conversation**, which works out the key with an expression, rather than each feeding the assistant directly. Where a node's text comes from config rather than an input port (for example a Discord message built from an email's subject and an AI summary), the template stores the value with **Set variable** and reads it as `vars.<name>` in the expression.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.

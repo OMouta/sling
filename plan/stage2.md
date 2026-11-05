@@ -2,6 +2,50 @@
 
 Workflows become first-class. This is spec section 15, Stage 2, with the choices in `decisions.md` applied (D28 to D35 are new for this stage).
 
+## Status (2026-11-05)
+
+W0 to W4 are built and on `main`: the contracts first, then three parallel workstreams (engine and server, connectors, editor), rebased and merged, then integration.
+
+| "Done when" item | Verified by |
+|---|---|
+| 1. Add Discord and Email, both pass their test | End-to-end suite: email against GreenMail, Discord against a fake REST and gateway |
+| 2, 3. Important email to Discord | End-to-end: a mail from an allowlisted sender posts the subject, summary, and action items to Discord, and the run shows every node |
+| 4. Other senders take the false branch | End-to-end: the run shows `false`, and nothing is sent |
+| 5. Publish version 2, version 1 stays inspectable | End-to-end through the API. The editor's publish path is covered by DOM tests against a mocked API |
+| 6. The assistant over Discord | End-to-end with the mock model. Task updates going back to the same Discord channel are covered by the engine suite |
+| 7. Approve from Discord, refuse strangers | End-to-end: a stranger's click is refused and audited, and the approver's click resumes the run, with `via: discord` in the audit |
+| 8. Web chat through Sling Assistant, and disabled | Engine suite |
+| 9. Waits survive a restart | Engine suite: a timer wait across a restart, and a SIGKILL mid-node |
+| 10. Website health monitor | The template installs and validates. Schedule triggers and `http.request` are covered separately in the engine suite |
+
+Test counts on `main`:
+- **Unit tests:** 42 in `packages/workflow`, 46 for Discord, 14 for email, 84 in the web app.
+- **GreenMail integration tests:** 12 for the email connector.
+- **End-to-end suites:** 42 tests across the Stage 1, engine, and Stage 2 suites.
+
+| Budget | Measured |
+|---|---|
+| Engine overhead per node, p95 | 1.7 to 1.95 ms (D36) |
+| Trigger to first node, p95 | 24.5 ms, with a 7.9 ms p50, over 30 manual runs on the dev server |
+| 200-node workflow in the editor | 16.7 ms per frame while dragging and panning, in headless Chromium on Apple Silicon |
+
+Found and fixed during integration:
+- **Publish issues:** the editor dropped them, because a failed publish is a 422 and the client threw before reading the body.
+- **Config forms:** the form didn't render the engine's `jsonata` and `workflow` field types, and didn't offer expressions on config keys named after an input port.
+- **Test fake:** the engine suite's fake `discord.send_message` had no `content` input, unlike the real connector.
+
+Not done or not verified yet:
+- **A real Discord bot.** There was no token, so the discord.js gateway, the DM channel creation, and editing the approval message after a click have only run against fakes.
+- **The editor against the real server in a browser.** It's covered by DOM tests with a mocked API, and a headless run against a mock API, but nobody has clicked through it against the real server.
+- **Delegating to real Codex from Discord.** That's the Stage 1 path with a different interface, and it hasn't been tried end to end.
+- **Linux and Windows.** CI hasn't run, because the repo has no remote yet.
+- **Gaps carried over:**
+  - Discord messages are dropped if the server can't take them.
+  - `http.request` can reach internal addresses.
+  - There's one server process per database (D37).
+  - The editor can't reroute a data edge by dragging it.
+  - The Docker image is 660 MB.
+
 ## Goal
 
 You can build and run the email example from the spec in a visual editor, and the assistant you chat with is itself a workflow you can open and change. Discord becomes a second way to talk to the same assistant and to approve its work.
