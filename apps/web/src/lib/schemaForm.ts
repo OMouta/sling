@@ -16,12 +16,15 @@ interface FieldBase {
   /** `null` is also allowed. */
   nullable: boolean;
   default: unknown;
+  /** The schema's `widget` hint, for callers that render special pickers. */
+  widget: string | null;
 }
 
 export type FormField = FieldBase &
   (
     | { kind: "string"; minLength?: number; maxLength?: number; format?: string }
     | { kind: "textarea" }
+    | { kind: "jsonata" }
     | { kind: "json" }
     | { kind: "number"; integer: boolean; min?: number; max?: number }
     | { kind: "boolean" }
@@ -102,6 +105,7 @@ export function fieldFor(key: string, raw: Schema, required: boolean, depth = 0)
     required: required && schema.default === undefined,
     nullable,
     default: schema.default,
+    widget: typeof schema.widget === "string" ? schema.widget : null,
   };
   const widget = schema.widget;
   if (widget === "json") return { ...base, kind: "json" };
@@ -130,6 +134,7 @@ export function fieldFor(key: string, raw: Schema, required: boolean, depth = 0)
   switch (type) {
     case "string":
       if (widget === "textarea") return { ...base, kind: "textarea" };
+      if (widget === "jsonata") return { ...base, kind: "jsonata" };
       return {
         ...base,
         kind: "string",

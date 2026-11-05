@@ -191,3 +191,17 @@ describe("defaults and values", () => {
     expect(missingRequired(fields, { url: "https://x" })).toEqual([]);
   });
 });
+
+describe("engine widget hints", () => {
+  it("maps jsonata fields to a JSONata editor", () => {
+    const f = fieldFor("condition", { type: "string", widget: "jsonata" }, true);
+    expect(f.kind).toBe("jsonata");
+    expect(f.widget).toBe("jsonata");
+  });
+
+  it("keeps the workflow hint on a string field so the inspector can render a picker", () => {
+    const f = fieldFor("workflowId", { type: "string", widget: "workflow" }, true);
+    expect(f.kind).toBe("string");
+    expect(f.widget).toBe("workflow");
+  });
+});

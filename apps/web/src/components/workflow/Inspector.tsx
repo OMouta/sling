@@ -11,7 +11,7 @@ import {
 } from "../../lib/workflow/expressions.ts";
 import * as g from "../../lib/workflow/graph.ts";
 import { useGraph, useGraphStore } from "../../lib/workflow/store.ts";
-import { useInstallations } from "../../lib/workflowApi.ts";
+import { useInstallations, useWorkflows } from "../../lib/workflowApi.ts";
 import { type FieldOverride, SchemaForm } from "../SchemaForm.tsx";
 import { Badge, Button, cx, Input, Select, Spinner } from "../ui.tsx";
 
@@ -183,7 +183,23 @@ function fieldOverride(
       ),
     };
   }
-  if (!spec.expressionFields.includes(field.key)) return null;
+  if (field.widget === "workflow") {
+    return {
+      control: (
+        <WorkflowSelect
+          value={typeof value === "string" ? value : ""}
+          onChange={(v) => set(v || undefined)}
+          disabled={!editable}
+          label={field.label}
+        />
+      ),
+    };
+  }
+  // A config key named after an input port is that input's default, so it can
+  // be an expression too.
+  const expressible =
+    spec.expressionFields.includes(field.key) || spec.inputs.some((p) => p.name === field.key);
+  if (!expressible) return null;
   const expr = isExpression(value);
   return {
     accessory: (
@@ -437,5 +453,39 @@ function PortList({
         </ul>
       )}
     </section>
+  );
+}
+
+function WorkflowSelect({
+  value,
+  onChange,
+  disabled,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+  label: string;
+}) {
+  const workflows = useWorkflows();
+  if (workflows.isPending) return <Spinner />;
+  const options = workflows.data ?? [];
+  const known = options.some((o) => o.id === value);
+  return (
+    <Select
+      aria-label={label}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+    >
+      <option value="">Choose a workflow</option>
+      {value && !known && <option value={value}>Unknown ({value})</option>}
+      {options.map((w) => (
+        <option key={w.id} value={w.id}>
+          {w.name}
+          {w.activeVersion === null ? " (not published)" : ""}
+        </option>
+      ))}
+    </Select>
   );
 }

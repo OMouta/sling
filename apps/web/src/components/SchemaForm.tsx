@@ -124,6 +124,19 @@ function Control({
           onChange={(e) => set(e.target.value === "" && field.nullable ? null : e.target.value)}
         />
       );
+    case "jsonata":
+      return (
+        <Textarea
+          id={id}
+          rows={2}
+          spellCheck={false}
+          value={typeof value === "string" ? value : ""}
+          placeholder={placeholder ?? "JSONata, for example inputs.value.status = 200"}
+          disabled={disabled}
+          className="font-mono text-xs"
+          onChange={(e) => set(e.target.value)}
+        />
+      );
     case "textarea":
       return (
         <LongText
