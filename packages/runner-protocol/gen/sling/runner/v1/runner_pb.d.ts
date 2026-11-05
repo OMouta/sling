@@ -60,6 +60,12 @@ export declare type Envelope = Message<"sling.runner.v1.Envelope"> & {
     case: "taskEvent";
   } | {
     /**
+     * @generated from field: sling.runner.v1.RepoChangeResult repo_change_result = 5;
+     */
+    value: RepoChangeResult;
+    case: "repoChangeResult";
+  } | {
+    /**
      * Server to Runner.
      *
      * @generated from field: sling.runner.v1.Challenge challenge = 20;
@@ -108,6 +114,18 @@ export declare type Envelope = Message<"sling.runner.v1.Envelope"> & {
      */
     value: Error;
     case: "error";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.RepoChange repo_change = 28;
+     */
+    value: RepoChange;
+    case: "repoChange";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.RepoScan repo_scan = 29;
+     */
+    value: RepoScan;
+    case: "repoScan";
   } | { case: undefined; value?: undefined };
 };
 
@@ -379,6 +397,22 @@ export declare type Inventory = Message<"sling.runner.v1.Inventory"> & {
    * @generated from field: repeated string labels = 5;
    */
   labels: string[];
+
+  /**
+   * Git repos the Runner found on the machine that aren't in `repos` yet.
+   * Only these can be added with RepoChange.
+   *
+   * @generated from field: repeated sling.runner.v1.FoundRepo found_repos = 6;
+   */
+  foundRepos: FoundRepo[];
+
+  /**
+   * Whether this machine accepts RepoChange. Turned off with
+   * `sling-runner config set remote-repos off`.
+   *
+   * @generated from field: bool remote_repos = 7;
+   */
+  remoteRepos: boolean;
 };
 
 /**
@@ -386,6 +420,41 @@ export declare type Inventory = Message<"sling.runner.v1.Inventory"> & {
  * Use `create(InventorySchema)` to create a new message.
  */
 export declare const InventorySchema: GenMessage<Inventory>;
+
+/**
+ * @generated from message sling.runner.v1.FoundRepo
+ */
+export declare type FoundRepo = Message<"sling.runner.v1.FoundRepo"> & {
+  /**
+   * Absolute path of the repo's working tree.
+   *
+   * @generated from field: string path = 1;
+   */
+  path: string;
+
+  /**
+   * Suggested name: the directory name, made unique on this Runner.
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string default_branch = 3;
+   */
+  defaultBranch: string;
+
+  /**
+   * @generated from field: string remote_url = 4;
+   */
+  remoteUrl: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.FoundRepo.
+ * Use `create(FoundRepoSchema)` to create a new message.
+ */
+export declare const FoundRepoSchema: GenMessage<FoundRepo>;
 
 /**
  * @generated from message sling.runner.v1.Capability
@@ -416,6 +485,14 @@ export declare type Capability = Message<"sling.runner.v1.Capability"> & {
    * @generated from field: string detail = 4;
    */
   detail: string;
+
+  /**
+   * Models a coding agent can run, for "coding.*" capabilities. Empty when
+   * the agent doesn't say.
+   *
+   * @generated from field: repeated sling.runner.v1.AgentModel models = 5;
+   */
+  models: AgentModel[];
 };
 
 /**
@@ -423,6 +500,61 @@ export declare type Capability = Message<"sling.runner.v1.Capability"> & {
  * Use `create(CapabilitySchema)` to create a new message.
  */
 export declare const CapabilitySchema: GenMessage<Capability>;
+
+/**
+ * @generated from message sling.runner.v1.AgentModel
+ */
+export declare type AgentModel = Message<"sling.runner.v1.AgentModel"> & {
+  /**
+   * What the agent's --model flag takes.
+   *
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: string description = 3;
+   */
+  description: string;
+
+  /**
+   * Reasoning effort levels the model takes, lowest first, for example
+   * "low", "medium", "high", "xhigh", "max".
+   *
+   * @generated from field: repeated string efforts = 4;
+   */
+  efforts: string[];
+
+  /**
+   * @generated from field: string default_effort = 5;
+   */
+  defaultEffort: string;
+
+  /**
+   * The model has a faster, pricier service tier.
+   *
+   * @generated from field: bool fast = 6;
+   */
+  fast: boolean;
+
+  /**
+   * The agent uses this model when none is given.
+   *
+   * @generated from field: bool is_default = 7;
+   */
+  isDefault: boolean;
+};
+
+/**
+ * Describes the message sling.runner.v1.AgentModel.
+ * Use `create(AgentModelSchema)` to create a new message.
+ */
+export declare const AgentModelSchema: GenMessage<AgentModel>;
 
 /**
  * @generated from message sling.runner.v1.Repo
@@ -502,6 +634,28 @@ export declare type TaskAssign = Message<"sling.runner.v1.TaskAssign"> & {
    * @generated from field: string branch = 7;
    */
   branch: string;
+
+  /**
+   * Model for the agent, one of the capability's AgentModel ids. Empty means
+   * the agent's own default.
+   *
+   * @generated from field: string model = 8;
+   */
+  model: string;
+
+  /**
+   * Reasoning effort. Empty means the model's default.
+   *
+   * @generated from field: string effort = 9;
+   */
+  effort: string;
+
+  /**
+   * Use the model's fast tier, when it has one.
+   *
+   * @generated from field: bool fast = 10;
+   */
+  fast: boolean;
 };
 
 /**
@@ -509,6 +663,112 @@ export declare type TaskAssign = Message<"sling.runner.v1.TaskAssign"> & {
  * Use `create(TaskAssignSchema)` to create a new message.
  */
 export declare const TaskAssignSchema: GenMessage<TaskAssign>;
+
+/**
+ * Server to Runner: allow a found repo, or stop allowing one. The Runner
+ * refuses when remote_repos is off, and adds only paths it found itself.
+ *
+ * @generated from message sling.runner.v1.RepoChange
+ */
+export declare type RepoChange = Message<"sling.runner.v1.RepoChange"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: sling.runner.v1.RepoChange.Op op = 2;
+   */
+  op: RepoChange_Op;
+
+  /**
+   * For OP_ADD: a FoundRepo path.
+   *
+   * @generated from field: string path = 3;
+   */
+  path: string;
+
+  /**
+   * For OP_ADD, the name to give it (empty takes the FoundRepo name). For
+   * OP_REMOVE, the repo to remove.
+   *
+   * @generated from field: string name = 4;
+   */
+  name: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.RepoChange.
+ * Use `create(RepoChangeSchema)` to create a new message.
+ */
+export declare const RepoChangeSchema: GenMessage<RepoChange>;
+
+/**
+ * @generated from enum sling.runner.v1.RepoChange.Op
+ */
+export enum RepoChange_Op {
+  /**
+   * @generated from enum value: OP_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: OP_ADD = 1;
+   */
+  ADD = 1,
+
+  /**
+   * @generated from enum value: OP_REMOVE = 2;
+   */
+  REMOVE = 2,
+}
+
+/**
+ * Describes the enum sling.runner.v1.RepoChange.Op.
+ */
+export declare const RepoChange_OpSchema: GenEnum<RepoChange_Op>;
+
+/**
+ * Runner to server, after a RepoChange. A fresh Inventory follows a change.
+ *
+ * @generated from message sling.runner.v1.RepoChangeResult
+ */
+export declare type RepoChangeResult = Message<"sling.runner.v1.RepoChangeResult"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: bool ok = 2;
+   */
+  ok: boolean;
+
+  /**
+   * @generated from field: string message = 3;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.RepoChangeResult.
+ * Use `create(RepoChangeResultSchema)` to create a new message.
+ */
+export declare const RepoChangeResultSchema: GenMessage<RepoChangeResult>;
+
+/**
+ * Server to Runner: look for repos again and send a fresh Inventory.
+ *
+ * @generated from message sling.runner.v1.RepoScan
+ */
+export declare type RepoScan = Message<"sling.runner.v1.RepoScan"> & {
+};
+
+/**
+ * Describes the message sling.runner.v1.RepoScan.
+ * Use `create(RepoScanSchema)` to create a new message.
+ */
+export declare const RepoScanSchema: GenMessage<RepoScan>;
 
 /**
  * @generated from message sling.runner.v1.TaskCancel

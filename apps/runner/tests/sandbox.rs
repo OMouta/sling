@@ -539,6 +539,7 @@ async fn boots_runs_a_task_pushes_and_exits_when_revoked() {
         mode: PermissionMode::Auto as i32,
         harness: "codex".into(),
         branch: "sling/sbx1-add-a-line".into(),
+        ..Default::default()
     }));
     let mut events = Vec::new();
     let finished = loop {

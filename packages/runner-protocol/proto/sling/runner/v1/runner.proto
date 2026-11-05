@@ -32,6 +32,7 @@ message Envelope {
     Heartbeat heartbeat = 2;
     Inventory inventory = 3;
     TaskEvent task_event = 4;
+    RepoChangeResult repo_change_result = 5;
 
     // Server to Runner.
     Challenge challenge = 20;
@@ -42,6 +43,8 @@ message Envelope {
     ActionRequest action_request = 25;
     EventAck event_ack = 26;
     Error error = 27;
+    RepoChange repo_change = 28;
+    RepoScan repo_scan = 29;
   }
 }
 
@@ -115,6 +118,21 @@ message Inventory {
   // Labels set in the Runner's local config, plus automatic "os:<os>" and
   // "arch:<arch>". Tasks can require labels. The server cannot change them.
   repeated string labels = 5;
+  // Git repos the Runner found on the machine that aren't in `repos` yet.
+  // Only these can be added with RepoChange.
+  repeated FoundRepo found_repos = 6;
+  // Whether this machine accepts RepoChange. Turned off with
+  // `sling-runner config set remote-repos off`.
+  bool remote_repos = 7;
+}
+
+message FoundRepo {
+  // Absolute path of the repo's working tree.
+  string path = 1;
+  // Suggested name: the directory name, made unique on this Runner.
+  string name = 2;
+  string default_branch = 3;
+  string remote_url = 4;
 }
 
 message Capability {
@@ -126,6 +144,24 @@ message Capability {
   // installed and logged in.
   bool ready = 3;
   string detail = 4;
+  // Models a coding agent can run, for "coding.*" capabilities. Empty when
+  // the agent doesn't say.
+  repeated AgentModel models = 5;
+}
+
+message AgentModel {
+  // What the agent's --model flag takes.
+  string id = 1;
+  string display_name = 2;
+  string description = 3;
+  // Reasoning effort levels the model takes, lowest first, for example
+  // "low", "medium", "high", "xhigh", "max".
+  repeated string efforts = 4;
+  string default_effort = 5;
+  // The model has a faster, pricier service tier.
+  bool fast = 6;
+  // The agent uses this model when none is given.
+  bool is_default = 7;
 }
 
 message Repo {
@@ -150,7 +186,43 @@ message TaskAssign {
   string harness = 6;
   // Branch to create, for example "sling/ab12cd-footer-year".
   string branch = 7;
+  // Model for the agent, one of the capability's AgentModel ids. Empty means
+  // the agent's own default.
+  string model = 8;
+  // Reasoning effort. Empty means the model's default.
+  string effort = 9;
+  // Use the model's fast tier, when it has one.
+  bool fast = 10;
 }
+
+// ---------------------------------------------------------------- repos
+
+// Server to Runner: allow a found repo, or stop allowing one. The Runner
+// refuses when remote_repos is off, and adds only paths it found itself.
+message RepoChange {
+  string request_id = 1;
+  enum Op {
+    OP_UNSPECIFIED = 0;
+    OP_ADD = 1;
+    OP_REMOVE = 2;
+  }
+  Op op = 2;
+  // For OP_ADD: a FoundRepo path.
+  string path = 3;
+  // For OP_ADD, the name to give it (empty takes the FoundRepo name). For
+  // OP_REMOVE, the repo to remove.
+  string name = 4;
+}
+
+// Runner to server, after a RepoChange. A fresh Inventory follows a change.
+message RepoChangeResult {
+  string request_id = 1;
+  bool ok = 2;
+  string message = 3;
+}
+
+// Server to Runner: look for repos again and send a fresh Inventory.
+message RepoScan {}
 
 message TaskCancel {
   string task_id = 1;

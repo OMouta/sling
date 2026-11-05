@@ -186,6 +186,7 @@ fn assign(agent: &str, id: &str, mode: PermissionMode, branch: &str, repo: &str)
         mode: mode as i32,
         harness: agent.into(),
         branch: branch.into(),
+        ..Default::default()
     }
 }
 

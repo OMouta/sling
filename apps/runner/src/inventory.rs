@@ -35,6 +35,7 @@ pub async fn build(cfg: &Config) -> Inventory {
         } else {
             "git not found".into()
         },
+        models: Vec::new(),
     });
 
     for agent in harness::all() {
@@ -44,6 +45,7 @@ pub async fn build(cfg: &Config) -> Inventory {
             version: d.version,
             ready: d.ready,
             detail: d.detail,
+            models: Vec::new(),
         });
     }
 
@@ -64,6 +66,7 @@ pub async fn build(cfg: &Config) -> Inventory {
             (true, false) => "gh is not logged in. Run `gh auth login`.".into(),
             _ => String::new(),
         },
+        models: Vec::new(),
     });
 
     let mut repos = Vec::new();
@@ -82,6 +85,8 @@ pub async fn build(cfg: &Config) -> Inventory {
         max_mode: cfg.max_mode.to_proto() as i32,
         max_concurrent_tasks: cfg.max_concurrent_tasks,
         labels: cfg.all_labels(),
+        found_repos: Vec::new(),
+        remote_repos: false,
     }
 }
 
