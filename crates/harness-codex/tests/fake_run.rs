@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use sling_harness_codex::{Event, Run, RunOptions, build_prompt, detect};
+use sling_harness_codex::{Event, Run, RunOptions, build_prompt, detect, list_models};
 use sling_runner_protocol::task_event::Kind;
 use tokio::sync::mpsc;
 
@@ -14,6 +14,9 @@ fn opts(dir: &std::path::Path, prompt: String, sandbox: &str) -> RunOptions {
         sandbox: sandbox.into(),
         network: false,
         env: None,
+        model: None,
+        effort: None,
+        fast: false,
     }
 }
 
@@ -32,6 +35,51 @@ async fn detects_the_fake_as_ready() {
     let d = detect(BIN).await;
     assert!(d.ready(), "{d:?}");
     assert_eq!(d.version, "0.166.0");
+}
+
+#[tokio::test]
+async fn lists_the_fakes_models() {
+    let d = detect(BIN).await;
+    let ids: Vec<&str> = d.models.iter().map(|m| m.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        ["fake-large", "fake-mini"],
+        "hidden models are left out"
+    );
+    assert!(d.models[0].is_default && d.models[0].fast);
+    assert_eq!(d.models[0].default_effort, "medium");
+    assert!(!d.models[1].is_default && !d.models[1].fast);
+    assert!(list_models("/nonexistent/codex").await.is_empty());
+}
+
+#[tokio::test]
+async fn model_settings_reach_codex() {
+    unsafe { std::env::set_var("FAKE_CODEX_DELAY_MS", "1") };
+    let dir = tempfile::tempdir().unwrap();
+    let (tx, rx) = mpsc::channel(64);
+    let mut o = opts(dir.path(), "[fake:noop] go".into(), "read-only");
+    o.model = Some("fake-mini".into());
+    o.effort = Some("high".into());
+    o.fast = true;
+    let (mut run, reader) = Run::start(&o, tx).await.unwrap();
+    let events = tokio::spawn(collect(rx));
+    let code = run.wait().await.unwrap();
+    reader.finish(code).await;
+    let said: Vec<String> = events
+        .await
+        .unwrap()
+        .into_iter()
+        .filter_map(|k| match k {
+            Kind::AgentMessage(m) => Some(m.text),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        said.contains(
+            &"Settings: model=fake-mini model_reasoning_effort=high service_tier=fast".to_string()
+        ),
+        "{said:?}"
+    );
 }
 
 #[tokio::test]

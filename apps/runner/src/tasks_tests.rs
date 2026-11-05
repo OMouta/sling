@@ -31,11 +31,21 @@ case "$1" in
       echo '{"type":"thread.started","thread_id":"t1"}'
       while true; do sleep 0.05; done ;;
     esac
-    sandbox=""; dir="."
+    sandbox=""; dir="."; settings=""
     while [ $# -gt 0 ]; do
-      case "$1" in -s) sandbox="$2"; shift ;; -C) dir="$2"; shift ;; esac
+      case "$1" in
+        -s) sandbox="$2"; shift ;;
+        -C) dir="$2"; shift ;;
+        -m) settings="$settings model=$2"; shift ;;
+        -c)
+          case "$2" in model_reasoning_effort=*|service_tier=*)
+            settings="$settings $(printf '%s' "$2" | tr -d '"')" ;;
+          esac
+          shift ;;
+      esac
       shift
     done
+    echo "{\"type\":\"item.completed\",\"item\":{\"id\":\"s1\",\"type\":\"agent_message\",\"text\":\"settings:$settings\"}}"
     if [ "$sandbox" != "read-only" ]; then
       echo "changed" >> "$dir/CHANGED.md"
       echo "build output" > "$dir/build.log"
@@ -63,16 +73,20 @@ case "$1" in
       echo '{"type":"system","subtype":"init","session_id":"s1","model":"m"}'
       while true; do sleep 0.05; done ;;
     esac
-    mode=""
+    mode=""; settings=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --permission-mode) mode="$2"; shift ;;
         --dangerously-skip-permissions) mode="bypassPermissions" ;;
+        --model) settings="$settings model=$2"; shift ;;
+        --effort) settings="$settings effort=$2"; shift ;;
+        --settings) shift ;;
       esac
       shift
     done
     dir="$PWD"
     echo "{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"s1\",\"model\":\"m\",\"permissionMode\":\"$mode\"}"
+    echo "{\"type\":\"assistant\",\"message\":{\"id\":\"m0\",\"content\":[{\"type\":\"text\",\"text\":\"settings:$settings\"}]},\"parent_tool_use_id\":null}"
     if [ "$mode" != "plan" ]; then
       echo "changed" >> "$dir/CHANGED.md"
       echo "build output" > "$dir/build.log"
@@ -535,6 +549,119 @@ async fn the_agent_never_sees_sling_variables_or_tokens() {
             })
             .expect("the fake reports its environment");
         assert_eq!(seen.trim(), want, "{agent}");
+    }
+}
+
+fn agent_said(events: &[TaskEvent], prefix: &str) -> Option<String> {
+    events.iter().find_map(|e| match &e.kind {
+        Some(Kind::AgentMessage(m)) if m.text.starts_with(prefix) => Some(m.text.clone()),
+        _ => None,
+    })
+}
+
+fn logged(events: &[TaskEvent]) -> Vec<String> {
+    events
+        .iter()
+        .filter_map(|e| match &e.kind {
+            Some(Kind::Log(l)) => Some(l.text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn model_settings_reach_each_agent() {
+    let env = setup(Mode::FullAccess);
+    for (agent, model, want, note) in [
+        (
+            "codex",
+            "fake-mini",
+            "settings: model=fake-mini model_reasoning_effort=high service_tier=fast",
+            "Codex: model fake-mini, effort high, fast tier",
+        ),
+        (
+            "claude-code",
+            "opus",
+            "settings: model=opus effort=high",
+            "Claude Code: model opus, effort high, no fast tier (Claude Code doesn't have one)",
+        ),
+    ] {
+        let id = format!("{agent}-m1");
+        let mut a = assign(
+            agent,
+            &id,
+            PermissionMode::Auto,
+            &format!("sling/m1-{agent}"),
+            "site",
+        );
+        a.model = model.into();
+        a.effort = "high".into();
+        a.fast = true;
+        env.mgr.assign(a, &all_ready()).await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Finished(_))).await;
+        assert_eq!(
+            finished(&events).outcome(),
+            task_finished::Outcome::Succeeded,
+            "{agent}"
+        );
+        assert_eq!(agent_said(&events, "settings:").as_deref(), Some(want));
+        assert!(logged(&events).iter().any(|l| l == note), "{agent}");
+    }
+}
+
+#[tokio::test]
+async fn empty_model_settings_leave_the_agents_defaults() {
+    let env = setup(Mode::FullAccess);
+    for agent in AGENTS {
+        let id = format!("{agent}-m2");
+        env.mgr
+            .assign(
+                assign(
+                    agent,
+                    &id,
+                    PermissionMode::Auto,
+                    &format!("sling/m2-{agent}"),
+                    "site",
+                ),
+                &all_ready(),
+            )
+            .await;
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Finished(_))).await;
+        assert_eq!(
+            agent_said(&events, "settings:").as_deref(),
+            Some("settings:"),
+            "{agent}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn refuses_model_settings_that_could_inject_options() {
+    let env = setup(Mode::FullAccess);
+    let cases: [(&str, &str); 4] = [
+        ("x\" sandbox_mode=\"danger-full-access", ""),
+        ("--dangerously-skip-permissions", ""),
+        ("", "high\"\napproval_policy=\"never"),
+        ("", &"x".repeat(65)),
+    ];
+    for agent in AGENTS {
+        for (i, (model, effort)) in cases.iter().enumerate() {
+            let id = format!("{agent}-m3-{i}");
+            let mut a = assign(
+                agent,
+                &id,
+                PermissionMode::Auto,
+                &format!("sling/m3-{agent}-{i}"),
+                "site",
+            );
+            a.model = model.to_string();
+            a.effort = effort.to_string();
+            env.mgr.assign(a, &all_ready()).await;
+            let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Rejected(_))).await;
+            let (reason, message) = rejected(&events).unwrap();
+            assert_eq!(reason, task_rejected::Reason::Invalid, "{agent} {i}");
+            assert!(message.starts_with("Refusing "), "{message}");
+        }
     }
 }
 

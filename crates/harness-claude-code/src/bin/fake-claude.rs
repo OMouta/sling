@@ -3,7 +3,8 @@
 //!
 //! It answers `--version`, `auth status`, and `-p --output-format
 //! stream-json ...`, printing the same stream-json shapes as real Claude Code.
-//! Pick a scenario with `FAKE_CLAUDE_SCENARIO`, or put `[fake:<scenario>]` in
+//! It takes `--model` and `--effort`, and reports the model in its init
+//! event the way Claude Code does. Pick a scenario with `FAKE_CLAUDE_SCENARIO`, or put `[fake:<scenario>]` in
 //! the prompt:
 //!
 //! - `success` (default): writes `SLING_FAKE.md`, runs a command, finishes.
@@ -64,6 +65,19 @@ fn print(args: &[String]) {
             .cloned()
             .unwrap_or_else(|| "default".into())
     };
+    let flag = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    let model = flag("--model").unwrap_or_else(|| "claude-fake".into());
+    if let Some(effort) = flag("--effort")
+        && !["low", "medium", "high", "xhigh", "max"].contains(&effort.as_str())
+    {
+        eprintln!("fake-claude: unknown effort {effort:?}");
+        std::process::exit(1);
+    }
     let cwd = std::env::current_dir().unwrap();
     let mut prompt = String::new();
     std::io::stdin().read_to_string(&mut prompt).unwrap();
@@ -88,12 +102,12 @@ fn print(args: &[String]) {
     let mut msg = 0;
     let mut text = |t: &str| {
         msg += 1;
-        json!({"type": "assistant", "message": {"id": format!("msg_fake_{msg}"), "type": "message", "role": "assistant", "model": "claude-fake", "content": [{"type": "text", "text": t}]}, "parent_tool_use_id": null, "session_id": SESSION})
+        json!({"type": "assistant", "message": {"id": format!("msg_fake_{msg}"), "type": "message", "role": "assistant", "model": model, "content": [{"type": "text", "text": t}]}, "parent_tool_use_id": null, "session_id": SESSION})
     };
 
     emit(json!({
         "type": "system", "subtype": "init", "cwd": cwd.display().to_string(), "session_id": SESSION,
-        "tools": ["Bash", "Edit", "Read", "Write"], "mcp_servers": [], "model": "claude-fake",
+        "tools": ["Bash", "Edit", "Read", "Write"], "mcp_servers": [], "model": model,
         "permissionMode": mode, "apiKeySource": "none", "claude_code_version": VERSION,
     }));
     pause();
@@ -159,7 +173,7 @@ fn print(args: &[String]) {
         body.push_str(&format!("- {title}\n"));
         let path = file.display().to_string();
         emit(
-            json!({"type": "assistant", "message": {"id": "msg_fake_w", "type": "message", "role": "assistant", "model": "claude-fake", "content": [{"type": "tool_use", "id": "toolu_fake_write", "name": "Write", "input": {"file_path": path, "content": body}}]}, "parent_tool_use_id": null, "session_id": SESSION}),
+            json!({"type": "assistant", "message": {"id": "msg_fake_w", "type": "message", "role": "assistant", "model": model, "content": [{"type": "tool_use", "id": "toolu_fake_write", "name": "Write", "input": {"file_path": path, "content": body}}]}, "parent_tool_use_id": null, "session_id": SESSION}),
         );
         std::fs::write(&file, &body).unwrap();
         emit(json!({
@@ -172,7 +186,7 @@ fn print(args: &[String]) {
     pause();
 
     emit(
-        json!({"type": "assistant", "message": {"id": "msg_fake_b", "type": "message", "role": "assistant", "model": "claude-fake", "content": [{"type": "tool_use", "id": "toolu_fake_bash", "name": "Bash", "input": {"command": "echo tests", "description": "Run the tests"}}]}, "parent_tool_use_id": null, "session_id": SESSION}),
+        json!({"type": "assistant", "message": {"id": "msg_fake_b", "type": "message", "role": "assistant", "model": model, "content": [{"type": "tool_use", "id": "toolu_fake_bash", "name": "Bash", "input": {"command": "echo tests", "description": "Run the tests"}}]}, "parent_tool_use_id": null, "session_id": SESSION}),
     );
     pause();
     emit(json!({

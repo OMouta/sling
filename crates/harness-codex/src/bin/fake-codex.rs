@@ -1,10 +1,12 @@
 //! A stand-in for the `codex` CLI, for tests and local development without a
 //! Codex login. Point the Runner at it with `codex_bin` in runner.toml.
 //!
-//! It answers `--version`, `login status`, `login --with-api-key`, and
-//! `exec --json ... -`, printing the same JSONL shape as real Codex. Pick a
-//! scenario with `FAKE_CODEX_SCENARIO`, or put `[fake:<scenario>]` in the
-//! prompt:
+//! It answers `--version`, `login status`, `login --with-api-key`,
+//! `debug models`, and `exec --json ... -`, printing the same shapes as real
+//! Codex. `exec` takes `-m <model>` and `-c` overrides such as
+//! `model_reasoning_effort` and `service_tier`, and reports them in an agent
+//! message. Pick a scenario with `FAKE_CODEX_SCENARIO`, or put
+//! `[fake:<scenario>]` in the prompt:
 //!
 //! - `success` (default): edits `SLING_FAKE.md`, runs a command, finishes.
 //! - `noop`: finishes without changing anything.
@@ -40,6 +42,7 @@ fn main() {
             }
             println!("Logged in using fake-codex");
         }
+        Some("debug") if args.get(1).map(String::as_str) == Some("models") => models(),
         Some("exec") => exec(&args[1..]),
         _ => {
             eprintln!("fake-codex: unsupported arguments {args:?}");
@@ -48,9 +51,52 @@ fn main() {
     }
 }
 
+/// A small catalog in the shape of `codex debug models`, which also carries
+/// fields the Runner ignores, such as `base_instructions`.
+fn models() {
+    let levels = |efforts: &[&str]| -> Vec<serde_json::Value> {
+        efforts
+            .iter()
+            .map(|e| json!({"effort": e, "description": format!("{e} reasoning")}))
+            .collect()
+    };
+    let catalog = json!({"models": [
+        {
+            "slug": "fake-large", "display_name": "Fake Large",
+            "description": "Workhorse model for coding and everyday work.",
+            "default_reasoning_level": "medium",
+            "supported_reasoning_levels": levels(&["low", "medium", "high", "xhigh"]),
+            "visibility": "list", "priority": 1, "context_window": 272000,
+            "additional_speed_tiers": ["fast"],
+            "service_tiers": [{"id": "priority", "name": "Fast", "description": "1.5x speed"}],
+            "base_instructions": "You are a fake coding agent.",
+        },
+        {
+            "slug": "fake-mini", "display_name": "Fake Mini",
+            "description": "Fast and affordable model for easier tasks.",
+            "default_reasoning_level": "low",
+            "supported_reasoning_levels": levels(&["low", "medium", "high"]),
+            "visibility": "list", "priority": 2, "context_window": 128000,
+            "additional_speed_tiers": [], "service_tiers": [],
+            "base_instructions": "You are a fake coding agent.",
+        },
+        {
+            "slug": "fake-review", "display_name": "Fake Review",
+            "description": "Internal review model.",
+            "default_reasoning_level": "medium",
+            "supported_reasoning_levels": levels(&["medium"]),
+            "visibility": "hide", "priority": 3,
+            "additional_speed_tiers": [], "service_tiers": [],
+            "base_instructions": "You review changes.",
+        },
+    ]});
+    println!("{}", serde_json::to_string_pretty(&catalog).unwrap());
+}
+
 fn exec(args: &[String]) {
     let mut cwd = std::env::current_dir().unwrap();
     let mut sandbox = "read-only".to_string();
+    let mut settings: Vec<String> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -60,6 +106,17 @@ fn exec(args: &[String]) {
             }
             "-s" => {
                 sandbox = args[i + 1].clone();
+                i += 1;
+            }
+            "-m" | "--model" => {
+                settings.push(format!("model={}", args[i + 1]));
+                i += 1;
+            }
+            "-c" => {
+                let kv = &args[i + 1];
+                if kv.starts_with("model_reasoning_effort=") || kv.starts_with("service_tier=") {
+                    settings.push(kv.replace('"', ""));
+                }
                 i += 1;
             }
             _ => {}
@@ -89,6 +146,12 @@ fn exec(args: &[String]) {
 
     emit(json!({"type": "thread.started", "thread_id": "fake-thread"}));
     emit(json!({"type": "turn.started"}));
+    if !settings.is_empty() {
+        let text = format!("Settings: {}", settings.join(" "));
+        emit(
+            json!({"type": "item.completed", "item": {"id": "item_settings", "type": "agent_message", "text": text}}),
+        );
+    }
     pause();
 
     match scenario.as_str() {

@@ -17,6 +17,8 @@ fn opts(dir: &std::path::Path, prompt: String, access: Access) -> RunOptions {
             ("PATH".into(), std::env::var("PATH").unwrap_or_default()),
             ("FAKE_CLAUDE_DELAY_MS".into(), "1".into()),
         ]),
+        model: None,
+        effort: None,
     }
 }
 
@@ -42,6 +44,32 @@ async fn detects_the_fake_as_ready() {
 async fn a_missing_binary_is_not_installed() {
     let d = detect("/nonexistent/claude").await;
     assert!(!d.installed && !d.ready());
+}
+
+#[tokio::test]
+async fn lists_models_once_installed() {
+    assert_eq!(detect(BIN).await.models.len(), 4);
+    assert!(detect("/nonexistent/claude").await.models.is_empty());
+}
+
+#[tokio::test]
+async fn the_model_reaches_claude_code() {
+    let dir = tempfile::tempdir().unwrap();
+    let (tx, mut rx) = mpsc::channel(64);
+    let mut o = opts(dir.path(), "[fake:noop] go".into(), Access::ReadOnly);
+    o.model = Some("opus".into());
+    o.effort = Some("max".into());
+    let (mut run, reader) = Run::start(&o, tx).await.unwrap();
+    let mut model = None;
+    while let Some(ev) = rx.recv().await {
+        if let Event::SessionStarted { model: m, .. } = ev {
+            model = Some(m);
+        }
+    }
+    let code = run.wait().await.unwrap();
+    let outcome = reader.finish(code).await;
+    assert_eq!(outcome.exit_code, Some(0), "{:?}", outcome.failure);
+    assert_eq!(model.as_deref(), Some("opus"));
 }
 
 #[tokio::test]

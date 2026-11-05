@@ -11,6 +11,7 @@ use std::time::Duration;
 use anyhow::Result;
 use sling_harness_claude_code as claude;
 use sling_harness_codex as codex;
+use sling_runner_protocol::AgentModel;
 use sling_runner_protocol::task_event::Kind;
 use tokio::sync::mpsc;
 
@@ -24,6 +25,8 @@ pub struct Detected {
     /// Installed and logged in.
     pub ready: bool,
     pub detail: String,
+    /// Models the agent can run, for the inventory.
+    pub models: Vec<AgentModel>,
 }
 
 /// What a task asks the agent to do, and where.
@@ -39,6 +42,25 @@ pub struct RunSpec {
     /// boundary, so the agent runs without its own.
     pub disposable: bool,
     pub env: Vec<(String, String)>,
+    /// Model for the agent. `None` uses its own default.
+    pub model: Option<String>,
+    /// Reasoning effort. `None` uses the model's default.
+    pub effort: Option<String>,
+    /// Use the model's fast tier, for agents that have one.
+    pub fast: bool,
+}
+
+/// Whether a model or effort from a task is safe to hand to an agent: empty,
+/// or letters, digits, `.`, `_`, `:` and `-`, up to 64 characters, starting
+/// with a letter or digit. Codex reads the effort as TOML, so quotes and
+/// newlines must never get through, and a value must never pass as a flag.
+pub fn valid_setting(value: &str) -> bool {
+    value.is_empty() || codex::valid_setting(value)
+}
+
+/// `None` for an empty setting, which means the agent's default.
+pub fn setting(value: &str) -> Option<String> {
+    (!value.is_empty()).then(|| value.to_string())
 }
 
 pub enum HarnessEvent {
@@ -67,6 +89,8 @@ pub trait Harness: Send + Sync {
     fn process_marker(&self) -> &'static str;
     /// The binary to run, from the config.
     fn bin(&self, cfg: &Config) -> String;
+    /// Whether the agent has a fast tier `RunSpec::fast` can turn on.
+    fn has_fast_tier(&self) -> bool;
     fn detect<'a>(&'a self, bin: &'a str) -> BoxFuture<'a, Detected>;
     /// Starts the agent. Events arrive on `tx` until its output closes.
     fn start<'a>(
@@ -152,6 +176,9 @@ impl Harness for Codex {
     fn bin(&self, cfg: &Config) -> String {
         cfg.codex_bin()
     }
+    fn has_fast_tier(&self) -> bool {
+        true
+    }
 
     fn detect<'a>(&'a self, bin: &'a str) -> BoxFuture<'a, Detected> {
         Box::pin(async move {
@@ -160,6 +187,7 @@ impl Harness for Codex {
                 ready: d.ready(),
                 version: d.version,
                 detail: d.detail,
+                models: d.models,
             }
         })
     }
@@ -177,6 +205,9 @@ impl Harness for Codex {
                 sandbox: Codex::sandbox(spec.mode, spec.disposable).into(),
                 network: spec.network,
                 env: Some(spec.env.clone()),
+                model: spec.model.clone(),
+                effort: spec.effort.clone(),
+                fast: spec.fast,
             };
             let tx = forward(tx, |ev| match ev {
                 codex::Event::Task(kind) => HarnessEvent::Task(kind),
@@ -252,6 +283,9 @@ impl Harness for ClaudeCode {
     fn bin(&self, cfg: &Config) -> String {
         cfg.claude_bin()
     }
+    fn has_fast_tier(&self) -> bool {
+        false
+    }
 
     fn detect<'a>(&'a self, bin: &'a str) -> BoxFuture<'a, Detected> {
         Box::pin(async move {
@@ -260,6 +294,7 @@ impl Harness for ClaudeCode {
                 ready: d.ready(),
                 version: d.version,
                 detail: d.detail,
+                models: d.models,
             }
         })
     }
@@ -277,6 +312,8 @@ impl Harness for ClaudeCode {
                 access: ClaudeCode::access(spec.mode, spec.disposable),
                 network: spec.network,
                 env: Some(spec.env.clone()),
+                model: spec.model.clone(),
+                effort: spec.effort.clone(),
             };
             let tx = forward(tx, |ev| match ev {
                 claude::Event::Task(kind) => HarnessEvent::Task(kind),
@@ -347,6 +384,18 @@ mod tests {
         assert_eq!(ClaudeCode::access(Mode::Supervised, false), Access::Edit);
         assert_eq!(ClaudeCode::access(Mode::Auto, false), Access::Edit);
         assert_eq!(ClaudeCode::access(Mode::FullAccess, false), Access::Full);
+    }
+
+    #[test]
+    fn model_settings_are_empty_or_safe() {
+        assert!(valid_setting(""));
+        assert!(valid_setting("gpt-6.1-sol"));
+        assert!(valid_setting("claude-opus-5-5"));
+        assert!(!valid_setting("high\" sandbox_mode=\"danger-full-access"));
+        assert!(!valid_setting("--dangerously-skip-permissions"));
+        assert!(!valid_setting(&"a".repeat(65)));
+        assert_eq!(setting(""), None);
+        assert_eq!(setting("opus").as_deref(), Some("opus"));
     }
 
     #[test]

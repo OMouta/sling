@@ -254,6 +254,20 @@ impl Manager {
                 task_rejected::Reason::Invalid,
                 format!("Refusing branch name {:?}.", a.branch),
             )),
+            _ if !harness::valid_setting(&a.model) => Some((
+                task_rejected::Reason::Invalid,
+                format!(
+                    "Refusing model {:?}: use letters, digits, '.', '_', ':' and '-', up to 64 characters.",
+                    a.model
+                ),
+            )),
+            _ if !harness::valid_setting(&a.effort) => Some((
+                task_rejected::Reason::Invalid,
+                format!(
+                    "Refusing effort {:?}: use letters, digits, '.', '_', ':' and '-', up to 64 characters.",
+                    a.effort
+                ),
+            )),
             _ if self.running_count() >= cfg.max_concurrent_tasks as usize => Some((
                 task_rejected::Reason::Busy,
                 "This machine is already running as many tasks as it allows.".into(),
@@ -393,6 +407,9 @@ impl Manager {
             }),
         );
         self.log(spool, format!("Branched {} from {base_ref}", a.branch));
+        if let Some(line) = settings_line(agent, a) {
+            self.log(spool, line);
+        }
 
         let spec = RunSpec {
             bin,
@@ -403,6 +420,9 @@ impl Manager {
             network,
             disposable: cfg.disposable,
             env: self.agent_env(agent.name()),
+            model: harness::setting(&a.model),
+            effort: harness::setting(&a.effort),
+            fast: a.fast && agent.has_fast_tier(),
         };
         let mut reported: Vec<PathBuf> = Vec::new();
         let (tx, mut rx) = mpsc::channel(256);
@@ -611,4 +631,23 @@ impl Manager {
 enum ActionError {
     Refused(String),
     Failed(anyhow::Error),
+}
+
+/// A log line naming the model settings a task asked for, if any.
+fn settings_line(agent: &dyn harness::Harness, a: &TaskAssign) -> Option<String> {
+    let mut parts = Vec::new();
+    if !a.model.is_empty() {
+        parts.push(format!("model {}", a.model));
+    }
+    if !a.effort.is_empty() {
+        parts.push(format!("effort {}", a.effort));
+    }
+    if a.fast {
+        parts.push(if agent.has_fast_tier() {
+            "fast tier".to_string()
+        } else {
+            format!("no fast tier ({} doesn't have one)", agent.label())
+        });
+    }
+    (!parts.is_empty()).then(|| format!("{}: {}", agent.label(), parts.join(", ")))
 }

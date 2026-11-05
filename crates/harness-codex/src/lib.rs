@@ -8,8 +8,8 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use sling_runner_protocol::{
-    AgentMessage, CommandRun, FileChange, LogLine, PlanUpdate, Usage, command_run, file_change,
-    log_line, plan_update, task_event::Kind,
+    AgentMessage, AgentModel, CommandRun, FileChange, LogLine, PlanUpdate, Usage, command_run,
+    file_change, log_line, plan_update, task_event::Kind,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -27,6 +27,8 @@ pub struct Detection {
     pub version: String,
     pub logged_in: bool,
     pub detail: String,
+    /// Models Codex lists for `-m`. Empty when it couldn't say.
+    pub models: Vec<AgentModel>,
 }
 
 impl Detection {
@@ -58,7 +60,98 @@ pub async fn detect(bin: &str) -> Detection {
         version,
         logged_in,
         detail,
+        models: list_models(bin).await,
     }
+}
+
+/// Models from `codex debug models`, which prints Codex's model catalog as
+/// JSON. Any failure gives an empty list.
+pub async fn list_models(bin: &str) -> Vec<AgentModel> {
+    let out = tokio::time::timeout(
+        Duration::from_secs(5),
+        Command::new(bin)
+            .args(["debug", "models"])
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await;
+    match out {
+        Ok(Ok(out)) if out.status.success() => parse_models(&String::from_utf8_lossy(&out.stdout)),
+        _ => Vec::new(),
+    }
+}
+
+/// Reads the catalog `codex debug models` prints. Keeps the models Codex
+/// lists in its own picker, ordered by Codex's priority, and marks the first
+/// one as the default. Text before the JSON, such as a warning, is skipped.
+pub fn parse_models(text: &str) -> Vec<AgentModel> {
+    let Some(start) = text.find('{') else {
+        return Vec::new();
+    };
+    let Some(Ok(catalog)) = serde_json::Deserializer::from_str(&text[start..])
+        .into_iter::<Value>()
+        .next()
+    else {
+        return Vec::new();
+    };
+    let Some(entries) = catalog["models"].as_array() else {
+        return Vec::new();
+    };
+    let mut models: Vec<(i64, AgentModel)> = entries
+        .iter()
+        .filter(|m| m["visibility"].as_str() == Some("list"))
+        .filter_map(|m| {
+            let id = m["slug"].as_str().filter(|s| valid_setting(s))?.to_string();
+            let efforts: Vec<String> = m["supported_reasoning_levels"]
+                .as_array()
+                .map(|levels| {
+                    levels
+                        .iter()
+                        .filter_map(|l| l["effort"].as_str())
+                        .filter(|e| valid_setting(e))
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let fast = m["additional_speed_tiers"]
+                .as_array()
+                .is_some_and(|t| t.iter().any(|t| t.as_str() == Some("fast")))
+                || m["service_tiers"].as_array().is_some_and(|t| !t.is_empty());
+            let model = AgentModel {
+                display_name: m["display_name"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or(&id)
+                    .to_string(),
+                description: str_of(&m["description"]),
+                default_effort: str_of(&m["default_reasoning_level"]),
+                efforts,
+                fast,
+                is_default: false,
+                id,
+            };
+            Some((m["priority"].as_i64().unwrap_or(i64::MAX), model))
+        })
+        .collect();
+    models.sort_by_key(|(priority, _)| *priority);
+    if let Some((_, first)) = models.first_mut() {
+        first.is_default = true;
+    }
+    models.into_iter().map(|(_, m)| m).collect()
+}
+
+/// Model and effort values may use letters, digits, `.`, `_`, `:` and `-`,
+/// up to 64 characters, starting with a letter or digit. They end up in a
+/// TOML `-c` override, so nothing that could close a string gets through,
+/// and they can't be mistaken for a flag.
+pub fn valid_setting(value: &str) -> bool {
+    (1..=64).contains(&value.len())
+        && value.starts_with(|c: char| c.is_ascii_alphanumeric())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
 }
 
 /// The version from `codex --version`, which prints `codex-cli 0.166.0`,
@@ -113,7 +206,17 @@ pub struct RunOptions {
     pub network: bool,
     /// Environment for Codex. `None` inherits the Runner's.
     pub env: Option<Vec<(String, String)>>,
+    /// `-m`, one of the catalog's slugs. `None` uses Codex's default.
+    pub model: Option<String>,
+    /// `model_reasoning_effort`. `None` uses the model's default.
+    pub effort: Option<String>,
+    /// Use the model's fast service tier.
+    pub fast: bool,
 }
+
+/// Codex's name for its fast service tier, which it sends as the
+/// `priority` tier.
+pub const FAST_SERVICE_TIER: &str = "fast";
 
 /// What the Runner hears from a running Codex.
 #[derive(Debug)]
@@ -151,6 +254,18 @@ pub fn args_for(opts: &RunOptions) -> Vec<String> {
         args.push("-c".into());
         args.push("sandbox_workspace_write.network_access=true".into());
     }
+    if let Some(model) = &opts.model {
+        args.push("-m".into());
+        args.push(model.clone());
+    }
+    if let Some(effort) = &opts.effort {
+        args.push("-c".into());
+        args.push(format!("model_reasoning_effort=\"{effort}\""));
+    }
+    if opts.fast {
+        args.push("-c".into());
+        args.push(format!("service_tier=\"{FAST_SERVICE_TIER}\""));
+    }
     // Prompt comes from stdin, so it never shows up in `ps`.
     args.push("-".into());
     args
@@ -160,6 +275,12 @@ impl Run {
     /// Starts Codex. Events arrive on `tx` until the process exits; then call
     /// `wait`.
     pub async fn start(opts: &RunOptions, tx: mpsc::Sender<Event>) -> Result<(Run, Reader)> {
+        for value in [&opts.model, &opts.effort].into_iter().flatten() {
+            anyhow::ensure!(
+                valid_setting(value),
+                "refusing model setting {value:?}: use letters, digits, '.', '_', ':' and '-'"
+            );
+        }
         let mut cmd = Command::new(&opts.bin);
         cmd.args(args_for(opts))
             .current_dir(&opts.cwd)
@@ -539,6 +660,68 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_model_catalog() {
+        let text = r#"WARNING: proceeding, even though we could not create PATH aliases
+{"models":[
+  {"slug":"gpt-b","display_name":"GPT B","description":"Second.","default_reasoning_level":"medium",
+   "supported_reasoning_levels":[{"effort":"low","description":"x"},{"effort":"medium"},{"effort":"high"}],
+   "visibility":"list","priority":2,"additional_speed_tiers":[],"service_tiers":[]},
+  {"slug":"gpt-hidden","display_name":"Hidden","visibility":"hide","priority":0},
+  {"slug":"gpt-a","display_name":"GPT A","description":"First.","default_reasoning_level":"low",
+   "supported_reasoning_levels":[{"effort":"low"},{"effort":"xhigh"}],
+   "visibility":"list","priority":1,"additional_speed_tiers":["fast"],"service_tiers":[]},
+  {"slug":"gpt-c","display_name":"","visibility":"list","priority":3,
+   "additional_speed_tiers":[],"service_tiers":[{"id":"priority","name":"Fast"}]},
+  {"slug":"bad\"slug","visibility":"list","priority":4}
+]}"#;
+        let models = parse_models(text);
+        let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["gpt-a", "gpt-b", "gpt-c"]);
+        let a = &models[0];
+        assert!(a.is_default);
+        assert!(a.fast);
+        assert_eq!(a.display_name, "GPT A");
+        assert_eq!(a.efforts, ["low", "xhigh"]);
+        assert_eq!(a.default_effort, "low");
+        let b = &models[1];
+        assert!(!b.is_default);
+        assert!(!b.fast);
+        assert_eq!(b.description, "Second.");
+        assert_eq!(b.efforts, ["low", "medium", "high"]);
+        let c = &models[2];
+        assert!(c.fast, "a service tier means a fast tier");
+        assert_eq!(c.display_name, "gpt-c");
+        assert!(c.efforts.is_empty());
+    }
+
+    #[test]
+    fn a_bad_catalog_gives_no_models() {
+        assert!(parse_models("").is_empty());
+        assert!(parse_models("error: unknown command").is_empty());
+        assert!(parse_models(r#"{"models": "nope"}"#).is_empty());
+        assert!(parse_models(r#"{"models": [{"slug": "x"#).is_empty());
+    }
+
+    #[test]
+    fn settings_use_a_safe_charset() {
+        for ok in ["gpt-6.1-sol", "high", "o3:latest", "a_b"] {
+            assert!(valid_setting(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "high\"",
+            "a b",
+            "x\n",
+            "é",
+            "-p",
+            "--yolo",
+            &"x".repeat(65),
+        ] {
+            assert!(!valid_setting(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
     fn non_json_lines_become_logs() {
         let mut p = Parser::default();
         assert!(matches!(kinds(&mut p, "plain text")[0], Kind::Log(_)));
@@ -562,6 +745,9 @@ mod tests {
             sandbox: "workspace-write".into(),
             network: true,
             env: None,
+            model: None,
+            effort: None,
+            fast: false,
         };
         assert!(
             args_for(&opts).contains(&"sandbox_workspace_write.network_access=true".to_string())
@@ -571,5 +757,57 @@ mod tests {
             !args_for(&opts).contains(&"sandbox_workspace_write.network_access=true".to_string())
         );
         assert_eq!(args_for(&opts).last().unwrap(), "-");
+    }
+
+    #[test]
+    fn passes_model_effort_and_fast_tier() {
+        let mut opts = RunOptions {
+            bin: "codex".into(),
+            cwd: "/tmp/w".into(),
+            prompt: String::new(),
+            sandbox: "workspace-write".into(),
+            network: false,
+            env: None,
+            model: None,
+            effort: None,
+            fast: false,
+        };
+        let plain = args_for(&opts);
+        assert!(!plain.iter().any(|a| a == "-m"
+            || a.starts_with("model_reasoning_effort")
+            || a.starts_with("service_tier")));
+
+        opts.model = Some("gpt-6.1-sol".into());
+        opts.effort = Some("xhigh".into());
+        opts.fast = true;
+        let args = args_for(&opts);
+        assert!(args.windows(2).any(|w| w == ["-m", "gpt-6.1-sol"]));
+        assert!(
+            args.windows(2)
+                .any(|w| w == ["-c", "model_reasoning_effort=\"xhigh\""])
+        );
+        assert!(
+            args.windows(2)
+                .any(|w| w == ["-c", "service_tier=\"fast\""])
+        );
+        assert_eq!(args.last().unwrap(), "-", "the prompt still comes last");
+    }
+
+    #[tokio::test]
+    async fn refuses_settings_that_could_break_out_of_toml() {
+        let opts = RunOptions {
+            bin: "/nonexistent/codex".into(),
+            cwd: "/tmp".into(),
+            prompt: String::new(),
+            sandbox: "read-only".into(),
+            network: false,
+            env: None,
+            model: None,
+            effort: Some("high\"\nsandbox_mode=\"danger-full-access".into()),
+            fast: false,
+        };
+        let (tx, _rx) = mpsc::channel(1);
+        let err = Run::start(&opts, tx).await.err().expect("refused");
+        assert!(err.to_string().contains("refusing model setting"), "{err}");
     }
 }

@@ -9,8 +9,8 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use sling_runner_protocol::{
-    AgentMessage, CommandRun, FileChange, LogLine, PlanUpdate, Usage, command_run, file_change,
-    log_line, plan_update, task_event::Kind,
+    AgentMessage, AgentModel, CommandRun, FileChange, LogLine, PlanUpdate, Usage, command_run,
+    file_change, log_line, plan_update, task_event::Kind,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -70,6 +70,32 @@ pub struct Detection {
     pub version: String,
     pub logged_in: bool,
     pub detail: String,
+    /// Model aliases `--model` takes.
+    pub models: Vec<AgentModel>,
+}
+
+/// Effort levels `--effort` takes, lowest first.
+pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
+
+/// The `--model` aliases, which always point at the latest model of each
+/// family. Claude Code has no command that lists models, so this list is
+/// fixed. None is marked as the default, because that depends on the
+/// account.
+pub fn models() -> Vec<AgentModel> {
+    [
+        ("fable", "Fable"),
+        ("opus", "Opus"),
+        ("sonnet", "Sonnet"),
+        ("haiku", "Haiku"),
+    ]
+    .into_iter()
+    .map(|(id, name)| AgentModel {
+        id: id.into(),
+        display_name: name.into(),
+        efforts: EFFORTS.iter().map(|e| e.to_string()).collect(),
+        ..Default::default()
+    })
+    .collect()
 }
 
 impl Detection {
@@ -107,6 +133,7 @@ pub async fn detect(bin: &str) -> Detection {
         version,
         logged_in,
         detail,
+        models: models(),
     }
 }
 
@@ -176,6 +203,10 @@ pub struct RunOptions {
     pub network: bool,
     /// Environment for Claude Code. `None` inherits the Runner's.
     pub env: Option<Vec<(String, String)>>,
+    /// `--model`, such as `opus`. `None` uses Claude Code's default.
+    pub model: Option<String>,
+    /// `--effort`, such as `high`. `None` uses the model's default.
+    pub effort: Option<String>,
 }
 
 /// The `--settings` JSON for each access level. Passed on every run so the
@@ -214,6 +245,12 @@ pub fn args_for(opts: &RunOptions) -> Vec<String> {
         Access::ReadOnly => args.extend(["--permission-mode".into(), "plan".into()]),
         Access::Edit => args.extend(["--permission-mode".into(), "acceptEdits".into()]),
         Access::Full => args.push("--dangerously-skip-permissions".into()),
+    }
+    if let Some(model) = &opts.model {
+        args.extend(["--model".into(), model.clone()]);
+    }
+    if let Some(effort) = &opts.effort {
+        args.extend(["--effort".into(), effort.clone()]);
     }
     args.push("--settings".into());
     args.push(settings_for(opts.access, opts.network).to_string());
@@ -766,8 +803,11 @@ mod tests {
             access: Access::ReadOnly,
             network: true,
             env: None,
+            model: None,
+            effort: None,
         };
         let args = args_for(&opts);
+        assert!(!args.iter().any(|a| a == "--model" || a == "--effort"));
         assert_eq!(
             &args[..4],
             ["-p", "--output-format", "stream-json", "--verbose"]
@@ -809,6 +849,37 @@ mod tests {
             settings_for(Access::Full, true)["sandbox"]["enabled"],
             false
         );
+    }
+
+    #[test]
+    fn passes_the_model_and_effort() {
+        let opts = RunOptions {
+            bin: "claude".into(),
+            cwd: "/tmp/w".into(),
+            prompt: String::new(),
+            access: Access::Edit,
+            network: false,
+            env: None,
+            model: Some("opus".into()),
+            effort: Some("xhigh".into()),
+        };
+        let args = args_for(&opts);
+        assert!(args.windows(2).any(|w| w == ["--model", "opus"]));
+        assert!(args.windows(2).any(|w| w == ["--effort", "xhigh"]));
+        assert!(
+            serde_json::from_str::<Value>(args.last().unwrap()).is_ok(),
+            "settings stay last"
+        );
+    }
+
+    #[test]
+    fn lists_the_model_aliases() {
+        let models = models();
+        let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["fable", "opus", "sonnet", "haiku"]);
+        assert_eq!(models[1].display_name, "Opus");
+        assert!(models.iter().all(|m| !m.fast && !m.is_default));
+        assert_eq!(models[0].efforts, ["low", "medium", "high", "xhigh", "max"]);
     }
 
     #[test]

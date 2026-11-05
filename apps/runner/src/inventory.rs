@@ -45,7 +45,7 @@ pub async fn build(cfg: &Config) -> Inventory {
             version: d.version,
             ready: d.ready,
             detail: d.detail,
-            models: Vec::new(),
+            models: d.models,
         });
     }
 
