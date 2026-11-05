@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --bg: #f7f7f5;
+  --surface: #ffffff;
+  --surface-2: #f0efec;
+  --border: #e3e2de;
+  --text: #1c1c1a;
+  --muted: #6b6a66;
+  --accent: #2f5bd8;
+  --accent-fg: #ffffff;
+  --ok: #1f8a4c;
+  --warn: #b46b00;
+  --danger: #c2372f;
+  --ring: rgba(47, 91, 216, 0.35);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111110;
+    --surface: #1a1a18;
+    --surface-2: #232321;
+    --border: #2e2e2b;
+    --text: #ecebe7;
+    --muted: #9b9a94;
+    --accent: #7b9cff;
+    --accent-fg: #0d0d0c;
+    --ok: #4cc27f;
+    --warn: #e0a23b;
+    --danger: #f06b62;
+    --ring: rgba(123, 156, 255, 0.4);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #111110;
+  --surface: #1a1a18;
+  --surface-2: #232321;
+  --border: #2e2e2b;
+  --text: #ecebe7;
+  --muted: #9b9a94;
+  --accent: #7b9cff;
+  --accent-fg: #0d0d0c;
+  --ok: #4cc27f;
+  --warn: #e0a23b;
+  --danger: #f06b62;
+  --ring: rgba(123, 156, 255, 0.4);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.prose-chat p + p,
+.prose-chat ul,
+.prose-chat ol,
+.prose-chat pre {
+  margin-top: 0.6em;
+}
+.prose-chat ul {
+  list-style: disc;
+  padding-left: 1.25em;
+}
+.prose-chat ol {
+  list-style: decimal;
+  padding-left: 1.25em;
+}
+.prose-chat code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: var(--surface-2);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+.prose-chat pre {
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 0.75em;
+  overflow-x: auto;
+}
+.prose-chat pre code {
+  background: none;
+  padding: 0;
+}
+.prose-chat a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
