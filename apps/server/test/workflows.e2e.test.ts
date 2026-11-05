@@ -711,6 +711,52 @@ describe("waits", () => {
     await c.call("PATCH", `/api/workflows/${settledWatcher.id}`, { enabled: false });
   });
 
+  it("waits for an event with a timeout", async () => {
+    const wf = await deploy(
+      c,
+      def(
+        "Event wait",
+        [
+          n("t", "core.manual"),
+          n("w", "test.wait_event", { key: "={{ trigger.input.key }}", timeoutMs: 800 }),
+          n("got", "test.record", { tag: "pinged" }),
+          n("late", "test.record", { tag: "timed-out" }),
+        ],
+        [
+          x("t.next", "w"),
+          x("w.next", "got"),
+          x("w.error", "late"),
+          d("w.payload", "got.value"),
+          d("w.error", "late.value"),
+        ],
+      ),
+    );
+    const m = await workspace();
+    const pinged = await start(c, wf.id, { key: "k-ping" });
+    await settled(c, pinged.id, ["waiting"]);
+    // Another key doesn't wake it.
+    await server.ctx.events.emit({
+      type: "test.ping",
+      workspaceId: m.workspaceId,
+      payload: { n: 0 },
+      waitKey: "other",
+    });
+    await server.ctx.events.emit({
+      type: "test.ping",
+      workspaceId: m.workspaceId,
+      payload: { n: 1 },
+      waitKey: "k-ping",
+    });
+    await settled(c, pinged.id, ["succeeded"]);
+    expect(callsFor(pinged.id).map((x) => [x.tag, x.value])).toEqual([["pinged", { n: 1 }]]);
+
+    const late = await start(c, wf.id, { key: "never" });
+    await settled(c, late.id, ["succeeded"], 10_000);
+    expect(callsFor(late.id).map((x) => [x.tag, x.value])).toEqual([
+      ["timed-out", { message: "No ping came", code: "timeout" }],
+    ]);
+  });
+
   it("cancels a waiting run and retries it from the same payload", async () => {
     const wf = await deploy(
       c,
@@ -1298,6 +1344,94 @@ describe("assistant", () => {
     ).length;
     expect(assistantRunsAfter).toBe(assistantRunsBefore);
     await c.call("PATCH", `/api/workflows/${wf.id}`, { enabled: false });
+  });
+});
+
+describe("http.request", () => {
+  it("retries GET on 5xx, never retries POST, and can pass errors on", async () => {
+    let flaky = 0;
+    let posts = 0;
+    const http = (await import("node:http")).createServer((req, res) => {
+      if (req.url === "/flaky") {
+        flaky++;
+        res.writeHead(flaky < 3 ? 503 : 200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ flaky }));
+      } else if (req.url === "/post") {
+        posts++;
+        let body = "";
+        req.on("data", (b) => {
+          body += b;
+        });
+        req.on("end", () => {
+          res.writeHead(502, { "content-type": "text/plain" });
+          res.end(`got ${body}`);
+        });
+      } else {
+        res.writeHead(404);
+        res.end("nope");
+      }
+    });
+    await new Promise<void>((ok) => http.listen(0, "127.0.0.1", ok));
+    const base = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    try {
+      const get = await deploy(
+        c,
+        def(
+          "GET",
+          [
+            n("t", "core.manual"),
+            n("h", "http.request", { url: `={{ '${base}' & trigger.input.path }}` }),
+          ],
+          [x("t.next", "h")],
+        ),
+      );
+      const r = await settled(c, (await start(c, get.id, { path: "/flaky" })).id);
+      expect(r.run.status).toBe("succeeded");
+      expect(byNode(r, "h").map((nr) => [nr.attempt, nr.status])).toEqual([
+        [1, "failed"],
+        [2, "failed"],
+        [3, "succeeded"],
+      ]);
+      expect(byNode(r, "h")[2]?.outputs?.response).toMatchObject({
+        status: 200,
+        ok: true,
+        body: { flaky: 3 },
+      });
+
+      const post = await deploy(
+        c,
+        def(
+          "POST",
+          [n("t", "core.manual"), n("h", "http.request", { method: "POST", url: `${base}/post` })],
+          [x("t.next", "h"), d("t.input", "h.body")],
+        ),
+      );
+      const p = await settled(c, (await start(c, post.id, { hello: 1 })).id);
+      expect(p.run.status).toBe("failed");
+      expect(p.run.error).toMatchObject({ code: "http_error", nodeId: "h" });
+      expect(posts).toBe(1);
+
+      const lenient = await deploy(
+        c,
+        def(
+          "Lenient",
+          [
+            n("t", "core.manual"),
+            n("h", "http.request", { method: "POST", url: `${base}/post`, failOnError: false }),
+          ],
+          [x("t.next", "h"), d("t.input", "h.body")],
+        ),
+      );
+      const l = await settled(c, (await start(c, lenient.id, { hello: 2 })).id);
+      expect(l.run.status).toBe("succeeded");
+      expect(byNode(l, "h")[0]?.outputs?.response).toMatchObject({
+        status: 502,
+        ok: false,
+        body: 'got {"hello":2}',
+      });
+    } finally {
+      http.close();
+    }
   });
 });
 

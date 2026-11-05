@@ -171,7 +171,39 @@ export const waitTaskNode = defineNode({
   },
 });
 
+export const waitEventNode = defineNode({
+  type: "test.wait_event",
+  version: 1,
+  title: "Wait for an event",
+  description: "Parks until a test.ping event with its key arrives, or times out.",
+  category: "logic",
+  configSchema: z.object({
+    key: z.string().describe("Event key."),
+    timeoutMs: z.number().int().default(60_000).describe("Give up after this long."),
+  }),
+  expressionFields: ["key"],
+  inputs: [],
+  outputs: [{ name: "payload", type: "json" }],
+  execInput: true,
+  execOutputs: [{ name: "next" }],
+  idempotent: true,
+  run: async (_ctx, { config }) => ({
+    wait: {
+      kind: "event",
+      eventType: "test.ping",
+      key: config.key,
+      timeoutAt: new Date(Date.now() + config.timeoutMs),
+    },
+  }),
+  resume: async (_ctx, { resolution }) => {
+    if (resolution.kind === "timeout") throw new NodeError("No ping came", { code: "timeout" });
+    if (resolution.kind !== "event") throw new NodeError("unexpected", { code: "bad" });
+    return { exec: "next", outputs: { payload: resolution.payload } };
+  },
+});
+
 export const testNodes: AnyNodeSpec[] = [
+  waitEventNode,
   recordNode,
   flakyNode,
   sideEffectNode,
