@@ -384,11 +384,42 @@ describe("repos from the web app", () => {
     await until("repo gone", async () => !(await machine())?.repos.some((r) => r.name === "api"));
   });
 
+  it("allows several found repos in one change", async () => {
+    const [m] = await api<{ id: string }[]>("GET", "/api/runners");
+    const found = [
+      { path: "/home/dev/code/web", name: "web" },
+      { path: "/home/dev/code/docs", name: "docs" },
+    ];
+    runner?.options.foundRepos?.push(...found);
+    await api("POST", `/api/runners/${m?.id}/scan`);
+    await until("both found", async () => {
+      const [r] = await api<{ foundRepos: { path: string }[] }[]>("GET", "/api/runners");
+      return (r?.foundRepos.length ?? 0) >= 2;
+    });
+
+    const res = await api<{ ok: boolean; message: string }>("POST", `/api/runners/${m?.id}/repos`, {
+      // A path the machine never reported is dropped before anything is sent.
+      paths: [...found.map((f) => f.path), "/etc"],
+    });
+    expect(res).toEqual({ ok: true, message: "Added 2 repos: web, docs." });
+    expect(runner?.repoChanges.at(-1)).toMatchObject({
+      op: RepoChange_Op.ADD,
+      path: "",
+      paths: found.map((f) => f.path),
+    });
+    await until("both allowed", async () => {
+      const [r] = await api<{ repos: { name: string }[] }[]>("GET", "/api/runners");
+      return ["web", "docs"].every((n) => r?.repos.some((p) => p.name === n));
+    });
+  });
+
   it("only sends paths the machine reported", async () => {
     const [m] = await api<{ id: string }[]>("GET", "/api/runners");
     const before = runner?.repoChanges.length;
     const res = await raw("POST", `/api/runners/${m?.id}/repos`, { path: "/etc" });
     expect(res.status).toBe(404);
+    const many = await raw("POST", `/api/runners/${m?.id}/repos`, { paths: ["/etc", "/"] });
+    expect(many.status).toBe(404);
     expect(runner?.repoChanges.length).toBe(before);
   });
 

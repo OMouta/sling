@@ -72,6 +72,38 @@ pub fn remove(paths: &Paths, name: &str) -> Result<()> {
     cfg.save(paths)
 }
 
+/// The most repos one change may add.
+pub const MAX_BATCH: usize = 200;
+
+/// Adds a repo the scan found, under `name` or its suggested name. Refuses a
+/// path the scan didn't report, and one that has stopped being a repo.
+async fn add_found(paths: &Paths, found: &[Found], path: &str, name: &str) -> Result<RepoEntry> {
+    let Some(hit) = found
+        .iter()
+        .find(|f| !path.is_empty() && f.path.to_str() == Some(path))
+    else {
+        bail!(
+            "{path:?} isn't a repo this machine found. Sling can only add repos the Runner found itself."
+        );
+    };
+    let path = &hit.path;
+    let still_there = scan::is_repo(path) && std::fs::canonicalize(path).is_ok_and(|p| &p == path);
+    if !still_there {
+        bail!("{} is no longer a git repo.", path.display());
+    }
+    let name = if name.is_empty() {
+        let cfg = Config::load(paths)?;
+        scan::suggest(found, &cfg)
+            .into_iter()
+            .find(|f| &f.path == path)
+            .map(|f| f.name)
+            .context("this repo is already added")?
+    } else {
+        name.to_string()
+    };
+    add(paths, path, Some(name), false).await
+}
+
 /// Applies a RepoChange from Sling and returns the message for the result.
 /// `found` is the latest scan, and `busy` says whether a task is running in
 /// a repo. Reads the config from disk, so turning `remote-repos` off takes
@@ -87,32 +119,42 @@ pub async fn change(
         bail!(REMOTE_OFF);
     }
     match req.op() {
-        repo_change::Op::Add => {
-            let Some(hit) = found
-                .iter()
-                .find(|f| !req.path.is_empty() && f.path.to_str() == Some(req.path.as_str()))
-            else {
-                bail!(
-                    "{:?} isn't a repo this machine found. Sling can only add repos the Runner found itself.",
-                    req.path
-                );
-            };
-            let path = &hit.path;
-            let still_there =
-                scan::is_repo(path) && std::fs::canonicalize(path).is_ok_and(|p| &p == path);
-            if !still_there {
-                bail!("{} is no longer a git repo.", path.display());
+        repo_change::Op::Add if !req.paths.is_empty() => {
+            if req.paths.len() > MAX_BATCH {
+                bail!("Sling can add at most {MAX_BATCH} repos at once.");
             }
-            let name = if req.name.is_empty() {
-                scan::suggest(found, &cfg)
-                    .into_iter()
-                    .find(|f| f.path == req.path)
-                    .map(|f| f.name)
-                    .context("this repo is already added")?
+            let mut added = Vec::new();
+            let mut skipped = Vec::new();
+            for path in &req.paths {
+                // Each add reads the config again, so suggested names stay unique.
+                match add_found(paths, found, path, "").await {
+                    Ok(entry) => added.push(entry.name),
+                    Err(e) => skipped.push(format!("{path}: {e:#}")),
+                }
+            }
+            if added.is_empty() {
+                bail!("Added none of them. {}", skipped.join(" "));
+            }
+            let mut message = if added.len() == 1 {
+                format!("Added {}. Network access is off for it.", added[0])
             } else {
-                req.name.clone()
+                format!(
+                    "Added {} repos: {}. Network access is off for them.",
+                    added.len(),
+                    added.join(", ")
+                )
             };
-            let entry = add(paths, path, Some(name), false).await?;
+            if !skipped.is_empty() {
+                message.push_str(&format!(
+                    " Skipped {}: {}",
+                    skipped.len(),
+                    skipped.join(" ")
+                ));
+            }
+            Ok(message)
+        }
+        repo_change::Op::Add => {
+            let entry = add_found(paths, found, &req.path, &req.name).await?;
             Ok(format!(
                 "Added {} ({}). Network access is off for it.",
                 entry.name,

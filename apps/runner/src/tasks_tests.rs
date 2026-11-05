@@ -757,7 +757,62 @@ fn repo_change(op: repo_change::Op, path: &Path, name: &str) -> RepoChange {
         op: op as i32,
         path: path.display().to_string(),
         name: name.into(),
+        paths: vec![],
     }
+}
+
+#[tokio::test]
+async fn adds_several_found_repos_in_one_change() {
+    let env = setup(Mode::FullAccess);
+    let root = scan_here(&env, |_| {});
+    let api = make_repo(&root, "code/api");
+    let docs = make_repo(&root, "code/docs");
+    let other_site = make_repo(&root, "work/site");
+    env.mgr.rescan().await;
+    let (tx, mut rx) = mpsc::channel(16);
+    let req = RepoChange {
+        request_id: "rc-all".into(),
+        op: repo_change::Op::Add as i32,
+        paths: [&api, &docs, &other_site, &root.join("nope")]
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect(),
+        ..Default::default()
+    };
+    env.mgr.repo_change_and_report(req, &tx).await;
+    drop(tx);
+    let mut bodies = Vec::new();
+    while let Some(body) = rx.recv().await {
+        bodies.push(body);
+    }
+    let Some(Body::RepoChangeResult(r)) = bodies.first() else {
+        panic!("a result first");
+    };
+    assert!(r.ok, "{}", r.message);
+    assert!(
+        r.message.starts_with("Added 3 repos: api, docs, site-2."),
+        "{}",
+        r.message
+    );
+    assert!(r.message.contains("Skipped 1"), "{}", r.message);
+    // One inventory for the whole change, with every new repo in it.
+    let inventories: Vec<_> = bodies
+        .iter()
+        .filter_map(|b| match b {
+            Body::Inventory(inv) => Some(inv),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(inventories.len(), 1);
+    let names: Vec<&str> = inventories[0]
+        .repos
+        .iter()
+        .map(|r| r.name.as_str())
+        .collect();
+    for name in ["api", "docs", "site-2"] {
+        assert!(names.contains(&name), "{names:?}");
+    }
+    assert!(env.mgr.found().is_empty(), "nothing left to add");
 }
 
 #[tokio::test]

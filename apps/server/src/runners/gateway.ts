@@ -94,14 +94,19 @@ export class RunnerGateway {
    */
   changeRepo(
     runnerId: string,
-    change: { op: "add"; path: string; name?: string } | { op: "remove"; name: string },
+    change:
+      | { op: "add"; path: string; name?: string }
+      | { op: "add-many"; paths: string[] }
+      | { op: "remove"; name: string },
     timeoutMs = 15_000,
   ): Promise<{ ok: boolean; message: string }> {
     const requestId = newId("rqc");
     const value =
       change.op === "add"
         ? { requestId, op: RepoChange_Op.ADD, path: change.path, name: change.name ?? "" }
-        : { requestId, op: RepoChange_Op.REMOVE, path: "", name: change.name };
+        : change.op === "add-many"
+          ? { requestId, op: RepoChange_Op.ADD, path: "", name: "", paths: change.paths }
+          : { requestId, op: RepoChange_Op.REMOVE, path: "", name: change.name };
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
         this.#repoChanges.delete(requestId);

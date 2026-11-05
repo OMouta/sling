@@ -713,6 +713,14 @@ export declare type RepoChange = Message<"sling.runner.v1.RepoChange"> & {
    * @generated from field: string name = 4;
    */
   name: string;
+
+  /**
+   * For OP_ADD: several FoundRepo paths, in place of path. Each takes its
+   * FoundRepo name, and one Inventory follows them all.
+   *
+   * @generated from field: repeated string paths = 5;
+   */
+  paths: string[];
 };
 
 /**

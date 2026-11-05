@@ -75,7 +75,7 @@ export class FakeRunner {
   /** Error codes the server sent, for example REVOKED. */
   readonly errors: number[] = [];
   /** Repo changes the server asked for, in order. */
-  readonly repoChanges: { op: number; path: string; name: string }[] = [];
+  readonly repoChanges: { op: number; path: string; name: string; paths: string[] }[] = [];
   /** How many times the server asked for a rescan. */
   scans = 0;
   /** Chat turns the server sent, in order. */
@@ -286,12 +286,20 @@ export class FakeRunner {
         return;
       case "repoChange": {
         const c = body.value;
-        this.repoChanges.push({ op: c.op, path: c.path, name: c.name });
+        this.repoChanges.push({ op: c.op, path: c.path, name: c.name, paths: [...c.paths] });
         const o = this.options;
         let ok = false;
         let message: string;
         if (o.remoteRepos === false) {
           message = "Repo changes from Sling are off on this machine.";
+        } else if (c.op === RepoChange_Op.ADD && c.paths.length > 0) {
+          const hits = (o.foundRepos ?? []).filter((f) => c.paths.includes(f.path));
+          ok = hits.length > 0;
+          message = ok
+            ? `Added ${hits.length} repos: ${hits.map((f) => f.name).join(", ")}.`
+            : "None of those paths are ones this machine found.";
+          o.foundRepos = o.foundRepos?.filter((f) => !hits.includes(f));
+          for (const f of hits) o.repos.push({ name: f.name, remoteUrl: f.remoteUrl ?? "" });
         } else if (c.op === RepoChange_Op.ADD) {
           const found = o.foundRepos?.find((f) => f.path === c.path);
           if (found) {

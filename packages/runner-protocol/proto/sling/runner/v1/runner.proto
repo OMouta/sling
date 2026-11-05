@@ -215,6 +215,9 @@ message RepoChange {
   // For OP_ADD, the name to give it (empty takes the FoundRepo name). For
   // OP_REMOVE, the repo to remove.
   string name = 4;
+  // For OP_ADD: several FoundRepo paths, in place of path. Each takes its
+  // FoundRepo name, and one Inventory follows them all.
+  repeated string paths = 5;
 }
 
 // Runner to server, after a RepoChange. A fresh Inventory follows a change.

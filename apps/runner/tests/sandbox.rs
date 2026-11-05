@@ -541,7 +541,7 @@ async fn boots_runs_a_task_pushes_and_exits_when_revoked() {
         request_id: "rc_sbx".into(),
         op: repo_change::Op::Add as i32,
         path: root.display().to_string(),
-        name: String::new(),
+        ..Default::default()
     }));
     let result = loop {
         if let Seen::RepoChangeResult(r) = stub.next().await {

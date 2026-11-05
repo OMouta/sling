@@ -168,19 +168,25 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
       };
     });
 
-    /** Allows one of the repos a machine found. The machine checks the path itself. */
+    /**
+     * Allows repos the machine found: one by `path` (optionally renamed), or
+     * several by `paths` in one change. The machine checks each path itself.
+     */
     s.post(
       "/api/runners/:id/repos",
       {
         schema: {
           params: z.object({ id: z.string() }),
-          body: z.object({
-            path: z.string().min(1).max(1024),
-            name: z
-              .string()
-              .regex(/^[A-Za-z0-9._-]{1,64}$/)
-              .optional(),
-          }),
+          body: z.union([
+            z.object({
+              path: z.string().min(1).max(1024),
+              name: z
+                .string()
+                .regex(/^[A-Za-z0-9._-]{1,64}$/)
+                .optional(),
+            }),
+            z.object({ paths: z.array(z.string().min(1).max(1024)).min(1).max(200) }),
+          ]),
         },
       },
       async (request, reply) => {
@@ -192,13 +198,39 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
             error: "This machine doesn't accept repo changes from Sling.",
           });
         }
-        const found = runner.foundRepos.find((f) => f.path === request.body.path);
+        const body = request.body;
+        if ("paths" in body) {
+          // Only paths the machine reported go over, so a stale list can't widen it.
+          const wanted = new Set(body.paths);
+          const found = runner.foundRepos.filter((f) => wanted.has(f.path));
+          if (found.length === 0)
+            return reply
+              .code(404)
+              .send({ error: "None of those repos are on the machine's list." });
+          const result = await ctx.runners.changeRepo(
+            runner.id,
+            { op: "add-many", paths: found.map((f) => f.path) },
+            60_000,
+          );
+          await audit(ctx, {
+            workspaceId: actor.workspaceId,
+            actorType: "user",
+            actorId: actor.userId,
+            verb: result.ok ? "runner.repo_allowed" : "runner.repo_change_refused",
+            subjectType: "runner",
+            subjectId: runner.id,
+            details: { paths: found.map((f) => f.path), message: result.message },
+          });
+          if (!result.ok) return reply.code(409).send({ error: result.message });
+          return { ok: true, message: result.message };
+        }
+        const found = runner.foundRepos.find((f) => f.path === body.path);
         if (!found)
           return reply.code(404).send({ error: "That repo isn't on the machine's list." });
         const result = await ctx.runners.changeRepo(runner.id, {
           op: "add",
           path: found.path,
-          ...(request.body.name ? { name: request.body.name } : {}),
+          ...(body.name ? { name: body.name } : {}),
         });
         await audit(ctx, {
           workspaceId: actor.workspaceId,
@@ -209,7 +241,7 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
           subjectId: runner.id,
           details: {
             path: found.path,
-            name: request.body.name ?? found.name,
+            name: body.name ?? found.name,
             message: result.message,
           },
         });
