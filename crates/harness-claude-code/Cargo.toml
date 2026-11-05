@@ -1,0 +1,24 @@
+[package]
+name = "sling-harness-claude-code"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Runs Claude Code (`claude -p --output-format stream-json`) and maps its events to Sling task events"
+
+[[bin]]
+name = "fake-claude"
+path = "src/bin/fake-claude.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+serde_json = "1.0.154"
+sling-runner-protocol = { path = "../runner-protocol" }
+tokio = { version = "1.54.1", features = ["process", "io-util", "sync", "time", "rt", "macros"] }
+
+[target."cfg(unix)".dependencies]
+libc = "0.2.191"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
