@@ -67,6 +67,8 @@ export interface SourceContext<Credentials, Config> {
    */
   approvals: {
     decide(decision: ApprovalDecision): Promise<{ ok: boolean; message: string }>;
+    /** Records a click the connector refused, for example from a user not on the approver list. */
+    reportRefused(decision: ApprovalDecision & { reason: string }): Promise<void>;
   };
   setStatus(status: SourceStatus, detail?: string): void;
 }

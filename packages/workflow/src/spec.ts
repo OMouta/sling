@@ -152,6 +152,12 @@ export interface NodeSpec<Config = Record<string, unknown>, Services = unknown> 
   category: NodeCategory;
   /** Connector that provides this node, if any. */
   connector?: string;
+  /**
+   * Zod schema for the node's settings. The editor renders a form from its
+   * JSON Schema. Hint the widget with `.meta({ widget: "textarea" })` for
+   * multi-line text such as prompts, or `.meta({ widget: "json" })` for JSON.
+   * Give every field a `.describe()` so the form has help text.
+   */
   configSchema: z.ZodType<Config>;
   /** Config keys whose string values may be JSONata (`={{ … }}`). */
   expressionFields?: string[];
