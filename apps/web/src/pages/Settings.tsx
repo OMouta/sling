@@ -417,8 +417,14 @@ function SandboxSecrets({ secrets }: { secrets: SandboxSettingsView["secrets"] }
   const qc = useQueryClient();
   const [typed, setTyped] = useState<Partial<Record<SecretKey, string>>>({});
   const body = secretsBody(typed);
-  const onSaved = (res: SandboxSettingsView | null) => {
-    if (isSandboxSettingsView(res)) qc.setQueryData(qk.sandboxSettings(), res);
+  // The secrets endpoint answers with `{ secrets }` only, so merge it into the
+  // cached settings rather than replacing them.
+  const onSaved = (res: { secrets: SandboxSettingsView["secrets"] } | null) => {
+    if (res?.secrets) {
+      qc.setQueryData<SandboxSettingsView>(qk.sandboxSettings(), (old) =>
+        old ? { ...old, secrets: res.secrets } : old,
+      );
+    }
     void qc.invalidateQueries({ queryKey: qk.sandboxSettings() });
   };
   const save = useMutation({

@@ -65,5 +65,5 @@ export const sandboxApi = {
     api.put<SandboxSettingsView | null>("/api/settings/sandboxes", body),
   /** Write-only. `""` clears a secret; a key that's left out is kept. */
   saveSecrets: (body: Partial<Record<SecretKey, string>>) =>
-    api.put<SandboxSettingsView | null>("/api/settings/sandboxes/secrets", body),
+    api.put<{ secrets: SandboxSettingsView["secrets"] }>("/api/settings/sandboxes/secrets", body),
 };

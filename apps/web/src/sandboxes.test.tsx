@@ -114,7 +114,8 @@ function route(method: string, path: string, body: unknown): unknown {
         next[k as keyof typeof next] = v !== "";
       }
       settings = { ...settings, secrets: next };
-      return settings;
+      // Like the server: only the secrets come back.
+      return { secrets: next };
     }
     case "POST /api/installations": {
       const b = body as { connectorId: string; name: string; config: Record<string, unknown> };
