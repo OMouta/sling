@@ -3,6 +3,11 @@
 //! pairing request, answers the handshake, assigns a task, and asks for a
 //! push. The repo is cloned from a local bare repo, and `fake-codex` stands in
 //! for Codex.
+//!
+//! With `SLING_SANDBOX_IMAGE` set, for example to `sling-sandbox:dev`, the
+//! same tests run the sandbox inside that image with `docker run`, and a shell
+//! script stands in for Codex. The container reaches the stub at
+//! `host.docker.internal`, and the test directory is mounted at the same path.
 
 #![cfg(unix)]
 
@@ -29,6 +34,35 @@ const GIT_TOKEN: &str = "ghs_sandboxtesttoken0123456789abcdef";
 const OPENAI_KEY: &str = "sk-sandbox-test-openai-key-0123456789";
 const PAIR_CODE: &str = "PAIR-5678";
 const NONCE: [u8; 32] = [7; 32];
+
+fn docker_image() -> Option<String> {
+    std::env::var("SLING_SANDBOX_IMAGE")
+        .ok()
+        .filter(|v| !v.is_empty())
+}
+
+/// Codex in the image's shape, for a Linux container: logs in with a key,
+/// reports what it can see of the environment, and edits a file.
+const SHELL_CODEX: &str = r#"#!/bin/sh
+case "$1" in
+  --version) echo "codex-cli 0.166.0" ;;
+  login)
+    if [ "$2" = "--with-api-key" ]; then cat > /dev/null; echo "API key saved."; exit 0; fi
+    echo "Logged in using a shell stand-in" ;;
+  exec)
+    cat > /dev/null
+    dir="."
+    while [ $# -gt 0 ]; do case "$1" in -C) dir="$2"; shift ;; esac; shift; done
+    seen=$(env | cut -d= -f1 | grep -E '^(SLING_|GH_TOKEN$|GITHUB_TOKEN$|OPENAI_API_KEY$|ANTHROPIC_API_KEY$)' | sort | paste -sd, -)
+    echo '{"type":"thread.started","thread_id":"t1"}'
+    echo "{\"type\":\"item.completed\",\"item\":{\"id\":\"e\",\"type\":\"agent_message\",\"text\":\"Sensitive environment: [$seen]\"}}"
+    echo "- change" >> "$dir/SLING_FAKE.md"
+    echo "{\"type\":\"item.completed\",\"item\":{\"id\":\"f\",\"type\":\"file_change\",\"changes\":[{\"path\":\"$dir/SLING_FAKE.md\",\"kind\":\"add\"}],\"status\":\"completed\"}}"
+    echo '{"type":"item.completed","item":{"id":"m","type":"agent_message","text":"Updated SLING_FAKE.md."}}'
+    echo '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
+    ;;
+esac
+"#;
 
 /// `fake-codex` comes from another package, so build it if this test run
 /// hasn't yet.
@@ -66,6 +100,13 @@ fn git(dir: &Path, args: &[&str]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8_lossy(&out.stdout).trim().to_string()
+}
+
+/// A test directory, canonicalized so it mounts at the same path in Docker.
+fn test_dir() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    (dir, root)
 }
 
 /// A bare repo with one commit on `main`.
@@ -111,7 +152,12 @@ struct Stub {
 impl Stub {
     async fn start() -> Stub {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
+        let host = if docker_image().is_some() {
+            "host.docker.internal"
+        } else {
+            "127.0.0.1"
+        };
+        let url = format!("http://{host}:{}", listener.local_addr().unwrap().port());
         let (seen_tx, seen) = mpsc::unbounded_channel();
         let (to_runner, mut cmds) = mpsc::unbounded_channel();
         tokio::spawn(async move {
@@ -267,10 +313,28 @@ async fn websocket(
 struct Sandbox {
     child: tokio::process::Child,
     logs: Arc<Mutex<Vec<String>>>,
+    container: Option<String>,
+}
+
+impl Drop for Sandbox {
+    fn drop(&mut self) {
+        if let Some(name) = &self.container {
+            let _ = std::process::Command::new("docker")
+                .args(["rm", "-f", name])
+                .output();
+        }
+    }
 }
 
 impl Sandbox {
     fn start(root: &Path, vars: &[(&str, String)]) -> Sandbox {
+        match docker_image() {
+            Some(image) => Sandbox::start_in_docker(root, vars, &image),
+            None => Sandbox::start_local(root, vars),
+        }
+    }
+
+    fn start_local(root: &Path, vars: &[(&str, String)]) -> Sandbox {
         let user_home = root.join("user-home");
         std::fs::create_dir_all(&user_home).unwrap();
         let mut cmd = tokio::process::Command::new(RUNNER);
@@ -282,8 +346,46 @@ impl Sandbox {
             .env("HOME", &user_home)
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("FAKE_CODEX_DELAY_MS", "1")
-            .envs(vars.iter().map(|(k, v)| (*k, v.as_str())))
-            .stdin(Stdio::null())
+            .envs(vars.iter().map(|(k, v)| (*k, v.as_str())));
+        Sandbox::spawn(cmd, None)
+    }
+
+    fn start_in_docker(root: &Path, vars: &[(&str, String)], image: &str) -> Sandbox {
+        let codex = root.join("shell-codex.sh");
+        std::fs::write(&codex, SHELL_CODEX).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&codex, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut suffix = [0u8; 4];
+        getrandom::fill(&mut suffix).unwrap();
+        let name = format!(
+            "sling-sandbox-test-{}",
+            suffix
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        );
+        let mount = format!("{0}:{0}", root.display());
+        // The clones go to /workspace. Mounting it keeps them after the
+        // container is gone, so the test can check them.
+        let workspace = root.join("workspace");
+        std::fs::create_dir_all(&workspace).unwrap();
+        let workspace = format!("{}:/workspace", workspace.display());
+        let mut cmd = tokio::process::Command::new("docker");
+        cmd.args(["run", "--rm", "--init", "--name", &name]);
+        cmd.args(["-v", &mount, "-v", &workspace]);
+        for (k, v) in vars {
+            let v = match *k {
+                "SLING_CODEX_BIN" => codex.display().to_string(),
+                _ => v.clone(),
+            };
+            cmd.arg("-e").arg(format!("{k}={v}"));
+        }
+        cmd.arg(image);
+        Sandbox::spawn(cmd, Some(name))
+    }
+
+    fn spawn(mut cmd: tokio::process::Command, container: Option<String>) -> Sandbox {
+        cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
@@ -302,7 +404,11 @@ impl Sandbox {
                 }
             });
         }
-        Sandbox { child, logs }
+        Sandbox {
+            child,
+            logs,
+            container,
+        }
     }
 
     async fn exit_code(&mut self, within: Duration) -> Option<i32> {
@@ -370,8 +476,8 @@ fn files_containing(dir: &Path, needle: &[u8]) -> Vec<PathBuf> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn boots_runs_a_task_pushes_and_exits_when_revoked() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
+    let (_dir, root) = test_dir();
+    let root = root.as_path();
     let remote = bare_repo(root);
     let home = root.join("sandbox-home");
     let mut stub = Stub::start().await;
@@ -496,7 +602,10 @@ async fn boots_runs_a_task_pushes_and_exits_when_revoked() {
     );
 
     // The token never landed on disk or in the log.
-    let clone = home.join("workspace/site");
+    let clone = match docker_image() {
+        Some(_) => root.join("workspace/site"),
+        None => home.join("workspace/site"),
+    };
     let git_config = std::fs::read_to_string(clone.join(".git/config")).unwrap();
     assert!(!git_config.contains(GIT_TOKEN));
     assert!(git_config.contains(&format!("file://{}", remote.display())));
@@ -520,8 +629,8 @@ async fn boots_runs_a_task_pushes_and_exits_when_revoked() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn exits_when_idle() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
+    let (_dir, root) = test_dir();
+    let root = root.as_path();
     let remote = bare_repo(root);
     let mut stub = Stub::start().await;
     let mut vars = base_vars(&stub.url, &remote, &root.join("home"));
@@ -538,8 +647,8 @@ async fn exits_when_idle() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_missing_variable_fails_the_boot() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
+    let (_dir, root) = test_dir();
+    let root = root.as_path();
     let remote = bare_repo(root);
     let mut vars = base_vars("http://127.0.0.1:9", &remote, &root.join("home"));
     vars.retain(|(k, _)| *k != "SLING_PAIR_CODE");
@@ -550,8 +659,8 @@ async fn a_missing_variable_fails_the_boot() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_failed_clone_fails_the_boot() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
+    let (_dir, root) = test_dir();
+    let root = root.as_path();
     let mut vars = base_vars(
         "http://127.0.0.1:9",
         &root.join("missing.git"),
@@ -567,8 +676,8 @@ async fn a_failed_clone_fails_the_boot() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_refused_pairing_fails_the_boot() {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
+    let (_dir, root) = test_dir();
+    let root = root.as_path();
     let remote = bare_repo(root);
     // Nothing listens on this port.
     let port = {
