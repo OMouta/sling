@@ -154,6 +154,7 @@ export class TaskService implements GatewayHandlers {
         .from(schema.tasks)
         .where(eq(schema.tasks.id, taskId))
         .for("update");
+      // biome-ignore lint/complexity/useOptionalChain: the explicit check keeps `task` narrowed below.
       if (!task || task.state !== "queued") return null;
       if (!this.#ctx.runners.isOnline(task.runnerId)) return null;
       const [runner] = await tx
