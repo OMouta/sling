@@ -1,0 +1,19 @@
+{
+  "name": "@sling/integration-docker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run src",
+    "test:integration": "vitest run test/"
+  },
+  "dependencies": {
+    "@sling/connector-sdk": "workspace:*",
+    "@sling/workflow": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}
