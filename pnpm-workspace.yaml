@@ -4,4 +4,7 @@ packages:
   - packages/*
 allowBuilds:
   "@bufbuild/buf": false
+  cpu-features: false
   esbuild: true
+  protobufjs: false
+  ssh2: false
