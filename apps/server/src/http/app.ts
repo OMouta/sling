@@ -14,6 +14,7 @@ import { hubRoutes } from "../realtime/hub.ts";
 import { authRoutes } from "../routes/auth.ts";
 import { settingsRoutes } from "../routes/settings.ts";
 import { setupRoutes } from "../routes/setup.ts";
+import { runnerRoutes } from "../runners/routes.ts";
 
 export function createServer(config: Config): FastifyInstance {
   const app = Fastify({
@@ -50,6 +51,10 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
 
   await app.register(async (scope) => authRoutes(scope, ctx));
   await app.register(async (scope) => hubRoutes(scope, ctx));
+  await app.register(async (scope) => {
+    ctx.runners.register(scope);
+    await runnerRoutes(scope, ctx);
+  });
   await app.register(async (scope) => {
     const r = scope.withTypeProvider<ZodTypeProvider>();
     await setupRoutes(r, ctx);
