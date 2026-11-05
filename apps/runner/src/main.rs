@@ -92,7 +92,7 @@ enum ServiceCommand {
 #[derive(Subcommand)]
 enum ConfigCommand {
     Show,
-    /// Keys: max-mode, max-concurrent-tasks, name, codex-bin, worktree-root.
+    /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, worktree-root.
     Set {
         key: String,
         value: String,
@@ -197,6 +197,7 @@ async fn real_main() -> Result<()> {
             ConfigCommand::Show => {
                 let cfg = Config::load(&paths)?;
                 println!("config file:  {}", paths.config_file().display());
+                println!("labels sent:  {}", cfg.all_labels().join(", "));
                 println!("{}", toml::to_string_pretty(&cfg)?);
             }
             ConfigCommand::Set { key, value } => {
@@ -211,6 +212,7 @@ async fn real_main() -> Result<()> {
                         cfg.max_concurrent_tasks = n;
                     }
                     "name" => cfg.name = value,
+                    "labels" => cfg.labels = config::parse_labels(&value)?,
                     "codex-bin" => cfg.codex_bin = Some(value),
                     "worktree-root" => cfg.worktree_root = Some(PathBuf::from(value)),
                     _ => bail!("unknown key {key:?}"),
@@ -290,5 +292,6 @@ async fn doctor(paths: &Paths) -> Result<()> {
         );
     }
     println!("     max mode  {}", cfg.max_mode.as_str());
+    println!("     labels    {}", inv.labels.join(", "));
     Ok(())
 }

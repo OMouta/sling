@@ -79,7 +79,7 @@ pub async fn build(cfg: &Config) -> Inventory {
         repos,
         max_mode: cfg.max_mode.to_proto() as i32,
         max_concurrent_tasks: cfg.max_concurrent_tasks,
-        labels: Vec::new(),
+        labels: cfg.all_labels(),
     }
 }
 

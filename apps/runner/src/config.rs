@@ -93,6 +93,10 @@ pub struct Config {
     pub worktree_root: Option<PathBuf>,
     /// Path to the codex binary. Defaults to `codex` on PATH.
     pub codex_bin: Option<String>,
+    /// Labels tasks can require, for example `ios` or `gpu`. The Runner adds
+    /// `os:` and `arch:` labels itself.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub labels: Vec<String>,
     #[serde(default)]
     pub repos: Vec<RepoEntry>,
 }
@@ -115,6 +119,7 @@ impl Default for Config {
             max_concurrent_tasks: default_concurrency(),
             worktree_root: None,
             codex_bin: None,
+            labels: Vec::new(),
             repos: Vec::new(),
         }
     }
@@ -154,6 +159,48 @@ impl Config {
     pub fn codex_bin(&self) -> String {
         self.codex_bin.clone().unwrap_or_else(|| "codex".into())
     }
+
+    /// Labels sent in the inventory: the configured ones plus `os:<os>` and
+    /// `arch:<arch>`.
+    pub fn all_labels(&self) -> Vec<String> {
+        let mut out = self.labels.clone();
+        out.push(format!("os:{}", crate::sys::os()));
+        out.push(format!("arch:{}", std::env::consts::ARCH));
+        out
+    }
+}
+
+/// Most labels a Runner may set.
+pub const MAX_LABELS: usize = 32;
+const MAX_LABEL_LEN: usize = 64;
+/// Prefixes the Runner sets itself.
+const RESERVED_PREFIXES: &[&str] = &["os:", "arch:"];
+
+/// Parses `ios,gpu` into labels. Labels use lowercase letters, digits, `-`,
+/// `_`, `:`, and `.`. An empty string clears them.
+pub fn parse_labels(value: &str) -> Result<Vec<String>> {
+    let mut out: Vec<String> = Vec::new();
+    for label in value.split(',').map(str::trim).filter(|l| !l.is_empty()) {
+        if label.len() > MAX_LABEL_LEN
+            || !label.chars().all(|c| {
+                c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_' | ':' | '.')
+            })
+        {
+            bail!(
+                "invalid label {label:?}: use lowercase letters, digits, '-', '_', ':' and '.', up to {MAX_LABEL_LEN} characters"
+            );
+        }
+        if let Some(p) = RESERVED_PREFIXES.iter().find(|p| label.starts_with(**p)) {
+            bail!("labels starting with {p:?} are set automatically");
+        }
+        if !out.iter().any(|l| l == label) {
+            out.push(label.to_string());
+        }
+    }
+    if out.len() > MAX_LABELS {
+        bail!("at most {MAX_LABELS} labels");
+    }
+    Ok(out)
 }
 
 #[derive(Clone, Debug)]
@@ -265,5 +312,36 @@ mod tests {
         let back: Config = toml::from_str(&text).unwrap();
         assert_eq!(back.max_mode, Mode::Supervised);
         assert!(back.repos[0].network);
+        assert!(back.labels.is_empty());
+        assert!(!text.contains("labels"), "left out unless set");
+    }
+
+    #[test]
+    fn labels_are_validated() {
+        assert_eq!(parse_labels("ios, gpu,ios").unwrap(), vec!["ios", "gpu"]);
+        assert_eq!(
+            parse_labels("team:mobile,xcode-16.2,big_disk").unwrap(),
+            vec!["team:mobile", "xcode-16.2", "big_disk"]
+        );
+        assert!(parse_labels("").unwrap().is_empty());
+        assert!(parse_labels("iOS").is_err());
+        assert!(parse_labels("has space").is_err());
+        assert!(parse_labels("os:linux").is_err());
+        assert!(parse_labels("arch:x86_64").is_err());
+        let many: Vec<String> = (0..33).map(|i| format!("l{i}")).collect();
+        assert!(parse_labels(&many.join(",")).is_err());
+        assert!(parse_labels(&"x".repeat(65)).is_err());
+    }
+
+    #[test]
+    fn automatic_labels_are_added() {
+        let c = Config {
+            labels: vec!["ios".into()],
+            ..Config::default()
+        };
+        let all = c.all_labels();
+        assert_eq!(all[0], "ios");
+        assert!(all.iter().any(|l| l.starts_with("os:")));
+        assert!(all.iter().any(|l| l.starts_with("arch:")));
     }
 }
