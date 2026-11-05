@@ -36,8 +36,16 @@ export type FormField = FieldBase &
 
 export type FieldKind = FormField["kind"];
 
+/** Keys whose plain wording reads better than the field name. */
+const KEY_LABELS: Record<string, string> = {
+  installationId: "Account",
+  providerInstallationId: "Sandbox provider",
+};
+
 /** "timeoutMs" → "Timeout ms", "allowed_user_ids" → "Allowed user ids". */
 export function humanize(key: string): string {
+  const known = KEY_LABELS[key];
+  if (known) return known;
   const words = key
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")

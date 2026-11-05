@@ -296,7 +296,7 @@ describe("workflow editor", () => {
   it("offers installations of the node's connector", async () => {
     renderAt("/workflows/wf_1");
     fireEvent.click(await findNode("n_send"));
-    const select = (await screen.findByLabelText("Installation id")) as HTMLSelectElement;
+    const select = (await screen.findByLabelText("Account")) as HTMLSelectElement;
     expect([...select.options].map((o) => o.textContent)).toEqual([
       "Choose an installation",
       "Sling bot",

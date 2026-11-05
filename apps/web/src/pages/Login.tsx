@@ -14,6 +14,7 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [backup, setBackup] = useState(false);
   const [step, setStep] = useState<"password" | "2fa">(
     new URLSearchParams(location.search).get("step") === "2fa" ? "2fa" : "password",
   );
@@ -42,13 +43,21 @@ export function LoginPage() {
     await done();
   }
 
-  async function verify(e: FormEvent) {
-    e.preventDefault();
+  async function verify(value = code) {
+    const clean = value.replace(/\s/g, "");
+    if (!clean || busy) return;
     setBusy(true);
     setError(null);
-    const res = await authClient.twoFactor.verifyTotp({ code: code.replace(/\s/g, "") });
+    const res = backup
+      ? await authClient.twoFactor.verifyBackupCode({ code: clean })
+      : await authClient.twoFactor.verifyTotp({ code: clean });
     setBusy(false);
-    if (res.error) return setError(res.error.message ?? "That code didn't work.");
+    if (res.error) {
+      setCode("");
+      return setError(
+        backup ? "That backup code didn't work." : "That code didn't match. Try the next one.",
+      );
+    }
     await done();
   }
 
@@ -62,16 +71,34 @@ export function LoginPage() {
   if (step === "2fa") {
     return (
       <AuthFrame
-        title="Two-factor code"
-        subtitle="Enter the 6-digit code from your authenticator app."
+        title={backup ? "Use a backup code" : "Two-factor code"}
+        subtitle={
+          backup
+            ? "Enter one of the backup codes you saved. Each works once."
+            : "Enter the 6-digit code from your authenticator app."
+        }
       >
-        <form onSubmit={verify} className="space-y-4">
-          <Field label="Code">
+        <form
+          onSubmit={(e: FormEvent) => {
+            e.preventDefault();
+            void verify();
+          }}
+          className="space-y-4"
+        >
+          <Field label={backup ? "Backup code" : "Code"}>
             <Input
+              key={backup ? "backup" : "totp"}
               value={code}
-              onChange={(e) => setCode(e.target.value)}
-              inputMode="numeric"
+              onChange={(e) => {
+                if (backup) return setCode(e.target.value);
+                const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+                setCode(v);
+                if (v.length === 6) void verify(v);
+              }}
+              inputMode={backup ? "text" : "numeric"}
               autoComplete="one-time-code"
+              placeholder={backup ? "xxxxx-xxxxx" : "123456"}
+              className="tabular text-center font-mono text-base tracking-[0.3em]"
               autoFocus
               required
             />
@@ -80,6 +107,17 @@ export function LoginPage() {
           <Button type="submit" variant="primary" className="w-full" busy={busy}>
             Verify
           </Button>
+          <button
+            type="button"
+            onClick={() => {
+              setBackup(!backup);
+              setCode("");
+              setError(null);
+            }}
+            className="w-full cursor-pointer text-center text-xs text-subtle hover:text-text"
+          >
+            {backup ? "Use the authenticator app instead" : "Lost your phone? Use a backup code"}
+          </button>
         </form>
       </AuthFrame>
     );
