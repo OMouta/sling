@@ -6,6 +6,7 @@ import type {
   PermissionMode,
   TaskState,
 } from "@sling/core";
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -64,7 +65,7 @@ export const workspaceMembers = pgTable(
 export const credentials = pgTable("credentials", {
   id: text("id").primaryKey(),
   ...owned(),
-  kind: text("kind").$type<"model_api_key">().notNull(),
+  kind: text("kind").$type<"model_api_key" | "connector">().notNull(),
   /** base64 of iv | auth tag | ciphertext, AES-256-GCM. */
   ciphertext: text("ciphertext").notNull(),
   keyVersion: integer("key_version").notNull(),
@@ -155,11 +156,20 @@ export const conversations = pgTable(
     ...owned(),
     title: text("title").notNull().default("New conversation"),
     mode: text("mode").$type<PermissionMode>().notNull(),
+    /** Workflow that owns this conversation. Follow-ups go back through it. */
+    workflowId: text("workflow_id"),
+    /** Stable key for conversations bound to an outside channel, e.g. `discord:<installation>:<channel>`. */
+    externalKey: text("external_key"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     archivedAt: ts("archived_at"),
   },
-  (t) => [index("conversations_workspace_idx").on(t.workspaceId, t.updatedAt)],
+  (t) => [
+    index("conversations_workspace_idx").on(t.workspaceId, t.updatedAt),
+    uniqueIndex("conversations_external_key_idx")
+      .on(t.workspaceId, t.externalKey)
+      .where(sql`${t.externalKey} is not null`),
+  ],
 );
 
 export interface TokenUsage {
@@ -289,15 +299,19 @@ export const approvals = pgTable(
   {
     id: text("id").primaryKey(),
     ...owned(),
-    actionId: text("action_id")
-      .notNull()
-      .references(() => actions.id, { onDelete: "cascade" }),
-    taskId: text("task_id")
-      .notNull()
-      .references(() => tasks.id, { onDelete: "cascade" }),
+    /** `task_action`: a push or PR step. `workflow`: a `human.approval` node. */
+    kind: text("kind").$type<"task_action" | "workflow">().notNull().default("task_action"),
+    title: text("title"),
+    /** What a workflow approval shows the approver. */
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
+    actionId: text("action_id").references(() => actions.id, { onDelete: "cascade" }),
+    taskId: text("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+    runId: text("run_id"),
     state: text("state").$type<ApprovalState>().notNull().default("pending"),
     expiresAt: ts("expires_at").notNull(),
     decidedBy: text("decided_by").references(() => users.id),
+    /** Set when decided from outside the web app, for example `discord`. */
+    decidedVia: text("decided_via"),
     decidedAt: ts("decided_at"),
     createdAt: createdAt(),
   },
