@@ -15,6 +15,8 @@ COPY packages/workflow/package.json packages/workflow/
 COPY packages/connector-sdk/package.json packages/connector-sdk/
 COPY integrations/discord/package.json integrations/discord/
 COPY integrations/email/package.json integrations/email/
+COPY integrations/docker/package.json integrations/docker/
+COPY integrations/railway/package.json integrations/railway/
 
 FROM base AS web
 RUN pnpm install --frozen-lockfile --filter "@sling/web..."

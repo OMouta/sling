@@ -214,9 +214,15 @@ importers:
       '@sling/integration-discord':
         specifier: workspace:*
         version: link:../../integrations/discord
+      '@sling/integration-docker':
+        specifier: workspace:*
+        version: link:../../integrations/docker
       '@sling/integration-email':
         specifier: workspace:*
         version: link:../../integrations/email
+      '@sling/integration-railway':
+        specifier: workspace:*
+        version: link:../../integrations/railway
       '@sling/runner-protocol':
         specifier: workspace:*
         version: link:../../packages/runner-protocol
