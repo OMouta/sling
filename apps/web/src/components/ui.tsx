@@ -20,13 +20,14 @@ export function cx(...parts: (string | false | null | undefined)[]): string {
 
 /* ------------------------------------------------------------------ Buttons */
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "ghost" | "danger" | "ghost-danger";
 
 const VARIANTS: Record<Variant, string> = {
   primary: "bg-accent text-accent-fg shadow-primary enabled:hover:bg-[#4a2fff]",
   secondary: "bg-surface-2 text-text shadow-raised enabled:hover:shadow-raised-hover",
   ghost: "text-muted enabled:hover:bg-surface-3 enabled:hover:text-text",
   danger: "bg-surface-2 text-danger shadow-raised enabled:hover:shadow-raised-hover",
+  "ghost-danger": "text-danger enabled:hover:bg-[var(--tag-red-bg)]",
 };
 
 /**

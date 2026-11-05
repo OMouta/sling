@@ -300,10 +300,9 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
           <ModeBadge mode={runner.maxMode} />
           <Button
             size="sm"
-            variant="ghost"
+            variant="ghost-danger"
             icon={Unplug}
             busy={revoke.isPending}
-            className="text-danger"
             onClick={() => {
               if (
                 window.confirm(

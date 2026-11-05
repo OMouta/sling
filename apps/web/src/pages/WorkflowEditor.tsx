@@ -325,7 +325,7 @@ function NameField({ value, onSave }: { value: string; onSave: (name: string) =>
         if (e.key === "Enter") e.currentTarget.blur();
         if (e.key === "Escape") setDraft(null);
       }}
-      className="-ml-1.5 h-[30px] min-w-0 rounded-lg bg-transparent px-1.5 text-base font-medium transition-shadow duration-150 outline-none hover:shadow-field focus:shadow-focus focus-visible:outline-none"
+      className="-ml-1.5 h-[30px] min-w-0 rounded-lg [field-sizing:content] bg-transparent px-1.5 text-base font-medium transition-shadow duration-150 outline-none hover:shadow-field focus:shadow-focus focus-visible:outline-none"
       size={Math.max(8, Math.min(40, (draft ?? value).length + 1))}
     />
   );

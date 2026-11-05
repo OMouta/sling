@@ -76,7 +76,7 @@ export function VersionsTab({
                     {ago(v.createdAt)}
                   </span>
                 </div>
-                {v.note && <p className="mt-1 text-sm text-muted">{v.note}</p>}
+                {v.note && <p className="mt-1 text-xs text-muted">{v.note}</p>}
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button size="sm" onClick={() => onView(viewing === v.number ? null : v.number)}>
                     {viewing === v.number ? "Close" : "View"}
@@ -98,7 +98,7 @@ export function VersionsTab({
             onClose={() => onView(null)}
           />
         ) : (
-          <div className="hidden h-full place-items-center p-6 text-sm text-muted md:grid">
+          <div className="hidden h-full place-items-center p-6 text-xs text-muted md:grid">
             Pick a version to view it.
           </div>
         )}
@@ -132,7 +132,7 @@ function VersionView({
     <div className="flex h-full min-h-[60vh] flex-col">
       <div className="flex items-center gap-2 border-b border-border bg-sidebar px-4 py-2">
         <span className="font-medium">Version {n}</span>
-        <span className="text-sm text-muted">read-only</span>
+        <span className="text-xs text-subtle">read-only</span>
         <div className="ml-auto flex gap-2">
           {version.data && (
             <Button
@@ -166,7 +166,7 @@ function VersionView({
             side={
               <Inspector
                 readOnly
-                empty={<p className="p-4 text-sm text-muted">Select a node to see its settings.</p>}
+                empty={<p className="p-4 text-xs text-muted">Select a node to see its settings.</p>}
               />
             }
           />
@@ -214,7 +214,7 @@ function RestoreDialog({
         </>
       }
     >
-      <p className="text-sm">
+      <p className="text-[13px] leading-5 text-soft">
         The draft is replaced with version {n}. Publish afterwards to make it the active version.
         The current draft isn't kept, so export it first if you want it.
       </p>

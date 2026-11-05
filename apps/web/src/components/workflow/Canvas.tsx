@@ -307,7 +307,7 @@ export function GraphCanvas({
         minZoom={0.1}
         maxZoom={2}
         fitView
-        fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+        fitViewOptions={{ padding: 0.2, maxZoom: 1, minZoom: 0.65 }}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
         <Toolbar editable={editable} />

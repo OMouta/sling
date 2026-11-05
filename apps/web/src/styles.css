@@ -38,6 +38,7 @@
   --warn: #fbbf24;
   --danger: #f97373;
   --ring: color-mix(in srgb, #8b7dff 70%, transparent);
+  --ring-soft: color-mix(in srgb, #8b7dff 24%, transparent);
   --edge-exec: #7f7f7f;
 
   --tag-neutral-bg: #2a2a2a;
@@ -109,6 +110,7 @@
   --warn: #b45309;
   --danger: #dc2626;
   --ring: color-mix(in srgb, #4124fb 45%, transparent);
+  --ring-soft: color-mix(in srgb, #4124fb 16%, transparent);
   --edge-exec: #8a8a8a;
 
   --tag-neutral-bg: #f4f4f5;
@@ -185,7 +187,7 @@
   --shadow-active: var(--sh-active);
   --shadow-field: var(--sh-field);
   --shadow-field-hover: var(--sh-field-hover);
-  --shadow-focus: inset 0 0 0 1px var(--accent-text), 0 0 0 3px var(--ring);
+  --shadow-focus: inset 0 0 0 1px var(--accent-text), 0 0 0 3px var(--ring-soft);
   --shadow-card: var(--sh-card);
   --shadow-card-hover: var(--sh-card-hover);
   --shadow-popover: var(--sh-popover);
@@ -284,11 +286,11 @@
   }
 }
 
-.prose-chat p + p,
-.prose-chat ul,
-.prose-chat ol,
-.prose-chat pre {
+.prose-chat > * + * {
   margin-top: 0.6em;
+}
+.prose-chat li + li {
+  margin-top: 0.2em;
 }
 .prose-chat ul {
   list-style: disc;

@@ -53,7 +53,7 @@ export function Inspector({
         : `${edgeIds.length} connection${edgeIds.length === 1 ? "" : "s"}`;
     return (
       <div className="space-y-3 p-4">
-        <p className="text-sm">{what} selected.</p>
+        <p className="text-[13px] text-soft">{what} selected.</p>
         {editable && (
           <Button variant="danger" size="sm" onClick={() => store.update(g.deleteSelection)}>
             Delete
@@ -97,21 +97,23 @@ function NodeInspector({
           {spec && <Badge>{spec.category}</Badge>}
         </div>
         <p className="font-mono text-xs text-muted">{data.type}</p>
-        {spec?.description && <p className="text-sm text-muted">{spec.description}</p>}
+        {spec?.description && (
+          <p className="text-xs leading-[18px] text-muted">{spec.description}</p>
+        )}
         {!spec && (
-          <p className="text-sm text-danger">
+          <p className="text-xs text-danger">
             This server doesn't know this node type. Publishing will fail until it's removed.
           </p>
         )}
         {spec && spec.version !== data.version && (
-          <p className="text-sm text-warn">
+          <p className="text-xs text-warn">
             Written for version {data.version} of this node; the server has version {spec.version}.
           </p>
         )}
       </div>
 
       {issues && (
-        <ul className="space-y-1 rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm text-danger">
+        <ul className="space-y-1 rounded-lg border border-[var(--tag-red-border)] bg-[var(--tag-red-bg)] p-3 text-xs text-[var(--tag-red-text)]">
           {issues.map((i) => (
             <li key={`${i.code}:${i.port ?? ""}:${i.edgeId ?? ""}:${i.message}`}>{i.message}</li>
           ))}
@@ -119,7 +121,7 @@ function NodeInspector({
       )}
 
       <div className="space-y-1.5">
-        <label htmlFor={`label-${nodeId}`} className="text-sm font-medium">
+        <label htmlFor={`label-${nodeId}`} className="text-xs font-medium text-soft">
           Label
         </label>
         <Input
@@ -388,7 +390,7 @@ function InstallationSelect({
   );
   if (options.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted">
+      <p className="rounded-lg bg-surface-2 p-3 text-xs text-muted shadow-raised">
         No {connector ?? "connector"} installations yet.{" "}
         <Link to="/connectors" className="text-accent-text hover:underline">
           Add one under Connectors

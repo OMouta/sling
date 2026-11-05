@@ -27,7 +27,7 @@ export interface SchemaFormProps {
 /** A form generated from JSON Schema fields. */
 export function SchemaForm(props: SchemaFormProps) {
   const { fields, value, onChange } = props;
-  if (fields.length === 0) return <p className="text-sm text-muted">No settings.</p>;
+  if (fields.length === 0) return <p className="text-xs text-muted">No settings.</p>;
   return (
     <div className={props.compact ? "space-y-3" : "space-y-4"}>
       {fields.map((f) => (
@@ -73,7 +73,7 @@ function FieldRow({
   return (
     <div className="space-y-1.5" data-field={field.key}>
       <div className="flex items-center justify-between gap-2">
-        <label htmlFor={labelFor} className="text-sm font-medium">
+        <label htmlFor={labelFor} className="text-xs font-medium text-soft">
           {field.label}
           {field.required && (
             <span className="ml-0.5 text-danger" title="Required">
@@ -391,7 +391,7 @@ export function LongText({
           onClose={() => setOpen(false)}
           footer={
             <>
-              <span className="mr-auto flex items-center gap-2 text-sm">
+              <span className="mr-auto flex items-center gap-2 text-[13px]">
                 <Switch checked={mono} onChange={setMono} label="Monospace" size="sm" />
                 Monospace
               </span>
@@ -443,7 +443,7 @@ function ChipList({
         {value.map((v, i) => (
           <li
             key={v}
-            className="inline-flex h-7 items-center gap-1 rounded-md bg-surface-2 pr-1 pl-2 text-sm"
+            className="inline-flex h-6 items-center gap-1 rounded-md bg-surface-3 pr-1 pl-2 text-xs"
           >
             <span className="max-w-56 truncate font-mono text-xs">{v}</span>
             <button
@@ -461,7 +461,7 @@ function ChipList({
           <input
             id={id}
             aria-label={`Add to ${label}`}
-            className="h-7 w-full bg-transparent px-1.5 text-sm outline-none placeholder:text-muted"
+            className="h-7 w-full bg-transparent px-1.5 text-[13px] outline-none placeholder:text-subtle focus-visible:outline-none"
             placeholder={value.length ? "Add another" : "Type and press Enter"}
             value={draft}
             disabled={disabled}
@@ -548,7 +548,7 @@ function RowCell({
   const label = `${field.label}${field.required ? " *" : ""}`;
   if (field.kind === "boolean") {
     return (
-      <span className="flex h-9 items-center gap-2 text-sm">
+      <span className="flex h-8 items-center gap-2 text-[13px]">
         <Switch checked={value === true} onChange={onChange} label={field.label} size="sm" />
         {field.label}
       </span>

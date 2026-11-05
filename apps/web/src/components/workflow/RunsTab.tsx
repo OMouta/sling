@@ -44,7 +44,7 @@ export function RunsTab({
                 <span className="w-24 shrink-0">
                   <RunStatusBadge status={r.status} />
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm">
+                <span className="min-w-0 flex-1 truncate text-[13px]">
                   {triggerTitle(catalog, r.triggerType)}
                   {r.error && <span className="ml-2 text-danger">{r.error.message}</span>}
                 </span>

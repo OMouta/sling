@@ -18,6 +18,7 @@ import {
   Tabs,
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
+import { groupApprovals } from "../lib/approvals.ts";
 import { ago, plural } from "../lib/format.ts";
 import { useRun } from "../lib/workflowApi.ts";
 
@@ -33,23 +34,10 @@ export function ApprovalsPage() {
     queryKey: ["approvals"],
     queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
   });
-  const byTask = new Map<string, ApprovalView[]>();
-  const workflow: ApprovalView[] = [];
-  const fallback: ApprovalView[] = [];
-  for (const a of approvals.data ?? []) {
-    if (a.kind === "sandbox_fallback") {
-      fallback.push(a);
-      continue;
-    }
-    if (a.kind === "workflow" || !a.taskId) {
-      workflow.push(a);
-      continue;
-    }
-    byTask.set(a.taskId, [...(byTask.get(a.taskId) ?? []), a]);
-  }
+  const { byTask, workflow, fallback, decisions } = groupApprovals(approvals.data ?? []);
 
   const [tab, setTab] = useState<"all" | "tasks" | "workflows" | "sandboxes">("all");
-  const total = approvals.data?.length ?? 0;
+  const total = decisions;
   const show = (t: typeof tab) => tab === "all" || tab === t;
 
   return (

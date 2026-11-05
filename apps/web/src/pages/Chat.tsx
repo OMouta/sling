@@ -144,7 +144,7 @@ export function ChatPage() {
           </div>
         )}
 
-        <div className="mx-auto w-full max-w-3xl flex-1 space-y-5 px-5 py-8">
+        <div className="mx-auto w-full max-w-[760px] flex-1 space-y-5 px-5 py-8">
           {items.length === 0 && (
             <p className="py-10 text-center text-[13px] text-muted">
               {MODE_POLICY[conversation.mode].label} mode.{" "}
@@ -176,7 +176,7 @@ export function ChatPage() {
           onSubmit={submit}
           className="sticky bottom-0 bg-gradient-to-t from-bg from-60% to-transparent px-5 pt-4 pb-5"
         >
-          <div className="mx-auto max-w-3xl">
+          <div className="mx-auto max-w-[720px]">
             <div className="flex items-end gap-2 rounded-2xl bg-surface p-2 pl-4 shadow-card transition-shadow duration-150 has-[textarea:focus]:shadow-focus">
               <textarea
                 ref={input}

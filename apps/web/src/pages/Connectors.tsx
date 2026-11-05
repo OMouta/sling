@@ -370,9 +370,9 @@ function InstallationCard({
           </Button>
           <Button
             size="sm"
-            variant="ghost"
+            variant="ghost-danger"
             icon={Trash2}
-            className="ml-auto text-danger enabled:hover:text-danger"
+            className="ml-auto"
             onClick={() => setConfirm(true)}
           >
             Delete

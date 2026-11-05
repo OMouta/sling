@@ -220,11 +220,11 @@ function WorkflowRow({ workflow: w }: { workflow: WorkflowSummaryView }) {
               to="/workflows/$id"
               params={{ id: w.id }}
               onClick={(e) => e.stopPropagation()}
+              title={w.description || undefined}
               className="block truncate"
             >
               {w.name}
             </Link>
-            {w.description && <p className="truncate text-xs text-subtle">{w.description}</p>}
             <ErrorText error={toggle.error} />
           </div>
         </div>

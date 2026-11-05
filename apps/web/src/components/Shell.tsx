@@ -4,6 +4,7 @@ import { Link, Navigate, Outlet, useNavigate, useRouterState } from "@tanstack/r
 import { MessageSquare, Plus, SquarePen } from "lucide-react";
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api.ts";
+import { decisionCount } from "../lib/approvals.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { connectRealtime, useConnection } from "../lib/realtime.ts";
 import { useSandboxes } from "../lib/sandboxApi.ts";
@@ -156,7 +157,7 @@ function Sidebar() {
   ).length;
   const counts: Partial<Record<NavItem["to"], { n?: number; warn?: boolean }>> = {
     "/tasks": { n: activeTasks },
-    "/approvals": { n: approvals.data?.length, warn: true },
+    "/approvals": { n: decisionCount(approvals.data), warn: true },
     "/machines": { n: online },
     "/sandboxes": { n: sandboxes.data?.usage.running },
   };

@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { createContext, type ReactNode, useContext } from "react";
 import { api } from "../lib/api.ts";
+import { decisionCount } from "../lib/approvals.ts";
 import { authClient } from "../lib/auth.ts";
 import { setTheme, type ThemePref, useTheme } from "../lib/theme.ts";
 import type { Status } from "../lib/types.ts";
@@ -109,7 +110,7 @@ export function StatsBar({ items }: { items: (ReactNode | false | null | undefin
 
 /** The centered column used by form and detail pages. */
 export function Content({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cx("mx-auto w-full max-w-3xl px-5 py-6", className)}>{children}</div>;
+  return <div className={cx("w-full max-w-3xl px-5 py-6", className)}>{children}</div>;
 }
 
 function TopBar({
@@ -180,7 +181,7 @@ function ApprovalsBell() {
     queryKey: ["approvals"],
     queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
   });
-  const n = approvals.data?.length ?? 0;
+  const n = decisionCount(approvals.data);
   return (
     <Link
       to="/approvals"
