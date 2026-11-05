@@ -1,0 +1,250 @@
+//! The Runner's outbound WebSocket to the control plane: signed handshake,
+//! heartbeats, inventory updates, and the event outbox. Reconnects forever with
+//! backoff, except when the server says this Runner is revoked or unknown.
+
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result, anyhow, bail};
+use futures_util::{SinkExt, StreamExt};
+use prost::Message as _;
+use sling_runner_protocol::{
+    Envelope, Heartbeat, Hello, Inventory, RUNNER_WS_PATH, auth_payload, envelope::Body,
+    error::Code,
+};
+use tokio_tungstenite::tungstenite::Message;
+
+use crate::config::Config;
+use crate::identity::Identity;
+use crate::inventory;
+use crate::sys::{hostname, now_ms, os};
+use crate::tasks::Manager;
+
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const INVENTORY_REFRESH: Duration = Duration::from_secs(60);
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+pub fn ws_url(server: &str) -> Result<String> {
+    let base = server.trim_end_matches('/');
+    let url = if let Some(rest) = base.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else if let Some(rest) = base.strip_prefix("http://") {
+        format!("ws://{rest}")
+    } else {
+        bail!("server URL must start with http:// or https://, got {server}");
+    };
+    Ok(format!("{url}{RUNNER_WS_PATH}"))
+}
+
+enum Ended {
+    /// Try again after a pause.
+    Retry(String),
+    /// Stop: the server will never accept this Runner.
+    Fatal(String),
+}
+
+pub async fn run_forever(mgr: Arc<Manager>, identity: Identity) -> Result<()> {
+    let mut backoff = Duration::from_secs(1);
+    loop {
+        let cfg = mgr.config();
+        let started = Instant::now();
+        match connect_once(&mgr, &identity, &cfg).await {
+            Ok(Ended::Fatal(msg)) => bail!("{msg}"),
+            Ok(Ended::Retry(msg)) => tracing::warn!("disconnected: {msg}"),
+            Err(e) => tracing::warn!("connection failed: {e:#}"),
+        }
+        if started.elapsed() > Duration::from_secs(30) {
+            backoff = Duration::from_secs(1);
+        }
+        let jitter = Duration::from_millis(now_ms().unsigned_abs() % 500);
+        tokio::time::sleep(backoff + jitter).await;
+        backoff = (backoff * 2).min(Duration::from_secs(30));
+    }
+}
+
+async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> Result<Ended> {
+    let server = cfg
+        .server_url
+        .as_deref()
+        .context("not paired: run `sling-runner pair <url> <code>`")?;
+    let runner_id = cfg.runner_id.as_deref().context("not paired")?;
+    let url = ws_url(server)?;
+    tracing::info!("connecting to {url}");
+    let (ws, _) = tokio::time::timeout(HANDSHAKE_TIMEOUT, tokio_tungstenite::connect_async(&url))
+        .await
+        .context("timed out connecting")??;
+    let (mut sink, mut stream) = ws.split();
+
+    // 1. Challenge
+    let nonce = match read_envelope(&mut stream).await? {
+        Some(Body::Challenge(c)) => c.nonce,
+        Some(Body::Error(e)) => return Ok(Ended::Retry(e.message)),
+        other => bail!("expected challenge, got {other:?}"),
+    };
+
+    // 2. Hello
+    let mut inv = inventory::build(cfg).await;
+    let codex_ready = inventory::ready(&inv, inventory::CODEX);
+    let ts = now_ms();
+    let hello = Hello {
+        runner_id: runner_id.to_string(),
+        timestamp_ms: ts,
+        signature: identity.sign(&auth_payload(&nonce, runner_id, ts)),
+        runner_version: VERSION.into(),
+        os: os().into(),
+        arch: std::env::consts::ARCH.into(),
+        hostname: hostname(),
+        inventory: Some(inv.clone()),
+        held_tasks: mgr.held_tasks(),
+    };
+    send(&mut sink, Body::Hello(hello)).await?;
+
+    // 3. Welcome
+    let welcome = match read_envelope(&mut stream).await? {
+        Some(Body::Welcome(w)) => w,
+        Some(Body::Error(e)) => {
+            let fatal = matches!(e.code(), Code::Revoked | Code::UnknownRunner);
+            return Ok(if fatal {
+                Ended::Fatal(format!(
+                    "the server refused this Runner: {}. Pair it again.",
+                    e.message
+                ))
+            } else {
+                Ended::Retry(e.message)
+            });
+        }
+        other => bail!("expected welcome, got {other:?}"),
+    };
+    tracing::info!("connected as {runner_id}");
+    mgr.forget(&welcome.forget_task_ids);
+    mgr.reset_sent();
+
+    let hb_secs = welcome.heartbeat_interval_seconds.clamp(5, 60) as u64;
+    let mut heartbeat = tokio::time::interval(Duration::from_secs(hb_secs));
+    let mut refresh = tokio::time::interval(INVENTORY_REFRESH);
+    refresh.tick().await;
+    let mut last_ack = Instant::now();
+    let mut codex_ready = codex_ready;
+
+    flush(mgr, &mut sink).await?;
+
+    loop {
+        tokio::select! {
+            msg = stream.next() => {
+                let Some(msg) = msg else { return Ok(Ended::Retry("server closed the connection".into())) };
+                match msg? {
+                    Message::Binary(bytes) => {
+                        let env = Envelope::decode(bytes.as_ref()).context("bad frame from server")?;
+                        match env.body {
+                            Some(Body::HeartbeatAck(_)) => last_ack = Instant::now(),
+                            Some(Body::TaskAssign(a)) => {
+                                let mgr = mgr.clone();
+                                tokio::spawn(async move { mgr.assign(a, codex_ready).await });
+                            }
+                            Some(Body::TaskCancel(c)) => mgr.cancel(&c.task_id),
+                            Some(Body::ActionRequest(r)) => {
+                                let mgr = mgr.clone();
+                                tokio::spawn(async move { mgr.action(r).await });
+                            }
+                            Some(Body::EventAck(a)) => mgr.ack(&a.task_id, a.seq),
+                            Some(Body::Error(e)) => {
+                                let fatal = matches!(e.code(), Code::Revoked | Code::UnknownRunner);
+                                if fatal {
+                                    return Ok(Ended::Fatal(format!("the server revoked this Runner: {}", e.message)));
+                                }
+                                return Ok(Ended::Retry(e.message));
+                            }
+                            _ => {}
+                        }
+                    }
+                    Message::Close(frame) => {
+                        return Ok(Ended::Retry(frame.map(|f| f.reason.to_string()).unwrap_or_default()));
+                    }
+                    _ => {}
+                }
+            }
+            _ = heartbeat.tick() => {
+                if last_ack.elapsed() > Duration::from_secs(hb_secs * 3) {
+                    return Ok(Ended::Retry("no heartbeat reply from the server".into()));
+                }
+                send(&mut sink, Body::Heartbeat(Heartbeat { running_tasks: mgr.running_count() as u32 })).await?;
+            }
+            _ = refresh.tick() => {
+                if let Some(next) = refresh_inventory(mgr, &inv).await {
+                    codex_ready = inventory::ready(&next, inventory::CODEX);
+                    send(&mut sink, Body::Inventory(next.clone())).await?;
+                    inv = next;
+                }
+            }
+            _ = mgr.outbox.notified() => flush(mgr, &mut sink).await?,
+        }
+    }
+}
+
+/// Re-reads runner.toml and rebuilds the inventory. Returns it if it changed.
+async fn refresh_inventory(mgr: &Arc<Manager>, current: &Inventory) -> Option<Inventory> {
+    match Config::load(&mgr.paths) {
+        Ok(cfg) => mgr.set_config(cfg),
+        Err(e) => tracing::warn!("could not reload config: {e:#}"),
+    }
+    let next = inventory::build(&mgr.config()).await;
+    (next != *current).then_some(next)
+}
+
+type Sink = futures_util::stream::SplitSink<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    Message,
+>;
+type Stream = futures_util::stream::SplitStream<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+>;
+
+async fn flush(mgr: &Arc<Manager>, sink: &mut Sink) -> Result<()> {
+    for event in mgr.unsent() {
+        send(sink, Body::TaskEvent(event)).await?;
+    }
+    Ok(())
+}
+
+async fn send(sink: &mut Sink, body: Body) -> Result<()> {
+    let bytes = Envelope { body: Some(body) }.encode_to_vec();
+    sink.send(Message::Binary(bytes.into())).await?;
+    Ok(())
+}
+
+async fn read_envelope(stream: &mut Stream) -> Result<Option<Body>> {
+    loop {
+        let msg = tokio::time::timeout(HANDSHAKE_TIMEOUT, stream.next())
+            .await
+            .context("timed out waiting for the server")?
+            .ok_or_else(|| anyhow!("connection closed during handshake"))??;
+        match msg {
+            Message::Binary(bytes) => return Ok(Envelope::decode(bytes.as_ref())?.body),
+            Message::Close(f) => {
+                bail!(
+                    "server closed the connection: {}",
+                    f.map(|f| f.reason.to_string()).unwrap_or_default()
+                )
+            }
+            _ => continue,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builds_ws_urls() {
+        assert_eq!(
+            ws_url("https://sling.example.com/").unwrap(),
+            "wss://sling.example.com/runner/v1/ws"
+        );
+        assert_eq!(
+            ws_url("http://localhost:8080").unwrap(),
+            "ws://localhost:8080/runner/v1/ws"
+        );
+        assert!(ws_url("sling.example.com").is_err());
+    }
+}
