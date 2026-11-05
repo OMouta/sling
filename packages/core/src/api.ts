@@ -279,6 +279,8 @@ export interface ConnectorView {
   /** JSON Schema. */
   configSchema: Record<string, unknown>;
   nodeTypes: string[];
+  /** Creates sandboxes (Docker, Railway). Listed with providers rather than with triggers and actions. */
+  isExecutionProvider?: boolean;
 }
 
 export type InstallationStatus = "idle" | "connecting" | "connected" | "error" | "disabled";
