@@ -4,6 +4,8 @@ import type {
   RunDetailView,
   RunnerView,
   RunView,
+  SandboxListView,
+  SandboxView,
   ServerEvent,
   TaskView,
   WorkflowSummaryView,
@@ -129,11 +131,52 @@ function applyNodeRun(qc: QueryClient, nodeRun: NodeRunView) {
   );
 }
 
+/**
+ * A sandbox changed. The list patches right away. The event doesn't carry the
+ * month's usage, and a new sandbox or a change of state is what moves the
+ * running count, so those refetch the list. The task running in it shows the
+ * sandbox's state on its card, so that patches too.
+ */
+function applySandbox(qc: QueryClient, sandbox: SandboxView) {
+  let lifecycle = false;
+  qc.setQueryData<SandboxListView>(qk.sandboxes(), (d) => {
+    if (!d) return d;
+    const prev = d.sandboxes.find((s) => s.id === sandbox.id);
+    lifecycle = prev?.state !== sandbox.state;
+    return { ...d, sandboxes: upsert(d.sandboxes, sandbox, true) };
+  });
+  if (lifecycle) void qc.invalidateQueries({ queryKey: qk.sandboxes() });
+
+  const taskId = sandbox.taskId;
+  if (!taskId) return;
+  const patch = (task: TaskView): TaskView => {
+    const env = task.environment;
+    // A retry can give a task a newer sandbox; an older one's events don't apply.
+    if (task.id !== taskId || (env.sandboxId && env.sandboxId !== sandbox.id)) return task;
+    return {
+      ...task,
+      environment: {
+        kind: "sandbox",
+        sandboxId: sandbox.id,
+        sandboxState: sandbox.state,
+        providerName: env.providerName ?? sandbox.providerName,
+      },
+    };
+  };
+  qc.setQueryData<TaskDetail>(["task", taskId], (d) => (d ? { ...d, task: patch(d.task) } : d));
+  qc.setQueriesData<ConversationDetail>({ queryKey: ["conversation"] }, (d) =>
+    d?.tasks.some((t) => t.id === taskId) ? { ...d, tasks: d.tasks.map(patch) } : d,
+  );
+}
+
 export function apply(qc: QueryClient, ev: ServerEvent) {
   switch (ev.type) {
     case "runner.updated":
       qc.setQueryData<RunnerView[]>(["runners"], (list) => {
-        if (ev.runner.revokedAt) return list?.filter((r) => r.id !== ev.runner.id);
+        // A sandbox's Runner is never a machine, so the Machines list skips it.
+        if (ev.runner.revokedAt || ev.runner.ephemeral) {
+          return list?.filter((r) => r.id !== ev.runner.id);
+        }
         return upsert(list, ev.runner);
       });
       return;
@@ -189,6 +232,9 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       qc.setQueryData<InstallationView[]>(qk.installations(), (list) =>
         upsertLoaded(list, ev.installation),
       );
+      return;
+    case "sandbox.updated":
+      applySandbox(qc, ev.sandbox);
       return;
   }
 }

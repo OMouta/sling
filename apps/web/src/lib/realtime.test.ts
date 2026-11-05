@@ -1,15 +1,30 @@
-import type { InstallationView, RunDetailView, RunView, WorkflowSummaryView } from "@sling/core";
+import type {
+  InstallationView,
+  RunDetailView,
+  RunnerView,
+  RunView,
+  SandboxListView,
+  WorkflowSummaryView,
+} from "@sling/core";
 import type { WorkflowDetailView } from "@sling/workflow";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
+  busySandbox,
+  devbox,
   installations,
+  machineTask,
   run,
   runDetail,
+  sandboxList,
+  sandboxRunner,
+  sandboxTask,
+  waitingTask,
   workflowDetail,
   workflowSummary,
 } from "../test/fixtures.ts";
 import { apply } from "./realtime.ts";
+import type { ConversationDetail, TaskDetail } from "./types.ts";
 import { qk } from "./workflowApi.ts";
 
 function client() {
@@ -85,5 +100,95 @@ describe("workflow realtime events", () => {
     const first = installations[0] as InstallationView;
     apply(qc, { type: "installation.updated", installation: { ...first, status: "error" } });
     expect(qc.getQueryData<InstallationView[]>(qk.installations())?.[0]?.status).toBe("error");
+  });
+});
+
+describe("sandbox realtime events", () => {
+  function conversation(tasks: ConversationDetail["tasks"]): ConversationDetail {
+    return {
+      conversation: {
+        id: "cnv_1",
+        title: "Signup",
+        mode: "supervised",
+        createdAt: "2026-11-05T10:00:00.000Z",
+        updatedAt: "2026-11-05T10:00:00.000Z",
+      },
+      messages: [],
+      tasks,
+      agentStatus: "idle",
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+  }
+
+  it("patches the list and refetches usage when a sandbox changes state", () => {
+    const qc = client();
+    qc.setQueryData(qk.sandboxes(), sandboxList);
+    apply(qc, { type: "sandbox.updated", sandbox: { ...busySandbox, state: "releasing" } });
+    const d = qc.getQueryData<SandboxListView>(qk.sandboxes());
+    expect(d?.sandboxes[0]?.state).toBe("releasing");
+    expect(d?.sandboxes).toHaveLength(3);
+    expect(qc.getQueryState(qk.sandboxes())?.isInvalidated).toBe(true);
+  });
+
+  it("adds new sandboxes to the top, and leaves usage alone for minute ticks", () => {
+    const qc = client();
+    qc.setQueryData(qk.sandboxes(), sandboxList);
+    apply(qc, { type: "sandbox.updated", sandbox: { ...busySandbox, minutes: 5 } });
+    expect(qc.getQueryState(qk.sandboxes())?.isInvalidated).toBe(false);
+    apply(qc, {
+      type: "sandbox.updated",
+      sandbox: { ...busySandbox, id: "sbx_9", state: "requested", taskId: null },
+    });
+    const d = qc.getQueryData<SandboxListView>(qk.sandboxes());
+    expect(d?.sandboxes.map((s) => s.id)).toEqual(["sbx_9", "sbx_1", "sbx_2", "sbx_3"]);
+    expect(d?.sandboxes[1]?.minutes).toBe(5);
+  });
+
+  it("doesn't create a sandbox list that was never fetched", () => {
+    const qc = client();
+    apply(qc, { type: "sandbox.updated", sandbox: busySandbox });
+    expect(qc.getQueryData(qk.sandboxes())).toBeUndefined();
+  });
+
+  it("shows the sandbox's state on its task", () => {
+    const qc = client();
+    const detail: TaskDetail = { task: { ...waitingTask, id: "tsk_sbx" }, events: [] };
+    qc.setQueryData(["task", "tsk_sbx"], detail);
+    qc.setQueryData(["conversation", "cnv_1"], conversation([machineTask, detail.task]));
+    qc.setQueryData(["conversation", "cnv_2"], conversation([machineTask]));
+    apply(qc, { type: "sandbox.updated", sandbox: { ...busySandbox, state: "provisioning" } });
+    const expected = {
+      kind: "sandbox",
+      sandboxId: "sbx_1",
+      sandboxState: "provisioning",
+      providerName: "Docker host",
+    };
+    expect(qc.getQueryData<TaskDetail>(["task", "tsk_sbx"])?.task.environment).toEqual(expected);
+    const c1 = qc.getQueryData<ConversationDetail>(["conversation", "cnv_1"]);
+    expect(c1?.tasks[1]?.environment).toEqual(expected);
+    expect(c1?.tasks[0]).toBe(machineTask);
+    const c2 = qc.getQueryData<ConversationDetail>(["conversation", "cnv_2"]);
+    expect(c2?.tasks[0]).toBe(machineTask);
+  });
+
+  it("ignores an older sandbox of a task that has moved on", () => {
+    const qc = client();
+    const task = {
+      ...sandboxTask,
+      environment: { ...sandboxTask.environment, sandboxId: "sbx_new" },
+    };
+    qc.setQueryData<TaskDetail>(["task", "tsk_sbx"], { task, events: [] });
+    apply(qc, { type: "sandbox.updated", sandbox: { ...busySandbox, state: "destroyed" } });
+    expect(qc.getQueryData<TaskDetail>(["task", "tsk_sbx"])?.task.environment.sandboxState).toBe(
+      "busy",
+    );
+  });
+
+  it("keeps sandbox Runners out of the machine list", () => {
+    const qc = client();
+    qc.setQueryData(["runners"], [devbox, { ...sandboxRunner, ephemeral: false }]);
+    apply(qc, { type: "runner.updated", runner: sandboxRunner });
+    apply(qc, { type: "runner.updated", runner: { ...sandboxRunner, id: "rnr_sbx2" } });
+    expect(qc.getQueryData<RunnerView[]>(["runners"])?.map((r) => r.id)).toEqual(["rnr_1"]);
   });
 });
