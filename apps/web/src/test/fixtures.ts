@@ -624,6 +624,8 @@ export const devbox: RunnerView = {
   labels: ["ios", "os:macos", "arch:aarch64"],
   ephemeral: false,
   sandboxId: null,
+  foundRepos: [],
+  remoteRepos: false,
 };
 
 export const buildbox: RunnerView = {
@@ -653,6 +655,8 @@ export const buildbox: RunnerView = {
   labels: ["gpu", "os:linux", "arch:x86_64"],
   ephemeral: false,
   sandboxId: null,
+  foundRepos: [],
+  remoteRepos: false,
 };
 
 /** A sandbox's own Runner, which the Machines page never shows. */
@@ -666,6 +670,8 @@ export const sandboxRunner: RunnerView = {
   labels: ["os:linux", "arch:x86_64"],
   ephemeral: true,
   sandboxId: "sbx_1",
+  foundRepos: [],
+  remoteRepos: false,
 };
 
 export const providerConnectors: ConnectorView[] = [
@@ -832,6 +838,9 @@ const baseTask: TaskView = {
   summary: null,
   error: null,
   harnessVersion: "0.166.0",
+  model: null,
+  effort: null,
+  fast: false,
   runnerOffline: false,
   cancelRequested: false,
   createdAt: "2026-11-05T10:01:00.000Z",
@@ -862,6 +871,9 @@ export const sandboxTask: TaskView = {
   runnerName: "sandbox-sbx_1",
   harness: "claude-code",
   harnessVersion: "2.1.4",
+  model: null,
+  effort: null,
+  fast: false,
   title: "Fix the signup form",
   environment: {
     kind: "sandbox",
@@ -886,6 +898,9 @@ export const waitingTask: TaskView = {
   state: "queued",
   title: "Update the README badges",
   harnessVersion: null,
+  model: null,
+  effort: null,
+  fast: false,
   startedAt: null,
   environment: { kind: "sandbox", sandboxId: null, sandboxState: null, providerName: null },
   routing: {

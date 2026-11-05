@@ -44,9 +44,12 @@ export const chatRoute = createRoute({
   path: "/c/$id",
   component: ChatPage,
 });
-const machinesRoute = createRoute({
+export const machinesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/machines",
+  // `pair` opens the pairing dialog, for links from the home page.
+  validateSearch: (search: Record<string, unknown>): { pair?: boolean } =>
+    search.pair === true || search.pair === "true" ? { pair: true } : {},
   component: MachinesPage,
 });
 const sandboxesRoute = createRoute({

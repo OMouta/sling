@@ -1,16 +1,30 @@
 import {
+  type AgentChoice,
+  type AssistantChoice,
   HARNESS_LABELS,
   HARNESSES,
   type Harness,
   MODE_POLICY,
+  type ModelCatalogView,
   type PermissionMode,
   type SandboxSettingsView,
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Box, Cpu, KeyRound, type LucideIcon, ShieldCheck } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
+import {
+  Box,
+  Cpu,
+  Fingerprint,
+  KeyRound,
+  type LucideIcon,
+  Plus,
+  ShieldCheck,
+  Smartphone,
+} from "lucide-react";
+import { type FormEvent, lazy, type ReactNode, Suspense, useEffect, useId, useState } from "react";
+import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
+import { ProviderIcon } from "../components/ProviderIcon.tsx";
 import {
   Badge,
   Button,
@@ -25,6 +39,8 @@ import {
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { authClient } from "../lib/auth.ts";
+import { ago, plural } from "../lib/format.ts";
+import { modelsKey, useModelCatalog, useSaveProviderKey } from "../lib/models.ts";
 import {
   costPerHourBody,
   providerInstallations,
@@ -36,7 +52,7 @@ import type { ProviderInfo, Settings } from "../lib/types.ts";
 import { qk, useConnectors, useInstallations } from "../lib/workflowApi.ts";
 
 const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
-  { id: "model", label: "Model", icon: Cpu },
+  { id: "model", label: "Models", icon: Cpu },
   { id: "mode", label: "Permission mode", icon: ShieldCheck },
   { id: "sandboxes", label: "Sandboxes", icon: Box },
   { id: "security", label: "Sign-in security", icon: KeyRound },
@@ -128,113 +144,176 @@ function Section({
 }
 
 function ModelSection({ settings }: { settings: Settings }) {
-  const qc = useQueryClient();
-  const [provider, setProvider] = useState<ProviderInfo["id"]>(
-    settings.model?.provider ?? "openai",
+  return (
+    <Section
+      id="model"
+      title="Models"
+      description="The assistant runs on any provider you connect, and each chat can switch from the composer. Coding agents use their own login on each machine."
+    >
+      <div className="space-y-6 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-6">
+        <ul aria-label="Model providers" className="space-y-4">
+          {settings.providers.map((p) => (
+            <ProviderRow key={p.id} provider={p} />
+          ))}
+        </ul>
+        <ChatDefaults />
+      </div>
+    </Section>
   );
-  const info = settings.providers.find((p) => p.id === provider);
-  const [model, setModel] = useState(settings.model?.model ?? info?.defaultModel ?? "");
-  const [baseUrl, setBaseUrl] = useState(settings.model?.baseUrl ?? "");
-  const [apiKey, setApiKey] = useState("");
+}
 
+function ProviderRow({ provider: p }: { provider: ProviderInfo }) {
+  const qc = useQueryClient();
+  const saveKey = useSaveProviderKey();
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState(p.baseUrl ?? "");
   const save = useMutation({
     mutationFn: () =>
-      api.put("/api/settings/model", {
-        provider,
-        model,
-        baseUrl: info?.needsBaseUrl ? baseUrl : null,
-        ...(apiKey ? { apiKey } : {}),
+      saveKey(p.id, {
+        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+        ...(p.needsBaseUrl ? { baseUrl: baseUrl.trim() || null } : {}),
       }),
-    onSuccess: () => {
-      setApiKey("");
+    onSuccess: () => setApiKey(""),
+  });
+  const remove = useMutation({
+    mutationFn: () => api.del<ModelCatalogView>(`/api/settings/providers/${p.id}`),
+    onSuccess: (catalog) => {
+      if (catalog) qc.setQueryData(modelsKey, catalog);
       void qc.invalidateQueries({ queryKey: ["settings"] });
     },
   });
   const test = useMutation({
     mutationFn: () =>
-      api.post<{ ok: boolean; reply?: string; error?: string; ms?: number }>(
-        "/api/settings/model/test",
+      api.post<{ ok: boolean; models?: number; ms?: number; error?: string }>(
+        `/api/settings/providers/${p.id}/test`,
       ),
   });
-
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    save.mutate();
-  }
+  const id = useId();
+  const canSave = p.needsBaseUrl ? Boolean(baseUrl.trim()) : Boolean(apiKey.trim());
 
   return (
-    <Section
-      id="model"
-      title="Model"
-      description="The model behind Sling's assistant. Coding agents use their own login on each machine."
-    >
-      <form onSubmit={submit} className="space-y-4">
-        <Field label="Provider">
-          <Select
-            value={provider}
-            onChange={(e) => {
-              const id = e.target.value as ProviderInfo["id"];
-              setProvider(id);
-              setModel(settings.providers.find((p) => p.id === id)?.defaultModel ?? "");
-            }}
-          >
-            {settings.providers.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <Field label="Model">
-          <Input value={model} onChange={(e) => setModel(e.target.value)} required />
-        </Field>
-        {info?.needsBaseUrl && (
-          <Field
-            label="Base URL"
-            hint="For Ollama on this server: http://host.docker.internal:11434/v1"
-          >
-            <Input
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="http://localhost:11434/v1"
-              required
-            />
-          </Field>
-        )}
-        <Field
-          label="API key"
-          hint={
-            settings.model?.hasKey
-              ? "A key is stored, encrypted. Leave empty to keep it."
-              : "Stored encrypted."
-          }
-        >
+    <li className="flex gap-3">
+      <span className="mt-0.5 grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-icon shadow-raised">
+        <ProviderIcon provider={p.id} size={17} />
+      </span>
+      <form
+        className="min-w-0 flex-1 space-y-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSave) save.mutate();
+        }}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor={id} className="text-[13px] font-medium">
+            {p.label}
+          </label>
+          {p.connected ? (
+            <Badge tone="ok" dot>
+              Connected
+            </Badge>
+          ) : (
+            <Badge>Not connected</Badge>
+          )}
+          <span className="ml-auto flex items-center gap-1">
+            {p.connected && (
+              <>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  busy={test.isPending}
+                  onClick={() => test.mutate()}
+                >
+                  Test
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost-danger"
+                  busy={remove.isPending}
+                  onClick={() => remove.mutate()}
+                >
+                  Remove
+                </Button>
+              </>
+            )}
+          </span>
+        </div>
+        {p.needsBaseUrl && (
           <Input
+            aria-label={`Base URL for ${p.label}`}
+            placeholder="http://host.docker.internal:11434/v1"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+          />
+        )}
+        <div className="flex gap-2">
+          <Input
+            id={id}
             type="password"
+            aria-label={`API key for ${p.label}`}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder={settings.model?.hasKey ? "••••••••" : ""}
+            placeholder={
+              p.hasKey
+                ? "Stored. Paste a new key to replace it."
+                : p.needsBaseUrl
+                  ? "API key, if the server needs one"
+                  : "Paste an API key"
+            }
             autoComplete="off"
           />
-        </Field>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" variant="primary" busy={save.isPending}>
-            Save
+          <Button type="submit" busy={save.isPending} disabled={!canSave}>
+            {p.connected ? "Replace" : "Connect"}
           </Button>
-          <Button busy={test.isPending} disabled={!settings.model} onClick={() => test.mutate()}>
-            Test connection
-          </Button>
-          {save.isSuccess && <span className="text-xs text-ok">Saved.</span>}
-          {test.data &&
-            (test.data.ok ? (
-              <span className="text-xs text-ok">Works. Replied in {test.data.ms} ms.</span>
-            ) : (
-              <span className="text-xs text-danger">{test.data.error}</span>
-            ))}
         </div>
-        <ErrorText error={save.error ?? test.error} />
+        {test.data &&
+          (test.data.ok ? (
+            <p className="text-xs text-ok">
+              Works. {plural(test.data.models ?? 0, "model")} available, in {test.data.ms} ms.
+            </p>
+          ) : (
+            <p className="text-xs text-danger">{test.data.error}</p>
+          ))}
+        <ErrorText error={save.error ?? remove.error ?? test.error} />
       </form>
-    </Section>
+    </li>
+  );
+}
+
+/** What a new chat starts with, picked with the same picker as the composer. */
+function ChatDefaults() {
+  const qc = useQueryClient();
+  const catalog = useModelCatalog();
+  const save = useMutation({
+    mutationFn: (patch: Partial<{ assistant: AssistantChoice; agent: AgentChoice }>) =>
+      api.put<ModelCatalogView["defaults"]>("/api/settings/chat-defaults", patch),
+    onSuccess: (defaults) => {
+      qc.setQueryData<ModelCatalogView>(modelsKey, (c) => (c ? { ...c, defaults } : c));
+      void qc.invalidateQueries({ queryKey: ["sandbox-settings"] });
+    },
+  });
+  const defaults = catalog.data?.defaults;
+  return (
+    <div className="space-y-2">
+      <p className="text-[13px] font-medium">New chats start with</p>
+      <div className="w-fit rounded-xl bg-field p-1.5 shadow-field">
+        {defaults ? (
+          <ChatControls
+            catalog={catalog.data}
+            assistant={defaults.assistant}
+            agent={defaults.agent}
+            onAssistant={(assistant) => save.mutate({ assistant })}
+            onAgent={(agent) => save.mutate({ agent })}
+          />
+        ) : (
+          <Spinner className="m-1 size-4" />
+        )}
+      </div>
+      <p className="text-xs text-subtle">
+        Any chat can switch from its composer. The coding agent here is also the default for
+        sandboxes.
+      </p>
+      <ErrorText error={save.error} />
+    </div>
   );
 }
 
@@ -607,100 +686,66 @@ function SecuritySection() {
       description="This account can start work on your machines, so protect it with a passkey or a second factor."
     >
       <div className="space-y-6 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-6">
-        <TwoFactor enabled={enabled} onChange={() => session.refetch()} />
+        <TwoFactor
+          enabled={enabled}
+          email={session.data?.user.email ?? ""}
+          onChange={() => session.refetch()}
+        />
         <Passkeys />
       </div>
     </Section>
   );
 }
 
-function TwoFactor({ enabled, onChange }: { enabled: boolean; onChange: () => void }) {
-  const [password, setPassword] = useState("");
-  const [setup, setSetup] = useState<{ totpURI: string; backupCodes: string[] } | null>(null);
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+const TwoFactorDialog = lazy(() =>
+  import("../components/TwoFactorDialog.tsx").then((m) => ({ default: m.TwoFactorDialog })),
+);
 
-  const secret = setup ? new URL(setup.totpURI).searchParams.get("secret") : null;
-
-  async function start(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const res = enabled
-      ? await authClient.twoFactor.disable({ password })
-      : await authClient.twoFactor.enable({ password });
-    setBusy(false);
-    setPassword("");
-    if (res.error) return setError(res.error.message ?? "That didn't work.");
-    if (enabled) return onChange();
-    setSetup(res.data as { totpURI: string; backupCodes: string[] });
-  }
-
-  async function verify(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    const res = await authClient.twoFactor.verifyTotp({ code: code.replace(/\s/g, "") });
-    setBusy(false);
-    if (res.error) return setError(res.error.message ?? "That code didn't work.");
-    setSetup(null);
-    setCode("");
-    onChange();
-  }
-
+function TwoFactor({
+  enabled,
+  email,
+  onChange,
+}: {
+  enabled: boolean;
+  email: string;
+  onChange: () => void;
+}) {
+  const [open, setOpen] = useState(false);
   return (
-    <div>
-      <div className="flex items-center gap-2">
-        <h3 className="text-[13px] font-medium">Authenticator app</h3>
-        {enabled ? <Badge tone="ok">On</Badge> : <Badge>Off</Badge>}
+    <div className="flex flex-wrap items-center gap-3">
+      <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-icon shadow-raised">
+        <Smartphone aria-hidden="true" size={16} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-2 text-[13px] font-medium">
+          Authenticator app
+          {enabled ? (
+            <Badge tone="ok" dot>
+              On
+            </Badge>
+          ) : (
+            <Badge>Off</Badge>
+          )}
+        </p>
+        <p className="text-xs text-muted">
+          {enabled
+            ? "Signing in asks for a code from your authenticator app."
+            : "Ask for a code from your phone when signing in."}
+        </p>
       </div>
-      {setup ? (
-        <form onSubmit={verify} className="mt-3 space-y-3">
-          <p className="text-xs leading-4 text-muted">
-            Add this key to your authenticator app, then enter the code it shows.
-          </p>
-          <code className="block rounded-lg bg-field px-3 py-2 font-mono text-xs break-all shadow-field">
-            {secret}
-          </code>
-          <details className="text-xs">
-            <summary className="cursor-pointer text-muted">
-              Backup codes (save these somewhere safe)
-            </summary>
-            <code className="mt-2 block rounded-lg bg-field px-3 py-2 font-mono text-xs leading-6 shadow-field">
-              {setup.backupCodes.join(" ")}
-            </code>
-          </details>
-          <div className="flex gap-2">
-            <Input
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              placeholder="123456"
-              inputMode="numeric"
-              className="max-w-40"
-              required
-            />
-            <Button type="submit" variant="primary" busy={busy}>
-              Turn on
-            </Button>
-          </div>
-        </form>
-      ) : (
-        <form onSubmit={start} className="mt-3 flex flex-wrap gap-2">
-          <Input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Your password"
-            className="max-w-60"
-            autoComplete="current-password"
-            required
+      <Button variant={enabled ? "ghost-danger" : "secondary"} onClick={() => setOpen(true)}>
+        {enabled ? "Turn off" : "Set up"}
+      </Button>
+      {open && (
+        <Suspense fallback={null}>
+          <TwoFactorDialog
+            action={enabled ? "disable" : "enable"}
+            email={email}
+            onClose={() => setOpen(false)}
+            onDone={onChange}
           />
-          <Button type="submit" busy={busy} variant={enabled ? "danger" : "secondary"}>
-            {enabled ? "Turn off" : "Set up"}
-          </Button>
-        </form>
+        </Suspense>
       )}
-      <ErrorText error={error} />
     </div>
   );
 }
@@ -725,26 +770,46 @@ function Passkeys() {
     list.refetch();
   }
 
+  const passkeys = list.data ?? [];
   return (
     <div>
-      <div className="flex items-center gap-2">
-        <h3 className="text-[13px] font-medium">Passkeys</h3>
-        <Button size="sm" className="ml-auto" busy={busy} onClick={add}>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-icon shadow-raised">
+          <Fingerprint aria-hidden="true" size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-2 text-[13px] font-medium">
+            Passkeys
+            {passkeys.length > 0 && <Badge tone="ok">{passkeys.length}</Badge>}
+          </p>
+          <p className="text-xs text-muted">Sign in with Touch ID, Face ID, or a security key.</p>
+        </div>
+        <Button icon={Plus} busy={busy} onClick={add}>
           Add passkey
         </Button>
       </div>
-      <ul className="mt-2 space-y-1 text-[13px]">
-        {(list.data ?? []).map((p) => (
-          <li key={p.id} className="flex items-center gap-2">
-            <span className="flex-1">{p.name ?? "Passkey"}</span>
-            <Button size="sm" variant="ghost" onClick={() => remove(p.id)}>
-              Remove
-            </Button>
-          </li>
-        ))}
-        {list.data?.length === 0 && <li className="text-muted">None yet.</li>}
-      </ul>
-      <ErrorText error={error} />
+      {passkeys.length > 0 && (
+        <ul className="mt-3 ml-12 divide-y divide-border rounded-xl bg-field shadow-field">
+          {passkeys.map((p) => (
+            <li key={p.id} className="flex h-10 items-center gap-2 px-3 text-[13px]">
+              <KeyRound aria-hidden="true" className="text-subtle" />
+              <span className="min-w-0 flex-1 truncate">{p.name ?? "Passkey"}</span>
+              <span className="text-xs text-subtle">added {ago(String(p.createdAt))}</span>
+              <Button
+                size="sm"
+                variant="ghost-danger"
+                aria-label={`Remove ${p.name ?? "passkey"}`}
+                onClick={() => remove(p.id)}
+              >
+                Remove
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-2 ml-12">
+        <ErrorText error={error} />
+      </div>
     </div>
   );
 }

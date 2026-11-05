@@ -1,13 +1,22 @@
-import { MODE_POLICY, PERMISSION_MODES, type PermissionMode } from "@sling/core";
+import {
+  type AgentChoice,
+  type AssistantChoice,
+  type ChatSettings,
+  MODE_POLICY,
+  type PermissionMode,
+} from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, ShieldAlert, ShieldCheck } from "lucide-react";
+import { ArrowUp, ShieldAlert } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
+import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { Logo } from "../components/Logo.tsx";
+import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { TaskCard } from "../components/TaskCard.tsx";
-import { Badge, Button, ErrorText, FilterSelect, Skeleton, Spinner } from "../components/ui.tsx";
+import { Badge, Button, ErrorText, Skeleton, Spinner } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
+import { useModelCatalog } from "../lib/models.ts";
 import { useStreamingText } from "../lib/realtime.ts";
 import type { ConversationDetail, MessageView, TaskView } from "../lib/types.ts";
 import { chatRoute } from "../router.tsx";
@@ -36,6 +45,31 @@ export function ChatPage() {
   const setMode = useMutation({
     mutationFn: (mode: PermissionMode) => api.patch(`/api/conversations/${id}`, { mode }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["conversation", id] }),
+  });
+  const modeChange = useModeChange((mode) => setMode.mutate(mode));
+  const catalog = useModelCatalog();
+  // Choices apply right away in the UI; the server stores them for the next turn.
+  const setSettings = useMutation({
+    mutationFn: (settings: Partial<ChatSettings>) =>
+      api.patch(`/api/conversations/${id}`, { settings }),
+    onMutate: (settings) => {
+      qc.setQueryData<ConversationDetail>(["conversation", id], (d) =>
+        d
+          ? {
+              ...d,
+              conversation: {
+                ...d.conversation,
+                settings: {
+                  assistant: d.conversation.settings?.assistant ?? null,
+                  agent: d.conversation.settings?.agent ?? null,
+                  ...settings,
+                },
+              },
+            }
+          : d,
+      );
+    },
+    onError: () => qc.invalidateQueries({ queryKey: ["conversation", id] }),
   });
 
   const items = useMemo<Item[]>(() => {
@@ -96,17 +130,10 @@ export function ChatPage() {
     if (t && !send.isPending) send.mutate(t);
   }
 
-  function changeMode(mode: PermissionMode) {
-    if (
-      mode === "full-access" &&
-      !window.confirm(
-        "Full access runs the coding agent without its sandbox and skips every approval, including pushes. Use it only for repos and machines you trust. Switch?",
-      )
-    ) {
-      return;
-    }
-    setMode.mutate(mode);
-  }
+  const assistant: AssistantChoice | null =
+    conversation.settings?.assistant ?? catalog.data?.defaults.assistant ?? null;
+  const agent: AgentChoice = conversation.settings?.agent ??
+    catalog.data?.defaults.agent ?? { harness: "codex", model: null, effort: null, fast: false };
 
   return (
     <Page
@@ -119,21 +146,11 @@ export function ChatPage() {
         ) : undefined
       }
       controls={
-        <>
-          {tokens > 0 && (
-            <span className="tabular text-xs text-subtle max-lg:hidden">
-              {tokens.toLocaleString()} tokens
-            </span>
-          )}
-          <FilterSelect
-            label="Mode"
-            ariaLabel="Permission mode"
-            icon={ShieldCheck}
-            value={conversation.mode}
-            onChange={changeMode}
-            options={PERMISSION_MODES.map((m) => ({ value: m, label: MODE_POLICY[m].label }))}
-          />
-        </>
+        tokens > 0 && (
+          <span className="tabular text-xs text-subtle max-lg:hidden">
+            {tokens.toLocaleString()} tokens
+          </span>
+        )
       }
     >
       <div className="flex min-h-full flex-col">
@@ -177,7 +194,7 @@ export function ChatPage() {
           className="sticky bottom-0 bg-gradient-to-t from-bg from-60% to-transparent px-5 pt-4 pb-5"
         >
           <div className="mx-auto max-w-[720px]">
-            <div className="flex items-end gap-2 rounded-2xl bg-surface p-2 pl-4 shadow-card transition-shadow duration-150 has-[textarea:focus]:shadow-focus">
+            <div className="rounded-2xl bg-surface shadow-card transition-shadow duration-150 has-[textarea:focus]:shadow-focus">
               <textarea
                 ref={input}
                 rows={1}
@@ -188,24 +205,37 @@ export function ChatPage() {
                 }}
                 aria-label="Message"
                 placeholder="Message Sling"
-                className="min-h-[30px] flex-1 resize-none bg-transparent py-[5px] text-sm leading-5 outline-none placeholder:text-subtle focus-visible:outline-none"
+                className="block min-h-[44px] w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-5 outline-none placeholder:text-subtle focus-visible:outline-none"
               />
-              <Button
-                type="submit"
-                variant="primary"
-                iconOnly
-                icon={ArrowUp}
-                aria-label="Send"
-                busy={send.isPending}
-                disabled={!text.trim()}
-              />
+              <div className="flex items-center gap-2 px-2 pb-2">
+                <ChatControls
+                  className="min-w-0 flex-1"
+                  catalog={catalog.data}
+                  assistant={assistant}
+                  agent={agent}
+                  onAssistant={(choice) => setSettings.mutate({ assistant: choice })}
+                  onAgent={(choice) => setSettings.mutate({ agent: choice })}
+                  mode={conversation.mode}
+                  onMode={modeChange.change}
+                />
+                <Button
+                  type="submit"
+                  variant="primary"
+                  iconOnly
+                  icon={ArrowUp}
+                  aria-label="Send"
+                  busy={send.isPending}
+                  disabled={!text.trim()}
+                />
+              </div>
             </div>
             <div className="mt-1.5 px-1">
-              <ErrorText error={send.error ?? setMode.error} />
+              <ErrorText error={send.error ?? setMode.error ?? setSettings.error} />
             </div>
           </div>
         </form>
       </div>
+      {modeChange.dialog}
     </Page>
   );
 }

@@ -82,6 +82,7 @@ function route(method: string, path: string, body: unknown): unknown {
           id: "cnv_1",
           title: "Site chores",
           mode: "supervised",
+          settings: { assistant: null, agent: null },
           createdAt: "2026-11-05T10:00:00.000Z",
           updatedAt: "2026-11-05T10:05:00.000Z",
         },

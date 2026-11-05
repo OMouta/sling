@@ -1,6 +1,7 @@
 import {
   type ActionView,
   type ApprovalView,
+  effortLabel,
   HARNESS_LABELS,
   type RoutingView,
   type TaskState,
@@ -18,6 +19,7 @@ import {
   Rocket,
   SquareTerminal,
   Upload,
+  Zap,
 } from "lucide-react";
 import { api } from "../lib/api.ts";
 import { between, duration, plural, shortSha } from "../lib/format.ts";
@@ -130,6 +132,12 @@ export function TaskCard({
       <div className="space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <Kicker icon={SquareTerminal}>{HARNESS_LABELS[task.harness] ?? task.harness} task</Kicker>
+          {(task.model || task.effort || task.fast) && (
+            <span className="inline-flex items-center gap-1 text-xs text-subtle">
+              {[task.model, task.effort && effortLabel(task.effort)].filter(Boolean).join(" · ")}
+              {task.fast && <Zap aria-label="Fast" size={12} className="text-warn" />}
+            </span>
+          )}
           <span className="ml-auto flex flex-wrap items-center gap-1.5">
             {task.runnerOffline && <Badge tone="warn">Machine offline</Badge>}
             <ModeBadge mode={task.mode} />

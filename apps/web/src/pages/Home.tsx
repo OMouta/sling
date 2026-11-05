@@ -1,15 +1,25 @@
-import type { ConversationView, RunnerView, TaskView } from "@sling/core";
+import type {
+  AgentChoice,
+  AssistantChoice,
+  ConversationView,
+  PermissionMode,
+  RunnerView,
+  TaskView,
+} from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, ArrowUp, Check, Cpu, Laptop } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
+import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { Logo } from "../components/Logo.tsx";
+import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { TaskStateBadge } from "../components/TaskCard.tsx";
 import { Button, Card, cx, ErrorText, Kbd } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { ago } from "../lib/format.ts";
 import { machinesOnly } from "../lib/machines.ts";
+import { useModelCatalog } from "../lib/models.ts";
 import type { Settings } from "../lib/types.ts";
 
 const SUGGESTIONS = [
@@ -34,10 +44,26 @@ export function HomePage() {
     queryFn: () => api.get<TaskView[]>("/api/tasks"),
   });
   const [text, setText] = useState("");
+  const catalog = useModelCatalog();
+  // Unset means "the workspace default", so a default changed elsewhere still applies.
+  const [assistant, setAssistant] = useState<AssistantChoice | undefined>();
+  const [agent, setAgent] = useState<AgentChoice | undefined>();
+  const [mode, setMode] = useState<PermissionMode | undefined>();
+  const modeChange = useModeChange(setMode);
 
   const start = useMutation({
     mutationFn: async (message: string) => {
       const c = await api.post<ConversationView>("/api/conversations");
+      const settings = {
+        ...(assistant ? { assistant } : {}),
+        ...(agent ? { agent } : {}),
+      };
+      if (mode || assistant || agent) {
+        await api.patch(`/api/conversations/${c.id}`, {
+          ...(mode ? { mode } : {}),
+          ...(assistant || agent ? { settings } : {}),
+        });
+      }
       await api.post(`/api/conversations/${c.id}/messages`, { text: message });
       return c;
     },
@@ -77,7 +103,14 @@ export function HomePage() {
             <Step done={hasModel} n={1} icon={Cpu} title="Connect a model" to="/settings">
               Sling's assistant needs an OpenAI, Anthropic, or OpenAI-compatible model.
             </Step>
-            <Step done={hasMachine} n={2} icon={Laptop} title="Pair a machine" to="/machines">
+            <Step
+              done={hasMachine}
+              n={2}
+              icon={Laptop}
+              title="Pair a machine"
+              to="/machines"
+              search={{ pair: true }}
+            >
               Install sling-runner on the computer that has your repos and Codex or Claude Code.
             </Step>
           </Card>
@@ -102,12 +135,26 @@ export function HomePage() {
               className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 outline-none placeholder:text-subtle focus-visible:outline-none disabled:cursor-not-allowed"
               disabled={!ready}
             />
-            <div className="flex items-center gap-2 px-3 pt-1 pb-3">
-              <span className="flex items-center gap-1 pl-1 text-xs text-subtle max-sm:hidden">
-                <Kbd>↵</Kbd> to send, <Kbd>⇧</Kbd>
-                <Kbd>↵</Kbd> for a new line
-              </span>
-              <div className="ml-auto flex items-center gap-2">
+            <div className="flex items-center gap-2 px-2 pt-1 pb-2">
+              <ChatControls
+                className="min-w-0 flex-1"
+                catalog={catalog.data}
+                assistant={assistant ?? catalog.data?.defaults.assistant ?? null}
+                agent={
+                  agent ??
+                  catalog.data?.defaults.agent ?? {
+                    harness: "codex",
+                    model: null,
+                    effort: null,
+                    fast: false,
+                  }
+                }
+                onAssistant={setAssistant}
+                onAgent={setAgent}
+                mode={mode ?? settings.data?.defaultMode ?? "auto"}
+                onMode={modeChange.change}
+              />
+              <div className="flex shrink-0 items-center gap-2">
                 <ErrorText error={start.error} />
                 <Button
                   type="submit"
@@ -122,6 +169,11 @@ export function HomePage() {
             </div>
           </div>
         </form>
+        <p className="mt-2 flex items-center justify-center gap-1 text-xs text-subtle max-sm:hidden">
+          <Kbd>↵</Kbd> to send, <Kbd>⇧</Kbd>
+          <Kbd>↵</Kbd> for a new line
+        </p>
+        {modeChange.dialog}
 
         {ready && !text && (
           <div className="mt-3 flex flex-wrap justify-center gap-2">
@@ -179,6 +231,7 @@ function Step({
   icon: Icon,
   title,
   to,
+  search,
   children,
 }: {
   done: boolean;
@@ -186,6 +239,7 @@ function Step({
   icon: typeof Cpu;
   title: string;
   to: string;
+  search?: Record<string, unknown>;
   children: ReactNode;
 }) {
   return (
@@ -208,6 +262,7 @@ function Step({
       {!done && (
         <Link
           to={to}
+          search={search as never}
           className="pressable flex h-[26px] shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2.5 text-xs font-medium shadow-raised hover:shadow-raised-hover"
         >
           Set up <ArrowRight aria-hidden="true" size={12} />

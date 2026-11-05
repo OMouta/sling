@@ -2,7 +2,7 @@
 import type { ConversationView, RunnerView, TaskView } from "@sling/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router.tsx";
 
@@ -33,12 +33,22 @@ const runner: RunnerView = {
   labels: ["os:macos", "arch:aarch64"],
   ephemeral: false,
   sandboxId: null,
+  foundRepos: [
+    {
+      path: "/Users/me/code/api",
+      name: "api",
+      defaultBranch: "main",
+      remoteUrl: "git@github.com:a/api.git",
+    },
+  ],
+  remoteRepos: true,
 };
 
 const conversation: ConversationView = {
   id: "cnv_1",
   title: "Fix the footer",
   mode: "supervised",
+  settings: { assistant: null, agent: null },
   createdAt: "2026-11-05T10:00:00.000Z",
   updatedAt: "2026-11-05T10:05:00.000Z",
 };
@@ -63,6 +73,9 @@ const task: TaskView = {
   summary: "Footer now uses the current year. Tests pass.",
   error: null,
   harnessVersion: "0.166.0",
+  model: null,
+  effort: null,
+  fast: false,
   runnerOffline: false,
   cancelRequested: false,
   createdAt: "2026-11-05T10:01:00.000Z",
@@ -93,6 +106,7 @@ const task: TaskView = {
 };
 
 let signedIn = true;
+let posts: { method: string; path: string; body: unknown }[] = [];
 let hasModel = false;
 
 function routes(path: string): unknown {
@@ -102,6 +116,17 @@ function routes(path: string): unknown {
   if (path === "/api/approvals") return [];
   if (path === "/api/runners") return [runner];
   if (path === "/api/sandbox-repos") return [];
+  if (path === "/api/runners/enrollments") {
+    return {
+      code: "ABCD-1234",
+      expiresAt: new Date(Date.now() + 600_000).toISOString(),
+      command: "sling-runner pair http://localhost ABCD-1234",
+      installCommand: "curl -fsSL http://localhost/install.sh | SLING_CODE=ABCD-1234 sh",
+      windowsInstallCommand: "$env:SLING_CODE='ABCD-1234'; irm http://localhost/install.ps1 | iex",
+    };
+  }
+  if (path.startsWith("/api/runners/rnr_1/")) return { ok: true, message: "Allowed api." };
+  if (path === "/api/models" || path === "/api/tasks" || path === "/api/sandboxes") return null;
   if (path === "/api/settings") {
     return {
       defaultMode: "auto",
@@ -151,13 +176,15 @@ class FakeSocket {
 }
 
 beforeEach(() => {
+  posts = [];
   signedIn = true;
   hasModel = false;
   vi.stubGlobal("WebSocket", FakeSocket);
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL) => {
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(typeof input === "string" ? input : input.toString(), "http://localhost");
+      posts.push({ method: init?.method ?? "GET", path: url.pathname, body: init?.body ?? null });
       if (url.pathname.startsWith("/api/auth/")) return new Response("null", { status: 200 });
       return new Response(JSON.stringify(routes(url.pathname)), {
         status: 200,
@@ -210,5 +237,27 @@ describe("web app", () => {
     expect(await screen.findByText("devbox")).toBeTruthy();
     expect(screen.getByText("site")).toBeTruthy();
     expect(screen.getByText(/Codex 0.166.0/)).toBeTruthy();
+  });
+
+  it("pairs a machine with one command", async () => {
+    renderAt("/machines?pair=true");
+    const dialog = await screen.findByRole("dialog");
+    expect(
+      await within(dialog).findByText(
+        "curl -fsSL http://localhost/install.sh | SLING_CODE=ABCD-1234 sh",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("tab", { name: "Windows" }));
+    expect(within(dialog).getByText(/irm http:\/\/localhost\/install\.ps1/)).toBeTruthy();
+  });
+
+  it("allows a repo the machine found", async () => {
+    renderAt("/machines");
+    fireEvent.click(await screen.findByRole("button", { name: "Allow api" }));
+    await waitFor(() =>
+      expect(
+        posts.find((p) => p.method === "POST" && p.path === "/api/runners/rnr_1/repos")?.body,
+      ).toBe(JSON.stringify({ path: "/Users/me/code/api" })),
+    );
   });
 });

@@ -8,7 +8,8 @@ import {
   type SandboxRepoView,
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, FolderGit2, Laptop, Plus, Unplug } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { Check, Copy, FolderGit2, Laptop, Plus, RefreshCw, Unplug, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, StatsBar, Toolbar, ToolbarText } from "../components/Page.tsx";
@@ -16,21 +17,25 @@ import {
   Badge,
   Button,
   Card,
+  cx,
   Dialog,
   Dot,
   Empty,
   ErrorText,
+  Input,
   Mono,
   Skeleton,
   Spinner,
   Switch,
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
-import { ago } from "../lib/format.ts";
+import { ago, plural } from "../lib/format.ts";
 import { codingAgents, isAgentCapability, machinesOnly, splitLabels } from "../lib/machines.ts";
 import { sandboxApi, useSandboxRepos } from "../lib/sandboxApi.ts";
 import type { Enrollment } from "../lib/types.ts";
+import { useNow } from "../lib/useNow.ts";
 import { qk } from "../lib/workflowApi.ts";
+import { machinesRoute } from "../router.tsx";
 
 const CAPABILITY_LABEL: Record<string, string> = {
   ...Object.fromEntries(HARNESSES.map((h) => [harnessCapability(h), HARNESS_LABELS[h]])),
@@ -91,7 +96,13 @@ export function MachinesPage() {
     queryFn: () => api.get<RunnerView[]>("/api/runners"),
   });
   const access = useSandboxAccess();
-  const [pairing, setPairing] = useState(false);
+  const search = machinesRoute.useSearch();
+  const navigate = useNavigate();
+  const [pairing, setPairingState] = useState(Boolean(search.pair));
+  const setPairing = (open: boolean) => {
+    setPairingState(open);
+    if (!open && search.pair) void navigate({ to: "/machines", search: {}, replace: true });
+  };
   // A sandbox's Runner is temporary and shows on the Sandboxes page instead.
   const machines = runners.data ? machinesOnly(runners.data) : undefined;
 
@@ -148,7 +159,8 @@ export function MachinesPage() {
         )
       }
     >
-      {pairing && <PairDialog onClose={() => setPairing(false)} known={machines ?? []} />}
+      {/* Wait for the list, so a machine already paired doesn't look new. */}
+      {pairing && machines && <PairDialog onClose={() => setPairing(false)} known={machines} />}
       <div className="space-y-4 px-5 pt-1 pb-6">
         {runners.isPending && <Skeleton className="h-48 w-full rounded-xl" />}
         <ErrorText error={runners.error ?? access.error} />
@@ -199,70 +211,111 @@ function CodeLine({ children, copy }: { children: ReactNode; copy?: string }) {
   );
 }
 
+type InstallTab = "unix" | "windows" | "installed";
+
 function PairDialog({ onClose, known }: { onClose: () => void; known: RunnerView[] }) {
   const create = useMutation({
     mutationFn: () => api.post<Enrollment>("/api/runners/enrollments"),
   });
   const initial = useRef(new Set(known.map((r) => r.id)));
   const paired = known.find((r) => !initial.current.has(r.id));
+  const [tab, setTab] = useState<InstallTab>(() =>
+    navigator.userAgent.includes("Windows") ? "windows" : "unix",
+  );
+  const now = useNow(1000, Boolean(create.data) && !paired);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: create one code when the dialog opens.
   useEffect(() => {
     create.mutate();
   }, []);
 
-  const command = create.data?.command;
+  const e = create.data;
+  const left = e ? Math.max(0, new Date(e.expiresAt).getTime() - now) : 0;
+  const expired = Boolean(e) && left === 0;
+  const command =
+    tab === "unix" ? e?.installCommand : tab === "windows" ? e?.windowsInstallCommand : e?.command;
+
   return (
     <Dialog
-      title="Pair a machine"
-      description="On the machine, install sling-runner, add the repos Sling may use, then run the command below. The code works once and expires in 10 minutes."
+      title={paired ? `${paired.name} is paired` : "Pair a machine"}
+      description={
+        paired
+          ? "Pick the repos Sling may use on it. They're listed on its card."
+          : "Run one command on the computer that has your repos and Codex or Claude Code."
+      }
       onClose={onClose}
       footer={
         <>
           {paired ? (
             <p className="mr-auto flex items-center gap-2 text-xs text-ok">
-              <Dot tone="ok" /> {paired.name} is paired.
+              <Dot tone="ok" /> Connected. {plural(paired.foundRepos.length, "repo")} found.
             </p>
+          ) : expired ? (
+            <p className="mr-auto text-xs text-warn">This code expired.</p>
           ) : (
             <p className="mr-auto flex items-center gap-2 text-xs text-muted">
               <Spinner className="size-3.5" /> Waiting for the machine
+              {e && (
+                <span className="tabular text-subtle">
+                  · code expires in {Math.floor(left / 60_000)}:
+                  {String(Math.floor((left % 60_000) / 1000)).padStart(2, "0")}
+                </span>
+              )}
             </p>
           )}
+          {expired && !paired && (
+            <Button icon={RefreshCw} busy={create.isPending} onClick={() => create.mutate()}>
+              New code
+            </Button>
+          )}
           <Button variant={paired ? "primary" : "secondary"} onClick={onClose}>
-            {paired ? "Done" : "Close"}
+            {paired ? "Pick repos" : "Close"}
           </Button>
         </>
       }
     >
-      <ol className="space-y-4">
-        <Step n={1} title="Allow a repo">
-          <CodeLine copy="sling-runner repo add ~/code/my-repo">
-            sling-runner repo add ~/code/my-repo
-          </CodeLine>
-        </Step>
-        <Step n={2} title="Pair">
+      {!paired && (
+        <div className="space-y-4">
+          <div
+            role="tablist"
+            aria-label="System"
+            className="flex w-fit rounded-full bg-field p-0.5 shadow-field"
+          >
+            {(
+              [
+                ["unix", "macOS and Linux"],
+                ["windows", "Windows"],
+                ["installed", "Already installed"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={tab === id}
+                onClick={() => setTab(id)}
+                className={cx(
+                  "h-[26px] cursor-pointer rounded-full px-3 text-xs transition-colors duration-150",
+                  tab === id
+                    ? "bg-surface-3 text-text shadow-active"
+                    : "text-subtle hover:text-soft",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <CodeLine copy={command ?? ""}>{command ?? "…"}</CodeLine>
-        </Step>
-        <Step n={3} title="Start it">
-          <CodeLine copy="sling-runner service install">sling-runner service install</CodeLine>
-        </Step>
-      </ol>
-      <ErrorText error={create.error} />
+          <p className="text-xs leading-[18px] text-muted">
+            {tab === "installed"
+              ? "Pairs this machine and starts nothing else. Run sling-runner service install afterwards to keep it running."
+              : "It installs sling-runner, pairs it with this code, and starts it in the background. The code works once."}{" "}
+            The machine needs git, and Codex or Claude Code logged in.
+          </p>
+          <ErrorText error={create.error} />
+        </div>
+      )}
     </Dialog>
-  );
-}
-
-function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
-  return (
-    <li className="flex gap-3">
-      <span className="tabular mt-px grid size-5 shrink-0 place-items-center rounded-full bg-surface-3 text-[11px] font-medium text-soft">
-        {n}
-      </span>
-      <div className="min-w-0 flex-1 space-y-1.5">
-        <p className="text-[13px] font-medium">{title}</p>
-        {children}
-      </div>
-    </li>
   );
 }
 
@@ -355,34 +408,155 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
         )}
       </div>
 
-      <div className="border-t border-border">
-        {runner.repos.length === 0 ? (
-          <p className="px-4 py-3 text-xs text-muted">
-            No repos. Add one on the machine with <Mono>sling-runner repo add</Mono>.
-          </p>
-        ) : (
-          <>
-            <ul>
-              {runner.repos.map((p) => (
-                <RepoRow key={p.id} repo={p} access={access} />
-              ))}
-            </ul>
-            {runner.repos.some((p) => p.remoteKey) && (
-              <p className="border-t border-border px-4 py-3 text-xs leading-4 text-subtle">
-                Allow in sandboxes lets Sling run a task for the repo in a fresh sandbox when no
-                machine can take it. The sandbox clones the repo from its remote, so local files and
-                uncommitted work never leave this machine.
-              </p>
-            )}
-          </>
-        )}
-      </div>
+      <RepoSection runner={runner} access={access} />
       {revoke.error ? (
         <div className="px-4 pb-3">
           <ErrorText error={revoke.error} />
         </div>
       ) : null}
     </Card>
+  );
+}
+
+/** Allowed repos, then the ones the machine found that Sling may be allowed to use. */
+function RepoSection({ runner, access }: { runner: RunnerView; access: SandboxAccess }) {
+  const qc = useQueryClient();
+  const [showAll, setShowAll] = useState(false);
+  const [filter, setFilter] = useState("");
+  const refresh = () => qc.invalidateQueries({ queryKey: ["runners"] });
+  const allow = useMutation({
+    mutationFn: (path: string) => api.post(`/api/runners/${runner.id}/repos`, { path }),
+    onSuccess: refresh,
+  });
+  const remove = useMutation({
+    mutationFn: (name: string) =>
+      api.del(`/api/runners/${runner.id}/repos/${encodeURIComponent(name)}`),
+    onSuccess: refresh,
+  });
+  const scan = useMutation({ mutationFn: () => api.post(`/api/runners/${runner.id}/scan`) });
+  const canChange = runner.online && runner.remoteRepos;
+  const q = filter.trim().toLowerCase();
+  const found = runner.foundRepos.filter(
+    (f) => !q || f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q),
+  );
+  const shown = showAll || q ? found : found.slice(0, 6);
+
+  return (
+    <div className="border-t border-border">
+      <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+        <span className="section-label">Repos</span>
+        <span className="ml-auto" />
+        {runner.online && runner.remoteRepos && (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={RefreshCw}
+            busy={scan.isPending}
+            onClick={() => scan.mutate()}
+          >
+            Look again
+          </Button>
+        )}
+      </div>
+      {runner.repos.length === 0 ? (
+        <p className="px-4 pb-3 text-xs text-muted">
+          {runner.foundRepos.length > 0
+            ? "None allowed yet. Pick the ones Sling may work in below."
+            : "None allowed yet."}
+        </p>
+      ) : (
+        <ul aria-label={`Repos on ${runner.name}`}>
+          {runner.repos.map((p) => (
+            <RepoRow
+              key={p.id}
+              repo={p}
+              access={access}
+              onRemove={canChange ? () => remove.mutate(p.name) : undefined}
+              removing={remove.isPending && remove.variables === p.name}
+            />
+          ))}
+        </ul>
+      )}
+      {runner.repos.some((p) => p.remoteKey) && (
+        <p className="border-t border-border px-4 py-3 text-xs leading-4 text-subtle">
+          Allow in sandboxes lets Sling run a task for the repo in a fresh sandbox when no machine
+          can take it. The sandbox clones the repo from its remote, so local files and uncommitted
+          work never leave this machine.
+        </p>
+      )}
+
+      {runner.remoteRepos && runner.foundRepos.length > 0 && (
+        <div className="border-t border-border bg-sidebar/60">
+          <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
+            <span className="text-xs font-medium text-soft">
+              Found on {runner.name}
+              <span className="ml-1.5 text-subtle tabular">{runner.foundRepos.length}</span>
+            </span>
+            {runner.foundRepos.length > 8 && (
+              <Input
+                aria-label="Filter found repos"
+                placeholder="Filter"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="ml-auto h-7 max-w-44"
+              />
+            )}
+          </div>
+          <ul aria-label={`Repos found on ${runner.name}`}>
+            {shown.map((f) => (
+              <li
+                key={f.path}
+                className="flex min-h-[43px] items-center gap-3 border-t border-border px-4 py-2 first:border-t-0"
+              >
+                <FolderGit2 aria-hidden="true" className="shrink-0 text-faint" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] text-soft">{f.name}</p>
+                  <p className="truncate font-mono text-[11px] text-subtle" title={f.path}>
+                    {f.path}
+                  </p>
+                </div>
+                {f.remoteUrl && (
+                  <span className="hidden max-w-56 truncate text-xs text-subtle md:inline">
+                    {f.remoteUrl}
+                  </span>
+                )}
+                <Button
+                  size="sm"
+                  icon={Plus}
+                  aria-label={`Allow ${f.name}`}
+                  disabled={!runner.online}
+                  busy={allow.isPending && allow.variables === f.path}
+                  onClick={() => allow.mutate(f.path)}
+                >
+                  Allow
+                </Button>
+              </li>
+            ))}
+          </ul>
+          {!showAll && !q && found.length > shown.length && (
+            <button
+              type="button"
+              onClick={() => setShowAll(true)}
+              className="w-full cursor-pointer border-t border-border px-4 py-2.5 text-left text-xs text-subtle hover:text-text"
+            >
+              Show all {found.length}
+            </button>
+          )}
+        </div>
+      )}
+      {!runner.remoteRepos && (
+        <p className="border-t border-border px-4 py-3 text-xs leading-4 text-subtle">
+          This machine doesn't take repo changes from Sling. Add repos on it with{" "}
+          <Mono>sling-runner repo add</Mono>, or allow changes from here with{" "}
+          <Mono>sling-runner config set remote-repos on</Mono>.
+        </p>
+      )}
+      {(allow.error || remove.error || scan.error) && (
+        <div className="px-4 pb-3">
+          <ErrorText error={allow.error ?? remove.error ?? scan.error} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -410,7 +584,17 @@ function Labels({ labels }: { labels: string[] }) {
   );
 }
 
-function RepoRow({ repo, access }: { repo: RepoView; access: SandboxAccess }) {
+function RepoRow({
+  repo,
+  access,
+  onRemove,
+  removing,
+}: {
+  repo: RepoView;
+  access: SandboxAccess;
+  onRemove?: (() => void) | undefined;
+  removing?: boolean;
+}) {
   const key = repo.remoteKey;
   return (
     <li className="flex min-h-[43px] flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-4 py-2 last:border-b-0">
@@ -437,6 +621,18 @@ function RepoRow({ repo, access }: { repo: RepoView; access: SandboxAccess }) {
           </>
         ) : (
           <span>No remote, so a sandbox has nothing to clone</span>
+        )}
+        {onRemove && (
+          <Button
+            size="sm"
+            variant="ghost"
+            iconOnly
+            icon={X}
+            busy={removing}
+            aria-label={`Stop allowing ${repo.name}`}
+            title={`Stop allowing ${repo.name}`}
+            onClick={onRemove}
+          />
         )}
       </span>
     </li>

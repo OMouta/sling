@@ -1,11 +1,10 @@
 import { ChevronDown, LoaderCircle, type LucideIcon, X } from "lucide-react";
 import {
   type ButtonHTMLAttributes,
+  type ComponentProps,
   createContext,
-  type InputHTMLAttributes,
   type ReactNode,
   type SelectHTMLAttributes,
-  type TextareaHTMLAttributes,
   useContext,
   useEffect,
   useId,
@@ -86,11 +85,11 @@ export function Button({
 const fieldBase =
   "w-full rounded-lg bg-field px-2.5 text-[13px] text-text shadow-field outline-none transition-shadow duration-150 placeholder:text-subtle hover:shadow-field-hover focus:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50";
 
-export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
+export function Input({ className, ...rest }: ComponentProps<"input">) {
   return <input {...rest} className={cx(fieldBase, "h-8", className)} />;
 }
 
-export function Textarea({ className, ...rest }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function Textarea({ className, ...rest }: ComponentProps<"textarea">) {
   return <textarea {...rest} className={cx(fieldBase, "py-2 leading-5", className)} />;
 }
 

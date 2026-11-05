@@ -34,6 +34,9 @@ export interface ProviderInfo {
   label: string;
   needsBaseUrl: boolean;
   defaultModel: string;
+  hasKey: boolean;
+  baseUrl: string | null;
+  connected: boolean;
 }
 
 export interface Settings {
@@ -51,7 +54,11 @@ export interface Settings {
 export interface Enrollment {
   code: string;
   expiresAt: string;
+  /** For a machine that already has sling-runner. */
   command: string;
+  /** Installs, pairs, and starts the Runner on macOS and Linux. */
+  installCommand: string;
+  windowsInstallCommand: string;
 }
 
 export type { ApprovalView, ConversationView, MessageView, RunnerView, TaskEventView, TaskView };
