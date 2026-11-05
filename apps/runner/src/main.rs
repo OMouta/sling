@@ -11,6 +11,7 @@ mod inventory;
 mod pair;
 mod redact;
 mod repos;
+mod sandbox;
 mod service;
 mod spool;
 mod sys;
@@ -65,6 +66,13 @@ enum Command {
     Gc,
     /// Check that everything this Runner needs is in place.
     Doctor,
+    /// Entrypoint of a sandbox image: clone the repos, pair with a one-time
+    /// code, and run one task. Reads its settings from SLING_* environment
+    /// variables. Execution providers start it; you don't run it yourself.
+    Sandbox,
+    /// Git credential helper used inside a sandbox.
+    #[command(hide = true)]
+    GitCredential { action: String },
 }
 
 #[derive(Subcommand)]
@@ -101,10 +109,28 @@ enum ConfigCommand {
     },
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    let cli = Cli::parse();
+    // git reads the helper's stdout, so nothing else may print there.
+    if let Command::GitCredential { action } = &cli.command {
+        std::process::exit(sandbox::git_credential(action));
+    }
     init_logging();
-    if let Err(e) = real_main().await {
+    let prepared = match cli.command {
+        Command::Sandbox => match sandbox::prepare() {
+            Ok(p) => Some(p),
+            Err(code) => std::process::exit(code),
+        },
+        _ => None,
+    };
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .expect("starting the async runtime");
+    if let Some(prepared) = prepared {
+        std::process::exit(runtime.block_on(sandbox::run(prepared)));
+    }
+    if let Err(e) = runtime.block_on(real_main(cli)) {
         tracing::error!("{e:#}");
         eprintln!("error: {e:#}");
         if e.downcast_ref::<connection::Refused>().is_some() {
@@ -121,14 +147,16 @@ async fn main() {
     }
 }
 
-/// Logs go to stderr, or to `runner.log` (rotated at 10 MB) when running as a
-/// service.
+/// Logs go to stdout, or to `runner.log` (rotated at 10 MB) when running as a
+/// service. Colors only when stdout is a terminal.
 fn init_logging() {
+    use std::io::IsTerminal;
     let filter = tracing_subscriber::EnvFilter::try_from_env("SLING_RUNNER_LOG")
         .unwrap_or_else(|_| "info".into());
     let builder = tracing_subscriber::fmt()
         .with_env_filter(filter)
-        .with_target(false);
+        .with_target(false)
+        .with_ansi(std::io::stdout().is_terminal());
     if std::env::var_os(service::SERVICE_ENV).is_some()
         && let Ok(paths) = Paths::resolve()
     {
@@ -155,8 +183,7 @@ fn init_logging() {
     builder.init();
 }
 
-async fn real_main() -> Result<()> {
-    let cli = Cli::parse();
+async fn real_main(cli: Cli) -> Result<()> {
     let paths = Paths::resolve()?;
     match cli.command {
         Command::Pair { url, code, name } => {
@@ -261,6 +288,7 @@ async fn real_main() -> Result<()> {
             };
             println!("{msg}");
         }
+        Command::Sandbox | Command::GitCredential { .. } => unreachable!("handled in main"),
         Command::Gc => {
             let cfg = Config::load(&paths)?;
             let n = gc::collect(&cfg, &paths, gc::KEEP_FOR).await?;

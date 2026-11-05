@@ -76,6 +76,12 @@ pub trait Harness: Send + Sync {
     ) -> BoxFuture<'a, Result<Box<dyn HarnessRun>>>;
 }
 
+impl std::fmt::Debug for dyn Harness {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
 /// A running agent process.
 pub trait HarnessRun: Send {
     /// Process ID, which is also its process group on Unix.

@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -40,6 +41,8 @@ pub struct Manager {
     /// Extra variables to keep out of an agent's environment, by harness
     /// name, for example an API key the agent is already logged in with.
     agent_env_removed: Mutex<HashMap<String, Vec<String>>>,
+    /// Push and PR actions still running.
+    actions_in_flight: AtomicUsize,
     /// Wakes the connection to flush new events.
     pub outbox: Notify,
 }
@@ -76,6 +79,7 @@ impl Manager {
             running: Mutex::new(HashMap::new()),
             early_cancels: Mutex::new(HashSet::new()),
             agent_env_removed: Mutex::new(HashMap::new()),
+            actions_in_flight: AtomicUsize::new(0),
             outbox: Notify::new(),
         }))
     }
@@ -111,6 +115,18 @@ impl Manager {
 
     pub fn running_count(&self) -> usize {
         self.running.lock().unwrap().len()
+    }
+
+    /// A task or an action is running.
+    pub fn busy(&self) -> bool {
+        self.running_count() > 0 || self.actions_in_flight.load(Ordering::SeqCst) > 0
+    }
+
+    /// Cancels every running task.
+    pub fn cancel_all(&self) {
+        for tx in self.running.lock().unwrap().values() {
+            let _ = tx.send(true);
+        }
     }
 
     pub fn held_tasks(&self) -> Vec<HeldTask> {
@@ -509,7 +525,9 @@ impl Manager {
         };
         let meta = spool.lock().unwrap().meta.clone();
         let kind = req.kind();
+        self.actions_in_flight.fetch_add(1, Ordering::SeqCst);
         let result = self.perform(&meta, &req).await;
+        self.actions_in_flight.fetch_sub(1, Ordering::SeqCst);
         let (outcome, message, url) = match result {
             Ok((url, message)) => (action_result::Outcome::Succeeded, message, url),
             Err(ActionError::Refused(m)) => (action_result::Outcome::Refused, m, String::new()),

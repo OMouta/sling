@@ -1,6 +1,7 @@
 //! Small OS helpers.
 
 use std::process::Stdio;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -49,6 +50,26 @@ impl Output {
     }
 }
 
+/// Extra environment for the Runner's own `git` and `gh` commands, such as
+/// a credential helper in a sandbox. Agents never get it: they're started
+/// with their own environment.
+static TOOL_ENV: OnceLock<Vec<(String, String, String)>> = OnceLock::new();
+
+/// Sets the extra environment, as `(program, name, value)`. Only the first
+/// call takes effect.
+pub fn set_tool_env(env: Vec<(String, String, String)>) {
+    let _ = TOOL_ENV.set(env);
+}
+
+fn tool_env(program: &str) -> impl Iterator<Item = (&'static str, &'static str)> {
+    TOOL_ENV
+        .get()
+        .into_iter()
+        .flatten()
+        .filter(move |(p, _, _)| p == program)
+        .map(|(_, k, v)| (k.as_str(), v.as_str()))
+}
+
 /// Runs a short command with a timeout, stdin closed, and output captured.
 pub async fn run(program: &str, args: &[&str], cwd: Option<&std::path::Path>) -> Result<Output> {
     run_timeout(program, args, cwd, Duration::from_secs(60)).await
@@ -62,6 +83,7 @@ pub async fn run_timeout(
 ) -> Result<Output> {
     let mut cmd = Command::new(program);
     cmd.args(args)
+        .envs(tool_env(program))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

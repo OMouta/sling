@@ -1,9 +1,10 @@
 //! A stand-in for the `codex` CLI, for tests and local development without a
 //! Codex login. Point the Runner at it with `codex_bin` in runner.toml.
 //!
-//! It answers `--version`, `login status`, and `exec --json ... -`, printing
-//! the same JSONL shape as real Codex. Pick a scenario with
-//! `FAKE_CODEX_SCENARIO`, or put `[fake:<scenario>]` in the prompt:
+//! It answers `--version`, `login status`, `login --with-api-key`, and
+//! `exec --json ... -`, printing the same JSONL shape as real Codex. Pick a
+//! scenario with `FAKE_CODEX_SCENARIO`, or put `[fake:<scenario>]` in the
+//! prompt:
 //!
 //! - `success` (default): edits `SLING_FAKE.md`, runs a command, finishes.
 //! - `noop`: finishes without changing anything.
@@ -23,6 +24,15 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("--version") => println!("codex-cli 0.166.0"),
+        Some("login") if args.iter().any(|a| a == "--with-api-key") => {
+            let mut key = String::new();
+            std::io::stdin().read_to_string(&mut key).unwrap();
+            if key.trim().is_empty() {
+                eprintln!("fake-codex: no API key on stdin");
+                std::process::exit(1);
+            }
+            println!("Successfully logged in");
+        }
         Some("login") => {
             if std::env::var("FAKE_CODEX_LOGGED_OUT").is_ok() {
                 println!("Not logged in");
