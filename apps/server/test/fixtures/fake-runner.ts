@@ -1,0 +1,276 @@
+/**
+ * A Runner in TypeScript, for tests: it pairs with a one-time code, signs the
+ * handshake, reports an inventory, and plays tasks and actions back without a
+ * coding agent. Machines with labels or Claude Code, and the fake execution
+ * provider's sandboxes, use it.
+ */
+import { generateKeyPairSync, type KeyObject, sign } from "node:crypto";
+import type { MessageInitShape } from "@bufbuild/protobuf";
+import {
+  ActionResult_Outcome,
+  authPayload,
+  create,
+  decodeEnvelope,
+  type Envelope,
+  EnvelopeSchema,
+  encodeEnvelope,
+  PermissionMode,
+  RUNNER_WS_PATH,
+  type TaskAssign,
+  TaskEventSchema,
+  TaskFinished_Outcome,
+} from "@sling/runner-protocol";
+
+type EventKind = MessageInitShape<typeof TaskEventSchema>["kind"];
+
+export interface FakeRepo {
+  name: string;
+  remoteUrl: string;
+  defaultBranch?: string;
+  network?: boolean;
+}
+
+export interface FakeRunnerOptions {
+  /** Control plane URL, for example http://127.0.0.1:1234. */
+  url: string;
+  name: string;
+  repos: FakeRepo[];
+  /** Coding agents to report as ready. */
+  harnesses?: string[];
+  labels?: string[];
+  maxMode?: PermissionMode;
+  maxConcurrentTasks?: number;
+  os?: string;
+  arch?: string;
+}
+
+/** What a task does: finish with a commit, fail, or wait to be cancelled. */
+function scenario(objective: string): "succeed" | "fail" | "hang" {
+  if (objective.includes("[fake:hang]")) return "hang";
+  if (objective.includes("[fake:fail]")) return "fail";
+  return "succeed";
+}
+
+export class FakeRunner {
+  readonly options: FakeRunnerOptions;
+  readonly #key: KeyObject;
+  readonly publicKey: string;
+  runnerId = "";
+  /** Tasks the server assigned, in order. */
+  readonly assigned: TaskAssign[] = [];
+  /** Actions the server asked for, in order. */
+  readonly actions: { actionId: string; taskId: string; kind: number }[] = [];
+  /** Error codes the server sent, for example REVOKED. */
+  readonly errors: number[] = [];
+  #ws: WebSocket | null = null;
+  #seq = new Map<string, number>();
+  #heartbeat: NodeJS.Timeout | null = null;
+  #closed = false;
+  /** Resolves when the connection closes for good. */
+  readonly exited: Promise<void>;
+  #exit!: () => void;
+
+  constructor(options: FakeRunnerOptions) {
+    this.options = options;
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    this.#key = privateKey;
+    const jwk = publicKey.export({ format: "jwk" }) as { x: string };
+    this.publicKey = Buffer.from(jwk.x, "base64url").toString("base64");
+    this.exited = new Promise((ok) => {
+      this.#exit = ok;
+    });
+  }
+
+  get connected(): boolean {
+    return this.#ws?.readyState === WebSocket.OPEN;
+  }
+
+  /** Pairs with a one-time code. Throws with the server's message on failure. */
+  async pair(code: string): Promise<string> {
+    const res = await fetch(`${this.options.url}/api/runner/pair`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        code,
+        publicKey: this.publicKey,
+        name: this.options.name,
+        os: this.options.os ?? "linux",
+        arch: this.options.arch ?? "x86_64",
+        hostname: this.options.name,
+        version: "0.0.0-fake",
+      }),
+    });
+    const body = (await res.json()) as { runnerId?: string; error?: string };
+    if (!res.ok || !body.runnerId) throw new Error(`pairing failed: ${res.status} ${body.error}`);
+    this.runnerId = body.runnerId;
+    return this.runnerId;
+  }
+
+  /** Connects and resolves once the server has welcomed it. */
+  connect(): Promise<void> {
+    this.#closed = false;
+    const ws = new WebSocket(`${this.options.url.replace(/^http/, "ws")}${RUNNER_WS_PATH}`);
+    ws.binaryType = "arraybuffer";
+    this.#ws = ws;
+    return new Promise((ok, fail) => {
+      let welcomed = false;
+      ws.addEventListener("message", (msg) => {
+        const env = decodeEnvelope(new Uint8Array(msg.data as ArrayBuffer));
+        if (env.body.case === "welcome" && !welcomed) {
+          welcomed = true;
+          ok();
+        }
+        void this.#handle(env).catch((err) => console.error("fake runner", err));
+      });
+      ws.addEventListener("close", () => {
+        if (this.#heartbeat) clearInterval(this.#heartbeat);
+        if (!welcomed) fail(new Error(`closed before welcome, errors ${this.errors.join(",")}`));
+        if (!this.#closed) {
+          this.#closed = true;
+          this.#exit();
+        }
+      });
+      ws.addEventListener("error", () => {
+        if (!welcomed) fail(new Error("websocket error"));
+      });
+    });
+  }
+
+  close() {
+    this.#closed = true;
+    if (this.#heartbeat) clearInterval(this.#heartbeat);
+    this.#ws?.close();
+    this.#exit();
+  }
+
+  #send(env: Envelope) {
+    if (this.#ws?.readyState === WebSocket.OPEN) this.#ws.send(encodeEnvelope(env));
+  }
+
+  #inventory() {
+    const o = this.options;
+    return {
+      capabilities: (o.harnesses ?? ["codex"]).map((h) => ({
+        name: `coding.${h}`,
+        version: "1.0.0",
+        ready: true,
+        detail: "",
+      })),
+      repos: o.repos.map((r) => ({
+        name: r.name,
+        defaultBranch: r.defaultBranch ?? "main",
+        remoteUrl: r.remoteUrl,
+        network: r.network ?? false,
+      })),
+      maxMode: o.maxMode ?? PermissionMode.FULL_ACCESS,
+      maxConcurrentTasks: o.maxConcurrentTasks ?? 2,
+      labels: o.labels ?? [],
+    };
+  }
+
+  async #handle(env: Envelope) {
+    const body = env.body;
+    switch (body.case) {
+      case "challenge": {
+        const ts = BigInt(Date.now());
+        const signature = sign(null, authPayload(body.value.nonce, this.runnerId, ts), this.#key);
+        this.#send(
+          create(EnvelopeSchema, {
+            body: {
+              case: "hello",
+              value: {
+                runnerId: this.runnerId,
+                timestampMs: ts,
+                signature,
+                runnerVersion: "0.0.0-fake",
+                os: this.options.os ?? "linux",
+                arch: this.options.arch ?? "x86_64",
+                hostname: this.options.name,
+                inventory: this.#inventory(),
+                heldTasks: [],
+              },
+            },
+          }),
+        );
+        return;
+      }
+      case "welcome":
+        this.#heartbeat = setInterval(() => {
+          this.#send(create(EnvelopeSchema, { body: { case: "heartbeat", value: {} } }));
+        }, 5_000);
+        return;
+      case "error":
+        this.errors.push(body.value.code);
+        return;
+      case "taskAssign":
+        this.assigned.push(body.value);
+        await this.#run(body.value);
+        return;
+      case "taskCancel":
+        this.#event(body.value.taskId, {
+          case: "finished",
+          value: { outcome: TaskFinished_Outcome.CANCELLED, error: "Cancelled." },
+        });
+        return;
+      case "actionRequest": {
+        const a = body.value;
+        this.actions.push({ actionId: a.actionId, taskId: a.taskId, kind: a.kind });
+        this.#event(a.taskId, {
+          case: "actionResult",
+          value: {
+            actionId: a.actionId,
+            kind: a.kind,
+            outcome: ActionResult_Outcome.SUCCEEDED,
+            message: "",
+            url: `https://git.example.test/compare/${a.taskId}`,
+          },
+        });
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  #event(taskId: string, kind: EventKind) {
+    const seq = (this.#seq.get(taskId) ?? 0) + 1;
+    this.#seq.set(taskId, seq);
+    const event = create(TaskEventSchema, {
+      taskId,
+      seq: BigInt(seq),
+      atMs: BigInt(Date.now()),
+      kind,
+    });
+    this.#send(create(EnvelopeSchema, { body: { case: "taskEvent", value: event } }));
+  }
+
+  async #run(t: TaskAssign) {
+    this.#event(t.taskId, { case: "accepted", value: {} });
+    this.#event(t.taskId, {
+      case: "started",
+      value: {
+        branch: t.branch,
+        baseSha: "0000000000000000000000000000000000000000",
+        worktreePath: `/work/${t.taskId}`,
+        harness: t.harness,
+        harnessVersion: `fake-${t.harness} 1.0`,
+      },
+    });
+    const what = scenario(t.objective);
+    if (what === "hang") return;
+    await new Promise((r) => setTimeout(r, 20));
+    this.#event(t.taskId, {
+      case: "finished",
+      value:
+        what === "fail"
+          ? { outcome: TaskFinished_Outcome.FAILED, error: "The fake task failed." }
+          : {
+              outcome: TaskFinished_Outcome.SUCCEEDED,
+              summary: `Did "${t.title}" with ${t.harness}.`,
+              branch: t.branch,
+              commitSha: "1111111111111111111111111111111111111111",
+              diffStats: { filesChanged: 1, insertions: 2, deletions: 0 },
+            },
+    });
+  }
+}
