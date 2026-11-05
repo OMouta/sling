@@ -159,11 +159,13 @@ export class TaskService implements GatewayHandlers {
         .for("update");
       // biome-ignore lint/complexity/useOptionalChain: the explicit check keeps `task` narrowed below.
       if (!task || task.state !== "queued") return null;
-      if (!this.#ctx.runners.isOnline(task.runnerId)) return null;
+      // A task waiting for a sandbox has no Runner yet. It's dispatched once one is bound.
+      const runnerId = task.runnerId;
+      if (!runnerId || !this.#ctx.runners.isOnline(runnerId)) return null;
       const [runner] = await tx
         .select()
         .from(schema.runners)
-        .where(eq(schema.runners.id, task.runnerId))
+        .where(eq(schema.runners.id, runnerId))
         .for("update");
       if (!runner || runner.revokedAt) return null;
       const [active] = await tx
@@ -171,7 +173,7 @@ export class TaskService implements GatewayHandlers {
         .from(schema.tasks)
         .where(and(eq(schema.tasks.runnerId, runner.id), inArray(schema.tasks.state, ACTIVE)));
       if ((active?.n ?? 0) >= runner.maxConcurrentTasks) return null;
-      const ok = this.#send(task.runnerId, this.#assignEnvelope(task));
+      const ok = this.#send(runnerId, this.#assignEnvelope(task));
       if (!ok) return null;
       await tx
         .update(schema.tasks)
@@ -230,10 +232,12 @@ export class TaskService implements GatewayHandlers {
         .update(schema.tasks)
         .set({ cancelRequestedAt: new Date() })
         .where(eq(schema.tasks.id, task.id));
-      this.#send(
-        task.runnerId,
-        create(EnvelopeSchema, { body: { case: "taskCancel", value: { taskId: task.id } } }),
-      );
+      if (task.runnerId) {
+        this.#send(
+          task.runnerId,
+          create(EnvelopeSchema, { body: { case: "taskCancel", value: { taskId: task.id } } }),
+        );
+      }
     }
     await audit(this.#ctx, {
       workspaceId,
@@ -492,7 +496,7 @@ export class TaskService implements GatewayHandlers {
         return async () => {
           await this.publish(task.id);
           await this.#settle(task.id, "finished");
-          await this.dispatchQueued(task.runnerId);
+          if (task.runnerId) await this.dispatchQueued(task.runnerId);
         };
       case "started":
         await tx
@@ -567,7 +571,7 @@ export class TaskService implements GatewayHandlers {
           } else {
             await this.#settle(task.id, "finished");
           }
-          await this.dispatchQueued(task.runnerId);
+          if (task.runnerId) await this.dispatchQueued(task.runnerId);
         };
       }
       case "actionResult": {
@@ -694,7 +698,7 @@ export class TaskService implements GatewayHandlers {
           .select()
           .from(schema.tasks)
           .where(eq(schema.tasks.id, taskId));
-        if (!task) break;
+        if (!task?.runnerId) break;
         const sent = this.#send(
           task.runnerId,
           create(EnvelopeSchema, {
@@ -888,9 +892,11 @@ export class TaskService implements GatewayHandlers {
     const queued = await db
       .selectDistinct({ runnerId: schema.tasks.runnerId })
       .from(schema.tasks)
-      .where(eq(schema.tasks.state, "queued"));
+      .where(and(eq(schema.tasks.state, "queued"), isNotNull(schema.tasks.runnerId)));
     for (const q of queued) {
-      if (this.#ctx.runners.isOnline(q.runnerId)) await this.dispatchQueued(q.runnerId);
+      if (q.runnerId && this.#ctx.runners.isOnline(q.runnerId)) {
+        await this.dispatchQueued(q.runnerId);
+      }
     }
   }
 

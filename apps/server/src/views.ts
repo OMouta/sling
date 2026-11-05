@@ -119,7 +119,7 @@ async function actionsFor(ctx: AppContext, taskIds: string[]): Promise<Map<strin
   return out;
 }
 
-function toTaskView(t: TaskRow, runnerName: string, actions: ActionView[]): TaskView {
+function toTaskView(t: TaskRow, runnerName: string | null, actions: ActionView[]): TaskView {
   return {
     id: t.id,
     conversationId: t.conversationId,
@@ -151,18 +151,24 @@ function toTaskView(t: TaskRow, runnerName: string, actions: ActionView[]): Task
 
 export async function taskViews(ctx: AppContext, rows: TaskRow[]): Promise<TaskView[]> {
   if (rows.length === 0) return [];
-  const runnerIds = [...new Set(rows.map((t) => t.runnerId))];
-  const runners = await ctx.db
-    .select({ id: schema.runners.id, name: schema.runners.name })
-    .from(schema.runners)
-    .where(inArray(schema.runners.id, runnerIds));
+  const runnerIds = [...new Set(rows.flatMap((t) => (t.runnerId ? [t.runnerId] : [])))];
+  const runners = runnerIds.length
+    ? await ctx.db
+        .select({ id: schema.runners.id, name: schema.runners.name })
+        .from(schema.runners)
+        .where(inArray(schema.runners.id, runnerIds))
+    : [];
   const names = new Map(runners.map((r) => [r.id, r.name]));
   const actions = await actionsFor(
     ctx,
     rows.map((t) => t.id),
   );
   return rows.map((t) =>
-    toTaskView(t, names.get(t.runnerId) ?? "unknown", actions.get(t.id) ?? []),
+    toTaskView(
+      t,
+      t.runnerId ? (names.get(t.runnerId) ?? "unknown") : null,
+      actions.get(t.id) ?? [],
+    ),
   );
 }
 
