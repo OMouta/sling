@@ -1,6 +1,14 @@
-import { MODE_POLICY, type PermissionMode } from "@sling/core";
+import {
+  HARNESS_LABELS,
+  HARNESSES,
+  type Harness,
+  MODE_POLICY,
+  type PermissionMode,
+  type SandboxSettingsView,
+} from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import {
   Badge,
   Button,
@@ -14,7 +22,15 @@ import {
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { authClient } from "../lib/auth.ts";
+import {
+  costPerHourBody,
+  providerInstallations,
+  type SecretKey,
+  secretsBody,
+} from "../lib/sandbox.ts";
+import { isSandboxSettingsView, sandboxApi, useSandboxSettings } from "../lib/sandboxApi.ts";
 import type { ProviderInfo, Settings } from "../lib/types.ts";
+import { qk, useConnectors, useInstallations } from "../lib/workflowApi.ts";
 
 export function SettingsPage() {
   const settings = useQuery({
@@ -32,6 +48,7 @@ export function SettingsPage() {
           <ModeSection settings={settings.data} />
         </>
       )}
+      <SandboxSection />
       <SecuritySection />
     </div>
   );
@@ -43,8 +60,8 @@ function Section({
   children,
 }: {
   title: string;
-  description?: string;
-  children: React.ReactNode;
+  description?: ReactNode;
+  children: ReactNode;
 }) {
   return (
     <Card className="p-5">
@@ -93,7 +110,7 @@ function ModelSection({ settings }: { settings: Settings }) {
   return (
     <Section
       title="Model"
-      description="The model behind Sling's assistant. Codex uses its own login on each machine."
+      description="The model behind Sling's assistant. Coding agents use their own login on each machine."
     >
       <form onSubmit={submit} className="space-y-4">
         <Field label="Provider">
@@ -198,6 +215,317 @@ function ModeSection({ settings }: { settings: Settings }) {
       </div>
       <ErrorText error={save.error} />
     </Section>
+  );
+}
+
+function SandboxSection() {
+  const settings = useSandboxSettings();
+  return (
+    <Section
+      title="Sandboxes"
+      description={
+        <>
+          When no machine can take a task, Sling can run it in a fresh sandbox from a provider under{" "}
+          <Link to="/connectors" className="text-accent hover:underline">
+            Connectors
+          </Link>
+          . A sandbox clones an allowed repo from its remote, runs the coding agent, and is
+          destroyed.
+        </>
+      }
+    >
+      {settings.isPending && <Spinner />}
+      <ErrorText error={settings.error} />
+      {settings.data && (
+        <div className="space-y-8">
+          <SandboxLimits settings={settings.data} />
+          <SandboxSecrets secrets={settings.data.secrets} />
+        </div>
+      )}
+    </Section>
+  );
+}
+
+/** A whole number at or above `min`, or null. */
+function wholeNumber(text: string, min: number): number | null {
+  if (!/^\d+$/.test(text.trim())) return null;
+  const n = Number(text);
+  return n >= min ? n : null;
+}
+
+function SandboxLimits({ settings }: { settings: SandboxSettingsView }) {
+  const qc = useQueryClient();
+  const installations = useInstallations();
+  const connectors = useConnectors();
+  const providers = providerInstallations(installations.data ?? [], connectors.data ?? []);
+  const [harness, setHarness] = useState<Harness>(settings.defaultHarness);
+  const [concurrent, setConcurrent] = useState(String(settings.concurrentLimit));
+  const [lifetime, setLifetime] = useState(String(settings.lifetimeMinutes));
+  const [budget, setBudget] = useState(String(settings.monthlyMinutesBudget));
+  const [costs, setCosts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(Object.entries(settings.costPerHour).map(([id, n]) => [id, String(n)])),
+  );
+
+  const values = {
+    concurrentLimit: wholeNumber(concurrent, 1),
+    lifetimeMinutes: wholeNumber(lifetime, 1),
+    monthlyMinutesBudget: wholeNumber(budget, 0),
+  };
+  const valid = Object.values(values).every((v) => v !== null);
+
+  const save = useMutation({
+    mutationFn: () =>
+      sandboxApi.saveSettings({
+        defaultHarness: harness,
+        concurrentLimit: values.concurrentLimit ?? settings.concurrentLimit,
+        lifetimeMinutes: values.lifetimeMinutes ?? settings.lifetimeMinutes,
+        monthlyMinutesBudget: values.monthlyMinutesBudget ?? settings.monthlyMinutesBudget,
+        costPerHour: costPerHourBody(costs),
+      }),
+    onSuccess: (res) => {
+      if (isSandboxSettingsView(res)) qc.setQueryData(qk.sandboxSettings(), res);
+      void qc.invalidateQueries({ queryKey: qk.sandboxSettings() });
+      // Usage on the Sandboxes page shows the limit and budget.
+      void qc.invalidateQueries({ queryKey: qk.sandboxes() });
+    },
+  });
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (valid) save.mutate();
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <Field
+        label="Default coding agent"
+        hint="Used when a request doesn't name one, on machines and in sandboxes."
+      >
+        <Select value={harness} onChange={(e) => setHarness(e.target.value as Harness)}>
+          {HARNESSES.map((h) => (
+            <option key={h} value={h}>
+              {HARNESS_LABELS[h]}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Field label="Concurrent sandboxes" hint="More requests wait.">
+          <Input
+            type="number"
+            min={1}
+            step={1}
+            value={concurrent}
+            onChange={(e) => setConcurrent(e.target.value)}
+            required
+          />
+        </Field>
+        <Field label="Lifetime (minutes)" hint="Longer ones are destroyed.">
+          <Input
+            type="number"
+            min={1}
+            step={1}
+            value={lifetime}
+            onChange={(e) => setLifetime(e.target.value)}
+            required
+          />
+        </Field>
+        <Field label="Minutes a month" hint="Requests over this are refused.">
+          <Input
+            type="number"
+            min={0}
+            step={1}
+            value={budget}
+            onChange={(e) => setBudget(e.target.value)}
+            required
+          />
+        </Field>
+      </div>
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Estimated cost per hour</p>
+        <p className="text-xs text-muted">
+          Optional, in your own currency. With a cost set, the Sandboxes page shows estimated spend.
+        </p>
+        {providers.length === 0 ? (
+          <p className="text-sm text-muted">
+            Add a sandbox provider under Connectors to set what it costs.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {providers.map((p) => (
+              <li key={p.id} className="flex items-center gap-3">
+                <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step="any"
+                  inputMode="decimal"
+                  aria-label={`Cost per hour for ${p.name}`}
+                  placeholder="Not set"
+                  className="max-w-32"
+                  value={costs[p.id] ?? ""}
+                  onChange={(e) => setCosts({ ...costs, [p.id]: e.target.value })}
+                />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" variant="primary" busy={save.isPending} disabled={!valid}>
+          Save
+        </Button>
+        {!valid && (
+          <span className="text-sm text-muted">
+            Limits are whole numbers, and the concurrent limit and lifetime are at least 1.
+          </span>
+        )}
+        {save.isSuccess && <span className="text-sm text-ok">Saved.</span>}
+      </div>
+      <ErrorText error={save.error} />
+    </form>
+  );
+}
+
+const SECRETS: { key: SecretKey; label: string; hint: ReactNode }[] = [
+  {
+    key: "openaiApiKey",
+    label: "OpenAI API key",
+    hint: "Codex logs in with it inside the sandbox.",
+  },
+  {
+    key: "anthropicApiKey",
+    label: "Anthropic API key",
+    hint: "Claude Code uses it inside the sandbox.",
+  },
+  {
+    key: "gitToken",
+    label: "GitHub token",
+    hint: (
+      <>
+        Use a fine-grained token limited to the repos you allow in sandboxes, with{" "}
+        <strong className="font-medium text-text">Contents</strong> and{" "}
+        <strong className="font-medium text-text">Pull requests</strong> set to read and write. The
+        Runner uses it to clone, push, and open pull requests, and never passes it to the agent.
+        Setup steps are in <code className="font-mono">docs/sandboxes.md</code>.
+      </>
+    ),
+  },
+];
+
+function SandboxSecrets({ secrets }: { secrets: SandboxSettingsView["secrets"] }) {
+  const qc = useQueryClient();
+  const [typed, setTyped] = useState<Partial<Record<SecretKey, string>>>({});
+  const body = secretsBody(typed);
+  const onSaved = (res: SandboxSettingsView | null) => {
+    if (isSandboxSettingsView(res)) qc.setQueryData(qk.sandboxSettings(), res);
+    void qc.invalidateQueries({ queryKey: qk.sandboxSettings() });
+  };
+  const save = useMutation({
+    mutationFn: () => sandboxApi.saveSecrets(body),
+    onSuccess: (res) => {
+      setTyped({});
+      onSaved(res);
+    },
+  });
+  const clear = useMutation({
+    mutationFn: (key: SecretKey) => sandboxApi.saveSecrets({ [key]: "" }),
+    onSuccess: onSaved,
+  });
+
+  function submit(e: FormEvent) {
+    e.preventDefault();
+    if (Object.keys(body).length > 0) save.mutate();
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div>
+        <h3 className="text-sm font-medium">Secrets</h3>
+        <p className="mt-1 text-xs text-muted">
+          Stored encrypted and never shown again. Sling passes them only to the sandbox running a
+          task, and they're gone when it's destroyed. A provider with a custom image can bring its
+          own logins instead.
+        </p>
+      </div>
+      {SECRETS.map((s) => (
+        <SecretField
+          key={s.key}
+          label={s.label}
+          hint={s.hint}
+          stored={secrets[s.key]}
+          value={typed[s.key] ?? ""}
+          onChange={(v) => setTyped({ ...typed, [s.key]: v })}
+          clearing={clear.isPending && clear.variables === s.key}
+          onClear={() => {
+            if (window.confirm(`Clear the stored ${s.label}?`)) clear.mutate(s.key);
+          }}
+        />
+      ))}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="submit"
+          variant="primary"
+          busy={save.isPending}
+          disabled={Object.keys(body).length === 0}
+        >
+          Save secrets
+        </Button>
+        {save.isSuccess && <span className="text-sm text-ok">Saved.</span>}
+      </div>
+      <ErrorText error={save.error ?? clear.error} />
+    </form>
+  );
+}
+
+function SecretField({
+  label,
+  hint,
+  stored,
+  value,
+  onChange,
+  clearing,
+  onClear,
+}: {
+  label: string;
+  hint: ReactNode;
+  stored: boolean;
+  value: string;
+  onChange: (value: string) => void;
+  clearing: boolean;
+  onClear: () => void;
+}) {
+  const id = useId();
+  return (
+    <div className="space-y-1.5">
+      <div className="flex min-h-8 items-center gap-2">
+        <label htmlFor={id} className="text-sm font-medium">
+          {label}
+        </label>
+        {stored ? <Badge tone="ok">Stored</Badge> : <Badge>Not set</Badge>}
+        {stored && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto"
+            busy={clearing}
+            aria-label={`Clear ${label}`}
+            onClick={onClear}
+          >
+            Clear
+          </Button>
+        )}
+      </div>
+      <Input
+        id={id}
+        type="password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={stored ? "Stored (hidden). Type to replace it." : ""}
+        autoComplete="off"
+      />
+      <p className="text-xs text-muted">{hint}</p>
+    </div>
   );
 }
 

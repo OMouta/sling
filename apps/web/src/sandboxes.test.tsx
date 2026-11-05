@@ -17,11 +17,23 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router.tsx";
 import {
   busySandbox,
+  dockerInstallation,
   connectors as integrationConnectors,
   installations as integrationInstallations,
   providerConnectors,
   sandboxList,
+  sandboxSettings,
 } from "./test/fixtures.ts";
+
+// The auth client keeps the fetch it found at import, before the stub below, so
+// the Settings page's sign-in section would reach for a real server.
+vi.mock("./lib/auth.ts", () => ({
+  authClient: {
+    useSession: () => ({ data: null, refetch: () => {} }),
+    useListPasskeys: () => ({ data: [], refetch: () => {} }),
+    signOut: async () => {},
+  },
+}));
 
 interface Call {
   method: string;
@@ -39,7 +51,7 @@ let tasks: TaskView[] = [];
 let connectors: ConnectorView[] = [];
 let installations: InstallationView[] = [];
 
-function route(method: string, path: string, _body: unknown): unknown {
+function route(method: string, path: string, body: unknown): unknown {
   const key = `${method} ${path}`;
   switch (key) {
     case "GET /api/status":
@@ -60,6 +72,28 @@ function route(method: string, path: string, _body: unknown): unknown {
       return sandboxRepos;
     case "GET /api/settings/sandboxes":
       return settings;
+    case "GET /api/settings":
+      return {
+        defaultMode: "supervised",
+        modes: ["read-only", "supervised", "auto", "full-access"],
+        providers: [
+          { id: "openai", label: "OpenAI", needsBaseUrl: false, defaultModel: "gpt-5.1" },
+        ],
+        model: { provider: "openai", model: "gpt-5.1", baseUrl: null, hasKey: true },
+      };
+    case "PUT /api/settings/sandboxes":
+      if (!settings) throw new Error("no settings");
+      settings = { ...settings, ...(body as object) };
+      return settings;
+    case "PUT /api/settings/sandboxes/secrets": {
+      if (!settings) throw new Error("no settings");
+      const next = { ...settings.secrets };
+      for (const [k, v] of Object.entries(body as Record<string, string>)) {
+        next[k as keyof typeof next] = v !== "";
+      }
+      settings = { ...settings, secrets: next };
+      return settings;
+    }
     case "POST /api/sandboxes/sbx_1/destroy": {
       const released = { ...busySandbox, state: "releasing" as const };
       sandboxes = {
@@ -262,5 +296,103 @@ describe("sandboxes page", () => {
     renderAt("/sandboxes");
     expect(await screen.findByText("No sandboxes yet")).toBeTruthy();
     expect(screen.getAllByText("Sandboxes").length).toBeGreaterThan(0);
+  });
+});
+
+describe("settings: sandboxes", () => {
+  async function section() {
+    const heading = await screen.findByRole("heading", { name: "Sandboxes" });
+    return within(heading.parentElement as HTMLElement);
+  }
+
+  it("saves the default agent, the limits, and each provider's cost", async () => {
+    settings = sandboxSettings;
+    installations = [...integrationInstallations, dockerInstallation];
+    renderAt("/settings");
+    const s = await section();
+    const agent = (await s.findByLabelText(/Default coding agent/)) as HTMLSelectElement;
+    expect([...agent.options].map((o) => o.textContent)).toEqual(["Codex", "Claude Code"]);
+    expect(agent.value).toBe("codex");
+    fireEvent.change(agent, { target: { value: "claude-code" } });
+    fireEvent.change(s.getByLabelText(/Concurrent sandboxes/), { target: { value: "1" } });
+    fireEvent.change(s.getByLabelText(/Minutes a month/), { target: { value: "300" } });
+    // Only provider installations get a cost.
+    const cost = await s.findByLabelText("Cost per hour for Docker host");
+    expect(s.queryByLabelText("Cost per hour for Work mail")).toBeNull();
+    fireEvent.change(cost, { target: { value: "0.12" } });
+    fireEvent.click(s.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(callsTo("PUT", "/api/settings/sandboxes")).toHaveLength(1));
+    expect(callsTo("PUT", "/api/settings/sandboxes")[0]?.body).toEqual({
+      defaultHarness: "claude-code",
+      concurrentLimit: 1,
+      lifetimeMinutes: 60,
+      monthlyMinutesBudget: 300,
+      costPerHour: { ins_docker: 0.12 },
+    });
+    expect(await s.findByText("Saved.")).toBeTruthy();
+    expect(callsTo("PUT", "/api/settings/sandboxes/secrets")).toHaveLength(0);
+  });
+
+  it("won't save a lifetime under a minute", async () => {
+    settings = sandboxSettings;
+    renderAt("/settings");
+    const s = await section();
+    fireEvent.change(await s.findByLabelText(/Lifetime/), { target: { value: "0" } });
+    expect((s.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(s.getByText(/at least 1/)).toBeTruthy();
+  });
+
+  it("sends only the secrets you type, and never shows stored ones", async () => {
+    settings = sandboxSettings;
+    renderAt("/settings");
+    const s = await section();
+    const openai = (await s.findByLabelText("OpenAI API key")) as HTMLInputElement;
+    const anthropic = s.getByLabelText("Anthropic API key") as HTMLInputElement;
+    const github = s.getByLabelText("GitHub token") as HTMLInputElement;
+    for (const input of [openai, anthropic, github]) expect(input.type).toBe("password");
+    expect(openai.value).toBe("");
+    expect(openai.placeholder).toMatch(/Stored/);
+    expect(s.getAllByText("Stored")).toHaveLength(1);
+    expect(s.getAllByText("Not set")).toHaveLength(2);
+    const save = s.getByRole("button", { name: "Save secrets" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+
+    fireEvent.change(anthropic, { target: { value: "sk-ant-123" } });
+    fireEvent.click(save);
+    await waitFor(() => expect(callsTo("PUT", "/api/settings/sandboxes/secrets")).toHaveLength(1));
+    expect(callsTo("PUT", "/api/settings/sandboxes/secrets")[0]?.body).toEqual({
+      anthropicApiKey: "sk-ant-123",
+    });
+    await waitFor(() => expect(s.getAllByText("Stored")).toHaveLength(2));
+    expect(anthropic.value).toBe("");
+    expect(callsTo("PUT", "/api/settings/sandboxes")).toHaveLength(0);
+  });
+
+  it("clears a stored secret with an empty string after you confirm", async () => {
+    settings = sandboxSettings;
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    renderAt("/settings");
+    const s = await section();
+    fireEvent.click(await s.findByRole("button", { name: "Clear OpenAI API key" }));
+    expect(confirm).toHaveBeenCalledWith("Clear the stored OpenAI API key?");
+    expect(callsTo("PUT", "/api/settings/sandboxes/secrets")).toHaveLength(0);
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(s.getByRole("button", { name: "Clear OpenAI API key" }));
+    await waitFor(() => expect(callsTo("PUT", "/api/settings/sandboxes/secrets")).toHaveLength(1));
+    expect(callsTo("PUT", "/api/settings/sandboxes/secrets")[0]?.body).toEqual({
+      openaiApiKey: "",
+    });
+    await waitFor(() => expect(s.getAllByText("Not set")).toHaveLength(3));
+    expect(s.queryByRole("button", { name: /^Clear / })).toBeNull();
+  });
+
+  it("says how to scope the GitHub token", async () => {
+    settings = sandboxSettings;
+    renderAt("/settings");
+    const s = await section();
+    expect(await s.findByText(/fine-grained token limited to the repos you allow/)).toBeTruthy();
+    expect(s.getByText("docs/sandboxes.md")).toBeTruthy();
   });
 });
