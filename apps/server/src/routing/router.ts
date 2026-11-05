@@ -30,7 +30,7 @@ export interface MachineCandidate {
   online: boolean;
   /** Effective labels, automatic `os:` and `arch:` included. */
   labels: string[];
-  capabilities: { name: string; ready: boolean; detail: string }[];
+  capabilities: { name: string; ready: boolean; detail: string; version?: string }[];
   maxMode: PermissionMode;
   maxConcurrentTasks: number;
   /** Tasks queued on, dispatched to, or running on it. */
@@ -186,7 +186,8 @@ function check(input: RouterInput, target: RepoTarget, m: MachineCandidate): Con
   if (!repo) problems.push(`doesn't have ${target.display}`);
   const agent = HARNESS_LABELS[request.harness];
   const cap = m.capabilities.find((c) => c.name === harnessCapability(request.harness));
-  if (!cap) problems.push(`${agent} isn't installed`);
+  // Runners report every agent they know about. One with no version wasn't found on the machine.
+  if (!cap || (!cap.ready && !cap.version)) problems.push(`${agent} isn't installed`);
   else if (!cap.ready) problems.push(`${agent} isn't ready${cap.detail ? ` (${cap.detail})` : ""}`);
   const labels = new Set(m.labels.map(normalizeLabel));
   const missing = request.labels.filter((l) => !labels.has(l));

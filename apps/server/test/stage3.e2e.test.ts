@@ -232,6 +232,8 @@ async function pairMachine(name: string) {
   const { code } = await api<{ code: string }>("POST", "/api/runners/enrollments");
   await runnerCli(name, "repo", "add", clone, "--name", "site");
   await runnerCli(name, "config", "set", "codex-bin", FAKE_CODEX);
+  // Otherwise a real `claude` on PATH would make Claude Code look installed.
+  await runnerCli(name, "config", "set", "claude-bin", join(dir, "no-claude-here"));
   await runnerCli(name, "pair", server.url, code, "--name", name);
   startRunner(name);
 }

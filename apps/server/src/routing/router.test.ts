@@ -16,7 +16,7 @@ function machine(over: Partial<MachineCandidate> & { id: string }): MachineCandi
     labels: ["os:macos", "arch:aarch64"],
     capabilities: [
       { name: "coding.codex", ready: true, detail: "" },
-      { name: "coding.claude-code", ready: false, detail: "not logged in" },
+      { name: "coding.claude-code", version: "2.1.318", ready: false, detail: "not logged in" },
     ],
     maxMode: "full-access",
     maxConcurrentTasks: 2,
