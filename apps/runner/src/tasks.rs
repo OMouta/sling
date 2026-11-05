@@ -22,6 +22,10 @@ use crate::git;
 use crate::spool::{SpoolState, TaskMeta, TaskSpool, open_all};
 use crate::sys::now_ms;
 
+#[cfg(all(test, unix))]
+#[path = "tasks_tests.rs"]
+mod tests;
+
 const CANCEL_GRACE: Duration = Duration::from_secs(10);
 
 type SharedSpool = Arc<Mutex<TaskSpool>>;
