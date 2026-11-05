@@ -141,6 +141,7 @@ impl Manager {
     }
 
     fn emit(&self, spool: &SharedSpool, kind: Kind) {
+        let kind = crate::redact::redact_kind(kind);
         if let Err(e) = spool.lock().unwrap().append(kind) {
             tracing::error!("could not write task event: {e:#}");
         }
