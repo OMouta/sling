@@ -55,10 +55,7 @@
               "description": "Things the reader has to do. Empty if none."
             }
           },
-          "required": [
-            "summary",
-            "actionItems"
-          ]
+          "required": ["summary", "actionItems"]
         }
       },
       "label": "Summarize"
