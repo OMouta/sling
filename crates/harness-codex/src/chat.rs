@@ -9,7 +9,7 @@ use std::path::PathBuf;
 
 use anyhow::{Result, ensure};
 use serde_json::Value;
-use sling_runner_protocol::{ChatDelta, ChatToolUse, chat_event, task_event::Kind};
+use sling_runner_protocol::{ChatDelta, ChatThinking, ChatToolUse, chat_event, task_event::Kind};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -203,6 +203,8 @@ pub struct ChatOutcome {
 pub struct ChatParser {
     inner: Parser,
     text: String,
+    /// Reasoning summaries sent so far.
+    thought: String,
     session_id: String,
     tools_seen: HashSet<String>,
     input_tokens: u64,
@@ -216,6 +218,19 @@ impl ChatParser {
         };
         let mut out = Vec::new();
         let item = &v["item"];
+        // Codex sends a summary of its reasoning as a whole item.
+        if v["type"] == "item.completed" && item["type"] == "reasoning" {
+            let text = item["text"].as_str().unwrap_or_default().trim();
+            if !text.is_empty() {
+                let delta = if self.thought.is_empty() {
+                    text.to_string()
+                } else {
+                    format!("\n\n{text}")
+                };
+                self.thought.push_str(&delta);
+                out.push(chat_event::Kind::Thinking(ChatThinking { text: delta }));
+            }
+        }
         if matches!(v["type"].as_str(), Some("item.started" | "item.completed"))
             && item["type"] == "mcp_tool_call"
             && item["server"] == MCP_SERVER
@@ -510,5 +525,28 @@ mod tests {
         assert!(o.failure.unwrap().contains("no rollout found"));
         let o = ChatParser::default().outcome(Some(0), &["a warning".into()]);
         assert!(o.failure.is_none());
+    }
+
+    #[test]
+    fn passes_reasoning_summaries_on_as_thinking() {
+        let mut p = ChatParser::default();
+        let mut events = Vec::new();
+        for line in [
+            r#"{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Checking machines**"}}"#,
+            r#"{"type":"item.completed","item":{"id":"item_1","type":"reasoning","text":"  "}}"#,
+            r#"{"type":"item.completed","item":{"id":"item_2","type":"reasoning","text":"One is online."}}"#,
+            r#"{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"You have one."}}"#,
+        ] {
+            events.extend(p.line(line));
+        }
+        let thought: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                chat_event::Kind::Thinking(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thought, ["**Checking machines**", "\n\nOne is online."]);
+        assert_eq!(p.outcome(Some(0), &[]).text, "You have one.");
     }
 }

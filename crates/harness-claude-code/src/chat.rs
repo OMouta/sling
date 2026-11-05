@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
-use sling_runner_protocol::{ChatDelta, ChatToolUse, chat_event, task_event::Kind};
+use sling_runner_protocol::{ChatDelta, ChatThinking, ChatToolUse, chat_event, task_event::Kind};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -186,6 +186,9 @@ pub struct ChatParser {
     text: String,
     streaming: bool,
     new_block: bool,
+    /// Thinking sent so far, and whether the next piece starts a new block.
+    thought: String,
+    new_thought: bool,
     input_tokens: u64,
     output_tokens: u64,
 }
@@ -217,8 +220,14 @@ impl ChatParser {
             "content_block_start" if e["content_block"]["type"] == "text" => {
                 self.new_block = true;
             }
+            "content_block_start" if e["content_block"]["type"] == "thinking" => {
+                self.new_thought = true;
+            }
             "content_block_delta" if e["delta"]["type"] == "text_delta" => {
                 self.push(e["delta"]["text"].as_str().unwrap_or_default(), out);
+            }
+            "content_block_delta" if e["delta"]["type"] == "thinking_delta" => {
+                self.think(e["delta"]["thinking"].as_str().unwrap_or_default(), out);
             }
             _ => {}
         }
@@ -240,9 +249,27 @@ impl ChatParser {
                     self.new_block = true;
                     self.push(block["text"].as_str().unwrap_or_default(), out);
                 }
+                "thinking" if !self.streaming => {
+                    self.new_thought = true;
+                    self.think(block["thinking"].as_str().unwrap_or_default(), out);
+                }
                 _ => {}
             }
         }
+    }
+
+    fn think(&mut self, text: &str, out: &mut Vec<chat_event::Kind>) {
+        if text.is_empty() {
+            return;
+        }
+        let mut delta = String::new();
+        if self.new_thought && !self.thought.is_empty() {
+            delta.push_str("\n\n");
+        }
+        self.new_thought = false;
+        delta.push_str(text);
+        self.thought.push_str(&delta);
+        out.push(chat_event::Kind::Thinking(ChatThinking { text: delta }));
     }
 
     fn push(&mut self, text: &str, out: &mut Vec<chat_event::Kind>) {
@@ -558,5 +585,40 @@ mod tests {
         );
         o.model = Some("claude-haiku-5-5".into());
         assert!(!chat_args(&o).iter().any(|a| a == "--settings"));
+    }
+
+    #[test]
+    fn passes_thinking_on_as_it_streams() {
+        let mut p = ChatParser::default();
+        let mut events = Vec::new();
+        for line in [
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}},"parent_tool_use_id":null}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"The user wants "}},"parent_tool_use_id":null}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"their machines."}},"parent_tool_use_id":null}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_start","index":1,"content_block":{"type":"thinking","thinking":""}},"parent_tool_use_id":null}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"thinking_delta","thinking":"One is online."}},"parent_tool_use_id":null}"#,
+            r#"{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"sub"}},"parent_tool_use_id":"t9"}"#,
+            // The whole message repeats it, and isn't sent twice.
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"thinking","thinking":"The user wants their machines."}]},"parent_tool_use_id":null}"#,
+        ] {
+            events.extend(p.line(line));
+        }
+        let thought: String = events
+            .iter()
+            .filter_map(|e| match e {
+                chat_event::Kind::Thinking(t) => Some(t.text.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(thought, "The user wants their machines.\n\nOne is online.");
+        assert_eq!(deltas(&events), "");
+
+        // Without partial messages, whole thinking blocks stand in.
+        let mut p = ChatParser::default();
+        let events = p.line(
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"thinking","thinking":"Plan it."},{"type":"text","text":"Done."}]},"parent_tool_use_id":null}"#,
+        );
+        assert!(matches!(&events[0], chat_event::Kind::Thinking(t) if t.text == "Plan it."));
+        assert_eq!(deltas(&events), "Done.");
     }
 }

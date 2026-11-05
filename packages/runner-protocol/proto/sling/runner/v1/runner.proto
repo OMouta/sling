@@ -440,7 +440,14 @@ message ChatEvent {
     ChatDelta delta = 2;
     ChatToolUse tool_use = 3;
     ChatDone done = 4;
+    ChatThinking thinking = 5;
   }
+}
+
+// The agent's reasoning as it arrives. Some models send only a summary of
+// it, and some send none.
+message ChatThinking {
+  string text = 1;
 }
 
 // Reply text as it arrives.

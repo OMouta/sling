@@ -1688,6 +1688,12 @@ export declare type ChatEvent = Message<"sling.runner.v1.ChatEvent"> & {
      */
     value: ChatDone;
     case: "done";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ChatThinking thinking = 5;
+     */
+    value: ChatThinking;
+    case: "thinking";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1696,6 +1702,25 @@ export declare type ChatEvent = Message<"sling.runner.v1.ChatEvent"> & {
  * Use `create(ChatEventSchema)` to create a new message.
  */
 export declare const ChatEventSchema: GenMessage<ChatEvent>;
+
+/**
+ * The agent's reasoning as it arrives. Some models send only a summary of
+ * it, and some send none.
+ *
+ * @generated from message sling.runner.v1.ChatThinking
+ */
+export declare type ChatThinking = Message<"sling.runner.v1.ChatThinking"> & {
+  /**
+   * @generated from field: string text = 1;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChatThinking.
+ * Use `create(ChatThinkingSchema)` to create a new message.
+ */
+export declare const ChatThinkingSchema: GenMessage<ChatThinking>;
 
 /**
  * Reply text as it arrives.
