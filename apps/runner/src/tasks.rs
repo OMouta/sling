@@ -56,6 +56,8 @@ pub struct Manager {
     inventory_turn: tokio::sync::Mutex<()>,
     /// Wakes the connection to flush new events.
     pub outbox: Notify,
+    /// Chat turns running now.
+    pub(crate) chats: crate::chat::Chats,
 }
 
 impl Manager {
@@ -63,6 +65,7 @@ impl Manager {
     /// finished as interrupted, so the server learns what happened.
     pub fn new(paths: Paths, config: Config) -> Result<Arc<Manager>> {
         std::fs::create_dir_all(paths.spool_dir())?;
+        crate::chat::clear_leftovers(&paths);
         let mut spools = HashMap::new();
         for mut spool in open_all(&paths.spool_dir()) {
             if spool.meta.state == SpoolState::Running {
@@ -95,6 +98,7 @@ impl Manager {
             repo_lock: tokio::sync::Mutex::new(()),
             inventory_turn: tokio::sync::Mutex::new(()),
             outbox: Notify::new(),
+            chats: crate::chat::Chats::default(),
         }))
     }
 
@@ -116,7 +120,7 @@ impl Manager {
             .push(var.to_string());
     }
 
-    fn agent_env(&self, harness: &str) -> Vec<(String, String)> {
+    pub(crate) fn agent_env(&self, harness: &str) -> Vec<(String, String)> {
         let removed = self
             .agent_env_removed
             .lock()
@@ -232,9 +236,11 @@ impl Manager {
         )
     }
 
-    /// A task or an action is running.
+    /// A task, an action, or a chat turn is running.
     pub fn busy(&self) -> bool {
-        self.running_count() > 0 || self.actions_in_flight.load(Ordering::SeqCst) > 0
+        self.running_count() > 0
+            || self.actions_in_flight.load(Ordering::SeqCst) > 0
+            || self.chats.running_count() > 0
     }
 
     /// Cancels every running task.

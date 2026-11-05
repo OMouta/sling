@@ -1,7 +1,7 @@
 //! A tiny HTTP/1.1 server for tests, standing in for Sling's tools API. It
 //! records every request and answers with whatever the handler returns.
 
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 

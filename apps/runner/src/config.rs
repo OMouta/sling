@@ -311,6 +311,11 @@ impl Paths {
         self.data_dir.join("spool")
     }
 
+    /// Holds one empty directory per running chat turn.
+    pub fn chat_dir(&self) -> PathBuf {
+        self.data_dir.join("chat")
+    }
+
     pub fn log_file(&self) -> PathBuf {
         self.data_dir.join("runner.log")
     }

@@ -1,6 +1,8 @@
 //! The Runner's outbound WebSocket to the control plane: signed handshake,
-//! heartbeats, inventory updates, and the event outbox. Reconnects forever with
-//! backoff, except when the server says this Runner is revoked or unknown.
+//! heartbeats, inventory updates, the event outbox, and chat turns.
+//! Reconnects forever with backoff, except when the server says this Runner
+//! is revoked or unknown. Chat turns belong to one connection and stop when
+//! it drops.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -143,6 +145,9 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
     let mut ready = inventory::ready_harnesses(&inv);
     // Replies from work spawned off the read loop, such as repo changes.
     let (reply_tx, mut reply_rx) = mpsc::channel::<Body>(16);
+    // Chat events. Turns stop when this connection ends and drops the
+    // receiver.
+    let (chat_tx, mut chat_rx) = mpsc::channel::<Body>(256);
 
     flush(mgr, &mut sink).await?;
 
@@ -176,6 +181,8 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                                 let reply = reply_tx.clone();
                                 tokio::spawn(async move { mgr.rescan_and_report(&reply).await });
                             }
+                            Some(Body::ChatTurn(t)) => mgr.chat_turn(t, &ready, chat_tx.clone()),
+                            Some(Body::ChatCancel(c)) => mgr.chat_cancel(&c.turn_id),
                             Some(Body::Error(e)) => {
                                 let fatal = matches!(e.code(), Code::Revoked | Code::UnknownRunner);
                                 if fatal {
@@ -206,6 +213,7 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                 }
             }
             _ = mgr.outbox.notified() => flush(mgr, &mut sink).await?,
+            Some(body) = chat_rx.recv() => send(&mut sink, body).await?,
             Some(body) = reply_rx.recv() => {
                 if let Body::Inventory(next) = &body {
                     ready = inventory::ready_harnesses(next);

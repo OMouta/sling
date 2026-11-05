@@ -490,7 +490,6 @@ fn mcp_call(server: &Value, allowed: bool) -> Result<(String, String, bool), Str
             .to_string();
         Ok((name, text, r["isError"].as_bool().unwrap_or(false)))
     })();
-    drop(ask);
     drop(stdin);
     let _ = child.wait();
     result

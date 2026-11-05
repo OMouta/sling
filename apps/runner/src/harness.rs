@@ -1,7 +1,8 @@
 //! Coding agents the Runner can run. Each one is a `Harness`: how to detect
-//! it, how to start it for a task, and how to read its output. Everything
-//! else about a task (worktrees, commits, spools, cancel, and actions) is
-//! shared and lives in `tasks`.
+//! it, how to start it for a task or a chat turn, and how to read its
+//! output. Everything else about a task (worktrees, commits, spools, cancel,
+//! and actions) is shared and lives in `tasks`, and the rest of a chat turn
+//! lives in `chat`.
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -12,10 +13,12 @@ use anyhow::Result;
 use sling_harness_claude_code as claude;
 use sling_harness_codex as codex;
 use sling_runner_protocol::AgentModel;
+use sling_runner_protocol::chat_event;
 use sling_runner_protocol::task_event::Kind;
 use tokio::sync::mpsc;
 
 use crate::config::{Config, Mode};
+use crate::mcp;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -58,6 +61,12 @@ pub fn valid_setting(value: &str) -> bool {
     value.is_empty() || codex::valid_setting(value)
 }
 
+/// Whether a session ID from Sling is safe to hand to an agent's resume
+/// flag. Both agents use UUIDs.
+pub fn valid_session_id(id: &str) -> bool {
+    codex::chat::valid_session_id(id)
+}
+
 /// `None` for an empty setting, which means the agent's default.
 pub fn setting(value: &str) -> Option<String> {
     (!value.is_empty()).then(|| value.to_string())
@@ -75,6 +84,55 @@ pub struct Outcome {
     pub summary: String,
     /// Set when the agent reported a failure the task should end with.
     pub failure: Option<String>,
+}
+
+/// What a chat turn asks the agent, and where.
+pub struct ChatSpec {
+    pub bin: String,
+    /// The turn's own empty directory.
+    pub dir: PathBuf,
+    pub prompt: String,
+    pub instructions: String,
+    /// Session to resume.
+    pub resume: Option<String>,
+    pub model: Option<String>,
+    pub effort: Option<String>,
+    pub fast: bool,
+    pub env: Vec<(String, String)>,
+    /// The `sling-runner` the agent starts as `sling-runner mcp`.
+    pub mcp_command: PathBuf,
+    pub tools_url: String,
+    pub tools_token: String,
+}
+
+impl ChatSpec {
+    fn mcp_env(&self) -> Vec<(String, String)> {
+        vec![
+            (mcp::URL_ENV.into(), self.tools_url.clone()),
+            (mcp::TOKEN_ENV.into(), self.tools_token.clone()),
+        ]
+    }
+}
+
+/// How a chat turn ended.
+#[derive(Debug, Default)]
+pub struct ChatOutcome {
+    /// The whole reply.
+    pub text: String,
+    pub session_id: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub failure: Option<String>,
+    /// The session to resume isn't on this machine.
+    pub session_missing: bool,
+}
+
+/// A running chat turn.
+pub trait ChatRun: Send {
+    /// Interrupts it, then kills it if it's still running after `grace`.
+    fn cancel(&mut self, grace: Duration) -> BoxFuture<'_, ()>;
+    /// Waits for it to exit and for its output to be read.
+    fn finish(self: Box<Self>) -> BoxFuture<'static, Result<ChatOutcome>>;
 }
 
 pub trait Harness: Send + Sync {
@@ -98,6 +156,13 @@ pub trait Harness: Send + Sync {
         spec: &'a RunSpec,
         tx: mpsc::Sender<HarnessEvent>,
     ) -> BoxFuture<'a, Result<Box<dyn HarnessRun>>>;
+    /// Starts a chat turn. Reply text and tool calls arrive on `tx` until
+    /// its output closes.
+    fn start_chat<'a>(
+        &'a self,
+        spec: &'a ChatSpec,
+        tx: mpsc::Sender<chat_event::Kind>,
+    ) -> BoxFuture<'a, Result<Box<dyn ChatRun>>>;
 }
 
 impl std::fmt::Debug for dyn Harness {
@@ -219,6 +284,63 @@ impl Harness for Codex {
             Ok(Box::new(CodexRun { run, reader }) as Box<dyn HarnessRun>)
         })
     }
+
+    fn start_chat<'a>(
+        &'a self,
+        spec: &'a ChatSpec,
+        tx: mpsc::Sender<chat_event::Kind>,
+    ) -> BoxFuture<'a, Result<Box<dyn ChatRun>>> {
+        Box::pin(async move {
+            // Codex hands these to the MCP server through `env_vars`.
+            let mut env = spec.env.clone();
+            env.extend(spec.mcp_env());
+            let opts = codex::chat::ChatOptions {
+                bin: spec.bin.clone(),
+                dir: spec.dir.clone(),
+                prompt: spec.prompt.clone(),
+                instructions: spec.instructions.clone(),
+                mcp: codex::chat::McpServer {
+                    command: spec.mcp_command.clone(),
+                    args: vec!["mcp".into()],
+                    env_vars: vec![mcp::URL_ENV.into(), mcp::TOKEN_ENV.into()],
+                },
+                env: Some(env),
+                model: spec.model.clone(),
+                effort: spec.effort.clone(),
+                fast: spec.fast,
+                resume: spec.resume.clone(),
+            };
+            let (run, reader) = codex::Run::start_chat(&opts, tx).await?;
+            Ok(Box::new(CodexChat { run, reader }) as Box<dyn ChatRun>)
+        })
+    }
+}
+
+struct CodexChat {
+    run: codex::Run,
+    reader: codex::chat::ChatReader,
+}
+
+impl ChatRun for CodexChat {
+    fn cancel(&mut self, grace: Duration) -> BoxFuture<'_, ()> {
+        Box::pin(self.run.cancel(grace))
+    }
+
+    fn finish(self: Box<Self>) -> BoxFuture<'static, Result<ChatOutcome>> {
+        Box::pin(async move {
+            let CodexChat { mut run, reader } = *self;
+            let exit = run.wait().await?;
+            let o = reader.finish(exit).await;
+            Ok(ChatOutcome {
+                text: o.text,
+                session_id: o.session_id,
+                input_tokens: o.input_tokens,
+                output_tokens: o.output_tokens,
+                failure: o.failure,
+                session_missing: o.session_missing,
+            })
+        })
+    }
 }
 
 struct CodexRun {
@@ -325,6 +447,61 @@ impl Harness for ClaudeCode {
             Ok(Box::new(ClaudeRun { run, reader }) as Box<dyn HarnessRun>)
         })
     }
+
+    fn start_chat<'a>(
+        &'a self,
+        spec: &'a ChatSpec,
+        tx: mpsc::Sender<chat_event::Kind>,
+    ) -> BoxFuture<'a, Result<Box<dyn ChatRun>>> {
+        Box::pin(async move {
+            let opts = claude::chat::ChatOptions {
+                bin: spec.bin.clone(),
+                dir: spec.dir.clone(),
+                prompt: spec.prompt.clone(),
+                instructions: spec.instructions.clone(),
+                // The token goes in the MCP config file, readable only by
+                // this user, not in Claude Code's own environment.
+                mcp: claude::chat::McpServer {
+                    command: spec.mcp_command.clone(),
+                    args: vec!["mcp".into()],
+                    env: spec.mcp_env(),
+                },
+                env: Some(spec.env.clone()),
+                model: spec.model.clone(),
+                effort: spec.effort.clone(),
+                resume: spec.resume.clone(),
+            };
+            let (run, reader) = claude::Run::start_chat(&opts, tx).await?;
+            Ok(Box::new(ClaudeChat { run, reader }) as Box<dyn ChatRun>)
+        })
+    }
+}
+
+struct ClaudeChat {
+    run: claude::Run,
+    reader: claude::chat::ChatReader,
+}
+
+impl ChatRun for ClaudeChat {
+    fn cancel(&mut self, grace: Duration) -> BoxFuture<'_, ()> {
+        Box::pin(self.run.cancel(grace))
+    }
+
+    fn finish(self: Box<Self>) -> BoxFuture<'static, Result<ChatOutcome>> {
+        Box::pin(async move {
+            let ClaudeChat { mut run, reader } = *self;
+            let exit = run.wait().await?;
+            let o = reader.finish(exit).await;
+            Ok(ChatOutcome {
+                text: o.text,
+                session_id: o.session_id,
+                input_tokens: o.input_tokens,
+                output_tokens: o.output_tokens,
+                failure: o.failure,
+                session_missing: o.session_missing,
+            })
+        })
+    }
 }
 
 struct ClaudeRun {
@@ -396,6 +573,8 @@ mod tests {
         assert!(!valid_setting(&"a".repeat(65)));
         assert_eq!(setting(""), None);
         assert_eq!(setting("opus").as_deref(), Some("opus"));
+        assert!(valid_session_id("01a1ad94-9adb-7991-b3a8-3f052f9cc2a3"));
+        assert!(!valid_session_id("--resume"));
     }
 
     #[test]
