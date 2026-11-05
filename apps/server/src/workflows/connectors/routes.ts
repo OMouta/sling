@@ -8,6 +8,7 @@ import { z } from "zod";
 import { audit } from "../../audit.ts";
 import type { AppContext } from "../../context.ts";
 import { actorOf, requireActor } from "../../http/session.ts";
+import { liveSandboxCount } from "../../sandboxes/routes.ts";
 import { toJsonSchema } from "../registry.ts";
 import { toInstallationView } from "../views.ts";
 import { readCredentials, writeCredentials } from "./installations.ts";
@@ -37,6 +38,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
         secretFields: c.secretFields,
         configSchema: toJsonSchema(c.configSchema),
         nodeTypes: c.nodes.map((n) => n.type),
+        isExecutionProvider: c.executionProvider !== undefined,
       })),
   );
 
@@ -243,6 +245,12 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
     const actor = actorOf(request);
     const row = await owned(actor.workspaceId, request.params.id);
     if (!row) return reply.code(404).send({ error: "not found" });
+    const live = await liveSandboxCount(ctx, row.id);
+    if (live > 0) {
+      return reply.code(409).send({
+        error: `${row.name} still has ${live} ${live === 1 ? "sandbox" : "sandboxes"}. Destroy ${live === 1 ? "it" : "them"} on the Sandboxes page first.`,
+      });
+    }
     await ctx.db.transaction(async (tx) => {
       await tx
         .delete(schema.connectorInstallations)

@@ -16,6 +16,7 @@ import { authRoutes } from "../routes/auth.ts";
 import { settingsRoutes } from "../routes/settings.ts";
 import { setupRoutes } from "../routes/setup.ts";
 import { runnerRoutes } from "../runners/routes.ts";
+import { sandboxRoutes } from "../sandboxes/routes.ts";
 import { taskRoutes } from "../tasks/routes.ts";
 import { connectorRoutes } from "../workflows/connectors/routes.ts";
 import { webhookRoutes, workflowRoutes } from "../workflows/routes.ts";
@@ -68,6 +69,9 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   });
   await app.register(async (scope) => {
     await taskRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await sandboxRoutes(scope, ctx);
   });
   await app.register(async (scope) => {
     await conversationRoutes(scope, ctx);
