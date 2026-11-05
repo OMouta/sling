@@ -4,6 +4,7 @@ import { loadConfig } from "./config.ts";
 import type { AppContext } from "./context.ts";
 import { deriveKey } from "./crypto.ts";
 import { createServer, registerRoutes } from "./http/app.ts";
+import { Hub } from "./realtime/hub.ts";
 
 const config = loadConfig();
 const app = createServer(config);
@@ -18,6 +19,7 @@ const ctx: AppContext = {
   auth: createAuth(database.db, config),
   log: app.log,
   secretsKey: deriveKey(config.secretKey, "credentials-v1"),
+  hub: new Hub(),
 };
 
 await registerRoutes(app, ctx);

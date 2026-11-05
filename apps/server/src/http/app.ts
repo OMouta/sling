@@ -10,6 +10,7 @@ import {
 } from "fastify-type-provider-zod";
 import type { Config } from "../config.ts";
 import type { AppContext } from "../context.ts";
+import { hubRoutes } from "../realtime/hub.ts";
 import { authRoutes } from "../routes/auth.ts";
 import { settingsRoutes } from "../routes/settings.ts";
 import { setupRoutes } from "../routes/setup.ts";
@@ -48,6 +49,7 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get("/healthz", async () => ({ ok: true }));
 
   await app.register(async (scope) => authRoutes(scope, ctx));
+  await app.register(async (scope) => hubRoutes(scope, ctx));
   await app.register(async (scope) => {
     const r = scope.withTypeProvider<ZodTypeProvider>();
     await setupRoutes(r, ctx);
