@@ -40,7 +40,12 @@ export const MODEL_PROVIDERS: Record<ModelProviderId, ModelProvider> = {
     needsBaseUrl: true,
     defaultModel: "llama3.3",
     create: ({ model, apiKey, baseUrl }) =>
-      createOpenAICompatible({ name: "custom", baseURL: baseUrl ?? "", apiKey }).chatModel(model),
+      createOpenAICompatible({
+        name: "custom",
+        baseURL: baseUrl ?? "",
+        apiKey,
+        includeUsage: true,
+      }).chatModel(model),
   },
 };
 

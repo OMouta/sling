@@ -1,4 +1,5 @@
 import { createDatabase, runMigrations } from "@sling/db";
+import { Agent } from "./agent/agent.ts";
 import { createAuth } from "./auth/auth.ts";
 import { loadConfig } from "./config.ts";
 import type { AppContext } from "./context.ts";
@@ -26,10 +27,13 @@ const ctx: AppContext = {
   // Replaced right below; the gateway needs the finished context.
   runners: undefined as unknown as RunnerGateway,
   tasks: undefined as unknown as TaskService,
+  agent: undefined as unknown as Agent,
 };
 ctx.runners = new RunnerGateway(ctx);
 ctx.tasks = new TaskService(ctx);
+ctx.agent = new Agent(ctx);
 ctx.runners.handlers = ctx.tasks;
+ctx.tasks.onSettled = (taskId, reason) => ctx.agent.onTaskSettled(taskId, reason);
 ctx.runners.start();
 const boss = await startJobs(ctx, config.databaseUrl);
 
@@ -47,3 +51,4 @@ process.on("SIGINT", () => void shutdown("SIGINT"));
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
 await app.listen({ host: config.host, port: config.port });
+await ctx.agent.recover();

@@ -4,7 +4,6 @@ import type { AppContext } from "./context.ts";
 export const QUEUES = {
   sweep: "sweep",
   pruneEvents: "prune-events",
-  agentTurn: "agent-turn",
 } as const;
 
 /** Durable background jobs (D7). Schedules run once across all server processes. */

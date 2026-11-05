@@ -1,5 +1,6 @@
 import type { Db } from "@sling/db";
 import type { FastifyBaseLogger } from "fastify";
+import type { Agent } from "./agent/agent.ts";
 import type { Auth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./realtime/hub.ts";
@@ -17,4 +18,5 @@ export interface AppContext {
   hub: Hub;
   runners: RunnerGateway;
   tasks: TaskService;
+  agent: Agent;
 }
