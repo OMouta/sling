@@ -1,5 +1,6 @@
 //! Sling Runner: pairs with a control plane and runs delegated tasks on this machine.
 
+mod agent_env;
 mod config;
 mod connection;
 mod gc;

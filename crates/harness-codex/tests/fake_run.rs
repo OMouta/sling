@@ -13,6 +13,7 @@ fn opts(dir: &std::path::Path, prompt: String, sandbox: &str) -> RunOptions {
         prompt,
         sandbox: sandbox.into(),
         network: false,
+        env: None,
     }
 }
 

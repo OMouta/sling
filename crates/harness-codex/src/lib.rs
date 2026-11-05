@@ -94,6 +94,8 @@ pub struct RunOptions {
     /// `read-only`, `workspace-write`, or `danger-full-access`.
     pub sandbox: String,
     pub network: bool,
+    /// Environment for Codex. `None` inherits the Runner's.
+    pub env: Option<Vec<(String, String)>>,
 }
 
 /// What the Runner hears from a running Codex.
@@ -148,6 +150,9 @@ impl Run {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        if let Some(env) = &opts.env {
+            cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+        }
         #[cfg(unix)]
         cmd.process_group(0);
         let mut child = cmd
@@ -518,6 +523,7 @@ mod tests {
             prompt: String::new(),
             sandbox: "workspace-write".into(),
             network: true,
+            env: None,
         };
         assert!(
             args_for(&opts).contains(&"sandbox_workspace_write.network_access=true".to_string())

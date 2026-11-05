@@ -37,6 +37,9 @@ pub struct Manager {
     running: Mutex<HashMap<String, watch::Sender<bool>>>,
     /// Cancels that arrived before their task started.
     early_cancels: Mutex<HashSet<String>>,
+    /// Extra variables to keep out of an agent's environment, by harness
+    /// name, for example an API key the agent is already logged in with.
+    agent_env_removed: Mutex<HashMap<String, Vec<String>>>,
     /// Wakes the connection to flush new events.
     pub outbox: Notify,
 }
@@ -69,6 +72,7 @@ impl Manager {
             spools: Mutex::new(spools),
             running: Mutex::new(HashMap::new()),
             early_cancels: Mutex::new(HashSet::new()),
+            agent_env_removed: Mutex::new(HashMap::new()),
             outbox: Notify::new(),
         }))
     }
@@ -79,6 +83,27 @@ impl Manager {
 
     pub fn set_config(&self, cfg: Config) {
         *self.config.lock().unwrap() = cfg;
+    }
+
+    /// Keeps `var` out of the environment of every `harness` run.
+    pub fn remove_from_agent_env(&self, harness: &str, var: &str) {
+        self.agent_env_removed
+            .lock()
+            .unwrap()
+            .entry(harness.to_string())
+            .or_default()
+            .push(var.to_string());
+    }
+
+    fn agent_env(&self, harness: &str) -> Vec<(String, String)> {
+        let removed = self
+            .agent_env_removed
+            .lock()
+            .unwrap()
+            .get(harness)
+            .cloned()
+            .unwrap_or_default();
+        crate::agent_env::for_agent(&removed)
     }
 
     pub fn running_count(&self) -> usize {
@@ -339,6 +364,7 @@ impl Manager {
             prompt: codex::build_prompt(&a.title, &a.objective, mode.writes()),
             sandbox: mode.sandbox().into(),
             network,
+            env: Some(self.agent_env("codex")),
         };
         let mut reported: Vec<PathBuf> = Vec::new();
         let (tx, mut rx) = mpsc::channel(256);

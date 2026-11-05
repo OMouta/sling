@@ -10,6 +10,8 @@
 //! - `fail`: reports a failed turn and exits 1.
 //! - `hang`: starts, then sleeps until killed. For cancel and crash tests.
 //! - `crash`: exits with code 101 after the first event.
+//! - `env`: like `success`, and also reports which sensitive environment
+//!   variables it can see.
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -104,6 +106,23 @@ fn exec(args: &[String]) {
     emit(
         json!({"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": "I'll make the change and run the tests."}}),
     );
+    if scenario == "env" {
+        let mut seen: Vec<String> = std::env::vars()
+            .map(|(k, _)| k)
+            .filter(|k| {
+                k.starts_with("SLING_")
+                    || matches!(
+                        k.as_str(),
+                        "GH_TOKEN" | "GITHUB_TOKEN" | "OPENAI_API_KEY" | "ANTHROPIC_API_KEY"
+                    )
+            })
+            .collect();
+        seen.sort();
+        let text = format!("Sensitive environment: [{}]", seen.join(","));
+        emit(
+            json!({"type": "item.completed", "item": {"id": "item_env", "type": "agent_message", "text": text}}),
+        );
+    }
     emit(
         json!({"type": "item.started", "item": {"id": "item_1", "type": "todo_list", "items": [
             {"text": "Edit SLING_FAKE.md", "completed": false},

@@ -30,6 +30,8 @@ case "$1" in
       echo "build output" > "$dir/build.log"
       echo "{\"type\":\"item.completed\",\"item\":{\"id\":\"f1\",\"type\":\"file_change\",\"changes\":[{\"path\":\"$dir/CHANGED.md\",\"kind\":\"add\"}],\"status\":\"completed\"}}"
     fi
+    seen=$(env | cut -d= -f1 | grep -E '^(SLING_|GH_TOKEN$|GITHUB_TOKEN$|OPENAI_API_KEY$)' | sort | tr '\n' ' ')
+    echo "{\"type\":\"item.completed\",\"item\":{\"id\":\"e1\",\"type\":\"agent_message\",\"text\":\"env: $seen\"}}"
     echo '{"type":"item.completed","item":{"id":"i1","type":"agent_message","text":"done"}}'
     echo '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}'
     ;;
@@ -319,4 +321,29 @@ async fn a_cancel_that_arrives_first_still_wins() {
         _ => None,
     });
     assert_eq!(outcome, Some(task_finished::Outcome::Cancelled));
+}
+
+#[tokio::test]
+async fn the_agent_never_sees_sling_variables_or_tokens() {
+    // SAFETY: tests only add variables; nothing reads these concurrently in a
+    // way that matters.
+    unsafe {
+        std::env::set_var("SLING_TEST_ONLY", "1");
+        std::env::set_var("GH_TOKEN", "gh-test-token-value");
+        std::env::set_var("OPENAI_API_KEY", "sk-test-only-value");
+    }
+    let env = setup(Mode::FullAccess);
+    env.mgr.remove_from_agent_env("codex", "OPENAI_API_KEY");
+    env.mgr
+        .assign(assign("t7", PermissionMode::Auto, "sling/t7", "site"), true)
+        .await;
+    let events = wait_for(&env.mgr, "t7", |k| matches!(k, Kind::Finished(_))).await;
+    let seen = events
+        .iter()
+        .find_map(|e| match &e.kind {
+            Some(Kind::AgentMessage(m)) if m.text.starts_with("env:") => Some(m.text.clone()),
+            _ => None,
+        })
+        .expect("the fake reports its environment");
+    assert_eq!(seen.trim(), "env:", "{seen}");
 }
