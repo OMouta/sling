@@ -1,0 +1,30 @@
+# Lets Sling start Docker sandboxes on this host. From this directory:
+#   docker compose -f docker-compose.yml -f docker-compose.sandbox.yml up -d
+#
+# This mounts the Docker socket into the sling container, and whoever can use
+# that socket is root on this host: one API call starts a privileged container
+# with the host's filesystem mounted. Anyone who takes over the Sling server
+# then takes over this machine. Sandboxes never get the socket, only Sling
+# does. To avoid the risk, leave this file out and point the Docker connector
+# at a separate Docker host over TLS.
+#
+# In the Docker connector, set the network to sling-sandboxes and the control
+# plane URL to http://sling:8080.
+services:
+  sling:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Sling runs as the node user, so it needs the socket's group. On Linux,
+    # stat -c %g /var/run/docker.sock prints it; set DOCKER_GID in .env.
+    # Docker Desktop and OrbStack give the socket group 0.
+    group_add:
+      - "${DOCKER_GID:-0}"
+    networks:
+      - default
+      - sandboxes
+
+networks:
+  # Sandboxes join this network to reach Sling by name. Postgres isn't on it,
+  # so they can't reach the database.
+  sandboxes:
+    name: sling-sandboxes
