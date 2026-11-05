@@ -14,6 +14,8 @@
     "@sling/connector-sdk": "workspace:*",
     "@sling/core": "workspace:*",
     "@sling/db": "workspace:*",
+    "@sling/integration-discord": "workspace:*",
+    "@sling/integration-email": "workspace:*",
     "@sling/runner-protocol": "workspace:*",
     "@sling/workflow": "workspace:*",
     "ai": "^7.0.162",

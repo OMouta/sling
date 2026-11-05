@@ -211,6 +211,12 @@ importers:
       '@sling/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@sling/integration-discord':
+        specifier: workspace:*
+        version: link:../../integrations/discord
+      '@sling/integration-email':
+        specifier: workspace:*
+        version: link:../../integrations/email
       '@sling/runner-protocol':
         specifier: workspace:*
         version: link:../../packages/runner-protocol
