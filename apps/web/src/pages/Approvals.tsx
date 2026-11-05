@@ -1,0 +1,105 @@
+import type { ApprovalView } from "@sling/core";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { Button, Card, Empty, ErrorText, PageHeader, Spinner } from "../components/ui.tsx";
+import { api } from "../lib/api.ts";
+import { ago, plural } from "../lib/format.ts";
+
+const LABEL = {
+  push: "Push branch",
+  open_pr: "Open pull request",
+  merge: "Merge",
+  deploy: "Deploy",
+};
+
+export function ApprovalsPage() {
+  const approvals = useQuery({
+    queryKey: ["approvals"],
+    queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
+  });
+  const byTask = new Map<string, ApprovalView[]>();
+  for (const a of approvals.data ?? []) {
+    byTask.set(a.taskId, [...(byTask.get(a.taskId) ?? []), a]);
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
+      <PageHeader
+        title="Approvals"
+        description="Steps waiting for you. They expire after 24 hours."
+      />
+      {approvals.isPending && <Spinner />}
+      <ErrorText error={approvals.error} />
+      {approvals.data?.length === 0 && <Empty title="Nothing waiting">You're all caught up.</Empty>}
+      {[...byTask.entries()].map(([taskId, list]) => (
+        <ApprovalGroup key={taskId} taskId={taskId} approvals={list} />
+      ))}
+    </div>
+  );
+}
+
+function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: ApprovalView[] }) {
+  const qc = useQueryClient();
+  const first = approvals[0];
+  const decide = useMutation({
+    mutationFn: (decision: "approve" | "reject") =>
+      api.post(`/api/tasks/${taskId}/approval`, { decision }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["approvals"] }),
+  });
+  if (!first) return null;
+  const t = first.task;
+  const pr = approvals.find((a) => a.actionKind === "open_pr");
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="space-y-3 p-4">
+        <div>
+          <Link to="/tasks/$id" params={{ id: taskId }} className="font-medium hover:underline">
+            {t.title}
+          </Link>
+          <p className="text-sm text-muted">
+            {t.repoName} on {t.runnerName} · <code className="font-mono text-xs">{t.branch}</code>
+          </p>
+        </div>
+        <ul className="space-y-1 text-sm">
+          {approvals.map((a) => (
+            <li key={a.id}>
+              <span className="font-medium">{LABEL[a.actionKind]}</span>
+              <span className="text-muted">
+                {a.actionKind === "push" ? ` to ${t.remoteUrl || "origin"}` : ""} · expires{" "}
+                {ago(a.expiresAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {t.diffStats && (
+          <p className="text-sm">
+            {plural(t.diffStats.filesChanged, "file")},{" "}
+            <span className="text-ok">+{t.diffStats.insertions}</span>{" "}
+            <span className="text-danger">-{t.diffStats.deletions}</span>
+          </p>
+        )}
+        {pr?.prTitle && (
+          <div className="rounded-lg bg-surface-2 p-3 text-sm">
+            <p className="font-medium">{pr.prTitle}</p>
+            <p className="mt-1 whitespace-pre-wrap text-muted">{pr.prBody}</p>
+          </div>
+        )}
+      </div>
+      <div className="flex items-center justify-end gap-2 border-t border-border bg-surface-2/50 px-4 py-3">
+        <ErrorText error={decide.error} />
+        <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
+          Reject
+        </Button>
+        <Button
+          size="sm"
+          variant="primary"
+          busy={decide.isPending}
+          onClick={() => decide.mutate("approve")}
+        >
+          Approve
+        </Button>
+      </div>
+    </Card>
+  );
+}
