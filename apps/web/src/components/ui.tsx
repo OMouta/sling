@@ -1,9 +1,12 @@
-import type {
-  ButtonHTMLAttributes,
-  InputHTMLAttributes,
-  ReactNode,
-  SelectHTMLAttributes,
-  TextareaHTMLAttributes,
+import {
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  type TextareaHTMLAttributes,
+  useEffect,
+  useId,
+  useRef,
 } from "react";
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
@@ -173,6 +176,148 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
     <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center">
       <p className="font-medium">{title}</p>
       {children && <div className="mt-2 text-sm text-muted">{children}</div>}
+    </div>
+  );
+}
+
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled,
+  size = "md",
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  /** Accessible name. */
+  label: string;
+  disabled?: boolean;
+  size?: "sm" | "md";
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cx(
+        "relative inline-flex shrink-0 items-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-50",
+        size === "sm" ? "h-5 w-9" : "h-6 w-11",
+        checked ? "bg-accent" : "bg-border",
+      )}
+    >
+      <span
+        className={cx(
+          "inline-block rounded-full bg-white shadow transition",
+          size === "sm" ? "size-4" : "size-5",
+          checked ? (size === "sm" ? "translate-x-4.5" : "translate-x-5.5") : "translate-x-0.5",
+        )}
+      />
+    </button>
+  );
+}
+
+/**
+ * A modal panel. Escape and the backdrop close it. On phones it sits at the
+ * bottom of the screen like a sheet.
+ */
+export function Dialog({
+  title,
+  onClose,
+  children,
+  footer,
+  wide,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+  wide?: boolean;
+}) {
+  const id = useId();
+  const panel = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        close.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    const first = panel.current?.querySelector<HTMLElement>(
+      "input:not([type=hidden]), textarea, select, button[data-autofocus]",
+    );
+    first?.focus();
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
+      <button
+        type="button"
+        aria-label="Close"
+        className="absolute inset-0 bg-black/40"
+        onClick={onClose}
+      />
+      <div
+        ref={panel}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={id}
+        className={cx(
+          "relative flex max-h-[90vh] w-full flex-col rounded-t-xl border border-border bg-surface shadow-xl sm:rounded-xl",
+          wide ? "sm:max-w-4xl" : "sm:max-w-lg",
+        )}
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
+          <h2 id={id} className="font-medium">
+            {title}
+          </h2>
+          <Button size="sm" variant="ghost" onClick={onClose} aria-label="Close dialog">
+            ✕
+          </Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        {footer && (
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-3">
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function Tabs<T extends string>({
+  tabs,
+  value,
+  onChange,
+}: {
+  tabs: { id: T; label: string }[];
+  value: T;
+  onChange: (id: T) => void;
+}) {
+  return (
+    <div role="tablist" className="flex gap-1">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          role="tab"
+          aria-selected={value === t.id}
+          onClick={() => onChange(t.id)}
+          className={cx(
+            "h-8 rounded-lg px-3 text-sm",
+            value === t.id ? "bg-surface-2 font-medium text-text" : "text-muted hover:text-text",
+          )}
+        >
+          {t.label}
+        </button>
+      ))}
     </div>
   );
 }

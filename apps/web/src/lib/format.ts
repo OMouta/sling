@@ -17,3 +17,19 @@ export function shortSha(sha: string | null | undefined): string {
 export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
+
+/** "850 ms", "3.2 s", "4m 05s", "1h 02m". */
+export function duration(ms: number | null | undefined): string {
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return "";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)} s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${String(Math.floor(s % 60)).padStart(2, "0")}s`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+
+export function between(start: string | null, end: string | null, now = Date.now()): number | null {
+  if (!start) return null;
+  return (end ? new Date(end).getTime() : now) - new Date(start).getTime();
+}
