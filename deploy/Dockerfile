@@ -11,6 +11,8 @@ COPY apps/web/package.json apps/web/
 COPY packages/core/package.json packages/core/
 COPY packages/db/package.json packages/db/
 COPY packages/runner-protocol/package.json packages/runner-protocol/
+COPY packages/workflow/package.json packages/workflow/
+COPY packages/connector-sdk/package.json packages/connector-sdk/
 
 FROM base AS web
 RUN pnpm install --frozen-lockfile --filter "@sling/web..."
@@ -34,8 +36,10 @@ WORKDIR /app
 COPY --from=deps /app /app
 COPY packages packages
 COPY apps/server apps/server
+# Bundled workflow templates. The server reads them from the repo root.
+COPY workflows workflows
 COPY --from=web /app/apps/web/dist /app/web
-RUN rm -rf packages/*/src/*.test.ts apps/server/src/*.test.ts
+RUN rm -rf packages/*/src/*.test.ts packages/*/src/*.test-util.ts apps/server/src/*.test.ts
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s \
