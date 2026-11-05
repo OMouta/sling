@@ -39,15 +39,15 @@ export const credentialsSchema = z.object({
     ),
   tlsCa: pem(
     "The CA certificate",
-    "CA certificate (ca.pem) that signed the daemon's certificate. Only for tcp:// hosts",
+    "The CA certificate that signed the daemon's certificate, usually ca.pem. Only for tcp:// hosts",
   ).meta({ widget: "textarea" }),
   tlsCert: pem(
     "The client certificate",
-    "Client certificate (cert.pem) the daemon trusts. Only for tcp:// hosts",
+    "The client certificate the daemon trusts, usually cert.pem. Only for tcp:// hosts",
   ).meta({ widget: "textarea" }),
   tlsKey: pem(
     "The client key",
-    "Private key (key.pem) for the client certificate. Only for tcp:// hosts",
+    "The client certificate's private key, usually key.pem. Only for tcp:// hosts",
   ),
   registryUsername: z
     .string()
