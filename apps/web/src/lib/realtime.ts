@@ -71,6 +71,7 @@ function upsert<T extends { id: string }>(list: T[] | undefined, item: T, prepen
 
 function applyTask(qc: QueryClient, task: TaskView) {
   qc.setQueryData<TaskDetail>(["task", task.id], (d) => (d ? { ...d, task } : d));
+  qc.setQueryData<TaskView[]>(["tasks"], (list) => upsertLoaded(list, task, true));
   if (task.conversationId) {
     qc.setQueryData<ConversationDetail>(["conversation", task.conversationId], (d) =>
       d ? { ...d, tasks: upsert(d.tasks, task) } : d,
@@ -164,6 +165,7 @@ function applySandbox(qc: QueryClient, sandbox: SandboxView) {
     };
   };
   qc.setQueryData<TaskDetail>(["task", taskId], (d) => (d ? { ...d, task: patch(d.task) } : d));
+  qc.setQueryData<TaskView[]>(["tasks"], (list) => list?.map(patch));
   qc.setQueriesData<ConversationDetail>({ queryKey: ["conversation"] }, (d) =>
     d?.tasks.some((t) => t.id === taskId) ? { ...d, tasks: d.tasks.map(patch) } : d,
   );

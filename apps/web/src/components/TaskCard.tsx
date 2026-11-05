@@ -8,6 +8,17 @@ import {
 } from "@sling/core";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import {
+  Clock,
+  ExternalLink,
+  FolderGit2,
+  GitBranch,
+  GitPullRequest,
+  LoaderCircle,
+  Rocket,
+  SquareTerminal,
+  Upload,
+} from "lucide-react";
 import { api } from "../lib/api.ts";
 import { between, duration, plural, shortSha } from "../lib/format.ts";
 import { pendingFallbackFor } from "../lib/sandbox.ts";
@@ -20,12 +31,20 @@ import { useNow } from "../lib/useNow.ts";
 import { ModeBadge } from "./ModeBadge.tsx";
 import { SandboxFallbackCard } from "./SandboxFallbackCard.tsx";
 import { SandboxStateBadge } from "./StatusBadge.tsx";
-import { Badge, Button, Card, Dot, ErrorText, Spinner } from "./ui.tsx";
+import {
+  Badge,
+  Button,
+  Card,
+  CardFooter,
+  Dot,
+  ErrorText,
+  Kicker,
+  Mono,
+  Spinner,
+  type Tone,
+} from "./ui.tsx";
 
-const STATE: Record<
-  TaskState,
-  { label: string; tone: "neutral" | "ok" | "warn" | "danger" | "accent" }
-> = {
+const STATE: Record<TaskState, { label: string; tone: Tone }> = {
   queued: { label: "Queued", tone: "neutral" },
   dispatched: { label: "Starting", tone: "accent" },
   running: { label: "Running", tone: "accent" },
@@ -43,6 +62,13 @@ const ACTION_LABEL: Record<string, string> = {
   deploy: "Deploy",
 };
 
+const ACTION_ICON = {
+  push: Upload,
+  open_pr: GitPullRequest,
+  merge: GitBranch,
+  deploy: Rocket,
+} as Record<string, typeof Upload>;
+
 const ACTION_STATE: Record<ActionView["state"], string> = {
   awaiting_approval: "Waiting for approval",
   ready: "Ready",
@@ -59,10 +85,10 @@ export function TaskStateBadge({ task }: { task: TaskView }) {
   const s = STATE[task.state];
   const busy = task.state === "running" || task.state === "dispatched";
   return (
-    <span className="inline-flex items-center gap-1.5">
-      {busy && <Spinner className="size-3 text-accent" />}
-      <Badge tone={s.tone}>{task.cancelRequested && busy ? "Cancelling" : s.label}</Badge>
-    </span>
+    <Badge tone={s.tone} dot={!busy}>
+      {busy && <LoaderCircle aria-hidden="true" size={12} className="animate-spin" />}
+      {task.cancelRequested && busy ? "Cancelling" : s.label}
+    </Badge>
   );
 }
 
@@ -94,36 +120,45 @@ export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean 
     <Card className="overflow-hidden">
       <div className="space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium tracking-wide text-muted uppercase">
-            {HARNESS_LABELS[task.harness] ?? task.harness} task
+          <Kicker icon={SquareTerminal}>{HARNESS_LABELS[task.harness] ?? task.harness} task</Kicker>
+          <span className="ml-auto flex flex-wrap items-center gap-1.5">
+            {task.runnerOffline && <Badge tone="warn">Machine offline</Badge>}
+            <ModeBadge mode={task.mode} />
+            <TaskStateBadge task={task} />
           </span>
-          <TaskStateBadge task={task} />
-          <ModeBadge mode={task.mode} />
-          {task.runnerOffline && <Badge tone="warn">Machine offline</Badge>}
         </div>
         <div>
           <Link
             to="/tasks/$id"
             params={{ id: task.id }}
-            className="font-medium hover:underline hover:underline-offset-2"
+            className="text-sm font-medium decoration-faint underline-offset-2 hover:underline"
           >
             {task.title}
           </Link>
-          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
-            <span>{task.repoName}</span>
+          <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted">
+            <span className="inline-flex items-center gap-1">
+              <FolderGit2 aria-hidden="true" size={12} className="text-subtle" />
+              {task.repoName}
+            </span>
             <EnvironmentBadge summary={environmentSummary(task)} />
             {ran !== null && (
-              <span className="tabular-nums">
+              <span className="tabular inline-flex items-center gap-1">
+                <Clock aria-hidden="true" size={12} className="text-subtle" />
                 {task.finishedAt ? "ran" : "running"} {duration(ran)}
               </span>
             )}
-            {task.branch && <code className="font-mono text-xs">{task.branch}</code>}
+            {task.branch && (
+              <span className="inline-flex min-w-0 items-center gap-1">
+                <GitBranch aria-hidden="true" size={12} className="text-subtle" />
+                <Mono className="truncate">{task.branch}</Mono>
+              </span>
+            )}
           </p>
         </div>
         {task.routing && <WhyHere routing={task.routing} />}
 
         {task.diffStats && (
-          <p className="text-sm">
+          <p className="tabular text-[13px]">
             {plural(task.diffStats.filesChanged, "file")} changed,{" "}
             <span className="text-ok">+{task.diffStats.insertions}</span>{" "}
             <span className="text-danger">-{task.diffStats.deletions}</span>
@@ -133,40 +168,50 @@ export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean 
           </p>
         )}
         {!compact && task.summary && (
-          <p className="text-sm whitespace-pre-wrap text-muted">{task.summary}</p>
+          <p className="text-[13px] leading-5 whitespace-pre-wrap text-soft">{task.summary}</p>
         )}
-        {task.error && <p className="text-sm text-danger">{task.error}</p>}
+        {task.error && <p className="text-[13px] text-danger">{task.error}</p>}
 
         {task.actions.length > 0 && (
-          <ol className="space-y-1.5 border-t border-border pt-3">
-            {task.actions.map((a) => (
-              <li key={a.id} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="w-36 shrink-0">{ACTION_LABEL[a.kind] ?? a.kind}</span>
-                <ActionStateText action={a} />
-                {a.url && (
-                  <a
-                    href={a.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-accent underline underline-offset-2"
-                  >
-                    {a.kind === "open_pr" && a.url.includes("/pull/") ? "View PR" : "Open link"}
-                  </a>
-                )}
-                {a.message && a.state !== "succeeded" && (
-                  <span className="w-full text-xs text-muted sm:w-auto">{a.message}</span>
-                )}
-              </li>
-            ))}
+          <ol className="space-y-1 border-t border-border pt-3">
+            {task.actions.map((a) => {
+              const Icon = ACTION_ICON[a.kind] ?? Upload;
+              return (
+                <li
+                  key={a.id}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]"
+                >
+                  <span className="flex w-40 shrink-0 items-center gap-2">
+                    <Icon aria-hidden="true" className="text-subtle" />
+                    {ACTION_LABEL[a.kind] ?? a.kind}
+                  </span>
+                  <ActionStateText action={a} />
+                  {a.url && (
+                    <a
+                      href={a.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-accent-text hover:underline"
+                    >
+                      {a.kind === "open_pr" && a.url.includes("/pull/") ? "View PR" : "Open link"}
+                      <ExternalLink aria-hidden="true" size={12} />
+                    </a>
+                  )}
+                  {a.message && a.state !== "succeeded" && (
+                    <span className="w-full pl-6 text-xs text-muted">{a.message}</span>
+                  )}
+                </li>
+              );
+            })}
           </ol>
         )}
       </div>
 
       {(awaiting.length > 0 || active) && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-border bg-surface-2/50 px-4 py-3">
+        <CardFooter>
           {awaiting.length > 0 && (
             <>
-              <span className="mr-auto text-sm">
+              <span className="mr-auto text-[13px]">
                 Approve {awaiting.map((a) => ACTION_LABEL[a.kind]?.toLowerCase()).join(" and ")}?
               </span>
               <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
@@ -195,7 +240,7 @@ export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean 
             </Button>
           )}
           <ErrorText error={decide.error ?? cancel.error} />
-        </div>
+        </CardFooter>
       )}
     </Card>
   );
@@ -205,37 +250,39 @@ export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean 
 function EnvironmentBadge({ summary }: { summary: EnvironmentSummary }) {
   switch (summary.kind) {
     case "machine":
-      return <Badge>{summary.text}</Badge>;
+      return <span>{summary.text}</span>;
     case "sandbox":
       return (
         <Link
           to="/sandboxes"
           title="See it on the Sandboxes page"
-          className="inline-flex items-center gap-1 hover:opacity-80"
+          className="inline-flex items-center gap-1.5 hover:text-text"
         >
-          <Badge tone="accent">{summary.text}</Badge>
+          {summary.text}
           <SandboxStateBadge state={summary.state} />
         </Link>
       );
     case "waiting":
-      return <Badge tone="warn">{summary.text}</Badge>;
+      return <span className="text-warn">{summary.text}</span>;
     case "none":
-      return <Badge>{summary.text}</Badge>;
+      return <span>{summary.text}</span>;
   }
 }
 
 function WhyHere({ routing }: { routing: RoutingView }) {
   const picked = routing.target?.kind === "machine" ? routing.target.runnerId : null;
   return (
-    <details className="rounded-lg border border-border px-3 py-2 text-sm">
-      <summary className="cursor-pointer font-medium">Why here?</summary>
-      <p className="mt-2">{routing.reason}</p>
+    <details className="group rounded-lg bg-surface-2 px-3 py-2 text-[13px] shadow-raised">
+      <summary className="cursor-pointer text-xs font-medium text-soft select-none marker:text-subtle">
+        Why here?
+      </summary>
+      <p className="mt-2 text-soft">{routing.reason}</p>
       {routing.considered.length > 0 && (
         <ul aria-label="Machines considered" className="mt-2 space-y-1">
           {sortConsidered(routing.considered).map((c) => (
-            <li key={c.runnerId} className="flex flex-wrap items-center gap-x-2">
+            <li key={c.runnerId} className="flex flex-wrap items-center gap-x-2 text-xs">
               <Dot tone={c.eligible ? "ok" : "neutral"} />
-              <span className="font-medium">{c.runnerName}</span>
+              <span className="font-medium text-text">{c.runnerName}</span>
               {c.runnerId === picked && <Badge tone="accent">picked</Badge>}
               <span className="text-muted">
                 {c.eligible ? "Eligible." : "Not eligible."} {c.reason}
@@ -258,7 +305,7 @@ function ActionStateText({ action }: { action: ActionView }) {
           ? "text-danger"
           : "text-muted";
   return (
-    <span className={`inline-flex items-center gap-1.5 ${tone}`}>
+    <span className={`inline-flex items-center gap-1.5 text-xs ${tone}`}>
       {action.state === "sent" && <Spinner className="size-3" />}
       {ACTION_STATE[action.state]}
     </span>

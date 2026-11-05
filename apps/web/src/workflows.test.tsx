@@ -176,14 +176,14 @@ async function findNode(id: string) {
 describe("workflows list", () => {
   it("shows each workflow's triggers, last run, and state", async () => {
     renderAt("/workflows");
-    const row = (await screen.findByText("Important email to Discord")).closest("li");
+    const row = (await screen.findByText("Important email to Discord")).closest("tr");
     if (!row) throw new Error("no row");
     const r = within(row);
     expect(r.getByText("On New email")).toBeTruthy();
     expect(r.getByText("failed")).toBeTruthy();
     expect(r.getByText("Unpublished changes")).toBeTruthy();
     expect(r.getByText("v1")).toBeTruthy();
-    const assistant = screen.getByText("Sling Assistant").closest("li");
+    const assistant = screen.getByText("Sling Assistant").closest("tr");
     if (!assistant) throw new Error("no row");
     expect(within(assistant).getByText("Not published")).toBeTruthy();
     expect(within(assistant).getByText("Never run")).toBeTruthy();
@@ -401,7 +401,7 @@ describe("connectors", () => {
 
   it("sends only changed values when editing, never stored secrets", async () => {
     renderAt("/connectors");
-    const card = (await screen.findByText("Sling bot")).closest("div.space-y-3") as HTMLElement;
+    const card = (await screen.findByText("Sling bot")).closest("article") as HTMLElement;
     fireEvent.click(within(card).getByText("Edit"));
     const dialog = await screen.findByRole("dialog");
     const token = within(dialog).getByLabelText(/Bot token/) as HTMLInputElement;
@@ -419,7 +419,7 @@ describe("connectors", () => {
 
   it("tests an installation", async () => {
     renderAt("/connectors");
-    const card = (await screen.findByText("Sling bot")).closest("div.space-y-3") as HTMLElement;
+    const card = (await screen.findByText("Sling bot")).closest("article") as HTMLElement;
     fireEvent.click(within(card).getByText("Test"));
     expect(await within(card).findByRole("status")).toBeTruthy();
   });

@@ -8,16 +8,19 @@ import {
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { Box, Cpu, KeyRound, type LucideIcon, ShieldCheck } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { Page } from "../components/Page.tsx";
 import {
   Badge,
   Button,
   Card,
+  cx,
   ErrorText,
   Field,
   Input,
-  PageHeader,
   Select,
+  Skeleton,
   Spinner,
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
@@ -32,43 +35,95 @@ import { isSandboxSettingsView, sandboxApi, useSandboxSettings } from "../lib/sa
 import type { ProviderInfo, Settings } from "../lib/types.ts";
 import { qk, useConnectors, useInstallations } from "../lib/workflowApi.ts";
 
+const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
+  { id: "model", label: "Model", icon: Cpu },
+  { id: "mode", label: "Permission mode", icon: ShieldCheck },
+  { id: "sandboxes", label: "Sandboxes", icon: Box },
+  { id: "security", label: "Sign-in security", icon: KeyRound },
+];
+
 export function SettingsPage() {
   const settings = useQuery({
     queryKey: ["settings"],
     queryFn: () => api.get<Settings>("/api/settings"),
   });
+  const [current, setCurrent] = useState("model");
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
-      <PageHeader title="Settings" />
-      {settings.isPending && <Spinner />}
-      <ErrorText error={settings.error} />
-      {settings.data && (
-        <>
-          <ModelSection settings={settings.data} />
-          <ModeSection settings={settings.data} />
-        </>
-      )}
-      <SandboxSection />
-      <SecuritySection />
-    </div>
+    <Page title="Settings">
+      <div className="mx-auto flex w-full max-w-5xl gap-10 px-5 py-6">
+        <nav
+          aria-label="Settings sections"
+          className="sticky top-6 hidden w-44 shrink-0 self-start lg:block"
+        >
+          <ul className="space-y-px">
+            {SECTIONS.map((sec) => {
+              const Icon = sec.icon;
+              return (
+                <li key={sec.id}>
+                  <a
+                    href={`#${sec.id}`}
+                    onClick={() => setCurrent(sec.id)}
+                    className={cx(
+                      "group flex h-[30px] items-center gap-2 rounded-lg px-2 text-[13px] font-medium transition-colors duration-150",
+                      current === sec.id
+                        ? "bg-surface-3 text-text shadow-active"
+                        : "text-muted hover:text-text",
+                    )}
+                  >
+                    <Icon
+                      aria-hidden="true"
+                      className={cx(
+                        "transition-colors duration-150",
+                        current === sec.id ? "text-icon" : "text-subtle group-hover:text-icon",
+                      )}
+                    />
+                    {sec.label}
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+        <div className="min-w-0 flex-1 space-y-10">
+          {settings.isPending && <Skeleton className="h-64 w-full rounded-xl" />}
+          <ErrorText error={settings.error} />
+          {settings.data && (
+            <>
+              <ModelSection settings={settings.data} />
+              <ModeSection settings={settings.data} />
+            </>
+          )}
+          <SandboxSection />
+          <SecuritySection />
+        </div>
+      </div>
+    </Page>
   );
 }
 
 function Section({
+  id,
   title,
   description,
   children,
 }: {
+  id: string;
   title: string;
   description?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <Card className="p-5">
-      <h2 className="font-medium">{title}</h2>
-      {description && <p className="mt-1 text-sm text-muted">{description}</p>}
-      <div className="mt-4">{children}</div>
-    </Card>
+    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-6 space-y-3">
+      <div>
+        <h2 id={`${id}-title`} className="text-sm font-medium">
+          {title}
+        </h2>
+        {description && (
+          <p className="mt-1 max-w-2xl text-xs leading-[18px] text-muted">{description}</p>
+        )}
+      </div>
+      <Card className="p-5">{children}</Card>
+    </section>
   );
 }
 
@@ -109,6 +164,7 @@ function ModelSection({ settings }: { settings: Settings }) {
 
   return (
     <Section
+      id="model"
       title="Model"
       description="The model behind Sling's assistant. Coding agents use their own login on each machine."
     >
@@ -168,12 +224,12 @@ function ModelSection({ settings }: { settings: Settings }) {
           <Button busy={test.isPending} disabled={!settings.model} onClick={() => test.mutate()}>
             Test connection
           </Button>
-          {save.isSuccess && <span className="text-sm text-ok">Saved.</span>}
+          {save.isSuccess && <span className="text-xs text-ok">Saved.</span>}
           {test.data &&
             (test.data.ok ? (
-              <span className="text-sm text-ok">Works. Replied in {test.data.ms} ms.</span>
+              <span className="text-xs text-ok">Works. Replied in {test.data.ms} ms.</span>
             ) : (
-              <span className="text-sm text-danger">{test.data.error}</span>
+              <span className="text-xs text-danger">{test.data.error}</span>
             ))}
         </div>
         <ErrorText error={save.error ?? test.error} />
@@ -190,6 +246,7 @@ function ModeSection({ settings }: { settings: Settings }) {
   });
   return (
     <Section
+      id="mode"
       title="Default permission mode"
       description="New conversations start in this mode. You can switch any conversation later. Each machine can also cap the mode it accepts."
     >
@@ -197,18 +254,20 @@ function ModeSection({ settings }: { settings: Settings }) {
         {settings.modes.map((m) => (
           <label
             key={m}
-            className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 has-[:checked]:border-accent"
+            className="flex cursor-pointer items-start gap-3 rounded-xl bg-surface-2 p-3 shadow-raised transition-shadow duration-150 hover:shadow-raised-hover has-[:checked]:shadow-[0_0_0_1px_var(--accent-text),inset_0_1px_0_0_rgb(255_255_255/0.08)] has-[:focus-visible]:shadow-focus"
           >
             <input
               type="radio"
               name="mode"
-              className="mt-1"
+              className="mt-0.5 size-3.5 accent-[var(--accent)]"
               checked={settings.defaultMode === m}
               onChange={() => save.mutate(m)}
             />
             <span>
-              <span className="font-medium">{MODE_POLICY[m].label}</span>
-              <span className="block text-sm text-muted">{MODE_POLICY[m].description}</span>
+              <span className="text-[13px] font-medium">{MODE_POLICY[m].label}</span>
+              <span className="mt-0.5 block text-xs leading-4 text-muted">
+                {MODE_POLICY[m].description}
+              </span>
             </span>
           </label>
         ))}
@@ -222,11 +281,12 @@ function SandboxSection() {
   const settings = useSandboxSettings();
   return (
     <Section
+      id="sandboxes"
       title="Sandboxes"
       description={
         <>
           When no machine can take a task, Sling can run it in a fresh sandbox from a provider under{" "}
-          <Link to="/connectors" className="text-accent hover:underline">
+          <Link to="/connectors" className="text-accent-text hover:underline">
             Connectors
           </Link>
           . A sandbox clones an allowed repo from its remote, runs the coding agent, and is
@@ -237,7 +297,7 @@ function SandboxSection() {
       {settings.isPending && <Spinner />}
       <ErrorText error={settings.error} />
       {settings.data && (
-        <div className="space-y-8">
+        <div className="space-y-8 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-8">
           <SandboxLimits settings={settings.data} />
           <SandboxSecrets secrets={settings.data.secrets} />
         </div>
@@ -342,19 +402,19 @@ function SandboxLimits({ settings }: { settings: SandboxSettingsView }) {
         </Field>
       </div>
       <div className="space-y-2">
-        <p className="text-sm font-medium">Estimated cost per hour</p>
+        <p className="text-xs font-medium text-soft">Estimated cost per hour</p>
         <p className="text-xs text-muted">
           Optional, in your own currency. With a cost set, the Sandboxes page shows estimated spend.
         </p>
         {providers.length === 0 ? (
-          <p className="text-sm text-muted">
+          <p className="text-xs text-muted">
             Add a sandbox provider under Connectors to set what it costs.
           </p>
         ) : (
           <ul className="space-y-2">
             {providers.map((p) => (
               <li key={p.id} className="flex items-center gap-3">
-                <span className="min-w-0 flex-1 truncate text-sm">{p.name}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px]">{p.name}</span>
                 <Input
                   type="number"
                   min={0}
@@ -376,11 +436,11 @@ function SandboxLimits({ settings }: { settings: SandboxSettingsView }) {
           Save
         </Button>
         {!valid && (
-          <span className="text-sm text-muted">
+          <span className="text-xs text-muted">
             Limits are whole numbers, and the concurrent limit and lifetime are at least 1.
           </span>
         )}
-        {save.isSuccess && <span className="text-sm text-ok">Saved.</span>}
+        {save.isSuccess && <span className="text-xs text-ok">Saved.</span>}
       </div>
       <ErrorText error={save.error} />
     </form>
@@ -407,7 +467,7 @@ const SECRETS: { key: SecretKey; label: string; hint: ReactNode }[] = [
         <strong className="font-medium text-text">Contents</strong> and{" "}
         <strong className="font-medium text-text">Pull requests</strong> set to read and write. The
         Runner uses it to clone, push, and open pull requests, and never passes it to the agent.
-        Setup steps are in <code className="font-mono">docs/sandboxes.md</code>.
+        Setup steps are in <code className="font-mono text-soft">docs/sandboxes.md</code>.
       </>
     ),
   },
@@ -447,7 +507,7 @@ function SandboxSecrets({ secrets }: { secrets: SandboxSettingsView["secrets"] }
   return (
     <form onSubmit={submit} className="space-y-4">
       <div>
-        <h3 className="text-sm font-medium">Secrets</h3>
+        <h3 className="text-[13px] font-medium">Secrets</h3>
         <p className="mt-1 text-xs text-muted">
           Stored encrypted and never shown again. Sling passes them only to the sandbox running a
           task, and they're gone when it's destroyed. A provider with a custom image can bring its
@@ -477,7 +537,7 @@ function SandboxSecrets({ secrets }: { secrets: SandboxSettingsView["secrets"] }
         >
           Save secrets
         </Button>
-        {save.isSuccess && <span className="text-sm text-ok">Saved.</span>}
+        {save.isSuccess && <span className="text-xs text-ok">Saved.</span>}
       </div>
       <ErrorText error={save.error ?? clear.error} />
     </form>
@@ -505,7 +565,7 @@ function SecretField({
   return (
     <div className="space-y-1.5">
       <div className="flex min-h-8 items-center gap-2">
-        <label htmlFor={id} className="text-sm font-medium">
+        <label htmlFor={id} className="text-xs font-medium text-soft">
           {label}
         </label>
         {stored ? <Badge tone="ok">Stored</Badge> : <Badge>Not set</Badge>}
@@ -530,7 +590,7 @@ function SecretField({
         placeholder={stored ? "Stored (hidden). Type to replace it." : ""}
         autoComplete="off"
       />
-      <p className="text-xs text-muted">{hint}</p>
+      <p className="text-xs leading-4 text-subtle">{hint}</p>
     </div>
   );
 }
@@ -542,10 +602,11 @@ function SecuritySection() {
   );
   return (
     <Section
+      id="security"
       title="Sign-in security"
       description="This account can start work on your machines, so protect it with a passkey or a second factor."
     >
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-6">
         <TwoFactor enabled={enabled} onChange={() => session.refetch()} />
         <Passkeys />
       </div>
@@ -590,22 +651,22 @@ function TwoFactor({ enabled, onChange }: { enabled: boolean; onChange: () => vo
   return (
     <div>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium">Authenticator app</h3>
+        <h3 className="text-[13px] font-medium">Authenticator app</h3>
         {enabled ? <Badge tone="ok">On</Badge> : <Badge>Off</Badge>}
       </div>
       {setup ? (
         <form onSubmit={verify} className="mt-3 space-y-3">
-          <p className="text-sm text-muted">
+          <p className="text-xs leading-4 text-muted">
             Add this key to your authenticator app, then enter the code it shows.
           </p>
-          <code className="block rounded-lg bg-surface-2 px-3 py-2 font-mono text-sm break-all">
+          <code className="block rounded-lg bg-field px-3 py-2 font-mono text-xs break-all shadow-field">
             {secret}
           </code>
-          <details className="text-sm">
+          <details className="text-xs">
             <summary className="cursor-pointer text-muted">
               Backup codes (save these somewhere safe)
             </summary>
-            <code className="mt-2 block rounded-lg bg-surface-2 px-3 py-2 font-mono text-xs leading-6">
+            <code className="mt-2 block rounded-lg bg-field px-3 py-2 font-mono text-xs leading-6 shadow-field">
               {setup.backupCodes.join(" ")}
             </code>
           </details>
@@ -667,12 +728,12 @@ function Passkeys() {
   return (
     <div>
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-medium">Passkeys</h3>
+        <h3 className="text-[13px] font-medium">Passkeys</h3>
         <Button size="sm" className="ml-auto" busy={busy} onClick={add}>
           Add passkey
         </Button>
       </div>
-      <ul className="mt-2 space-y-1 text-sm">
+      <ul className="mt-2 space-y-1 text-[13px]">
         {(list.data ?? []).map((p) => (
           <li key={p.id} className="flex items-center gap-2">
             <span className="flex-1">{p.name ?? "Passkey"}</span>

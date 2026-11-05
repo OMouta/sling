@@ -227,10 +227,10 @@ function callsTo(method: string, path: string) {
   return calls.filter((c) => c.method === method && c.path === path);
 }
 
-/** The card for a sandbox, found by its task's title. */
+/** The row for a sandbox, found by its task's title. */
 async function sandboxCard(taskTitle: string) {
   const link = await screen.findByText(taskTitle);
-  return within(link.closest("li") as HTMLElement);
+  return within(link.closest("tr") as HTMLElement);
 }
 
 describe("sandboxes page", () => {
@@ -246,7 +246,7 @@ describe("sandboxes page", () => {
     expect(busy.getByText("Docker host")).toBeTruthy();
     await waitFor(() => expect(busy.getByText("Docker")).toBeTruthy());
     expect(busy.getByText("ghcr.io/sling/sling-sandbox:latest")).toBeTruthy();
-    expect(busy.getByText(/4 min used/)).toBeTruthy();
+    expect(busy.getByText("4 min")).toBeTruthy();
     expect(busy.getByText(/Running for 1m 0\ds/)).toBeTruthy();
     expect(busy.getByText("3f9c2a1b7d4e8f60a1b2c3d4e5f60718293a4b5c6d7e8f90")).toBeTruthy();
     expect(busy.getByText("Fix the signup form").getAttribute("href")).toBe("/tasks/tsk_sbx");
@@ -321,7 +321,7 @@ describe("sandboxes page", () => {
     };
     emit({ type: "sandbox.updated", sandbox: released });
     expect(await busy.findByText("releasing")).toBeTruthy();
-    expect(busy.getByText(/5 min used/)).toBeTruthy();
+    expect(busy.getByText("5 min")).toBeTruthy();
     // Usage isn't in the event, so a change of state refetches it.
     expect(await screen.findByText("0 of 2")).toBeTruthy();
     expect(screen.getByText("151 min of 600 min")).toBeTruthy();
@@ -347,7 +347,7 @@ describe("sandboxes page", () => {
 describe("settings: sandboxes", () => {
   async function section() {
     const heading = await screen.findByRole("heading", { name: "Sandboxes" });
-    return within(heading.parentElement as HTMLElement);
+    return within(heading.closest("section") as HTMLElement);
   }
 
   it("saves the default agent, the limits, and each provider's cost", async () => {

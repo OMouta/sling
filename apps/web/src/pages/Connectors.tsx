@@ -1,21 +1,35 @@
 import type { ConnectorView, InstallationView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { type FormEvent, useMemo, useState } from "react";
+import {
+  ArrowRight,
+  Container,
+  FlaskConical,
+  type LucideIcon,
+  Mail,
+  MessagesSquare,
+  Pencil,
+  Plug,
+  Plus,
+  TrainFront,
+  Trash2,
+} from "lucide-react";
+import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import Markdown from "react-markdown";
+import { Content, Page, Toolbar, ToolbarText } from "../components/Page.tsx";
 import { SchemaForm } from "../components/SchemaForm.tsx";
 import { InstallationStatusLabel } from "../components/StatusBadge.tsx";
 import {
   Button,
   Card,
+  cx,
   Dialog,
   Dot,
   Empty,
   ErrorText,
   Field,
   Input,
-  PageHeader,
-  Spinner,
+  Skeleton,
   Switch,
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
@@ -28,6 +42,63 @@ import { qk, useConnectors, useInstallations } from "../lib/workflowApi.ts";
 type TestResult = { ok: true; detail?: string } | { ok: false; error: string };
 
 type FormTarget = { connector: ConnectorView; installation?: InstallationView };
+
+const ICONS: [RegExp, LucideIcon][] = [
+  [/discord/i, MessagesSquare],
+  [/mail/i, Mail],
+  [/docker/i, Container],
+  [/railway/i, TrainFront],
+];
+
+function iconFor(c: { id: string; name: string }): LucideIcon {
+  return ICONS.find(([re]) => re.test(c.id) || re.test(c.name))?.[1] ?? Plug;
+}
+
+function ConnectorIcon({
+  connector,
+  size = "md",
+}: {
+  connector?: { id: string; name: string };
+  size?: "md" | "lg";
+}) {
+  const Icon = connector ? iconFor(connector) : Plug;
+  return (
+    <span
+      className={cx(
+        "grid shrink-0 place-items-center rounded-lg bg-surface-2 text-icon shadow-raised",
+        size === "lg" ? "size-10" : "size-9",
+      )}
+    >
+      <Icon aria-hidden="true" size={16} />
+    </span>
+  );
+}
+
+function Group({
+  id,
+  title,
+  description,
+  children,
+}: {
+  id: string;
+  title: string;
+  description?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section aria-labelledby={id} className="space-y-3">
+      <div>
+        <h2 id={id} className="section-label">
+          {title}
+        </h2>
+        {description && (
+          <p className="mt-1.5 max-w-2xl text-xs leading-4 text-muted">{description}</p>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export function ConnectorsPage() {
   const connectors = useConnectors();
@@ -47,72 +118,79 @@ export function ConnectorsPage() {
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 px-4 py-8">
-      <PageHeader
-        title="Connectors"
-        description="Accounts Sling's workflows can use. Credentials are stored encrypted and never shown again."
-      />
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium tracking-wide text-muted uppercase">Installed</h2>
-        {installations.isPending && <Spinner />}
-        <ErrorText error={installations.error} />
-        {installed?.length === 0 && <Empty title="Nothing installed">Add a connector below.</Empty>}
-        <div className="space-y-3">
-          {installed?.map((i) => (
-            <InstallationCard
-              key={i.id}
-              installation={i}
-              connector={byId.get(i.connectorId)}
-              onEdit={() => edit(i)}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium tracking-wide text-muted uppercase">Available</h2>
-        {connectors.isPending && <Spinner />}
-        <ErrorText error={connectors.error} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          {available?.map((c) => (
-            <ConnectorCard key={c.id} connector={c} onAdd={() => setForm({ connector: c })} />
-          ))}
-        </div>
-      </section>
-
-      {(providers.length > 0 || installedProviders.length > 0) && (
-        <section aria-labelledby="sandbox-providers" className="space-y-3">
-          <div>
-            <h2
-              id="sandbox-providers"
-              className="text-sm font-medium tracking-wide text-muted uppercase"
-            >
-              Sandbox providers
-            </h2>
-            <p className="mt-1 text-sm text-muted">
-              Where Sling creates a fresh sandbox for a task no machine can take, after you approve
-              it. Each sandbox clones an allowed repo from its remote, runs the coding agent, and is
-              destroyed once the task is delivered.
-            </p>
+    <Page
+      title="Connectors"
+      badge={
+        installations.data && installations.data.length > 0 ? (
+          <span className="tabular text-xs text-subtle">{installations.data.length} installed</span>
+        ) : undefined
+      }
+      toolbar={
+        <Toolbar>
+          <ToolbarText>
+            Accounts Sling's workflows can use. Credentials are stored encrypted and never shown
+            again.
+          </ToolbarText>
+        </Toolbar>
+      }
+    >
+      <Content className="max-w-5xl space-y-9 pt-2">
+        <Group id="installed" title="Installed">
+          {installations.isPending && <Skeleton className="h-24 w-full rounded-xl" />}
+          <ErrorText error={installations.error} />
+          {installed?.length === 0 && (
+            <Card>
+              <Empty icon={Plug} title="Nothing installed" className="py-10">
+                Add a connector below.
+              </Empty>
+            </Card>
+          )}
+          <div className="space-y-3">
+            {installed?.map((i) => (
+              <InstallationCard
+                key={i.id}
+                installation={i}
+                connector={byId.get(i.connectorId)}
+                onEdit={() => edit(i)}
+              />
+            ))}
           </div>
-          <ProviderReadiness />
-          {installedProviders.map((i) => (
-            <InstallationCard
-              key={i.id}
-              provider
-              installation={i}
-              connector={byId.get(i.connectorId)}
-              onEdit={() => edit(i)}
-            />
-          ))}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {providers.map((c) => (
+        </Group>
+
+        <Group id="available" title="Available">
+          {connectors.isPending && <Skeleton className="h-28 w-full rounded-xl" />}
+          <ErrorText error={connectors.error} />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {available?.map((c) => (
               <ConnectorCard key={c.id} connector={c} onAdd={() => setForm({ connector: c })} />
             ))}
           </div>
-        </section>
-      )}
+        </Group>
+
+        {(providers.length > 0 || installedProviders.length > 0) && (
+          <Group
+            id="sandbox-providers"
+            title="Sandbox providers"
+            description="Where Sling creates a fresh sandbox for a task no machine can take, after you approve it. Each sandbox clones an allowed repo from its remote, runs the coding agent, and is destroyed once the task is delivered."
+          >
+            <ProviderReadiness />
+            {installedProviders.map((i) => (
+              <InstallationCard
+                key={i.id}
+                provider
+                installation={i}
+                connector={byId.get(i.connectorId)}
+                onEdit={() => edit(i)}
+              />
+            ))}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {providers.map((c) => (
+                <ConnectorCard key={c.id} connector={c} onAdd={() => setForm({ connector: c })} />
+              ))}
+            </div>
+          </Group>
+        )}
+      </Content>
 
       {form && (
         <InstallationForm
@@ -121,20 +199,21 @@ export function ConnectorsPage() {
           onClose={() => setForm(null)}
         />
       )}
-    </div>
+    </Page>
   );
 }
 
 function ConnectorCard({ connector: c, onAdd }: { connector: ConnectorView; onAdd: () => void }) {
   return (
-    <Card className="flex flex-col p-4">
-      <h3 className="font-medium">{c.name}</h3>
-      <p className="mt-1 flex-1 text-sm text-muted">{c.description}</p>
-      <div className="mt-3">
-        <Button size="sm" aria-label={`Add ${c.name}`} onClick={onAdd}>
+    <Card className="flex flex-col p-4 transition-shadow duration-150 hover:shadow-card-hover">
+      <div className="flex items-start justify-between gap-3">
+        <ConnectorIcon connector={c} />
+        <Button size="sm" icon={Plus} aria-label={`Add ${c.name}`} onClick={onAdd}>
           Add
         </Button>
       </div>
+      <h3 className="mt-3 text-sm font-medium">{c.name}</h3>
+      <p className="mt-1 flex-1 text-xs leading-4 text-muted">{c.description}</p>
     </Card>
   );
 }
@@ -175,22 +254,26 @@ function ProviderReadiness() {
   ];
   return (
     <Card className="p-4">
-      <p className="text-sm font-medium">A provider is only useful with these in place</p>
-      <ul aria-label="Sandbox setup" className="mt-2 space-y-1.5 text-sm">
+      <p className="text-[13px] font-medium">A provider is only useful with these in place</p>
+      <ul aria-label="Sandbox setup" className="mt-3 space-y-2 text-[13px]">
         {items.map((item) => (
-          <li key={item.text} className="flex items-center gap-2">
+          <li key={item.text} className="flex items-center gap-2.5">
             <Dot tone={item.done === null ? "neutral" : item.done ? "ok" : "warn"} />
             <span className="sr-only">
               {item.done === null ? "" : item.done ? "Done: " : "Still needed: "}
             </span>
             <span className="min-w-0 flex-1">{item.text}</span>
-            <Link to={item.to} className="text-accent hover:underline">
+            <Link
+              to={item.to}
+              className="inline-flex items-center gap-1 text-xs text-subtle transition-colors duration-150 hover:text-text"
+            >
               {item.where}
+              <ArrowRight aria-hidden="true" size={12} />
             </Link>
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-xs text-muted">
+      <p className="mt-3 text-xs text-subtle">
         A provider set to a custom image can bring its own logins instead of the stored keys.
       </p>
     </Card>
@@ -236,70 +319,87 @@ function InstallationCard({
   });
 
   return (
-    <Card className="space-y-3 p-4">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="min-w-0 flex-1">
-          <p className="font-medium">{i.name}</p>
-          <p className="text-sm text-muted">
-            {connector?.name ?? i.connectorId} · added {ago(i.createdAt)}
-          </p>
+    <article aria-label={i.name}>
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
+          <ConnectorIcon connector={connector ?? { id: i.connectorId, name: "" }} />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">{i.name}</p>
+            <p className="text-xs text-muted">
+              {connector?.name ?? i.connectorId} · added {ago(i.createdAt)}
+            </p>
+          </div>
+          <InstallationStatusLabel status={i.status} />
+          <Switch
+            checked={i.enabled}
+            label={`${i.enabled ? "Disable" : "Enable"} ${i.name}`}
+            disabled={toggle.isPending}
+            onChange={(enabled) => toggle.mutate(enabled)}
+          />
         </div>
-        <InstallationStatusLabel status={i.status} />
-        <Switch
-          checked={i.enabled}
-          label={`${i.enabled ? "Disable" : "Enable"} ${i.name}`}
-          disabled={toggle.isPending}
-          onChange={(enabled) => toggle.mutate(enabled)}
-        />
-      </div>
-      {i.statusDetail && (
-        <p className={i.status === "error" ? "text-sm text-danger" : "text-sm text-muted"}>
-          {i.statusDetail}
-        </p>
-      )}
-      {i.status === "idle" && !i.statusDetail && !provider && (
-        <p className="text-sm text-muted">Not listening: no enabled workflow uses it.</p>
-      )}
-      {test.data && (
-        <p role="status" className={test.data.ok ? "text-sm text-ok" : "text-sm text-danger"}>
-          {test.data.ok
-            ? `Connection works.${test.data.detail ? ` ${test.data.detail}` : ""}`
-            : test.data.error}
-        </p>
-      )}
-      <ErrorText error={toggle.error ?? test.error} />
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" busy={test.isPending} onClick={() => test.mutate()}>
-          Test
-        </Button>
-        <Button size="sm" onClick={onEdit} disabled={!connector}>
-          Edit
-        </Button>
-        <Button size="sm" variant="danger" onClick={() => setConfirm(true)}>
-          Delete
-        </Button>
-      </div>
-      {confirm && (
-        <Dialog
-          title={`Delete ${i.name}?`}
-          onClose={() => setConfirm(false)}
-          footer={
-            <>
-              <ErrorText error={del.error} />
-              <Button onClick={() => setConfirm(false)}>Cancel</Button>
-              <Button variant="danger" busy={del.isPending} onClick={() => del.mutate()}>
-                Delete
-              </Button>
-            </>
-          }
-        >
-          <p className="text-sm">
-            Its stored credentials are erased. Workflows that use it fail until you pick another
-            installation.
-          </p>
-        </Dialog>
-      )}
-    </Card>
+        {(i.statusDetail ||
+          (i.status === "idle" && !provider) ||
+          test.data ||
+          toggle.error ||
+          test.error) && (
+          <div className="space-y-1.5 px-4 pb-3 pl-16 text-xs">
+            {i.statusDetail && (
+              <p className={i.status === "error" ? "text-danger" : "text-muted"}>
+                {i.statusDetail}
+              </p>
+            )}
+            {i.status === "idle" && !i.statusDetail && !provider && (
+              <p className="text-muted">Not listening: no enabled workflow uses it.</p>
+            )}
+            {test.data && (
+              <p role="status" className={test.data.ok ? "text-ok" : "text-danger"}>
+                {test.data.ok
+                  ? `Connection works.${test.data.detail ? ` ${test.data.detail}` : ""}`
+                  : test.data.error}
+              </p>
+            )}
+            <ErrorText error={toggle.error ?? test.error} />
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2 border-t border-border px-4 py-2.5">
+          <Button size="sm" icon={FlaskConical} busy={test.isPending} onClick={() => test.mutate()}>
+            Test
+          </Button>
+          <Button size="sm" icon={Pencil} onClick={onEdit} disabled={!connector}>
+            Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={Trash2}
+            className="ml-auto text-danger enabled:hover:text-danger"
+            onClick={() => setConfirm(true)}
+          >
+            Delete
+          </Button>
+        </div>
+        {confirm && (
+          <Dialog
+            title={`Delete ${i.name}?`}
+            onClose={() => setConfirm(false)}
+            footer={
+              <>
+                <ErrorText error={del.error} />
+                <Button onClick={() => setConfirm(false)}>Cancel</Button>
+                <Button variant="danger" busy={del.isPending} onClick={() => del.mutate()}>
+                  Delete
+                </Button>
+              </>
+            }
+          >
+            <p className="text-[13px] leading-5 text-soft">
+              Its stored credentials are erased. Workflows that use it fail until you pick another
+              installation.
+            </p>
+          </Dialog>
+        )}
+      </Card>
+    </article>
   );
 }
 
@@ -375,6 +475,7 @@ function InstallationForm({
     <Dialog
       wide
       title={editing ? `Edit ${installation.name}` : `Add ${connector.name}`}
+      description={connector.description}
       onClose={onClose}
       footer={
         <>
@@ -406,9 +507,7 @@ function InstallationForm({
           </Field>
           {credFields.length > 0 && (
             <section className="space-y-3">
-              <h3 className="text-xs font-medium tracking-wide text-muted uppercase">
-                Credentials
-              </h3>
+              <h3 className="section-label">Credentials</h3>
               {credentialsStored && (
                 <p className="text-xs text-muted">
                   Stored. Leave a field blank to keep it; type a new value to replace it.
@@ -426,14 +525,14 @@ function InstallationForm({
           )}
           {configFields.length > 0 && (
             <section className="space-y-3">
-              <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Settings</h3>
+              <h3 className="section-label">Settings</h3>
               <SchemaForm fields={configFields} value={config} onChange={setConfig} />
             </section>
           )}
         </div>
         {connector.setupHelp && (
-          <aside className="prose-chat rounded-lg bg-surface-2 p-3 text-sm text-muted md:self-start">
-            <p className="mb-1 font-medium text-text">Setup</p>
+          <aside className="prose-chat rounded-xl bg-surface-2 p-3.5 text-xs leading-5 text-muted shadow-raised md:self-start">
+            <p className="mb-1.5 text-[13px] font-medium text-text">Setup</p>
             <Markdown>{connector.setupHelp}</Markdown>
           </aside>
         )}

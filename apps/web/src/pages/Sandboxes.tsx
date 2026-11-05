@@ -1,7 +1,9 @@
 import type { SandboxListView, SandboxView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { Box, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { Page, StatsBar, Toolbar, ToolbarText } from "../components/Page.tsx";
 import { SandboxStateBadge } from "../components/StatusBadge.tsx";
 import {
   Button,
@@ -10,8 +12,13 @@ import {
   Dialog,
   Empty,
   ErrorText,
-  PageHeader,
-  Spinner,
+  Mono,
+  Skeleton,
+  Table,
+  Tabs,
+  Td,
+  Th,
+  Tr,
 } from "../components/ui.tsx";
 import { ago, duration } from "../lib/format.ts";
 import { isLiveSandbox, minutes, money, sandboxRunMs } from "../lib/sandbox.ts";
@@ -29,48 +36,117 @@ export function SandboxesPage() {
   );
   const connectorName = new Map((connectors.data ?? []).map((c) => [c.id, c.name]));
 
+  const [tab, setTab] = useState<"live" | "all">("all");
+  const live = sandboxes.filter((x) => isLiveSandbox(x.state));
+  const rows = tab === "live" ? live : sandboxes;
+  const used = rows.reduce((n, x) => n + x.minutes, 0);
+
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
-      <PageHeader
-        title="Sandboxes"
-        description="Fresh environments a provider creates for one task, then destroys. Limits and secrets are under Settings."
-      />
-      {list.isPending && <Spinner />}
-      <ErrorText error={list.error} />
-      {list.data && <Usage usage={list.data.usage} />}
-      {list.data && sandboxes.length === 0 && (
-        <Empty title="No sandboxes yet">
-          When no machine can take a task, Sling asks to run it in a sandbox. Add a provider under{" "}
-          <Link to="/connectors" className="text-accent hover:underline">
-            Connectors
-          </Link>
-          .
+    <Page
+      title="Sandboxes"
+      badge={
+        list.data && list.data.usage.running > 0 ? (
+          <span className="tabular text-xs text-subtle">{list.data.usage.running} running</span>
+        ) : undefined
+      }
+      tabs={
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: "all", label: "All sandboxes" },
+            { id: "live", label: "Live", count: live.length },
+          ]}
+        />
+      }
+      toolbar={
+        <Toolbar>
+          <ToolbarText>
+            Fresh environments a provider creates for one task, then destroys. Limits and secrets
+            are under Settings.
+          </ToolbarText>
+        </Toolbar>
+      }
+      footer={
+        rows.length > 0 && (
+          <StatsBar
+            items={[
+              <>
+                <span className="text-text">{rows.length}</span> sandboxes in view
+              </>,
+              <>
+                <span className="text-text">{minutes(used)}</span> used
+              </>,
+            ]}
+          />
+        )
+      }
+    >
+      <div className="px-5 pt-1 pb-5">
+        {list.isPending && <Skeleton className="h-24 w-full rounded-xl" />}
+        <ErrorText error={list.error} />
+        {list.data && <Usage usage={list.data.usage} />}
+      </div>
+      {list.data && rows.length === 0 && (
+        <Empty icon={Box} title={sandboxes.length === 0 ? "No sandboxes yet" : "Nothing live"}>
+          {sandboxes.length === 0 ? (
+            <>
+              When no machine can take a task, Sling asks to run it in a sandbox. Add a provider
+              under{" "}
+              <Link to="/connectors" className="text-accent-text hover:underline">
+                Connectors
+              </Link>
+              .
+            </>
+          ) : (
+            "No sandbox is running right now."
+          )}
         </Empty>
       )}
-      <ul className="space-y-3">
-        {sandboxes.map((s) => (
-          <SandboxCard
-            key={s.id}
-            sandbox={s}
-            connectorName={connectorName.get(s.connectorId) ?? s.connectorId}
-            now={now}
-          />
-        ))}
-      </ul>
-    </div>
+      {rows.length > 0 && (
+        <Table className="border-t border-border">
+          <thead>
+            <tr>
+              <Th>Task</Th>
+              <Th>State</Th>
+              <Th>Provider</Th>
+              <Th>Image</Th>
+              <Th align="right">Used</Th>
+              <Th align="right">Time</Th>
+              <Th align="right">Requested</Th>
+              <Th>
+                <span className="sr-only">Actions</span>
+              </Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((x) => (
+              <SandboxRow
+                key={x.id}
+                sandbox={x}
+                connectorName={connectorName.get(x.connectorId) ?? x.connectorId}
+                now={now}
+              />
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </Page>
   );
 }
 
 function Usage({ usage }: { usage: SandboxListView["usage"] }) {
   const { monthMinutes, monthlyMinutesBudget: budget } = usage;
   const ratio = budget > 0 ? monthMinutes / budget : 1;
-  const tone = ratio >= 1 ? "bg-danger" : ratio >= 0.8 ? "bg-warn" : "bg-accent";
+  const segments = 30;
+  const filled = Math.min(segments, Math.round(ratio * segments));
+  const tone = ratio >= 1 ? "bg-danger" : ratio >= 0.8 ? "bg-warn" : "bg-accent-text";
   return (
-    <Card className="grid gap-4 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end sm:gap-8">
+    <Card className="grid gap-5 p-4 sm:grid-cols-[1fr_auto_auto] sm:items-end sm:gap-10">
       <div className="min-w-0">
-        <div className="flex items-baseline justify-between gap-3 text-sm">
-          <span className="font-medium">Minutes this month</span>
-          <span className="text-muted">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-xs text-subtle">Minutes this month</span>
+          <span className="tabular text-xs text-soft">
             {minutes(monthMinutes)} of {minutes(budget)}
           </span>
         </div>
@@ -83,14 +159,17 @@ function Usage({ usage }: { usage: SandboxListView["usage"] }) {
           value={Math.min(monthMinutes, budget)}
           aria-valuetext={`${minutes(monthMinutes)} of ${minutes(budget)}`}
         />
-        <div aria-hidden="true" className="mt-2 h-2 overflow-hidden rounded-full bg-surface-2">
-          <div
-            className={cx("h-full rounded-full transition-[width]", tone)}
-            style={{ width: `${Math.min(100, Math.round(ratio * 100))}%` }}
-          />
+        <div aria-hidden="true" className="mt-2.5 flex gap-[3px]">
+          {Array.from({ length: segments }, (_, i) => (
+            <span
+              // biome-ignore lint/suspicious/noArrayIndexKey: fixed segments of a meter.
+              key={i}
+              className={cx("h-3 flex-1 rounded-[2px]", i < filled ? tone : "bg-surface-3")}
+            />
+          ))}
         </div>
         {ratio >= 1 && (
-          <p className="mt-1.5 text-xs text-danger">
+          <p className="mt-2 text-xs text-danger">
             The budget is used up. New sandboxes are refused until next month, or until you raise it
             in Settings.
           </p>
@@ -111,13 +190,13 @@ function Usage({ usage }: { usage: SandboxListView["usage"] }) {
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div title={hint}>
-      <p className="text-xs text-muted">{label}</p>
-      <p className="text-lg font-semibold tabular-nums">{value}</p>
+      <p className="text-xs text-subtle">{label}</p>
+      <p className="tabular mt-1 text-xl font-medium tracking-tight">{value}</p>
     </div>
   );
 }
 
-function SandboxCard({
+function SandboxRow({
   sandbox: s,
   connectorName,
   now,
@@ -143,77 +222,88 @@ function SandboxCard({
   });
 
   return (
-    <li>
-      <Card className="space-y-2 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <SandboxStateBadge state={s.state} />
-          <span className="font-medium">{s.providerName}</span>
-          <span className="text-sm text-muted">{connectorName}</span>
-          <span className="ml-auto text-sm text-muted tabular-nums">
-            {live ? "Running for " : "Ran "}
-            {duration(sandboxRunMs(s, now))}
-          </span>
-        </div>
-        <p className="text-sm">
+    <Tr>
+      <Td className="max-w-[340px]">
+        <div className="min-w-0">
           {s.taskId ? (
             <Link
               to="/tasks/$id"
               params={{ id: s.taskId }}
-              className="hover:underline hover:underline-offset-2"
+              className="block truncate decoration-faint underline-offset-2 hover:underline"
             >
               {s.taskTitle ?? "Its task"}
             </Link>
           ) : (
             <span className="text-muted">No task yet</span>
           )}
-        </p>
-        <p className="text-xs text-muted">
-          <code className="font-mono">{s.image}</code> · {minutes(s.minutes)} used · requested{" "}
-          {ago(s.requestedAt, now)}
-        </p>
-        {s.failure && <p className="text-sm text-danger">{s.failure}</p>}
-        <div className="flex flex-wrap items-center gap-2">
+          {s.failure && (
+            <p className="truncate text-xs whitespace-normal text-danger">{s.failure}</p>
+          )}
+        </div>
+      </Td>
+      <Td>
+        <SandboxStateBadge state={s.state} />
+      </Td>
+      <Td className="text-[13px]">
+        <span className="text-soft">{s.providerName}</span>{" "}
+        <span className="text-xs text-subtle">{connectorName}</span>
+      </Td>
+      <Td className="max-w-[220px]">
+        <div className="min-w-0">
+          <Mono className="block truncate">{s.image}</Mono>
           {s.externalId && (
             <code
-              className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
+              className="mt-0.5 block truncate font-mono text-[11px] text-subtle"
               title={`Provider ID: ${s.externalId}`}
             >
               {s.externalId}
             </code>
           )}
-          {s.state !== "destroyed" && (
-            <Button
-              size="sm"
-              variant="danger"
-              className="ml-auto"
-              aria-label={`Destroy the sandbox for ${s.taskTitle ?? s.id}`}
-              onClick={() => setConfirm(true)}
-            >
-              Destroy
-            </Button>
-          )}
         </div>
-      </Card>
-      {confirm && (
-        <Dialog
-          title="Destroy this sandbox?"
-          onClose={() => setConfirm(false)}
-          footer={
-            <>
-              <ErrorText error={destroy.error} />
-              <Button onClick={() => setConfirm(false)}>Cancel</Button>
-              <Button variant="danger" busy={destroy.isPending} onClick={() => destroy.mutate()}>
-                Destroy
-              </Button>
-            </>
-          }
-        >
-          <p className="text-sm">
-            {s.providerName} removes it now, with anything in it that wasn't pushed.
-            {live && s.taskId ? " Its task stops and is marked interrupted." : ""}
-          </p>
-        </Dialog>
-      )}
-    </li>
+      </Td>
+      <Td align="right" className="text-[13px] text-soft">
+        {minutes(s.minutes)}
+      </Td>
+      <Td align="right" className="text-[13px] text-soft">
+        {live ? "Running for " : "Ran "}
+        {duration(sandboxRunMs(s, now))}
+      </Td>
+      <Td align="right" className="text-[13px] text-muted">
+        {ago(s.requestedAt, now)}
+      </Td>
+      <Td align="right">
+        {s.state !== "destroyed" && (
+          <Button
+            size="sm"
+            variant="danger"
+            icon={Trash2}
+            aria-label={`Destroy the sandbox for ${s.taskTitle ?? s.id}`}
+            onClick={() => setConfirm(true)}
+          >
+            Destroy
+          </Button>
+        )}
+        {confirm && (
+          <Dialog
+            title="Destroy this sandbox?"
+            onClose={() => setConfirm(false)}
+            footer={
+              <>
+                <ErrorText error={destroy.error} />
+                <Button onClick={() => setConfirm(false)}>Cancel</Button>
+                <Button variant="danger" busy={destroy.isPending} onClick={() => destroy.mutate()}>
+                  Destroy
+                </Button>
+              </>
+            }
+          >
+            <p className="text-left text-[13px] leading-5 whitespace-normal text-soft">
+              {s.providerName} removes it now, with anything in it that wasn't pushed.
+              {live && s.taskId ? " Its task stops and is marked interrupted." : ""}
+            </p>
+          </Dialog>
+        )}
+      </Td>
+    </Tr>
   );
 }

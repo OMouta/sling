@@ -18,6 +18,7 @@ import { SandboxesPage } from "./pages/Sandboxes.tsx";
 import { SettingsPage } from "./pages/Settings.tsx";
 import { SetupPage } from "./pages/Setup.tsx";
 import { TaskPage } from "./pages/Task.tsx";
+import { TasksPage } from "./pages/Tasks.tsx";
 import { WorkflowsPage } from "./pages/Workflows.tsx";
 
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -62,6 +63,11 @@ const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/settings",
   component: SettingsPage,
+});
+const tasksRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/tasks",
+  component: TasksPage,
 });
 export const taskRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -116,6 +122,7 @@ const routeTree = rootRoute.addChildren([
     sandboxesRoute,
     approvalsRoute,
     settingsRoute,
+    tasksRoute,
     taskRoute,
     workflowsRoute,
     workflowRoute,

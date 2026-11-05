@@ -2,7 +2,9 @@ import type { InstallationView, WorkflowSummaryView } from "@sling/core";
 import type { TemplateView, WorkflowDetailView } from "@sling/workflow";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { ChevronRight, LayoutTemplate, Plus, Upload, Workflow, Zap } from "lucide-react";
 import { type FormEvent, useRef, useState } from "react";
+import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
 import { RunStatusBadge } from "../components/StatusBadge.tsx";
 import {
   Badge,
@@ -12,10 +14,15 @@ import {
   ErrorText,
   Field,
   Input,
-  PageHeader,
   Select,
+  Skeleton,
   Spinner,
   Switch,
+  Table,
+  Tabs,
+  Td,
+  Th,
+  Tr,
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { ago } from "../lib/format.ts";
@@ -54,58 +61,139 @@ export function WorkflowsPage() {
     },
   });
 
-  const sorted = [...(workflows.data ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+  const [tab, setTab] = useState<"all" | "on" | "off">("all");
+  const all = [...(workflows.data ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+  const enabled = all.filter((w) => w.enabled).length;
+  const sorted = all.filter((w) => tab === "all" || (tab === "on") === w.enabled);
+  const failing = all.filter((w) => w.lastRun?.status === "failed").length;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
-      <PageHeader
-        title="Workflows"
-        description="What Sling does when something happens: a chat message, an email, a schedule."
-        actions={
-          <>
-            <input
-              ref={file}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              aria-label="Import workflow file"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) importJson.mutate(f);
-                e.target.value = "";
-              }}
-            />
-            <Button busy={importJson.isPending} onClick={() => file.current?.click()}>
-              Import
-            </Button>
-            <Button onClick={() => setDialog("template")}>From template</Button>
-            <Button variant="primary" onClick={() => setDialog("blank")}>
-              New workflow
-            </Button>
-          </>
-        }
-      />
-      <ErrorText error={importJson.error} />
-      {workflows.isPending && <Spinner />}
+    <Page
+      title="Workflows"
+      badge={
+        all.length > 0 ? (
+          <Badge tone={enabled > 0 ? "ok" : "neutral"} dot>
+            {enabled} on
+          </Badge>
+        ) : undefined
+      }
+      tabs={
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: "all", label: "All workflows" },
+            { id: "on", label: "On", count: enabled },
+            { id: "off", label: "Off", count: all.length - enabled },
+          ]}
+        />
+      }
+      toolbar={
+        <Toolbar
+          actions={
+            <>
+              <input
+                ref={file}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                aria-label="Import workflow file"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) importJson.mutate(f);
+                  e.target.value = "";
+                }}
+              />
+              <Button
+                icon={Upload}
+                busy={importJson.isPending}
+                onClick={() => file.current?.click()}
+              >
+                Import
+              </Button>
+              <Button icon={LayoutTemplate} onClick={() => setDialog("template")}>
+                From template
+              </Button>
+              <Button variant="primary" icon={Plus} onClick={() => setDialog("blank")}>
+                New workflow
+              </Button>
+            </>
+          }
+        >
+          <p className="min-w-0 text-xs leading-4 text-muted max-lg:hidden">
+            What Sling does when something happens: a chat message, an email, a schedule.
+          </p>
+          <ErrorText error={importJson.error} />
+        </Toolbar>
+      }
+      footer={
+        all.length > 0 && (
+          <StatsBar
+            items={[
+              <>
+                <span className="text-text">{sorted.length}</span> workflows in view
+              </>,
+              <>
+                <span className="text-text">{enabled}</span> on
+              </>,
+              failing > 0 && (
+                <>
+                  <span className="text-danger">{failing}</span> failed last run
+                </>
+              ),
+            ]}
+          />
+        )
+      }
+    >
+      {workflows.isPending && (
+        <div className="space-y-3 px-5 py-4">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-5 w-full" />
+          ))}
+        </div>
+      )}
       <ErrorText error={workflows.error} />
       {workflows.data?.length === 0 && (
-        <Empty title="No workflows yet">Start from a template or a blank canvas.</Empty>
+        <Empty
+          icon={Workflow}
+          title="No workflows yet"
+          action={
+            <Button icon={LayoutTemplate} onClick={() => setDialog("template")}>
+              Browse templates
+            </Button>
+          }
+        >
+          Start from a template or a blank canvas.
+        </Empty>
       )}
       {sorted.length > 0 && (
-        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
-          {sorted.map((w) => (
-            <WorkflowRow key={w.id} workflow={w} />
-          ))}
-        </ul>
+        <Table className="border-t border-border">
+          <thead>
+            <tr>
+              <Th>Workflow</Th>
+              <Th>Trigger</Th>
+              <Th>Version</Th>
+              <Th>Last run</Th>
+              <Th align="right">On</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((w) => (
+              <WorkflowRow key={w.id} workflow={w} />
+            ))}
+          </tbody>
+        </Table>
       )}
       {dialog === "blank" && <NewBlankDialog onClose={() => setDialog(null)} />}
       {dialog === "template" && <TemplateDialog onClose={() => setDialog(null)} />}
-    </div>
+    </Page>
   );
 }
 
 function WorkflowRow({ workflow: w }: { workflow: WorkflowSummaryView }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const catalog = useCatalog();
   const toggle = useMutation({
     mutationFn: (enabled: boolean) => workflowApi.patch(w.id, { enabled }),
@@ -121,50 +209,75 @@ function WorkflowRow({ workflow: w }: { workflow: WorkflowSummaryView }) {
     .join(", ");
 
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-      <div className="min-w-0 flex-1 basis-60">
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to="/workflows/$id"
-            params={{ id: w.id }}
-            className="truncate font-medium hover:underline"
-          >
-            {w.name}
-          </Link>
+    <Tr onClick={() => void navigate({ to: "/workflows/$id", params: { id: w.id } })}>
+      <Td className="max-w-[360px]">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="grid size-6 shrink-0 place-items-center rounded-md bg-surface-2 text-icon shadow-raised">
+            <Workflow aria-hidden="true" size={12} />
+          </span>
+          <div className="min-w-0">
+            <Link
+              to="/workflows/$id"
+              params={{ id: w.id }}
+              onClick={(e) => e.stopPropagation()}
+              className="block truncate"
+            >
+              {w.name}
+            </Link>
+            {w.description && <p className="truncate text-xs text-subtle">{w.description}</p>}
+            <ErrorText error={toggle.error} />
+          </div>
+        </div>
+      </Td>
+      <Td className="max-w-[240px]">
+        <span className="flex min-w-0 items-center gap-1.5 text-[13px] text-soft">
+          <Zap aria-hidden="true" size={12} className="shrink-0 text-subtle" />
+          <span className="truncate">{triggers ? `On ${triggers}` : "No trigger"}</span>
+        </span>
+      </Td>
+      <Td>
+        <span className="flex items-center gap-1.5">
           {w.activeVersion === null ? (
             <Badge>Not published</Badge>
           ) : (
-            <span className="text-xs text-muted">v{w.activeVersion}</span>
+            <span className="tabular text-[13px] text-soft">v{w.activeVersion}</span>
           )}
           {w.hasUnpublishedChanges && <Badge tone="warn">Unpublished changes</Badge>}
-        </div>
-        <p className="mt-0.5 truncate text-sm text-muted">
-          {triggers ? `On ${triggers}` : "No trigger"}
-        </p>
-        <ErrorText error={toggle.error} />
-      </div>
-      <div className="flex items-center gap-2 text-sm">
+        </span>
+      </Td>
+      <Td>
         {w.lastRun ? (
           <Link
             to="/workflows/$id/runs/$runId"
             params={{ id: w.id, runId: w.lastRun.id }}
-            className="flex items-center gap-2 hover:underline"
+            onClick={(e) => e.stopPropagation()}
+            className="group/run inline-flex items-center gap-2"
             title="Last run"
           >
             <RunStatusBadge status={w.lastRun.status} />
-            <span className="text-xs text-muted">{ago(w.lastRun.createdAt)}</span>
+            <span className="text-xs text-subtle group-hover/run:text-soft">
+              {ago(w.lastRun.createdAt)}
+            </span>
+            <ChevronRight aria-hidden="true" size={12} className="text-faint" />
           </Link>
         ) : (
-          <span className="text-xs text-muted">Never run</span>
+          <span className="text-xs text-subtle">Never run</span>
         )}
-      </div>
-      <Switch
-        checked={w.enabled}
-        label={`${w.enabled ? "Disable" : "Enable"} ${w.name}`}
-        disabled={toggle.isPending}
-        onChange={(enabled) => toggle.mutate(enabled)}
-      />
-    </li>
+      </Td>
+      <Td align="right">
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: stops the row's click, the switch handles keys. */}
+        {/* biome-ignore lint/a11y/useKeyWithClickEvents: as above. */}
+        <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
+          <Switch
+            size="sm"
+            checked={w.enabled}
+            label={`${w.enabled ? "Disable" : "Enable"} ${w.name}`}
+            disabled={toggle.isPending}
+            onChange={(enabled) => toggle.mutate(enabled)}
+          />
+        </span>
+      </Td>
+    </Tr>
   );
 }
 
@@ -238,25 +351,36 @@ function TemplateDialog({ onClose }: { onClose: () => void }) {
         <>
           {templates.isPending && <Spinner />}
           <ErrorText error={templates.error} />
-          {templates.data?.length === 0 && <p className="text-sm text-muted">No templates.</p>}
+          {templates.data?.length === 0 && <p className="text-[13px] text-muted">No templates.</p>}
           <ul className="space-y-2">
             {templates.data?.map((t) => (
               <li key={t.key}>
                 <button
                   type="button"
                   onClick={() => setPicked(t)}
-                  className="w-full rounded-xl border border-border p-3 text-left hover:border-accent"
+                  className="pressable group flex w-full cursor-pointer items-start gap-3 rounded-xl bg-surface-2 p-3 text-left shadow-raised hover:shadow-raised-hover"
                 >
-                  <span className="flex items-center gap-2 font-medium">
-                    {t.name}
-                    {t.builtIn && <Badge>built in</Badge>}
+                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-3 text-icon">
+                    <LayoutTemplate aria-hidden="true" />
                   </span>
-                  <span className="mt-0.5 block text-sm text-muted">{t.description}</span>
-                  {t.bindings.length > 0 && (
-                    <span className="mt-1 block text-xs text-muted">
-                      Needs {t.bindings.map((b) => b.label).join(", ")}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2 text-[13px] font-medium">
+                      {t.name}
+                      {t.builtIn && <Badge>built in</Badge>}
                     </span>
-                  )}
+                    <span className="mt-0.5 block text-xs leading-4 text-muted">
+                      {t.description}
+                    </span>
+                    {t.bindings.length > 0 && (
+                      <span className="mt-1.5 block text-xs text-subtle">
+                        Needs {t.bindings.map((b) => b.label).join(", ")}
+                      </span>
+                    )}
+                  </span>
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="mt-2 shrink-0 text-faint transition-colors duration-150 group-hover:text-soft"
+                  />
                 </button>
               </li>
             ))}
@@ -309,16 +433,20 @@ function TemplateBindings({
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted">{template.description}</p>
+      <p className="text-[13px] leading-5 text-muted">{template.description}</p>
       {installations.isPending && <Spinner />}
       {template.bindings.map((b) => {
         const list = options(b.connectorId);
         return (
           <Field key={b.placeholder} label={b.label}>
             {list.length === 0 ? (
-              <span className="block rounded-lg border border-dashed border-border p-3 text-sm text-muted">
+              <span className="block rounded-lg bg-surface-2 p-3 text-xs text-muted shadow-raised">
                 No {b.connectorId} installation yet.{" "}
-                <Link to="/connectors" className="text-accent hover:underline" onClick={onClose}>
+                <Link
+                  to="/connectors"
+                  className="text-accent-text hover:underline"
+                  onClick={onClose}
+                >
                   Add one under Connectors
                 </Link>
                 .

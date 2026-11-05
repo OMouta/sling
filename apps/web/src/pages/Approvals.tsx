@@ -1,8 +1,22 @@
 import type { ApprovalView } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { GitBranch, GitPullRequest, ShieldCheck, Upload, Workflow } from "lucide-react";
+import { useState } from "react";
+import { Content, Page, Toolbar, ToolbarText } from "../components/Page.tsx";
 import { SandboxFallbackCard } from "../components/SandboxFallbackCard.tsx";
-import { Button, Card, Empty, ErrorText, PageHeader, Spinner } from "../components/ui.tsx";
+import {
+  Badge,
+  Button,
+  Card,
+  CardFooter,
+  Empty,
+  ErrorText,
+  Kicker,
+  Mono,
+  Skeleton,
+  Tabs,
+} from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { ago, plural } from "../lib/format.ts";
 import { useRun } from "../lib/workflowApi.ts";
@@ -34,27 +48,58 @@ export function ApprovalsPage() {
     byTask.set(a.taskId, [...(byTask.get(a.taskId) ?? []), a]);
   }
 
+  const [tab, setTab] = useState<"all" | "tasks" | "workflows" | "sandboxes">("all");
+  const total = approvals.data?.length ?? 0;
+  const show = (t: typeof tab) => tab === "all" || tab === t;
+
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
-      <PageHeader
-        title="Approvals"
-        description="Steps waiting for you. They expire after 24 hours."
-      />
-      {approvals.isPending && <Spinner />}
-      <ErrorText error={approvals.error} />
-      {approvals.data?.length === 0 && <Empty title="Nothing waiting">You're all caught up.</Empty>}
-      {fallback.map((a) => (
-        <SandboxFallbackCard key={a.id} approval={a} />
-      ))}
-      {[...byTask.entries()].map(([taskId, list]) => (
-        <ApprovalGroup key={taskId} taskId={taskId} approvals={list} />
-      ))}
-      {workflow.map((a) => (
-        <WorkflowApproval key={a.id} approval={a} />
-      ))}
-    </div>
+    <Page
+      title="Approvals"
+      badge={
+        total > 0 ? (
+          <Badge tone="warn" dot>
+            {total} waiting
+          </Badge>
+        ) : undefined
+      }
+      tabs={
+        <Tabs
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { id: "all", label: "All", count: total },
+            { id: "tasks", label: "Pushes and PRs", count: byTask.size },
+            { id: "workflows", label: "Workflows", count: workflow.length },
+            { id: "sandboxes", label: "Sandboxes", count: fallback.length },
+          ]}
+        />
+      }
+      toolbar={
+        <Toolbar>
+          <ToolbarText>Steps waiting for you. They expire after 24 hours.</ToolbarText>
+        </Toolbar>
+      }
+    >
+      <Content className="space-y-4 pt-2">
+        {approvals.isPending && <Skeleton className="h-40 w-full rounded-xl" />}
+        <ErrorText error={approvals.error} />
+        {approvals.data?.length === 0 && (
+          <Empty icon={ShieldCheck} title="Nothing waiting">
+            You're all caught up.
+          </Empty>
+        )}
+        {show("sandboxes") && fallback.map((a) => <SandboxFallbackCard key={a.id} approval={a} />)}
+        {show("tasks") &&
+          [...byTask.entries()].map(([taskId, list]) => (
+            <ApprovalGroup key={taskId} taskId={taskId} approvals={list} />
+          ))}
+        {show("workflows") && workflow.map((a) => <WorkflowApproval key={a.id} approval={a} />)}
+      </Content>
+    </Page>
   );
 }
+
+const ICON = { push: Upload, open_pr: GitPullRequest, merge: GitBranch, deploy: GitBranch };
 
 function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: ApprovalView[] }) {
   const qc = useQueryClient();
@@ -71,42 +116,50 @@ function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: Appro
   return (
     <Card className="overflow-hidden">
       <div className="space-y-3 p-4">
+        <Kicker icon={GitPullRequest}>Push and pull request</Kicker>
         <div>
-          <Link to="/tasks/$id" params={{ id: taskId }} className="font-medium hover:underline">
+          <Link
+            to="/tasks/$id"
+            params={{ id: taskId }}
+            className="text-sm font-medium decoration-faint underline-offset-2 hover:underline"
+          >
             {t.title}
           </Link>
-          <p className="text-sm text-muted">
+          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
             {t.repoName}
-            {t.runnerName ? ` on ${t.runnerName}` : ""} ·{" "}
-            <code className="font-mono text-xs">{t.branch}</code>
+            {t.runnerName ? ` on ${t.runnerName}` : ""} · <Mono>{t.branch}</Mono>
           </p>
         </div>
-        <ul className="space-y-1 text-sm">
-          {approvals.map((a) => (
-            <li key={a.id}>
-              <span className="font-medium">{a.actionKind ? LABEL[a.actionKind] : a.title}</span>
-              <span className="text-muted">
-                {a.actionKind === "push" ? ` to ${t.remoteUrl || "origin"}` : ""} · expires{" "}
-                {ago(a.expiresAt)}
-              </span>
-            </li>
-          ))}
+        <ul className="space-y-1.5 text-[13px]">
+          {approvals.map((a) => {
+            const Icon = a.actionKind ? ICON[a.actionKind] : Upload;
+            return (
+              <li key={a.id} className="flex flex-wrap items-center gap-x-2">
+                <Icon aria-hidden="true" className="text-subtle" />
+                <span className="font-medium">{a.actionKind ? LABEL[a.actionKind] : a.title}</span>
+                <span className="text-xs text-muted">
+                  {a.actionKind === "push" ? `to ${t.remoteUrl || "origin"} · ` : ""}expires{" "}
+                  {ago(a.expiresAt)}
+                </span>
+              </li>
+            );
+          })}
         </ul>
         {t.diffStats && (
-          <p className="text-sm">
+          <p className="tabular text-[13px]">
             {plural(t.diffStats.filesChanged, "file")},{" "}
             <span className="text-ok">+{t.diffStats.insertions}</span>{" "}
             <span className="text-danger">-{t.diffStats.deletions}</span>
           </p>
         )}
         {pr?.prTitle && (
-          <div className="rounded-lg bg-surface-2 p-3 text-sm">
+          <div className="rounded-lg bg-surface-2 p-3 text-[13px] shadow-raised">
             <p className="font-medium">{pr.prTitle}</p>
-            <p className="mt-1 whitespace-pre-wrap text-muted">{pr.prBody}</p>
+            <p className="mt-1 leading-5 whitespace-pre-wrap text-muted">{pr.prBody}</p>
           </div>
         )}
       </div>
-      <div className="flex items-center justify-end gap-2 border-t border-border bg-surface-2/50 px-4 py-3">
+      <CardFooter>
         <ErrorText error={decide.error} />
         <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
           Reject
@@ -119,7 +172,7 @@ function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: Appro
         >
           Approve
         </Button>
-      </div>
+      </CardFooter>
     </Card>
   );
 }
@@ -137,15 +190,16 @@ function WorkflowApproval({ approval }: { approval: ApprovalView }) {
   return (
     <Card className="overflow-hidden">
       <div className="space-y-2 p-4">
-        <p className="font-medium">{approval.title}</p>
-        <p className="text-sm text-muted">
+        <Kicker icon={Workflow}>Workflow step</Kicker>
+        <p className="text-sm font-medium">{approval.title}</p>
+        <p className="text-xs text-muted">
           {r ? (
             <>
               From{" "}
               <Link
                 to="/workflows/$id"
                 params={{ id: r.workflowId }}
-                className="text-text hover:underline"
+                className="text-soft hover:text-text hover:underline"
               >
                 {r.workflowName}
               </Link>{" "}
@@ -153,7 +207,7 @@ function WorkflowApproval({ approval }: { approval: ApprovalView }) {
               <Link
                 to="/workflows/$id/runs/$runId"
                 params={{ id: r.workflowId, runId: r.id }}
-                className="text-accent hover:underline"
+                className="text-accent-text hover:underline"
               >
                 view run
               </Link>
@@ -164,12 +218,12 @@ function WorkflowApproval({ approval }: { approval: ApprovalView }) {
           · expires {ago(approval.expiresAt)}
         </p>
         {approval.payload && (
-          <pre className="max-h-60 overflow-auto rounded-lg bg-surface-2 p-3 font-mono text-xs whitespace-pre-wrap">
+          <pre className="max-h-60 overflow-auto rounded-lg bg-field p-3 font-mono text-xs whitespace-pre-wrap shadow-field">
             {JSON.stringify(approval.payload, null, 2)}
           </pre>
         )}
       </div>
-      <div className="flex items-center justify-end gap-2 border-t border-border bg-surface-2/50 px-4 py-3">
+      <CardFooter>
         <ErrorText error={decide.error} />
         <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
           Reject
@@ -182,7 +236,7 @@ function WorkflowApproval({ approval }: { approval: ApprovalView }) {
         >
           Approve
         </Button>
-      </div>
+      </CardFooter>
     </Card>
   );
 }

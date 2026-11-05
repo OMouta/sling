@@ -1,9 +1,12 @@
 import { MODE_POLICY, PERMISSION_MODES, type PermissionMode } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowUp, ShieldAlert, ShieldCheck } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
+import { Logo } from "../components/Logo.tsx";
+import { Page } from "../components/Page.tsx";
 import { TaskCard } from "../components/TaskCard.tsx";
-import { Button, cx, ErrorText, Select, Spinner, Textarea } from "../components/ui.tsx";
+import { Badge, Button, ErrorText, FilterSelect, Skeleton, Spinner } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { useStreamingText } from "../lib/realtime.ts";
 import type { ConversationDetail, MessageView, TaskView } from "../lib/types.ts";
@@ -23,6 +26,7 @@ export function ChatPage() {
   const streamText = useStreamingText(id);
   const [text, setText] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLTextAreaElement>(null);
 
   const send = useMutation({
     mutationFn: (message: string) =>
@@ -52,23 +56,39 @@ export function ChatPage() {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [items.length, streamText]);
 
+  // Grow the composer with its text, up to a limit.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measure when the text changes.
+  useEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
+  }, [text]);
+
   if (detail.isPending) {
     return (
-      <div className="grid h-full place-items-center text-muted">
-        <Spinner className="size-6" />
-      </div>
+      <Page title={<Skeleton className="h-4 w-48" />}>
+        <div className="mx-auto max-w-3xl space-y-4 px-5 py-8">
+          <Skeleton className="ml-auto h-10 w-2/3 rounded-2xl" />
+          <Skeleton className="h-4 w-3/4" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      </Page>
     );
   }
   if (detail.isError || !detail.data) {
     return (
-      <div className="p-6">
-        <ErrorText error={detail.error ?? "Conversation not found."} />
-      </div>
+      <Page title="Conversation">
+        <div className="p-5">
+          <ErrorText error={detail.error ?? "Conversation not found."} />
+        </div>
+      </Page>
     );
   }
 
   const { conversation, agentStatus, usage } = detail.data;
   const thinking = agentStatus === "thinking";
+  const tokens = usage.inputTokens + usage.outputTokens;
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -89,40 +109,44 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b border-border bg-surface px-4 py-2.5">
-        <h1 className="min-w-0 flex-1 truncate font-medium">{conversation.title}</h1>
-        {usage.inputTokens + usage.outputTokens > 0 && (
-          <span className="hidden text-xs text-muted sm:inline">
-            {(usage.inputTokens + usage.outputTokens).toLocaleString()} tokens
-          </span>
-        )}
-        <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted">Mode</span>
-          <Select
+    <Page
+      title={conversation.title}
+      badge={
+        thinking ? (
+          <Badge tone="accent" dot>
+            Thinking
+          </Badge>
+        ) : undefined
+      }
+      controls={
+        <>
+          {tokens > 0 && (
+            <span className="tabular text-xs text-subtle max-lg:hidden">
+              {tokens.toLocaleString()} tokens
+            </span>
+          )}
+          <FilterSelect
+            label="Mode"
+            ariaLabel="Permission mode"
+            icon={ShieldCheck}
             value={conversation.mode}
-            onChange={(e) => changeMode(e.target.value as PermissionMode)}
-            className="h-8 w-auto py-0 pr-8"
-            aria-label="Permission mode"
-          >
-            {PERMISSION_MODES.map((m) => (
-              <option key={m} value={m}>
-                {MODE_POLICY[m].label}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </header>
-      {conversation.mode === "full-access" && (
-        <div className="border-b border-danger/30 bg-danger/10 px-4 py-2 text-sm text-danger">
-          Full access: the coding agent runs without its sandbox and nothing asks before pushing.
-        </div>
-      )}
+            onChange={changeMode}
+            options={PERMISSION_MODES.map((m) => ({ value: m, label: MODE_POLICY[m].label }))}
+          />
+        </>
+      }
+    >
+      <div className="flex min-h-full flex-col">
+        {conversation.mode === "full-access" && (
+          <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--tag-red-border)] bg-[var(--tag-red-bg)] px-5 py-2 text-xs text-[var(--tag-red-text)]">
+            <ShieldAlert aria-hidden="true" className="shrink-0" />
+            Full access: the coding agent runs without its sandbox and nothing asks before pushing.
+          </div>
+        )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+        <div className="mx-auto w-full max-w-3xl flex-1 space-y-5 px-5 py-8">
           {items.length === 0 && (
-            <p className="py-10 text-center text-sm text-muted">
+            <p className="py-10 text-center text-[13px] text-muted">
               {MODE_POLICY[conversation.mode].label} mode.{" "}
               {MODE_POLICY[conversation.mode].description}
             </p>
@@ -135,42 +159,64 @@ export function ChatPage() {
             ),
           )}
           {thinking && (
-            <div className="flex gap-3">
-              <div className="prose-chat min-w-0 flex-1 text-[15px] leading-relaxed">
-                {streamText ? (
-                  <Markdown>{streamText}</Markdown>
-                ) : (
-                  <span className="inline-flex items-center gap-2 text-sm text-muted">
-                    <Spinner className="size-3.5" /> Thinking
-                  </span>
-                )}
-              </div>
-            </div>
+            <AssistantRow>
+              {streamText ? (
+                <Markdown>{streamText}</Markdown>
+              ) : (
+                <span className="inline-flex items-center gap-2 text-[13px] text-muted">
+                  <Spinner className="size-3.5" /> Thinking
+                </span>
+              )}
+            </AssistantRow>
           )}
           <div ref={bottom} />
         </div>
-      </div>
 
-      <form onSubmit={submit} className="border-t border-border bg-surface px-4 py-3">
-        <div className="mx-auto flex max-w-3xl items-end gap-2">
-          <Textarea
-            rows={1}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) submit(e);
-            }}
-            placeholder="Message Sling"
-            className="max-h-48 min-h-10 resize-none"
-          />
-          <Button type="submit" variant="primary" busy={send.isPending} disabled={!text.trim()}>
-            Send
-          </Button>
-        </div>
-        <div className="mx-auto max-w-3xl">
-          <ErrorText error={send.error ?? setMode.error} />
-        </div>
-      </form>
+        <form
+          onSubmit={submit}
+          className="sticky bottom-0 bg-gradient-to-t from-bg from-60% to-transparent px-5 pt-4 pb-5"
+        >
+          <div className="mx-auto max-w-3xl">
+            <div className="flex items-end gap-2 rounded-2xl bg-surface p-2 pl-4 shadow-card transition-shadow duration-150 has-[textarea:focus]:shadow-focus">
+              <textarea
+                ref={input}
+                rows={1}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) submit(e);
+                }}
+                aria-label="Message"
+                placeholder="Message Sling"
+                className="min-h-[30px] flex-1 resize-none bg-transparent py-[5px] text-sm leading-5 outline-none placeholder:text-subtle focus-visible:outline-none"
+              />
+              <Button
+                type="submit"
+                variant="primary"
+                iconOnly
+                icon={ArrowUp}
+                aria-label="Send"
+                busy={send.isPending}
+                disabled={!text.trim()}
+              />
+            </div>
+            <div className="mt-1.5 px-1">
+              <ErrorText error={send.error ?? setMode.error} />
+            </div>
+          </div>
+        </form>
+      </div>
+    </Page>
+  );
+}
+
+function AssistantRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg bg-accent text-white shadow-primary">
+        <Logo className="size-3.5" />
+      </span>
+      <div className="prose-chat min-w-0 flex-1 text-sm leading-6">{children}</div>
     </div>
   );
 }
@@ -179,7 +225,7 @@ function Message({ message }: { message: MessageView }) {
   if (message.role === "system") {
     const first = message.text.split("\n")[0] ?? "";
     return (
-      <p className="text-center text-xs text-muted" title={message.text}>
+      <p className="text-center text-xs text-subtle" title={message.text}>
         {first}
       </p>
     );
@@ -187,15 +233,15 @@ function Message({ message }: { message: MessageView }) {
   if (message.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-[15px] whitespace-pre-wrap text-accent-fg">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-surface-3 px-3.5 py-2 text-sm leading-6 whitespace-pre-wrap shadow-active">
           {message.text}
         </div>
       </div>
     );
   }
   return (
-    <div className={cx("prose-chat text-[15px] leading-relaxed")}>
+    <AssistantRow>
       <Markdown>{message.text}</Markdown>
-    </div>
+    </AssistantRow>
   );
 }
