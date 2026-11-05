@@ -1,4 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="362.0 84.5 876.0 876.0">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="362.0 84.5 876.0 876.0" role="img" aria-label="Sling">
+  <title>Sling</title>
   <style>
     g { fill: #111110; }
     @media (prefers-color-scheme: dark) { g { fill: #ffffff; } }

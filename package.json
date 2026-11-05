@@ -13,7 +13,8 @@
     "format": "biome check --write .",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "gen": "pnpm --filter @sling/runner-protocol gen"
+    "gen": "pnpm --filter @sling/runner-protocol gen",
+    "test:e2e": "cargo build -p sling-runner -p sling-harness-codex && pnpm --filter @sling/server test:e2e"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.5",
