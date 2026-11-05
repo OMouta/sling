@@ -490,6 +490,10 @@ async fn boots_runs_a_task_pushes_and_exits_when_revoked() {
         message: "sandbox destroyed".into(),
     }));
     assert_eq!(sandbox.exit_code(Duration::from_secs(20)).await, Some(0));
+    assert!(
+        !root.join("user-home/.sling-sandbox-sbx_test01").exists(),
+        "the Codex home made for the API key is removed"
+    );
 
     // The token never landed on disk or in the log.
     let clone = home.join("workspace/site");

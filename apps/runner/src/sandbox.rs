@@ -326,8 +326,8 @@ fn tool_env(settings: &Settings, exe: &Path) -> Vec<(String, String, String)> {
 pub struct Prepared {
     settings: Settings,
     paths: Paths,
-    /// Removed on exit, because the sandbox created it.
-    temp_home: Option<PathBuf>,
+    /// Directories the sandbox created, removed on exit.
+    cleanup: Vec<PathBuf>,
 }
 
 /// Reads the settings and picks the Runner's home. Runs before the async
@@ -356,11 +356,21 @@ pub fn prepare() -> Result<Prepared, i32> {
         tracing::error!("sandbox can't start: creating {}: {e}", home.display());
         return Err(EXIT_OTHER);
     }
+    let mut cleanup: Vec<PathBuf> = temp_home.into_iter().collect();
     if settings.wants("codex") && settings.openai_api_key.is_some() {
-        // Codex is logged in with the key under the sandbox's home, so an
-        // existing Codex login on this machine is left alone.
-        let codex_home = home.join("codex");
-        if let Err(e) = seed_codex_home(&codex_home) {
+        // Codex is logged in with the key in a home of its own, so an
+        // existing Codex login on this machine is left alone. Codex won't set
+        // up its helper commands under the temp directory, so it goes in HOME.
+        let own = std::env::var_os("HOME")
+            .filter(|h| !h.is_empty())
+            .map(|h| PathBuf::from(h).join(format!(".sling-sandbox-{}", settings.sandbox_id)));
+        let mut codex_home = home.join("codex");
+        if let Some(dir) = own
+            && seed_codex_home(&dir.join("codex")).is_ok()
+        {
+            codex_home = dir.join("codex");
+            cleanup.push(dir);
+        } else if let Err(e) = seed_codex_home(&codex_home) {
             tracing::error!("sandbox can't start: {e:#}");
             return Err(EXIT_OTHER);
         }
@@ -374,7 +384,7 @@ pub fn prepare() -> Result<Prepared, i32> {
     Ok(Prepared {
         settings,
         paths,
-        temp_home,
+        cleanup,
     })
 }
 
@@ -399,7 +409,7 @@ pub async fn run(prepared: Prepared) -> i32 {
     let Prepared {
         settings,
         paths,
-        temp_home,
+        cleanup,
     } = prepared;
     let code = match boot(&settings, &paths).await {
         Ok((cfg, env_removed)) => serve(&settings, paths, cfg, env_removed).await,
@@ -408,7 +418,7 @@ pub async fn run(prepared: Prepared) -> i32 {
             code
         }
     };
-    if let Some(dir) = temp_home {
+    for dir in cleanup {
         let _ = std::fs::remove_dir_all(dir);
     }
     code
