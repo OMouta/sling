@@ -13,6 +13,9 @@ import { api } from "./api.ts";
 
 export const modelsKey = ["models"] as const;
 
+/** The column chats and the composer share. Wide, with a cap for reading. */
+export const CHAT_WIDTH = "max-w-[920px]";
+
 export function useModelCatalog() {
   return useQuery({
     queryKey: modelsKey,

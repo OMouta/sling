@@ -73,6 +73,13 @@ function listedFrom(data: unknown): Listed[] {
 const OPENAI_SKIP =
   /(audio|realtime|tts|transcribe|whisper|dall-e|image|embedding|moderation|search|instruct|babbage|davinci|computer-use|-\d{4}-\d{2}-\d{2}$)/;
 
+/** Models on an OpenAI-style server that can't chat: embeddings, rerankers, speech. */
+const NOT_CHAT = /(embed|rerank|whisper|tts|transcrib|moderation|bge-|e5-)/i;
+
+export function isChatModel(id: string): boolean {
+  return !NOT_CHAT.test(id);
+}
+
 /** OpenAI's reasoning models take an effort level and the priority tier. */
 export function openaiMeta(id: string): Omit<ModelOption, "id" | "label" | "description"> {
   const reasoning = /^(o\d|gpt-5|gpt-6)/.test(id);
@@ -143,6 +150,7 @@ async function listModels(
     await fetchJson(url, apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
   );
   return listed
+    .filter((m) => isChatModel(m.id))
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((m) => ({
       id: m.id,

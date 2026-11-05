@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { anthropicMeta, openaiLabel, openaiMeta } from "./catalog.ts";
+import { anthropicMeta, isChatModel, openaiLabel, openaiMeta } from "./catalog.ts";
 import { providerOptionsFor } from "./models.ts";
 
 describe("assistant provider options", () => {
@@ -63,5 +63,15 @@ describe("model metadata", () => {
     expect(openaiMeta("gpt-5.1").efforts).toEqual(["low", "medium", "high"]);
     expect(openaiMeta("gpt-4.1")).toEqual({ efforts: [], defaultEffort: null, fast: false });
     expect(openaiLabel("gpt-5.1-mini")).toBe("GPT-5.1-mini");
+  });
+});
+
+describe("OpenAI-compatible lists", () => {
+  it("leaves out models that can't chat", () => {
+    expect(isChatModel("gemma4:31b-cloud")).toBe(true);
+    expect(isChatModel("qwen3.5:397b-cloud")).toBe(true);
+    expect(isChatModel("nomic-embed-text:latest")).toBe(false);
+    expect(isChatModel("bge-m3")).toBe(false);
+    expect(isChatModel("whisper-large-v3")).toBe(false);
   });
 });

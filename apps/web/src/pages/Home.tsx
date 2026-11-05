@@ -8,7 +8,7 @@ import type {
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowRight, ArrowUp, Check, Cpu, Laptop } from "lucide-react";
+import { ArrowRight, ArrowUp, Check, ChevronDown, Cpu, Laptop } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { Logo } from "../components/Logo.tsx";
@@ -19,7 +19,7 @@ import { Button, Card, cx, ErrorText, Kbd } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { ago } from "../lib/format.ts";
 import { machinesOnly } from "../lib/machines.ts";
-import { useModelCatalog } from "../lib/models.ts";
+import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
 import type { Settings } from "../lib/types.ts";
 
 const SUGGESTIONS = [
@@ -85,142 +85,162 @@ export function HomePage() {
 
   return (
     <Page title="Chat">
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 pt-[12vh] pb-10">
-        <div className="mb-7 flex flex-col items-center text-center">
-          <span className="mb-4 grid size-11 place-items-center rounded-xl bg-accent text-white shadow-primary">
-            <Logo className="size-6" />
-          </span>
-          <h2 className="text-2xl font-medium tracking-tight text-balance">
-            What should we work on?
-          </h2>
-          <p className="mt-1.5 max-w-md text-[13px] leading-5 text-pretty text-muted">
-            Sling hands coding work to Codex or Claude Code, on your machines or in a fresh sandbox.
-          </p>
-        </div>
-
-        {!ready && settings.isSuccess && runners.isSuccess && (
-          <Card className="mb-4 divide-y divide-border">
-            <Step done={hasModel} n={1} icon={Cpu} title="Connect a model" to="/settings">
-              Sling's assistant needs an OpenAI, Anthropic, or OpenAI-compatible model.
-            </Step>
-            <Step
-              done={hasMachine}
-              n={2}
-              icon={Laptop}
-              title="Pair a machine"
-              to="/machines"
-              search={{ pair: true }}
-            >
-              Install sling-runner on the computer that has your repos and Codex or Claude Code.
-            </Step>
-          </Card>
-        )}
-
-        <form onSubmit={submit}>
-          <div
-            className={cx(
-              "rounded-2xl bg-surface shadow-card transition-shadow duration-150 has-[textarea:focus]:shadow-focus",
-              !ready && "opacity-60",
-            )}
-          >
-            <textarea
-              rows={3}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) submit(e);
-              }}
-              aria-label="Message"
-              placeholder="The footer year in site is hardcoded. Make it dynamic and add a test."
-              className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 outline-none placeholder:text-subtle focus-visible:outline-none disabled:cursor-not-allowed"
-              disabled={!ready}
-            />
-            <div className="flex items-center gap-2 px-2 pt-1 pb-2">
-              <ChatControls
-                className="min-w-0 flex-1"
-                catalog={catalog.data}
-                assistant={assistant ?? catalog.data?.defaults.assistant ?? null}
-                agent={
-                  agent ??
-                  catalog.data?.defaults.agent ?? {
-                    harness: "codex",
-                    model: null,
-                    effort: null,
-                    fast: false,
-                  }
-                }
-                onAssistant={setAssistant}
-                onAgent={setAgent}
-                mode={mode ?? settings.data?.defaultMode ?? "auto"}
-                onMode={modeChange.change}
-              />
-              <div className="flex shrink-0 items-center gap-2">
-                <ErrorText error={start.error} />
-                <Button
-                  type="submit"
-                  variant="primary"
-                  icon={ArrowUp}
-                  busy={start.isPending}
-                  disabled={!ready || !text.trim()}
+      {/* The first screen: a greeting, then the composer at the bottom. Recent tasks sit below it. */}
+      <div className="flex min-h-full flex-col">
+        <div className={cx("mx-auto flex w-full flex-1 flex-col px-5", CHAT_WIDTH)}>
+          <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
+            <span className="mb-4 grid size-11 place-items-center rounded-xl bg-accent text-white shadow-primary">
+              <Logo className="size-6" />
+            </span>
+            <h2 className="text-2xl font-medium tracking-tight text-balance">
+              What should we work on?
+            </h2>
+            <p className="mt-1.5 max-w-md text-[13px] leading-5 text-pretty text-muted">
+              Sling hands coding work to Codex or Claude Code, on your machines or in a fresh
+              sandbox.
+            </p>
+            {!ready && settings.isSuccess && runners.isSuccess && (
+              <Card className="mt-6 w-full max-w-xl divide-y divide-border text-left">
+                <Step done={hasModel} n={1} icon={Cpu} title="Connect a model" to="/settings">
+                  Sling's assistant needs an OpenAI, Anthropic, or OpenAI-compatible model.
+                </Step>
+                <Step
+                  done={hasMachine}
+                  n={2}
+                  icon={Laptop}
+                  title="Pair a machine"
+                  to="/machines"
+                  search={{ pair: true }}
                 >
-                  Start
-                </Button>
+                  Install sling-runner on the computer that has your repos and Codex or Claude Code.
+                </Step>
+              </Card>
+            )}
+          </div>
+
+          {ready && !text && (
+            <div className="mb-3 flex flex-wrap justify-center gap-2">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setText(s)}
+                  className="pressable h-[26px] cursor-pointer rounded-full bg-surface-2 px-2.5 text-xs text-muted shadow-raised hover:text-text hover:shadow-raised-hover"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <form onSubmit={submit}>
+            <div
+              className={cx(
+                "rounded-2xl bg-surface shadow-card transition-shadow duration-150 has-[textarea:focus]:shadow-focus",
+                !ready && "opacity-60",
+              )}
+            >
+              <textarea
+                rows={3}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) submit(e);
+                }}
+                aria-label="Message"
+                placeholder="The footer year in site is hardcoded. Make it dynamic and add a test."
+                className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 outline-none placeholder:text-subtle focus-visible:outline-none disabled:cursor-not-allowed"
+                disabled={!ready}
+              />
+              <div className="flex items-center gap-2 px-2 pt-1 pb-2">
+                <ChatControls
+                  className="min-w-0 flex-1"
+                  catalog={catalog.data}
+                  assistant={assistant ?? catalog.data?.defaults.assistant ?? null}
+                  agent={
+                    agent ??
+                    catalog.data?.defaults.agent ?? {
+                      harness: "codex",
+                      model: null,
+                      effort: null,
+                      fast: false,
+                    }
+                  }
+                  onAssistant={setAssistant}
+                  onAgent={setAgent}
+                  mode={mode ?? settings.data?.defaultMode ?? "auto"}
+                  onMode={modeChange.change}
+                />
+                <div className="flex shrink-0 items-center gap-2">
+                  <ErrorText error={start.error} />
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    icon={ArrowUp}
+                    busy={start.isPending}
+                    disabled={!ready || !text.trim()}
+                  >
+                    Start
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        </form>
-        <p className="mt-2 flex items-center justify-center gap-1 text-xs text-subtle max-sm:hidden">
-          <Kbd>↵</Kbd> to send, <Kbd>⇧</Kbd>
-          <Kbd>↵</Kbd> for a new line
-        </p>
-        {modeChange.dialog}
-
-        {ready && !text && (
-          <div className="mt-3 flex flex-wrap justify-center gap-2">
-            {SUGGESTIONS.map((s) => (
+          </form>
+          <div className="flex items-center justify-between gap-3 px-1 pt-2 pb-5 text-xs text-subtle">
+            <span className="flex items-center gap-1 max-sm:hidden">
+              <Kbd>↵</Kbd> to send, <Kbd>⇧</Kbd>
+              <Kbd>↵</Kbd> for a new line
+            </span>
+            {recent.length > 0 && (
               <button
-                key={s}
                 type="button"
-                onClick={() => setText(s)}
-                className="pressable h-[26px] cursor-pointer rounded-full bg-surface-2 px-2.5 text-xs text-muted shadow-raised hover:text-text hover:shadow-raised-hover"
+                onClick={() =>
+                  document.getElementById("recent-tasks")?.scrollIntoView({ behavior: "smooth" })
+                }
+                className="ml-auto flex cursor-pointer items-center gap-1 transition-colors duration-150 hover:text-text"
               >
-                {s}
+                Recent tasks <ChevronDown aria-hidden="true" size={12} />
               </button>
-            ))}
+            )}
           </div>
-        )}
-
-        {recent.length > 0 && (
-          <div className="mt-12">
-            <div className="mb-2 flex items-center justify-between px-1">
-              <span className="section-label">Recent tasks</span>
-              <Link
-                to="/tasks"
-                className="flex items-center gap-1 text-xs text-subtle transition-colors duration-150 hover:text-text"
-              >
-                All tasks <ArrowRight aria-hidden="true" size={12} />
-              </Link>
-            </div>
-            <Card className="divide-y divide-border overflow-hidden">
-              {recent.map((t) => (
-                <Link
-                  key={t.id}
-                  to="/tasks/$id"
-                  params={{ id: t.id }}
-                  className="flex h-11 items-center gap-3 px-4 transition-colors duration-150 hover:bg-hover"
-                >
-                  <span className="min-w-0 flex-1 truncate text-[13px]">{t.title}</span>
-                  <span className="text-xs text-subtle max-sm:hidden">{t.repoName}</span>
-                  <TaskStateBadge task={t} />
-                  <span className="tabular w-20 text-right text-xs text-subtle">
-                    {ago(t.createdAt)}
-                  </span>
-                </Link>
-              ))}
-            </Card>
-          </div>
-        )}
+        </div>
       </div>
+      {modeChange.dialog}
+
+      {recent.length > 0 && (
+        <section
+          id="recent-tasks"
+          aria-label="Recent tasks"
+          className={cx("mx-auto w-full scroll-mt-4 px-5 pt-4 pb-16", CHAT_WIDTH)}
+        >
+          <div className="mb-2 flex items-center justify-between px-1">
+            <span className="section-label">Recent tasks</span>
+            <Link
+              to="/tasks"
+              className="flex items-center gap-1 text-xs text-subtle transition-colors duration-150 hover:text-text"
+            >
+              All tasks <ArrowRight aria-hidden="true" size={12} />
+            </Link>
+          </div>
+          <Card className="divide-y divide-border overflow-hidden">
+            {recent.map((t) => (
+              <Link
+                key={t.id}
+                to="/tasks/$id"
+                params={{ id: t.id }}
+                className="flex h-11 items-center gap-3 px-4 transition-colors duration-150 hover:bg-hover"
+              >
+                <span className="min-w-0 flex-1 truncate text-[13px]">{t.title}</span>
+                <span className="text-xs text-subtle max-sm:hidden">{t.repoName}</span>
+                <TaskStateBadge task={t} />
+                <span className="tabular w-20 text-right text-xs text-subtle">
+                  {ago(t.createdAt)}
+                </span>
+              </Link>
+            ))}
+          </Card>
+        </section>
+      )}
     </Page>
   );
 }

@@ -14,9 +14,9 @@ import { Logo } from "../components/Logo.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { TaskCard } from "../components/TaskCard.tsx";
-import { Badge, Button, ErrorText, Skeleton, Spinner } from "../components/ui.tsx";
+import { Badge, Button, cx, ErrorText, Skeleton, Spinner } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
-import { useModelCatalog } from "../lib/models.ts";
+import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
 import { useStreamingText } from "../lib/realtime.ts";
 import type { ConversationDetail, MessageView, TaskView } from "../lib/types.ts";
 import { chatRoute } from "../router.tsx";
@@ -161,39 +161,41 @@ export function ChatPage() {
           </div>
         )}
 
-        <div className="mx-auto w-full max-w-[760px] flex-1 space-y-5 px-5 py-8">
-          {items.length === 0 && (
-            <p className="py-10 text-center text-[13px] text-muted">
-              {MODE_POLICY[conversation.mode].label} mode.{" "}
-              {MODE_POLICY[conversation.mode].description}
-            </p>
-          )}
-          {items.map((item) =>
-            item.kind === "task" ? (
-              <TaskCard key={item.task.id} task={item.task} />
-            ) : (
-              <Message key={item.message.id} message={item.message} />
-            ),
-          )}
-          {thinking && (
-            <AssistantRow>
-              {streamText ? (
-                <Markdown>{streamText}</Markdown>
+        <div className="w-full flex-1 px-5 py-8">
+          <div className={cx("mx-auto space-y-5", CHAT_WIDTH)}>
+            {items.length === 0 && (
+              <p className="py-10 text-center text-[13px] text-muted">
+                {MODE_POLICY[conversation.mode].label} mode.{" "}
+                {MODE_POLICY[conversation.mode].description}
+              </p>
+            )}
+            {items.map((item) =>
+              item.kind === "task" ? (
+                <TaskCard key={item.task.id} task={item.task} />
               ) : (
-                <span className="inline-flex items-center gap-2 text-[13px] text-muted">
-                  <Spinner className="size-3.5" /> Thinking
-                </span>
-              )}
-            </AssistantRow>
-          )}
-          <div ref={bottom} />
+                <Message key={item.message.id} message={item.message} />
+              ),
+            )}
+            {thinking && (
+              <AssistantRow>
+                {streamText ? (
+                  <Markdown>{streamText}</Markdown>
+                ) : (
+                  <span className="inline-flex items-center gap-2 text-[13px] text-muted">
+                    <Spinner className="size-3.5" /> Thinking
+                  </span>
+                )}
+              </AssistantRow>
+            )}
+            <div ref={bottom} />
+          </div>
         </div>
 
         <form
           onSubmit={submit}
           className="sticky bottom-0 bg-gradient-to-t from-bg from-60% to-transparent px-5 pt-4 pb-5"
         >
-          <div className="mx-auto max-w-[720px]">
+          <div className={cx("mx-auto", CHAT_WIDTH)}>
             <div className="rounded-2xl bg-surface shadow-card transition-shadow duration-150 has-[textarea:focus]:shadow-focus">
               <textarea
                 ref={input}

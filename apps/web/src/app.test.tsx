@@ -260,4 +260,15 @@ describe("web app", () => {
       ).toBe(JSON.stringify({ path: "/Users/me/code/api" })),
     );
   });
+
+  it("collapses the sidebar and remembers it", async () => {
+    localStorage.removeItem("sling.sidebar");
+    renderAt("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Hide sidebar" }));
+    expect(screen.getByRole("button", { name: "Show sidebar" })).toBeTruthy();
+    expect(localStorage.getItem("sling.sidebar")).toBe("collapsed");
+    fireEvent.click(screen.getByRole("button", { name: "Show sidebar" }));
+    expect(screen.queryByRole("button", { name: "Show sidebar" })).toBeNull();
+    expect(localStorage.getItem("sling.sidebar")).toBe("open");
+  });
 });

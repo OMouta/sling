@@ -1,7 +1,7 @@
 import type { ApprovalView, ConversationView, RunnerView, TaskView } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { MessageSquare, Plus, SquarePen } from "lucide-react";
+import { MessageSquare, PanelLeftClose, Plus, SquarePen } from "lucide-react";
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api.ts";
 import { decisionCount } from "../lib/approvals.ts";
@@ -37,10 +37,39 @@ export function AppLayout() {
   return <Shell />;
 }
 
+const SIDEBAR_KEY = "sling.sidebar";
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === "collapsed";
+  } catch {
+    return false;
+  }
+}
+
 function Shell() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [navOpen, setNavOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const create = useMutation({
+    mutationFn: () => api.post<ConversationView>("/api/conversations"),
+    onSuccess: (c) => {
+      void qc.invalidateQueries({ queryKey: ["conversations"] });
+      void navigate({ to: "/c/$id", params: { id: c.id } });
+    },
+  });
+  const toggleSidebar = useCallback(() => {
+    setCollapsed((c) => {
+      try {
+        localStorage.setItem(SIDEBAR_KEY, c ? "open" : "collapsed");
+      } catch {
+        // Not remembered; still applies for this tab.
+      }
+      return !c;
+    });
+  }, []);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => connectRealtime(qc), [qc]);
@@ -48,19 +77,31 @@ function Shell() {
   useEffect(() => setNavOpen(false), [pathname]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      const key = e.key.toLowerCase();
+      if (key === "k") {
         e.preventDefault();
         setSearchOpen((o) => !o);
+      } else if (key === "b" && window.matchMedia("(min-width: 48rem)").matches) {
+        e.preventDefault();
+        toggleSidebar();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [toggleSidebar]);
 
   const closeSearch = useCallback(() => setSearchOpen(false), []);
+  const newConversation = create.mutate;
   const shell = useMemo(
-    () => ({ openNav: () => setNavOpen(true), openSearch: () => setSearchOpen(true) }),
-    [],
+    () => ({
+      openNav: () => setNavOpen(true),
+      openSearch: () => setSearchOpen(true),
+      collapsed,
+      toggleSidebar,
+      newConversation: () => newConversation(),
+    }),
+    [collapsed, toggleSidebar, newConversation],
   );
 
   return (
@@ -70,9 +111,14 @@ function Shell() {
           className={cx(
             "fixed inset-y-0 left-0 z-30 flex w-[254px] flex-col border-r border-border bg-sidebar transition-transform duration-300 ease-[var(--ease-out)] md:static md:translate-x-0 md:transition-none",
             navOpen ? "translate-x-0" : "-translate-x-full",
+            collapsed && "md:hidden",
           )}
         >
-          <Sidebar />
+          <Sidebar
+            onNew={() => create.mutate()}
+            creating={create.isPending}
+            onCollapse={toggleSidebar}
+          />
         </aside>
         {navOpen && (
           <button
@@ -122,9 +168,15 @@ function SectionLabel({ children, action }: { children: ReactNode; action?: Reac
   );
 }
 
-function Sidebar() {
-  const qc = useQueryClient();
-  const navigate = useNavigate();
+function Sidebar({
+  onNew,
+  creating,
+  onCollapse,
+}: {
+  onNew: () => void;
+  creating: boolean;
+  onCollapse: () => void;
+}) {
   const conversations = useQuery({
     queryKey: ["conversations"],
     queryFn: () => api.get<ConversationView[]>("/api/conversations"),
@@ -142,13 +194,6 @@ function Sidebar() {
     queryFn: () => api.get<TaskView[]>("/api/tasks"),
   });
   const sandboxes = useSandboxes();
-  const create = useMutation({
-    mutationFn: () => api.post<ConversationView>("/api/conversations"),
-    onSuccess: (c) => {
-      void qc.invalidateQueries({ queryKey: ["conversations"] });
-      void navigate({ to: "/c/$id", params: { id: c.id } });
-    },
-  });
 
   const machines = machinesOnly(runners.data ?? []);
   const online = machines.filter((m) => m.online).length;
@@ -185,8 +230,18 @@ function Sidebar() {
           icon={SquarePen}
           aria-label="New conversation"
           title="New conversation"
-          busy={create.isPending}
-          onClick={() => create.mutate()}
+          busy={creating}
+          onClick={onNew}
+        />
+        <Button
+          variant="ghost"
+          size="sm"
+          iconOnly
+          icon={PanelLeftClose}
+          aria-label="Hide sidebar"
+          title="Hide sidebar (⌘B)"
+          className="max-md:hidden"
+          onClick={onCollapse}
         />
       </div>
 
@@ -223,7 +278,7 @@ function Sidebar() {
               <button
                 type="button"
                 aria-label="Start a conversation"
-                onClick={() => create.mutate()}
+                onClick={onNew}
                 className="grid size-5 cursor-pointer place-items-center rounded-md text-subtle transition-colors duration-150 hover:bg-surface-3 hover:text-icon"
               >
                 <Plus aria-hidden="true" size={12} />

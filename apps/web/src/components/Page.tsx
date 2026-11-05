@@ -10,8 +10,10 @@ import {
   Menu as MenuIcon,
   Monitor,
   Moon,
+  PanelLeft,
   Search,
   Settings,
+  SquarePen,
   Sun,
 } from "lucide-react";
 import { createContext, type ReactNode, useContext } from "react";
@@ -22,10 +24,19 @@ import { setTheme, type ThemePref, useTheme } from "../lib/theme.ts";
 import type { Status } from "../lib/types.ts";
 import { Avatar, Button, cx, Kbd, Menu, MenuItem, MenuLabel, MenuSeparator } from "./ui.tsx";
 
-/** What the shell lends to pages: opening the phone drawer and the search palette. */
-export const ShellContext = createContext<{ openNav: () => void; openSearch: () => void }>({
+/** What the shell lends to pages: the sidebar, the search palette, and new chats. */
+export const ShellContext = createContext<{
+  openNav: () => void;
+  openSearch: () => void;
+  collapsed: boolean;
+  toggleSidebar: () => void;
+  newConversation: () => void;
+}>({
   openNav: () => {},
   openSearch: () => {},
+  collapsed: false,
+  toggleSidebar: () => {},
+  newConversation: () => {},
 });
 
 /**
@@ -135,6 +146,27 @@ function TopBar({
         className="md:hidden"
         onClick={shell.openNav}
       />
+      {shell.collapsed && (
+        <span className="-ml-1.5 flex items-center gap-0.5 max-md:hidden">
+          <Button
+            variant="ghost"
+            iconOnly
+            icon={PanelLeft}
+            aria-label="Show sidebar"
+            title="Show sidebar (⌘B)"
+            onClick={shell.toggleSidebar}
+          />
+          <Button
+            variant="ghost"
+            iconOnly
+            icon={SquarePen}
+            aria-label="New conversation"
+            title="New conversation"
+            onClick={shell.newConversation}
+          />
+          <span className="mx-1.5 h-4 w-px bg-border" />
+        </span>
+      )}
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         {crumb && (
           <>
