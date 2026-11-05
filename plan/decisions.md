@@ -111,6 +111,32 @@ Push and PR each get an approval record, so the audit log shows exactly what was
 ### D27. Tests use a fake Codex and a scripted model
 `fake-codex` (in `crates/harness-codex`) speaks the same JSONL as `codex exec --json`, with scenarios for success, failure, hanging, and crashing. The end-to-end suite runs real Postgres, the server, and the real Runner binary against it, with the AI SDK's mock model playing the agent. Real Codex stays out of CI because it needs a login.
 
+## Stage 2
+
+### D28. Email: IMAP and SMTP
+Works with any mailbox, Gmail and Fastmail included through app passwords, and needs no Google Cloud project. imapflow handles IMAP with IDLE and falls back to polling. nodemailer sends, and mailparser parses. Gmail OAuth can come later as its own connector.
+
+### D29. Expressions: JSONata, with limits
+Config fields marked `expression` take JSONata written as `={{ … }}`. JSONata runs no arbitrary code. Evaluation is capped at 1 second and a recursion depth of 300. There's no JavaScript code node.
+
+### D30. Chat runs through the workflow engine
+The web chat is the installed **Sling Assistant** workflow: `app.chat_message` to `state.conversation` to `agent.assistant`. The Discord assistant template reuses the same nodes. Each conversation records the workflow that owns it, so follow-ups after a task settles go back where the conversation started. Turns for one conversation run in order through a concurrency key.
+
+### D31. Discord approvals use buttons, for allowlisted users only
+Approval DMs carry Approve and Reject buttons. The connector accepts a click only from a Discord user ID in the installation's `approverUserIds`, and only for a pending approval in the same workspace. Accepted and refused clicks are both audited with `via: "discord"`. This makes an approver's Discord account an approval key, which is a choice you made knowingly. The threat model says so.
+
+### D32. Workflow format: `sling.workflow/v1` JSON
+Nodes with typed data ports and named exec ports. Exec edges and data edges are separate. Drafts are mutable, versions immutable, and runs record their version. Templates are the same JSON, kept in `workflows/`.
+
+### D33. Retries are opt-in, and never automatic for side effects
+The engine retries a failed node only when the error is retryable and the node spec says it's idempotent. Sending a message, sending email, and starting a task are not retried after an ambiguous failure. Every node run gets an idempotency key that connectors pass along where the service supports one.
+
+### D34. Discord: discord.js gateway bot with a token you provide
+You create the bot in the Discord developer portal and paste its token into the installation. It needs the Message Content intent. Messages from users outside the installation's allowed list are dropped before any trigger fires.
+
+### D35. One durable job per run, persisted after every node
+A pg-boss job runs a workflow run's nodes in a loop and saves the cursor after each one. Waiting runs hold no job. A node that was running when the process died is re-run only if it's idempotent; otherwise it fails as "interrupted, outcome unknown".
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.
@@ -134,7 +160,6 @@ These became spikes S1 to S3. Notes are in `plan/spikes/`. S1 and S3 are settled
 
 ## Deferred to later stages
 
-- Workflow definition format (open question 8) and the visual editor: Stage 2.
 - Docker and Railway execution providers, cloud cost controls (open question 10), and delivering secrets to isolated tasks (open question 7): Stage 3.
 - Desktop app (Tauri): after Stage 2.
 - Extension signing and a marketplace: Stage 4.
