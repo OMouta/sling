@@ -44,6 +44,8 @@ export interface Parked extends InFlight {
   waitId: string;
   inputs: Record<string, unknown>;
   config: Record<string, unknown>;
+  /** Outputs returned with the wait. What `resume` returns is merged over them. */
+  outputs: Record<string, unknown>;
   /** Filled in when the wait resolves, before the run is queued again. */
   resolution?: WaitResolution;
 }

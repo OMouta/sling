@@ -202,6 +202,9 @@ importers:
       '@fastify/websocket':
         specifier: ^11.3.7
         version: 11.3.7
+      '@sling/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
       '@sling/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -211,6 +214,9 @@ importers:
       '@sling/runner-protocol':
         specifier: workspace:*
         version: link:../../packages/runner-protocol
+      '@sling/workflow':
+        specifier: workspace:*
+        version: link:../../packages/workflow
       ai:
         specifier: ^7.0.162
         version: 7.0.162(zod@4.6.7)
