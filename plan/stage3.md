@@ -2,6 +2,55 @@
 
 More machines and environments. This is spec section 15, Stage 3, with the choices in `decisions.md` applied (D40 to D47 are new for this stage).
 
+## Status (2026-11-05)
+
+W0 to W5 are built and on `main`. The contracts went in first, then four parallel workstreams: Runner, control plane, providers, and web. Each was rebased and merged, then the integration was done.
+
+| "Done when" item | Verified by |
+|---|---|
+| 1. Picks between two machines and explains why | End-to-end with two real Runners: free slots, then the most recent repo, then pairing order, with reasons |
+| 2. Labels | End-to-end with real Runners reporting labels |
+| 3. Claude Code | A real Claude Code 2.1.318 task through Sling on macOS. The router picked the machine and said why, Claude Code fixed a bug and ran the check, and the Runner committed one file and pushed. `fake-claude` covers the rest |
+| 4. Allow in sandboxes, a provider, keys | The API in the end-to-end suite. The web app in DOM tests |
+| 5. Offline to fallback approval to sandbox to push to destroyed | End-to-end with the real `sling-runner sandbox` started as a local process. The Docker path is covered separately by the item 8 test |
+| 6. A repo that isn't allowed | End-to-end |
+| 7. Railway | Not run. There's no Railway account here. Unit tests run against a fake SDK client, and the live tests skip themselves |
+| 8. "Run this in a fresh sandbox" | End-to-end on the real Docker daemon. The `sling-sandbox` image cloned over smart HTTP, a stand-in agent made the change, the branch was pushed, and the container was destroyed. The agent's environment held no token, no API key, and no `SLING_` variables |
+| 9. Limits, lifetime, orphans | End-to-end |
+| 10. Sandboxes page | DOM tests |
+
+Test counts on `main`:
+- **Unit tests:** 423 in TypeScript and 82 in Rust.
+- **End-to-end:** 66 tests across five suites, including the real-process sandbox test and the real Docker sandbox test.
+- **Integration:** 10 Docker tests against the real daemon, and 12 GreenMail tests.
+
+| Budget | Measured |
+|---|---|
+| Docker sandbox, request to Runner connected (image cached) | 0.8 s |
+| Routing decision, with its database reads | well under 20 ms at p95 |
+| Sandbox destroyed after its task delivers | under 0.1 s |
+
+Found and fixed during integration:
+- **Agent detection:** the router counted an agent the Runner couldn't find as installed but not logged in. It now says "isn't installed".
+- **Init process:** sandbox containers now start with one, because `sling-runner` as PID 1 doesn't reap leftover processes.
+- **Settings cache:** saving sandbox secrets replaced the cached sandbox settings with `{ secrets }` alone.
+- **Found by the workstreams themselves:**
+  - a dispatch race, where a fast Runner's first event could arrive before the task was saved as dispatched
+  - Codex logins made with an API key reading as "not logged in"
+
+Not done or not verified yet:
+- **Railway against a live account.** Need: an API token and an environment ID.
+- **Real agents inside the sandbox image.** No OpenAI or Anthropic API key was available, so startup, detection, and login were checked with fake keys only.
+- **A PR opened from a sandbox with a GitHub token.** Tests push to a local server and skip `gh`.
+- **The new pages clicked through in a browser against the real server.**
+- **CI, and Linux and Windows.** CI hasn't run yet, because the repo has no remote.
+- **Gaps carried forward** (in the threat model):
+  - agents have no sandbox of their own inside a sandbox container (D48)
+  - a repo's network setting isn't enforced in sandboxes
+  - the sandbox image is 2.05 GB
+  - one Sling server per provider target (D52)
+  - a Supervised sandbox keeps running, and uses minutes, while a push waits for approval
+
 ## Goal
 
 A task goes to the right place without you naming it: the machine that has the repo and the coding agent, or, when that machine is offline, a fresh sandbox you approve. Claude Code joins Codex as a second coding agent.

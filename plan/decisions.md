@@ -175,6 +175,24 @@ It runs headless with `claude -p --output-format stream-json --verbose`. Read-on
 ### D47. Machine labels are set on the machine
 `sling-runner config set labels …` adds labels to the Runner's inventory, alongside automatic `os:` and `arch:` labels. Tasks can require labels. The control plane can't change a machine's labels.
 
+### D48. Inside a sandbox container, the container is the agent's only sandbox
+Found in spike S4: Codex's and Claude Code's sandboxes both need unprivileged user namespaces, which a default Docker container doesn't allow, so neither starts. `sling-runner sandbox` marks its Runner disposable, and a disposable Runner runs agents without their own sandbox: Codex with `danger-full-access`, and Claude Code skipping permissions in every mode except Read-only, which stays in plan mode. Read-only tasks still never commit or push, and the conversation's mode still gates pushes and PRs.
+
+### D49. Claude Code's network opt-in is an allowlist
+Claude Code's sandbox refuses `*` in `allowedDomains`, so a repo with `network = true` gives Claude Code a fixed list of package registries and code hosts, while Codex gets the whole network. In Supervised and Auto, Claude Code runs with `failIfUnavailable`, so on a machine where its sandbox can't start it refuses to run rather than run commands unsandboxed.
+
+### D50. The Docker provider talks to the Engine API directly, and locks containers down
+A small client over `node:http` instead of dockerode, which would have brought grpc-js, protobufjs, and ssh2 into the server. Containers run with every capability dropped, `no-new-privileges`, an init process, a PID limit, swap equal to memory, no published ports, and labels Sling's sweep can find. Mounting the Docker socket into the control plane is opt-in through `deploy/docker-compose.sandbox.yml`, because it's root-equivalent on that host.
+
+### D51. Railway runs the same image, through Docker inside the sandbox
+The Railway provider creates a Railway Sandbox and runs `sling-sandbox` in it with `docker run`, passing secrets as exec environment variables, never on a command line or in a file. Railway's `Sandbox` type has no name or label field, so `create` writes a marker file inside the sandbox and `list` reads it. A detached keepalive exec stops Railway's idle timeout from ending a task early.
+
+### D52. One Sling server per provider target
+The orphan sweep destroys anything carrying Sling's label that isn't a live sandbox in this server's database. Two servers sharing a Docker host or a Railway environment would destroy each other's sandboxes, so each server gets its own.
+
+### D53. A named machine is a preference, unless the environment is `machine`
+`machineId` on its own tells the router which machine to try first. If that machine can't take the task, the router falls back the usual way. `environment: "machine"` (or the older `runnerId`) restricts the task to that machine and refuses otherwise.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.
