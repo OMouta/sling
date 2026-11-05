@@ -5,14 +5,13 @@
 import { startServer } from "../../src/server.ts";
 import { testNodes } from "./nodes.ts";
 
-const port = Number(process.env.PORT);
 const server = await startServer(
   {
     databaseUrl: process.env.DATABASE_URL ?? "",
-    publicUrl: new URL(`http://127.0.0.1:${port}`),
+    publicUrl: new URL(process.env.SLING_PUBLIC_URL ?? "http://127.0.0.1"),
     secretKey: process.env.SLING_SECRET_KEY ?? "",
     host: "127.0.0.1",
-    port,
+    port: 0,
     logLevel: "warn",
     webDist: undefined,
   },

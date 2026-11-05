@@ -6,7 +6,6 @@
  * Needs Docker.
  */
 import { type ChildProcess, spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { join } from "node:path";
 import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import type { NodeRunView, RunDetailView, RunView } from "@sling/core";
@@ -92,22 +91,16 @@ let c: Client;
 const extra: RunningServer[] = [];
 let child: ChildProcess | null = null;
 
-async function freePort(): Promise<number> {
-  return new Promise((ok) => {
-    const s = createServer().listen(0, () => {
-      const port = (s.address() as { port: number }).port;
-      s.close(() => ok(port));
-    });
-  });
-}
+/** Browsers reach Sling here. Servers listen on port 0, so there's no race for a free port. */
+const ORIGIN = "http://sling.test";
 
-function configFor(databaseUrl: string, port: number): Config {
+function configFor(databaseUrl: string): Config {
   return {
     databaseUrl,
-    publicUrl: new URL(`http://127.0.0.1:${port}`),
+    publicUrl: new URL(ORIGIN),
     secretKey: SECRET,
     host: "127.0.0.1",
-    port,
+    port: 0,
     logLevel: "warn",
     webDist: undefined,
   };
@@ -122,8 +115,7 @@ async function freshDatabase(name: string): Promise<string> {
 }
 
 async function boot(databaseUrl: string, opts: StartOptions = {}): Promise<RunningServer> {
-  const port = await freePort();
-  return startServer(configFor(databaseUrl, port), {
+  return startServer(configFor(databaseUrl), {
     model,
     jobs: false,
     nodes: testNodes,
@@ -143,7 +135,7 @@ class Client {
     const res = await fetch(this.base + path, {
       method,
       headers: {
-        origin: this.base,
+        origin: ORIGIN,
         cookie: this.cookie,
         ...(body === undefined ? {} : { "content-type": "application/json" }),
       },
@@ -1617,7 +1609,6 @@ describe("restarts", () => {
 
   it("resumes after the executor is killed mid-node: idempotent nodes rerun, others fail", async () => {
     const url = await freshDatabase("crash_test");
-    const p = await freePort();
     child = spawn(
       process.execPath,
       [
@@ -1628,7 +1619,7 @@ describe("restarts", () => {
         env: {
           ...process.env,
           DATABASE_URL: url,
-          PORT: String(p),
+          SLING_PUBLIC_URL: ORIGIN,
           SLING_SECRET_KEY: SECRET,
           SLING_TEST_BLOCK: "1",
         },
