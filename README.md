@@ -36,15 +36,15 @@ cp .env.example .env    # set SLING_PUBLIC_URL, SLING_SECRET_KEY, POSTGRES_PASSW
 docker compose up -d
 ```
 
-Open `SLING_PUBLIC_URL`, create the account, and connect a model provider: paste an OpenAI or Anthropic key in the chat's model picker or under **Settings**, or point Sling at any OpenAI-compatible endpoint such as Ollama.
-
-Under **Machines**, choose **Add machine** and run the command it shows on the computer with your repos. It installs `sling-runner`, pairs it, and starts it:
+Open `SLING_PUBLIC_URL` and create the account. Under **Machines**, choose **Add machine** and run the command it shows on the computer with your repos. It installs `sling-runner`, pairs it, and starts it:
 
 ```sh
 curl -fsSL https://sling.example.com/install.sh | SLING_CODE=K7QM-2XVD-HP4R sh
 ```
 
 Then allow the repos Sling may use, from the list the machine found, and start a conversation: "The footer year in site is hardcoded. Make it dynamic and add a test."
+
+The assistant chats through that machine's Codex or Claude Code, on your own login, so it runs on your subscription with no API key. It picks the coding agent and model for each task itself, unless you name one. API keys under **Settings** are optional, for chatting when no machine is on or through another provider such as Ollama.
 
 To use Discord or email, add them under **Connectors**, then install a template under **Workflows**, for example **Important email to Discord** or **Discord assistant**.
 

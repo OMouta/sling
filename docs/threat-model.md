@@ -19,6 +19,7 @@ What Sling protects, what it trusts, and where the known gaps are.
 | Control plane | Deciding what to run and when | Widening a Runner's limits |
 | Runner | Enforcing local limits | |
 | Master agent (LLM) | Choosing tools within the limits | Picking the mode, reaching other workspaces, running commands |
+| Chat turns on a Runner | Running one assistant turn on the machine's own Codex or Claude Code login | Calling tools outside that turn's conversation, or reaching any server but the paired one |
 | Codex, Claude Code | Editing files in its worktree. On your machines, inside the agent's own sandbox. In a sandbox container, inside the container | Committing or pushing |
 | Sandbox | Running one task on a fresh clone of one allowed repo, with that task's secrets | Reaching your machines, other repos, or other tasks' secrets |
 | Execution provider (Docker, Railway) | Starting and removing sandboxes | Seeing anything but the sandbox it was asked to start |
@@ -50,7 +51,9 @@ What Sling protects, what it trusts, and where the known gaps are.
 
 **Expressions.** JSONata runs no arbitrary code. Each evaluation is capped at 1 second, a recursion depth of 300, and a million items.
 
-**Prompt injection.** Codex summaries, emails, and Discord messages reach models as data inside the user turn. AI nodes (`ai.prompt`, `ai.extract`, `ai.classify`) have no tools at all. The assistant has no shell, file, or web tools on the control plane, so the worst a manipulated assistant can do is start or cancel tasks inside the conversation's mode, on machines and repos you allowed.
+**Chat on your machines.** When the assistant runs on a machine's Codex or Claude Code, the Runner runs the CLI in an empty directory outside every repo, with Sling's tools as its only MCP server. Each turn gets a random token that lets its tool calls act for that conversation only. The token expires when the turn ends, plus 30 seconds for calls already in flight, and lives only in the server's memory. The Runner sends tool calls only to the server it paired with, and refuses a turn whose tools URL points anywhere else. See [runner.md](runner.md#what-the-assistant-can-reach).
+
+**Prompt injection.** Codex summaries, emails, and Discord messages reach models as data inside the user turn. AI nodes (`ai.prompt`, `ai.extract`, `ai.classify`) have no tools at all. The assistant has no shell, file, or web tools of its own, so the worst a manipulated assistant can do is start or cancel tasks inside the conversation's mode, on machines and repos you allowed. Codex chat turns are the exception below.
 
 **Audit.** Task creation (with mode and routing), mode changes, approvals (with where they were decided), refused approval clicks, push and PR results, pairing, revokes, installation changes, every sandbox state change, orphans removed, sandbox list changes, and which sandbox secrets were set or cleared go to an append-only audit table.
 
@@ -60,6 +63,7 @@ What Sling protects, what it trusts, and where the known gaps are.
 - **Linux and Windows sandboxes are untested.** The sandbox probe covered macOS only. Linux uses Landlock and seccomp, and Windows support in Codex has been weaker.
 - **Sling can switch on repos a machine found.** With `remote-repos` on (the default), whoever controls the control plane can allow any git repo the Runner found under its scan roots, though not other paths. Turn it off on machines where that matters, or narrow `scan-roots`.
 - **A recent sign-in is enough to change two-factor.** For 10 minutes after signing in, a session can turn two-factor on or off without the password. Someone who steals a fresh session cookie can do that, along with everything else a session can do.
+- **Codex chat turns can read files.** Codex's read-only sandbox blocks writes, not reads. The Runner turns off every Codex tool it knows of, but a later Codex could add one it doesn't, and a manipulated assistant could use it to read files on that machine and put them in its reply. Claude Code chat turns start with no built-in tools, so they don't have this gap.
 - **The Runner runs as you.** There's no separate OS user on your machines. Sandboxes give a task its own container, but only for repos you allow there.
 - **Inside a sandbox container, the agent has no sandbox of its own.** Codex's and Claude Code's sandboxes need unprivileged user namespaces, which a normal Docker container doesn't allow. So in a sandbox, agents run with their own checks off in every mode except Read-only (Codex with `danger-full-access`, Claude Code skipping permissions), and the container is the only boundary. Read-only tasks still never commit or push, and Supervised and Auto still gate pushes and PRs.
 - **Sandbox secrets share the container with the agent.** The agent's environment doesn't carry the GitHub token, and Codex's API key is removed once Codex has logged in with it. But the agent runs as the same user as the Runner in that container, so it could read the token from the Runner's process. Scope the GitHub token to the repos you allow, with contents and pull requests only.

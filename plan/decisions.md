@@ -202,6 +202,9 @@ The Runner scans for git repos and reports the ones not yet allowed. Sling can a
 ### D56. Two-factor changes skip the password right after sign-in
 Within 10 minutes of signing in, turning two-factor on or off needs no password. Otherwise the dialog asks for the password or a passkey sign-in. A small Better Auth plugin stores the secret exactly as the two-factor plugin does. Asked 2026-11-05.
 
+### D57. Chat runs on the CLIs, and the assistant picks the coding model
+The assistant's turns run on a paired machine's Codex or Claude Code, on its existing login, so chat uses the user's subscription. The Runner runs each turn with only Sling's tools, through `sling-runner mcp` and a per-turn token, and calls only its paired server. API keys become optional, for chatting when no machine is on. The composer has one model picker, for the assistant. The assistant chooses the coding agent, model, and effort for each task, and uses the one the user names. This replaces the two pickers in D54. Asked 2026-11-05.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.
