@@ -27,6 +27,7 @@ import {
   Skeleton,
   Spinner,
   Switch,
+  useConfirm,
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { ago, plural } from "../lib/format.ts";
@@ -326,6 +327,7 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
     onSuccess: () => qc.invalidateQueries({ queryKey: ["runners"] }),
   });
   const problems = runner.capabilities.filter((c) => !c.ready && c.detail);
+  const { confirm, dialog } = useConfirm();
   return (
     <Card className="overflow-hidden">
       <div className="flex flex-wrap items-center gap-3 px-4 pt-4">
@@ -356,14 +358,14 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
             variant="ghost-danger"
             icon={Unplug}
             busy={revoke.isPending}
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Revoke ${runner.name}? It disconnects now and has to be paired again.`,
-                )
-              ) {
-                revoke.mutate();
-              }
+            onClick={async () => {
+              const ok = await confirm({
+                title: `Revoke ${runner.name}?`,
+                body: "It disconnects now and has to be paired again. Tasks running on it stop.",
+                action: "Revoke",
+                danger: true,
+              });
+              if (ok) revoke.mutate();
             }}
           >
             Revoke
@@ -409,6 +411,7 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
       </div>
 
       <RepoSection runner={runner} access={access} />
+      {dialog}
       {revoke.error ? (
         <div className="px-4 pb-3">
           <ErrorText error={revoke.error} />

@@ -807,3 +807,44 @@ export function Mono({ children, className }: { children: ReactNode; className?:
     </code>
   );
 }
+
+interface ConfirmOptions {
+  title: string;
+  body?: ReactNode;
+  action: string;
+  danger?: boolean;
+}
+
+/** A confirm step in a dialog, in place of the browser's own. */
+export function useConfirm() {
+  const [state, setState] = useState<(ConfirmOptions & { resolve: (ok: boolean) => void }) | null>(
+    null,
+  );
+  const confirm = (options: ConfirmOptions) =>
+    new Promise<boolean>((resolve) => setState({ ...options, resolve }));
+  const close = (ok: boolean) => {
+    state?.resolve(ok);
+    setState(null);
+  };
+  const dialog = state ? (
+    <Dialog
+      title={state.title}
+      onClose={() => close(false)}
+      footer={
+        <>
+          <Button onClick={() => close(false)}>Cancel</Button>
+          <Button
+            variant={state.danger ? "danger" : "primary"}
+            data-autofocus
+            onClick={() => close(true)}
+          >
+            {state.action}
+          </Button>
+        </>
+      }
+    >
+      {state.body && <div className="text-[13px] leading-5 text-soft">{state.body}</div>}
+    </Dialog>
+  ) : null;
+  return { confirm, dialog };
+}

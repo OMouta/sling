@@ -416,16 +416,16 @@ describe("settings: sandboxes", () => {
 
   it("clears a stored secret with an empty string after you confirm", async () => {
     settings = sandboxSettings;
-    const confirm = vi.fn(() => false);
-    vi.stubGlobal("confirm", confirm);
     renderAt("/settings");
     const s = await section();
     fireEvent.click(await s.findByRole("button", { name: "Clear OpenAI API key" }));
-    expect(confirm).toHaveBeenCalledWith("Clear the stored OpenAI API key?");
+    let dialog = await screen.findByRole("dialog", { name: "Clear the stored OpenAI API key?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(callsTo("PUT", "/api/settings/sandboxes/secrets")).toHaveLength(0);
 
-    confirm.mockReturnValue(true);
     fireEvent.click(s.getByRole("button", { name: "Clear OpenAI API key" }));
+    dialog = await screen.findByRole("dialog", { name: "Clear the stored OpenAI API key?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(callsTo("PUT", "/api/settings/sandboxes/secrets")).toHaveLength(1));
     expect(callsTo("PUT", "/api/settings/sandboxes/secrets")[0]?.body).toEqual({
       openaiApiKey: "",

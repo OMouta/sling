@@ -36,6 +36,7 @@ import {
   Select,
   Skeleton,
   Spinner,
+  useConfirm,
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { authClient } from "../lib/auth.ts";
@@ -553,6 +554,7 @@ const SECRETS: { key: SecretKey; label: string; hint: ReactNode }[] = [
 ];
 
 function SandboxSecrets({ secrets }: { secrets: SandboxSettingsView["secrets"] }) {
+  const { confirm, dialog } = useConfirm();
   const qc = useQueryClient();
   const [typed, setTyped] = useState<Partial<Record<SecretKey, string>>>({});
   const body = secretsBody(typed);
@@ -602,8 +604,14 @@ function SandboxSecrets({ secrets }: { secrets: SandboxSettingsView["secrets"] }
           value={typed[s.key] ?? ""}
           onChange={(v) => setTyped({ ...typed, [s.key]: v })}
           clearing={clear.isPending && clear.variables === s.key}
-          onClear={() => {
-            if (window.confirm(`Clear the stored ${s.label}?`)) clear.mutate(s.key);
+          onClear={async () => {
+            const ok = await confirm({
+              title: `Clear the stored ${s.label}?`,
+              body: "Sandboxes that need it fail to start until you add another.",
+              action: "Clear",
+              danger: true,
+            });
+            if (ok) clear.mutate(s.key);
           }}
         />
       ))}
@@ -619,6 +627,7 @@ function SandboxSecrets({ secrets }: { secrets: SandboxSettingsView["secrets"] }
         {save.isSuccess && <span className="text-xs text-ok">Saved.</span>}
       </div>
       <ErrorText error={save.error ?? clear.error} />
+      {dialog}
     </form>
   );
 }

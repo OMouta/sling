@@ -1,5 +1,5 @@
-import type { ChatSettings } from "./models.ts";
 import type { Harness } from "./harness.ts";
+import type { ChatSettings } from "./models.ts";
 import type { ActionKind, PermissionMode } from "./modes.ts";
 import type { ActionState, ApprovalState, Delivery, TaskState } from "./states.ts";
 
