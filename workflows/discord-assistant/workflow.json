@@ -1,0 +1,112 @@
+{
+  "schema": "sling.workflow/v1",
+  "name": "Discord assistant",
+  "description": "Talk to the Sling assistant in Discord. It answers in the same DM or channel, delegates coding work to your machines, and reports back there when tasks finish.",
+  "nodes": [
+    {
+      "id": "message",
+      "type": "discord.message_received",
+      "version": 1,
+      "label": "Discord message",
+      "position": { "x": 0, "y": 0 },
+      "config": {
+        "installationId": "$discord",
+        "scope": "dm",
+        "channelIds": [],
+        "requireMention": false
+      }
+    },
+    {
+      "id": "update",
+      "type": "sling.conversation_update",
+      "version": 1,
+      "label": "Task update",
+      "position": { "x": 0, "y": 220 },
+      "config": {}
+    },
+    {
+      "id": "conversation",
+      "type": "state.conversation",
+      "version": 1,
+      "label": "Conversation",
+      "position": { "x": 320, "y": 100 },
+      "config": {
+        "key": "={{ $exists(trigger.key) ? trigger.key : 'discord:' & execution.installationId & ':' & trigger.message.channelId }}",
+        "title": "={{ 'Discord: ' & trigger.message.author.username }}"
+      }
+    },
+    {
+      "id": "assistant",
+      "type": "agent.assistant",
+      "version": 1,
+      "label": "Assistant",
+      "position": { "x": 640, "y": 100 },
+      "config": { "message": "={{ trigger.message.content }}" }
+    },
+    {
+      "id": "reply",
+      "type": "core.set_var",
+      "version": 1,
+      "label": "Keep the reply",
+      "position": { "x": 960, "y": 100 },
+      "config": { "name": "reply" }
+    },
+    {
+      "id": "send",
+      "type": "discord.send_message",
+      "version": 1,
+      "label": "Reply in Discord",
+      "position": { "x": 1280, "y": 100 },
+      "config": {
+        "installationId": "$discord",
+        "channelId": "={{ $exists(trigger.key) ? $split(trigger.key, ':')[2] : trigger.message.channelId }}",
+        "content": "={{ vars.reply }}",
+        "approvalButtons": false
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "message-conversation",
+      "kind": "exec",
+      "from": { "node": "message", "port": "next" },
+      "to": { "node": "conversation", "port": "in" }
+    },
+    {
+      "id": "update-conversation",
+      "kind": "exec",
+      "from": { "node": "update", "port": "next" },
+      "to": { "node": "conversation", "port": "in" }
+    },
+    {
+      "id": "conversation-assistant",
+      "kind": "exec",
+      "from": { "node": "conversation", "port": "next" },
+      "to": { "node": "assistant", "port": "in" }
+    },
+    {
+      "id": "conversation-data",
+      "kind": "data",
+      "from": { "node": "conversation", "port": "conversation" },
+      "to": { "node": "assistant", "port": "conversation" }
+    },
+    {
+      "id": "assistant-reply",
+      "kind": "exec",
+      "from": { "node": "assistant", "port": "next" },
+      "to": { "node": "reply", "port": "in" }
+    },
+    {
+      "id": "reply-data",
+      "kind": "data",
+      "from": { "node": "assistant", "port": "reply" },
+      "to": { "node": "reply", "port": "value" }
+    },
+    {
+      "id": "reply-send",
+      "kind": "exec",
+      "from": { "node": "reply", "port": "next" },
+      "to": { "node": "send", "port": "in" }
+    }
+  ]
+}
