@@ -170,10 +170,6 @@ impl TaskSpool {
         )
     }
 
-    pub fn fully_acked(&self) -> bool {
-        self.acked >= self.last_seq
-    }
-
     pub fn remove(self) -> Result<()> {
         drop(self.file);
         std::fs::remove_dir_all(&self.dir)?;
