@@ -2,7 +2,7 @@
 //! its events from stdout, and turns them into Sling `TaskEvent` kinds.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -13,8 +13,10 @@ use sling_runner_protocol::{
     file_change, log_line, plan_update, task_event::Kind,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::sync::mpsc;
+
+pub mod chat;
 
 /// Command output kept per event. The tail matters more than the head.
 pub const MAX_OUTPUT_BYTES: usize = 8 * 1024;
@@ -283,35 +285,66 @@ pub struct Run {
     pid: Option<u32>,
 }
 
+/// A started process with its output streams.
+pub(crate) struct Spawned {
+    pub child: Child,
+    pub pid: Option<u32>,
+    pub stdout: ChildStdout,
+    pub stderr: ChildStderr,
+}
+
+/// Starts `bin` in its own process group with `stdin_text` on stdin.
+pub(crate) async fn spawn(
+    bin: &str,
+    args: &[String],
+    cwd: &Path,
+    env: Option<&[(String, String)]>,
+    stdin_text: &str,
+) -> Result<Spawned> {
+    let mut cmd = Command::new(bin);
+    cmd.args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    if let Some(env) = env {
+        cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+    }
+    #[cfg(unix)]
+    cmd.process_group(0);
+    let mut child = cmd.spawn().with_context(|| format!("starting {bin}"))?;
+    // Claude Code waits a few seconds for stdin when it isn't a TTY, so
+    // write the prompt and close it right away.
+    let mut stdin = child.stdin.take().context("no stdin")?;
+    stdin.write_all(stdin_text.as_bytes()).await?;
+    stdin.shutdown().await?;
+    drop(stdin);
+    Ok(Spawned {
+        stdout: child.stdout.take().context("no stdout")?,
+        stderr: child.stderr.take().context("no stderr")?,
+        pid: child.id(),
+        child,
+    })
+}
+
 impl Run {
     /// Starts Claude Code. Events arrive on `tx` until the process exits; then
     /// call `wait`.
     pub async fn start(opts: &RunOptions, tx: mpsc::Sender<Event>) -> Result<(Run, Reader)> {
-        let mut cmd = Command::new(&opts.bin);
-        cmd.args(args_for(opts))
-            .current_dir(&opts.cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        if let Some(env) = &opts.env {
-            cmd.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
-        }
-        #[cfg(unix)]
-        cmd.process_group(0);
-        let mut child = cmd
-            .spawn()
-            .with_context(|| format!("starting {}", opts.bin))?;
-        // Claude Code waits a few seconds for stdin when it isn't a TTY, so
-        // write the prompt and close it right away.
-        let mut stdin = child.stdin.take().context("no stdin")?;
-        stdin.write_all(opts.prompt.as_bytes()).await?;
-        stdin.shutdown().await?;
-        drop(stdin);
-
-        let stdout = child.stdout.take().context("no stdout")?;
-        let stderr = child.stderr.take().context("no stderr")?;
-        let pid = child.id();
+        let Spawned {
+            child,
+            pid,
+            stdout,
+            stderr,
+        } = spawn(
+            &opts.bin,
+            &args_for(opts),
+            &opts.cwd,
+            opts.env.as_deref(),
+            &opts.prompt,
+        )
+        .await?;
 
         let err_tx = tx.clone();
         let stderr_task = tokio::spawn(async move {
@@ -442,11 +475,16 @@ impl Parser {
             }
             return vec![log(line)];
         };
+        self.value(&v)
+    }
+
+    /// Like `line`, for a line that's already parsed.
+    pub fn value(&mut self, v: &Value) -> Vec<Event> {
         match v["type"].as_str().unwrap_or_default() {
-            "system" => self.system(&v),
-            "assistant" => self.assistant(&v),
-            "user" => self.user(&v),
-            "result" => self.result(&v),
+            "system" => self.system(v),
+            "assistant" => self.assistant(v),
+            "user" => self.user(v),
+            "result" => self.result(v),
             "rate_limit_event" => {
                 let info = &v["rate_limit_info"];
                 match info["status"].as_str() {

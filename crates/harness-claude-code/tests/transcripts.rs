@@ -1,6 +1,7 @@
 //! Parser tests on stream-json captured from real Claude Code 2.1.318 runs.
 //! Paths and personal details in the captures were replaced.
 
+use sling_harness_claude_code::chat::{ChatOutcome, ChatParser};
 use sling_harness_claude_code::{Event, Outcome, Parser};
 use sling_runner_protocol::{command_run, file_change, task_event::Kind};
 
@@ -165,4 +166,56 @@ fn an_invalid_api_key_is_a_failure() {
         Some("Invalid API key · Fix external API key")
     );
     assert!(logs(&events).iter().any(|l| l.contains("Invalid API key")));
+}
+
+/// Chat captures come from real Claude Code 2.1.318 talking to a local
+/// stand-in for the API, so the events are Claude Code's own and the model's
+/// words are the stand-in's.
+fn chat(name: &str) -> (Vec<sling_runner_protocol::chat_event::Kind>, ChatOutcome) {
+    let path = format!(
+        "{}/tests/transcripts/{name}.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let mut p = ChatParser::default();
+    let events = text.lines().flat_map(|l| p.line(l)).collect();
+    (events, p.outcome(Some(0), &[]))
+}
+
+#[test]
+fn chat_turn_that_calls_a_sling_tool() {
+    use sling_runner_protocol::chat_event::Kind as Chat;
+    let (events, o) = chat("chat-tool");
+    let tools: Vec<&str> = events
+        .iter()
+        .filter_map(|e| match e {
+            Chat::ToolUse(t) => Some(t.name.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(tools, ["list_machines"]);
+    let deltas: Vec<&str> = events
+        .iter()
+        .filter_map(|e| match e {
+            Chat::Delta(d) => Some(d.text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(deltas.len() > 1, "text streams in pieces: {deltas:?}");
+    assert_eq!(
+        deltas.concat(),
+        "Tool said: You have 2 machines: laptop, desktop."
+    );
+    assert_eq!(o.text, deltas.concat());
+    assert_eq!(o.session_id, "db9297fe-0cb6-434c-a393-2cda4f686a44");
+    assert_eq!((o.input_tokens, o.output_tokens), (20, 10));
+    assert!(o.failure.is_none() && !o.session_missing, "{:?}", o.failure);
+}
+
+#[test]
+fn chat_resume_of_a_session_that_isnt_here() {
+    let (events, o) = chat("chat-missing-session");
+    assert!(events.is_empty());
+    assert!(o.session_missing);
+    assert!(o.failure.unwrap().starts_with("No conversation found"));
 }

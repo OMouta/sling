@@ -205,3 +205,122 @@ async fn the_environment_is_replaced_not_inherited() {
         .unwrap();
     assert_eq!(report, "Sensitive environment: [ANTHROPIC_API_KEY]");
 }
+
+mod chat {
+    use super::BIN;
+    use sling_harness_claude_code::Run;
+    use sling_harness_claude_code::chat::{
+        ChatOptions, ChatOutcome, INSTRUCTIONS_FILE, MCP_CONFIG_FILE, McpServer,
+    };
+    use sling_runner_protocol::chat_event::Kind;
+    use tokio::sync::mpsc;
+
+    fn opts(dir: &std::path::Path, prompt: &str, resume: Option<String>) -> ChatOptions {
+        ChatOptions {
+            bin: BIN.into(),
+            dir: dir.to_path_buf(),
+            prompt: prompt.into(),
+            instructions: "You are Sling's assistant.".into(),
+            mcp: McpServer {
+                command: "/nonexistent/sling-runner".into(),
+                args: vec!["mcp".into()],
+                env: vec![("SLING_TOOLS_TOKEN".into(), "tok-123".into())],
+            },
+            env: None,
+            model: Some("claude-haiku-5-5".into()),
+            effort: Some("low".into()),
+            resume,
+        }
+    }
+
+    async fn turn(o: &ChatOptions) -> (Vec<Kind>, ChatOutcome) {
+        let (tx, mut rx) = mpsc::channel(64);
+        let (mut run, reader) = Run::start_chat(o, tx).await.unwrap();
+        let mut events = Vec::new();
+        while let Some(ev) = rx.recv().await {
+            events.push(ev);
+        }
+        let code = run.wait().await.unwrap();
+        (events, reader.finish(code).await)
+    }
+
+    #[tokio::test]
+    async fn streams_a_reply_and_resumes_its_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let (events, first) = turn(&opts(dir.path(), "hello", None)).await;
+        assert!(first.failure.is_none(), "{:?}", first.failure);
+        let deltas: String = events
+            .iter()
+            .filter_map(|e| match e {
+                Kind::Delta(d) => Some(d.text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas, first.text);
+        assert!(first.text.contains("new session, with instructions"));
+        assert!(first.text.ends_with("You said: hello"));
+        assert!(!first.session_id.is_empty());
+        assert_eq!((first.input_tokens, first.output_tokens), (312, 30));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            for f in [MCP_CONFIG_FILE, INSTRUCTIONS_FILE] {
+                let mode = std::fs::metadata(dir.path().join(f))
+                    .unwrap()
+                    .permissions()
+                    .mode();
+                assert_eq!(mode & 0o777, 0o600, "{f}");
+            }
+        }
+
+        let (_, second) = turn(&opts(dir.path(), "again", Some(first.session_id.clone()))).await;
+        assert!(second.failure.is_none(), "{:?}", second.failure);
+        assert!(second.text.contains("resumed session"));
+        assert_eq!(second.session_id, first.session_id);
+    }
+
+    #[tokio::test]
+    async fn a_session_that_isnt_here_is_reported_as_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let o = opts(
+            dir.path(),
+            "hello",
+            Some("00000000-dead-4000-8000-000000000000".into()),
+        );
+        let (events, out) = turn(&o).await;
+        assert!(events.is_empty());
+        assert!(out.session_missing);
+        assert!(out.failure.is_some());
+    }
+
+    #[tokio::test]
+    async fn refuses_a_session_id_that_looks_like_a_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let o = opts(
+            dir.path(),
+            "hello",
+            Some("--dangerously-skip-permissions".into()),
+        );
+        let (tx, _rx) = mpsc::channel(1);
+        let err = Run::start_chat(&o, tx).await.err().expect("refused");
+        assert!(err.to_string().contains("refusing session ID"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn cancel_ends_a_turn() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, mut rx) = mpsc::channel(64);
+        let (mut run, reader) = Run::start_chat(&opts(dir.path(), "[fake:hang]", None), tx)
+            .await
+            .unwrap();
+        assert!(matches!(rx.recv().await, Some(Kind::Delta(_))));
+        let started = std::time::Instant::now();
+        run.cancel(std::time::Duration::from_secs(5)).await;
+        assert!(started.elapsed() < std::time::Duration::from_secs(4));
+        while rx.recv().await.is_some() {}
+        let code = run.wait().await.unwrap();
+        let out = reader.finish(code).await;
+        assert!(out.failure.is_some());
+    }
+}
