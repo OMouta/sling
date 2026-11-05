@@ -4,13 +4,25 @@
 
 ## Install
 
-From a release (set `SLING_REPO` to the repo that publishes Sling):
+Copy the install command from **Machines > Add machine** in Sling. It looks like this:
+
+```sh
+curl -fsSL https://sling.example.com/install.sh | SLING_CODE=<code> sh
+```
+
+The script downloads `sling-runner`, pairs it with the code, and installs the background service. Sling fills in its own URL and the GitHub repo to download from when it serves the script. On Windows, run the PowerShell command from the same page, which does the same with `install.ps1`:
+
+```powershell
+$env:SLING_CODE = "<code>"; irm https://sling.example.com/install.ps1 | iex
+```
+
+You can also run the script from a GitHub release. Set `SLING_REPO` to the repo that publishes Sling, and add `SLING_URL` and `SLING_CODE` to pair in the same step:
 
 ```sh
 curl -fsSL https://github.com/$SLING_REPO/releases/latest/download/install.sh | SLING_REPO=$SLING_REPO sh
 ```
 
-On Windows, use `install.ps1` from the same release. From source: `cargo build --release -p sling-runner`.
+If `SLING_REPO` is empty and `sling-runner` is already on your PATH, the script skips the download and uses that one. From source: `cargo build --release -p sling-runner`.
 
 You also need, on the same machine and as the same user:
 
@@ -24,14 +36,51 @@ The Runner checks each agent with its own CLI (`codex login status`, `claude aut
 
 ## Set up
 
+After the one-line install the machine is paired and running. Without it:
+
 ```sh
-sling-runner repo add ~/code/site          # repeat for each repo
 sling-runner pair <SLING_PUBLIC_URL> <code> # code from Machines > Add machine
 sling-runner service install                # run in the background
 sling-runner doctor                         # check everything
 ```
 
-Only repos you add here are visible to Sling. The control plane has no way to add one.
+Then choose the repos Sling may use under **Machines** in Sling.
+
+## Repos
+
+Sling works only in repos this machine allows. You can allow them in Sling or on the machine.
+
+In Sling, open the machine under **Machines** and pick from the repos it found. The Runner looks for git repos when it connects, when you ask Sling to look again, and after each change. It searches your home directory down to four levels, so `~/code/org/team/repo` is found. It doesn't look inside a repo it found, and it skips hidden folders, `node_modules`, `target`, `vendor`, `dist`, `build`, `Library`, `Applications`, `Movies`, `Music`, `Pictures`, `AppData`, and its own worktrees. A scan stops after 300 repos or about 3 seconds. Sling suggests each folder's name as the repo name, adding `-2`, `-3` and so on when the name is taken.
+
+To search other folders instead of your home directory:
+
+```sh
+sling-runner config set scan-roots ~/code,~/work   # "" goes back to your home directory
+```
+
+On macOS, Desktop, Documents, and Downloads are protected folders, so the first scan may ask for permission to read them. If you'd rather it didn't, set `scan-roots` to the folders that hold your code.
+
+On the machine:
+
+```sh
+sling-runner repo add ~/code/site       # --name picks the name, --network allows network
+sling-runner repo list
+sling-runner repo remove site
+```
+
+A repo added from Sling starts with network off. Sling can also remove a repo, except while a task is running in it. Removing a repo leaves its files alone.
+
+### Why Sling can only add repos the Runner found
+
+Sling never names a folder of its own. It picks a path from the list the Runner sent, and the Runner adds it only if that exact path is in its latest scan and is still a git repo. Someone who took over the control plane could at most allow a repo that already sits under your scan roots. They couldn't point the Runner at `~/.ssh` or anywhere else.
+
+To keep every repo decision on the machine:
+
+```sh
+sling-runner config set remote-repos off
+```
+
+With `remote-repos` off, the Runner doesn't scan, Sling sees no found repos, and the Runner refuses every add and remove that comes from Sling. Only `sling-runner repo add` and `repo remove` change repos then. `sling-runner config show` and `sling-runner doctor` show the setting. It's on by default, and always off in a sandbox.
 
 ## Settings
 
@@ -43,6 +92,8 @@ sling-runner config set name "work laptop"
 sling-runner config set labels ios,gpu          # comma-separated; "" clears them
 sling-runner config set codex-bin /opt/codex/bin/codex
 sling-runner config set claude-bin ~/.local/bin/claude
+sling-runner config set remote-repos off         # on | off
+sling-runner config set scan-roots ~/code,~/work # "" means your home directory
 ```
 
 `max-mode` is the highest permission mode this machine accepts. A task above it is refused here, whatever the control plane says.
@@ -51,7 +102,7 @@ sling-runner config set claude-bin ~/.local/bin/claude
 
 Labels say what a machine is for, so a task can ask for one. "Run the iOS build" can require `ios`, and only machines with that label get it. Labels use lowercase letters, digits, `-`, `_`, `:`, and `.`, up to 64 characters each and 32 per machine.
 
-The Runner adds `os:<os>` and `arch:<arch>` itself, for example `os:macos` and `arch:aarch64`, so you can't set labels starting with `os:` or `arch:`. Like repos, labels are set only here. The control plane can't change them. `sling-runner config show` and `sling-runner doctor` list the labels the Runner sends.
+The Runner adds `os:<os>` and `arch:<arch>` itself, for example `os:macos` and `arch:aarch64`, so you can't set labels starting with `os:` or `arch:`. Labels are set only here, on the machine. The control plane can't change them. `sling-runner config show` and `sling-runner doctor` list the labels the Runner sends.
 
 ## Agents and permission modes
 
@@ -67,6 +118,19 @@ Both agents load your own settings, such as `~/.codex/config.toml`, `~/.claude/s
 
 The agent's environment never includes `SLING_*` variables, `GH_TOKEN`, or `GITHUB_TOKEN`.
 
+## Models
+
+A task can pick the agent's model and reasoning effort, and for Codex the fast tier. An empty value leaves the agent's own default. The Runner tells Sling which models each agent offers:
+
+| | Codex | Claude Code |
+|---|---|---|
+| Models offered | The ones `codex debug models` lists in Codex's own picker. The first by Codex's priority is the default. | The `--model` aliases `fable`, `opus`, `sonnet`, and `haiku` |
+| Model | `-m <model>` | `--model <model>` |
+| Effort | `-c model_reasoning_effort="<effort>"` | `--effort <effort>` |
+| Fast | `-c service_tier="fast"` | Claude Code has no fast tier, so the Runner ignores it |
+
+The Runner refuses a task whose model or effort is longer than 64 characters, starts with anything but a letter or digit, or uses anything but letters, digits, `.`, `_`, `:`, and `-`. Codex reads the effort as TOML, and this keeps a value from adding its own settings or flags. The task log names the model settings a task ran with.
+
 ## Network
 
 Network inside the agent's sandbox is off by default in Read-only, Supervised, and Auto. To allow it in one repo:
@@ -75,6 +139,8 @@ Network inside the agent's sandbox is off by default in Read-only, Supervised, a
 sling-runner repo remove site
 sling-runner repo add ~/code/site --network
 ```
+
+Repos added from Sling start with network off, so use these commands on the machine to turn it on.
 
 For Codex that opens the whole network. Claude Code's sandbox only takes a list of hosts, so for Claude Code it opens package registries and code hosts: GitHub, GitLab, Bitbucket, npm, Yarn, JSR, Deno, PyPI, crates.io, the Go module proxy, RubyGems, Maven, Gradle, Packagist, NuGet, pub.dev, and Hex. Full access has no sandbox, so network is on there for both.
 
@@ -88,7 +154,7 @@ A running Runner picks up config changes within a minute.
 | `sling-runner service install` | launchd on macOS, a systemd user unit on Linux, a logon task on Windows. |
 | `sling-runner service status` / `uninstall` | |
 | `sling-runner gc` | Remove worktrees of finished tasks older than 7 days. Also runs daily on its own. |
-| `sling-runner doctor` | Check git, the agents, and gh, and show which repos match across machines. |
+| `sling-runner doctor` | Check git, the agents, and gh, show which repos match across machines, and count the found repos Sling can offer. |
 | `sling-runner sandbox` | The entrypoint of the sandbox image. You don't run it yourself; see below. |
 
 On Linux, `loginctl enable-linger $USER` keeps the service running while you're logged out. On Windows the logon task only runs while you're logged in.
