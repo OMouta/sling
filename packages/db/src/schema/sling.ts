@@ -9,6 +9,7 @@ import type {
   Harness,
   ModelProviderId,
   PermissionMode,
+  ReplyTrace,
   RoutingView,
   SandboxState,
   TaskState,
@@ -255,6 +256,8 @@ export const messages = pgTable(
     /** Set on system notes the server adds when a task changes. */
     taskId: text("task_id"),
     usage: jsonb("usage").$type<TokenUsage>(),
+    /** For an assistant reply: its thinking and tool calls, for the chat to show. Never sent to a model. */
+    trace: jsonb("trace").$type<ReplyTrace>(),
     createdAt: createdAt(),
   },
   (t) => [index("messages_conversation_idx").on(t.conversationId, t.id)],

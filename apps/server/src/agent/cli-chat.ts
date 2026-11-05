@@ -5,6 +5,7 @@ import { type ChatEvent, create, EnvelopeSchema } from "@sling/runner-protocol";
 import { and, eq, isNull } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import type { RunnerSession } from "../runners/gateway.ts";
+import type { TraceRecorder } from "./trace.ts";
 
 /** A turn runs at most this long before it's given up. */
 const TURN_TIMEOUT_MS = 10 * 60_000;
@@ -29,6 +30,7 @@ interface Pending {
   runnerId: string;
   onDelta: (text: string) => void;
   onTool: (name: string) => void;
+  trace: TraceRecorder | undefined;
   resolve: (r: CliTurnResult) => void;
   reject: (err: Error) => void;
   token: string;
@@ -92,6 +94,8 @@ export class CliChat {
     signal?: AbortSignal;
     onDelta: (text: string) => void;
     onTool?: (name: string) => void;
+    /** Collects the turn's thinking, and its tool calls as Sling serves them. */
+    trace?: TraceRecorder;
   }): Promise<CliTurnResult> {
     const harness = opts.choice.provider;
     if (!isCliProvider(harness)) throw new Error("not a CLI provider");
@@ -134,6 +138,7 @@ export class CliChat {
         token,
         onDelta: opts.onDelta,
         onTool: opts.onTool ?? (() => {}),
+        trace: opts.trace,
         resolve: (r) => {
           done();
           resolve(r);
@@ -188,6 +193,9 @@ export class CliChat {
       case "toolUse":
         t.onTool(ev.kind.value.name);
         return;
+      case "thinking":
+        t.trace?.thinking(ev.kind.value.text);
+        return;
       case "done": {
         const d = ev.kind.value;
         if (d.error) {
@@ -212,6 +220,11 @@ export class CliChat {
     for (const t of [...this.#turns.values()]) {
       if (t.runnerId === runnerId) t.reject(new Error("The machine disconnected during the turn."));
     }
+  }
+
+  /** Where a turn's tool calls are recorded, while the turn runs. */
+  traceFor(turnId: string): TraceRecorder | undefined {
+    return this.#turns.get(turnId)?.trace;
   }
 
   /** The grant for a tool call, or null when the token is unknown or expired. */

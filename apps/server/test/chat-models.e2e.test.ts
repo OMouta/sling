@@ -6,7 +6,7 @@
 import { createServer } from "node:net";
 import { base32 } from "@better-auth/utils/base32";
 import { createOTP } from "@better-auth/utils/otp";
-import type { ModelCatalogView } from "@sling/core";
+import type { ModelCatalogView, ReplyTrace } from "@sling/core";
 import { schema } from "@sling/db";
 import { RepoChange_Op } from "@sling/runner-protocol";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
@@ -552,6 +552,24 @@ describe("chat on a coding agent's CLI", () => {
     expect(r.text).toBe(
       "Tools: list_machines, delegate_coding_task, get_task, cancel_task. Machines: devbox.",
     );
+    // The reply keeps its thinking and the tool call Sling served, in order.
+    const { messages } = await api<{ messages: { role: string; trace: ReplyTrace | null }[] }>(
+      "GET",
+      `/api/conversations/${conv.id}`,
+    );
+    const trace = messages.filter((m) => m.role === "assistant").at(-1)?.trace;
+    expect(trace?.steps).toEqual([
+      { kind: "thinking", text: "The user wants their machines." },
+      {
+        kind: "tool",
+        id: expect.any(String),
+        name: "list_machines",
+        input: {},
+        status: "done",
+        output: expect.stringContaining("devbox"),
+      },
+    ]);
+    expect(trace?.ms).toBeGreaterThanOrEqual(0);
     const res = await realFetch(`${origin}/api/agent/tools`, {
       headers: { authorization: "Bearer not-a-turn-token" },
     });

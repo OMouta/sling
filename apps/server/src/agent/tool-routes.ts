@@ -20,9 +20,12 @@ function bearer(header: string | undefined): string | null {
  * token, which only works while that turn runs, for its conversation.
  */
 export async function agentToolRoutes(app: FastifyInstance, ctx: AppContext) {
-  const scopeOf = (header: string | undefined) => {
+  const grantOf = (header: string | undefined) => {
     const token = bearer(header);
-    const grant = token ? ctx.cliChat.grant(token) : null;
+    return token ? ctx.cliChat.grant(token) : null;
+  };
+  const scopeOf = (header: string | undefined) => {
+    const grant = grantOf(header);
     return grant
       ? {
           workspaceId: grant.workspaceId,
@@ -54,16 +57,27 @@ export async function agentToolRoutes(app: FastifyInstance, ctx: AppContext) {
       const t = Object.hasOwn(tools, request.params.name) ? tools[request.params.name] : undefined;
       if (!t?.execute)
         return reply.code(404).send({ error: `no tool named ${request.params.name}` });
-      const parsed = t.inputSchema.safeParse(request.body?.arguments ?? {});
+      const grant = grantOf(request.headers.authorization);
+      const trace = grant ? ctx.cliChat.traceFor(grant.turnId) : undefined;
+      const name = request.params.name;
+      const args = request.body?.arguments ?? {};
+      trace?.toolStarted(request.id, name, args);
+      const parsed = t.inputSchema.safeParse(args);
       if (!parsed.success) {
-        return { content: `Invalid arguments: ${z.prettifyError(parsed.error)}`, isError: true };
+        const content = `Invalid arguments: ${z.prettifyError(parsed.error)}`;
+        trace?.toolFinished(request.id, false, content);
+        return { content, isError: true };
       }
       try {
         const result = await t.execute(parsed.data, { toolCallId: request.id, messages: [] });
-        return { content: JSON.stringify(result ?? null), isError: false };
+        const content = JSON.stringify(result ?? null);
+        trace?.toolFinished(request.id, true, content);
+        return { content, isError: false };
       } catch (err) {
-        ctx.log.warn({ err, tool: request.params.name }, "assistant tool failed");
-        return { content: err instanceof Error ? err.message : String(err), isError: true };
+        ctx.log.warn({ err, tool: name }, "assistant tool failed");
+        const content = err instanceof Error ? err.message : String(err);
+        trace?.toolFinished(request.id, false, content);
+        return { content, isError: true };
       }
     },
   );

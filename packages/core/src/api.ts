@@ -239,6 +239,29 @@ export interface MessageView {
   text: string;
   taskIds: string[];
   createdAt: string;
+  /** For an assistant reply: its thinking and tool calls, in order. */
+  trace: ReplyTrace | null;
+}
+
+/** A tool call the assistant made while replying. */
+export interface ToolStep {
+  kind: "tool";
+  id: string;
+  name: string;
+  /** The arguments, or a shortened JSON string when they're large. */
+  input: unknown;
+  status: "running" | "done" | "error";
+  /** The result as text, shortened. */
+  output: string | null;
+}
+
+/** One step of a reply: a stretch of thinking, or a tool call. */
+export type TraceStep = { kind: "thinking"; text: string } | ToolStep;
+
+/** How the assistant got to a reply, and how long it worked on it. */
+export interface ReplyTrace {
+  steps: TraceStep[];
+  ms: number;
 }
 
 export type RunStatus = "queued" | "running" | "waiting" | "succeeded" | "failed" | "cancelled";
@@ -394,6 +417,8 @@ export type ServerEvent =
   | { type: "conversation.updated"; conversation: ConversationView }
   | { type: "message.created"; message: MessageView }
   | { type: "agent.delta"; conversationId: string; text: string }
+  | { type: "agent.thinking"; conversationId: string; text: string }
+  | { type: "agent.tool"; conversationId: string; step: ToolStep }
   | { type: "agent.status"; conversationId: string; status: AgentStatus; error?: string }
   | { type: "workflow.updated"; workflow: WorkflowSummaryView }
   | { type: "run.updated"; run: RunView }

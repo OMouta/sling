@@ -213,6 +213,8 @@ export class FakeRunner {
       );
     let text = `Fake reply to: ${t.prompt.split("\n")[0]}`;
     if (t.prompt.includes("[fake:tool]")) {
+      chat({ case: "thinking", value: { text: "The user wants " } });
+      chat({ case: "thinking", value: { text: "their machines." } });
       const auth = { authorization: `Bearer ${t.toolsToken}` };
       const list = (await (await fetch(t.toolsUrl, { headers: auth })).json()) as {
         tools: { name: string }[];

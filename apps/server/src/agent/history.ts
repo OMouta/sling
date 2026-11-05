@@ -54,5 +54,6 @@ export function toMessageView(row: MessageRow): MessageView | null {
     text,
     taskIds: row.taskId ? [row.taskId] : [],
     createdAt: row.createdAt.toISOString(),
+    trace: row.trace ?? null,
   };
 }
