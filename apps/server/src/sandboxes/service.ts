@@ -130,6 +130,7 @@ export class SandboxService {
       details: { taskId: task.id, providerInstallationId, remoteKey, harness: task.harness },
     });
     await this.publish(id);
+    await this.#publishTask(task.id);
     await this.pump(task.workspaceId);
     return row;
   }
@@ -565,8 +566,17 @@ export class SandboxService {
       .update(schema.sandboxes)
       .set({ state: "busy" })
       .where(and(eq(schema.sandboxes.id, sandboxId), eq(schema.sandboxes.state, "ready")))
-      .returning({ id: schema.sandboxes.id });
-    if (row) await this.publish(sandboxId);
+      .returning();
+    if (!row) return;
+    await audit(this.#ctx, {
+      workspaceId: row.workspaceId,
+      actorType: "system",
+      verb: "sandbox.busy",
+      subjectType: "sandbox",
+      subjectId: sandboxId,
+      details: { taskId: row.taskId },
+    });
+    await this.publish(sandboxId);
   }
 
   // ------------------------------------------------------------- teardown
