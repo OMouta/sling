@@ -611,74 +611,72 @@ export class SandboxService {
   }
 
   async #teardown(sandboxId: string): Promise<void> {
-    {
-      const [sbx] = await this.#db
-        .select()
-        .from(schema.sandboxes)
-        .where(eq(schema.sandboxes.id, sandboxId));
-      if (!sbx || sbx.state === "destroyed") return;
-      let row = sbx;
-      if (sbx.state !== "failed" && sbx.state !== "releasing") {
-        const [releasing] = await this.#db
-          .update(schema.sandboxes)
-          .set({ state: "releasing" })
-          .where(and(eq(schema.sandboxes.id, sandboxId), eq(schema.sandboxes.state, sbx.state)))
-          .returning();
-        if (!releasing) return;
-        row = releasing;
-        await audit(this.#ctx, {
-          workspaceId: row.workspaceId,
-          actorType: "system",
-          verb: "sandbox.releasing",
-          subjectType: "sandbox",
-          subjectId: sandboxId,
-        });
-        await this.publish(sandboxId);
-      }
-
-      // The code can't pair anything any more, and the Runner is cut off.
-      await this.#db
-        .update(schema.runnerEnrollments)
-        .set({ usedAt: new Date() })
-        .where(
-          and(
-            eq(schema.runnerEnrollments.sandboxId, sandboxId),
-            isNull(schema.runnerEnrollments.usedAt),
-          ),
-        );
-      const [runner] = await this.#db
-        .select({ id: schema.runners.id })
-        .from(schema.runners)
-        .where(eq(schema.runners.sandboxId, sandboxId));
-      const runnerId = row.runnerId ?? runner?.id ?? null;
-      if (runnerId) await this.#revokeRunner(runnerId, row.workspaceId);
-
-      if (row.externalId && !(await this.#destroyExternal(row, row.externalId))) return;
-
-      const destroyedAt = new Date();
-      const minutes = sandboxMinutes({ ...row, destroyedAt: null }, destroyedAt);
-      const [done] = await this.#db
+    const [sbx] = await this.#db
+      .select()
+      .from(schema.sandboxes)
+      .where(eq(schema.sandboxes.id, sandboxId));
+    if (!sbx || sbx.state === "destroyed") return;
+    let row = sbx;
+    if (sbx.state !== "failed" && sbx.state !== "releasing") {
+      const [releasing] = await this.#db
         .update(schema.sandboxes)
-        .set({ state: "destroyed", destroyedAt, minutes })
-        .where(eq(schema.sandboxes.id, sandboxId))
+        .set({ state: "releasing" })
+        .where(and(eq(schema.sandboxes.id, sandboxId), eq(schema.sandboxes.state, sbx.state)))
         .returning();
+      if (!releasing) return;
+      row = releasing;
       await audit(this.#ctx, {
         workspaceId: row.workspaceId,
         actorType: "system",
-        verb: "sandbox.destroyed",
+        verb: "sandbox.releasing",
         subjectType: "sandbox",
         subjectId: sandboxId,
-        details: {
-          minutes: Math.round(minutes * 100) / 100,
-          externalId: row.externalId,
-          failure: done?.failure ?? null,
-        },
       });
       await this.publish(sandboxId);
-      await this.#publishTask(row.taskId);
-      // Not awaited: a teardown can run inside the pump, and the freed slot is the pump's next turn.
-      this.#inBackground("sandbox pump", () => this.pump(row.workspaceId));
     }
+
+    // The code can't pair anything any more, and the Runner is cut off.
+    await this.#db
+      .update(schema.runnerEnrollments)
+      .set({ usedAt: new Date() })
+      .where(
+        and(
+          eq(schema.runnerEnrollments.sandboxId, sandboxId),
+          isNull(schema.runnerEnrollments.usedAt),
+        ),
+      );
+    const [runner] = await this.#db
+      .select({ id: schema.runners.id })
+      .from(schema.runners)
+      .where(eq(schema.runners.sandboxId, sandboxId));
+    const runnerId = row.runnerId ?? runner?.id ?? null;
+    if (runnerId) await this.#revokeRunner(runnerId, row.workspaceId);
+
+    if (row.externalId && !(await this.#destroyExternal(row, row.externalId))) return;
+
+    const destroyedAt = new Date();
+    const minutes = sandboxMinutes({ ...row, destroyedAt: null }, destroyedAt);
+    const [done] = await this.#db
+      .update(schema.sandboxes)
+      .set({ state: "destroyed", destroyedAt, minutes })
+      .where(eq(schema.sandboxes.id, sandboxId))
+      .returning();
+    await audit(this.#ctx, {
+      workspaceId: row.workspaceId,
+      actorType: "system",
+      verb: "sandbox.destroyed",
+      subjectType: "sandbox",
+      subjectId: sandboxId,
+      details: {
+        minutes: Math.round(minutes * 100) / 100,
+        externalId: row.externalId,
+        failure: done?.failure ?? null,
+      },
+    });
+    await this.publish(sandboxId);
+    await this.#publishTask(row.taskId);
+    // Not awaited: a teardown can run inside the pump, and the freed slot is the pump's next turn.
+    this.#inBackground("sandbox pump", () => this.pump(row.workspaceId));
   }
 
   /** Removes the provider's resource. Returns false when the provider refused, so a sweep retries. */
