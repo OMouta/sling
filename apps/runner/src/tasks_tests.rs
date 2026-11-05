@@ -82,7 +82,7 @@ case "$1" in
         --dangerously-skip-permissions) mode="bypassPermissions" ;;
         --model) settings="$settings model=$2"; shift ;;
         --effort) settings="$settings effort=$2"; shift ;;
-        --settings) shift ;;
+        --settings) case "$2" in *fastMode*) settings="$settings fast" ;; esac; shift ;;
       esac
       shift
     done
@@ -584,16 +584,22 @@ async fn model_settings_reach_each_agent() {
         (
             "claude-code",
             "opus",
-            "settings: model=opus effort=high",
-            "Claude Code: model opus, effort high, no fast tier (Claude Code doesn't have one)",
+            "settings: model=opus effort=high fast",
+            "Claude Code: model opus, effort high, fast tier",
+        ),
+        (
+            "claude-code",
+            "claude-haiku-5-5",
+            "settings: model=claude-haiku-5-5 effort=high",
+            "Claude Code: model claude-haiku-5-5, effort high, no fast tier (claude-haiku-5-5 doesn't have one)",
         ),
     ] {
-        let id = format!("{agent}-m1");
+        let id = format!("{agent}-m1-{model}");
         let mut a = assign(
             agent,
             &id,
             PermissionMode::Auto,
-            &format!("sling/m1-{agent}"),
+            &format!("sling/m1-{agent}-{model}"),
             "site",
         );
         a.model = model.into();

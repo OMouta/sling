@@ -543,7 +543,7 @@ impl Manager {
             env: self.agent_env(agent.name()),
             model: harness::setting(&a.model),
             effort: harness::setting(&a.effort),
-            fast: a.fast && agent.has_fast_tier(),
+            fast: a.fast && agent.has_fast_tier(harness::setting(&a.model).as_deref()),
         };
         let mut reported: Vec<PathBuf> = Vec::new();
         let (tx, mut rx) = mpsc::channel(256);
@@ -764,10 +764,14 @@ fn settings_line(agent: &dyn harness::Harness, a: &TaskAssign) -> Option<String>
         parts.push(format!("effort {}", a.effort));
     }
     if a.fast {
-        parts.push(if agent.has_fast_tier() {
+        let model = harness::setting(&a.model);
+        parts.push(if agent.has_fast_tier(model.as_deref()) {
             "fast tier".to_string()
         } else {
-            format!("no fast tier ({} doesn't have one)", agent.label())
+            match model {
+                Some(m) => format!("no fast tier ({m} doesn't have one)"),
+                None => format!("no fast tier ({} doesn't have one)", agent.label()),
+            }
         });
     }
     (!parts.is_empty()).then(|| format!("{}: {}", agent.label(), parts.join(", ")))

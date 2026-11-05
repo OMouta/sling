@@ -244,6 +244,8 @@ export function ModelPicker({
     }
   }
 
+  // On a Claude plan, Claude Code's fast mode is paid from usage credits.
+  const creditsForFast = assistant?.provider === "claude-code" && Boolean(current?.fast);
   const efforts = current?.efforts ?? [];
   const selectedEffort = assistant?.effort ?? current?.defaultEffort ?? null;
   const effortButton = (e: string, compact: boolean) => (
@@ -441,7 +443,15 @@ export function ModelPicker({
               role="radio"
               aria-checked={(assistant?.fast ?? false) === fast}
               disabled={fast && !current?.fast}
-              title={fast && !current?.fast ? "This model has no fast tier." : undefined}
+              title={
+                !fast
+                  ? undefined
+                  : !current?.fast
+                    ? "This model has no fast tier."
+                    : creditsForFast
+                      ? "Claude bills fast mode to usage credits, outside your plan's limits."
+                      : undefined
+              }
               onClick={() => setFast(fast)}
               className={cx(
                 "flex h-[26px] cursor-pointer items-center gap-1 rounded-full px-3 text-[13px] transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40",
@@ -455,6 +465,9 @@ export function ModelPicker({
             </button>
           ))}
         </div>
+        {assistant?.fast && creditsForFast && (
+          <span className="text-xs text-subtle">Billed to usage credits</span>
+        )}
         <div className="ml-auto">{mode && onMode && <ModeMenu mode={mode} onMode={onMode} />}</div>
       </div>
     </div>

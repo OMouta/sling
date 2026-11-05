@@ -49,6 +49,8 @@ pub struct ChatOptions {
     pub env: Option<Vec<(String, String)>>,
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// Fast mode, for a model that has it.
+    pub fast: bool,
     /// Session to resume.
     pub resume: Option<String>,
 }
@@ -106,6 +108,9 @@ pub fn chat_args(o: &ChatOptions) -> Vec<String> {
     }
     if let Some(effort) = &o.effort {
         args.extend(["--effort".into(), effort.clone()]);
+    }
+    if o.fast && crate::has_fast(o.model.as_deref()) {
+        args.extend(["--settings".into(), json!({ "fastMode": true }).to_string()]);
     }
     if let Some(id) = &o.resume {
         args.extend(["--resume".into(), id.clone()]);
@@ -389,6 +394,7 @@ mod tests {
             env: None,
             model: None,
             effort: None,
+            fast: false,
             resume: None,
         }
     }
@@ -434,6 +440,7 @@ mod tests {
         );
         assert!(!args.iter().any(|a| a.contains("tok-secret-123")));
         assert!(!args.iter().any(|a| a.contains("Be brief")));
+        assert!(!args.iter().any(|a| a == "--settings"));
 
         o.model = Some("claude-haiku-5-5".into());
         o.effort = Some("low".into());
@@ -537,5 +544,19 @@ mod tests {
             Some("Claude Code ended without a reply: error: unknown option '--nope'")
         );
         assert!(!o.session_missing);
+    }
+
+    #[test]
+    fn turns_on_fast_mode_for_opus_only() {
+        let mut o = opts();
+        o.fast = true;
+        o.model = Some("claude-opus-5-5".into());
+        assert!(
+            chat_args(&o)
+                .windows(2)
+                .any(|w| w == ["--settings", r#"{"fastMode":true}"#])
+        );
+        o.model = Some("claude-haiku-5-5".into());
+        assert!(!chat_args(&o).iter().any(|a| a == "--settings"));
     }
 }

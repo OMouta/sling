@@ -147,8 +147,9 @@ pub trait Harness: Send + Sync {
     fn process_marker(&self) -> &'static str;
     /// The binary to run, from the config.
     fn bin(&self, cfg: &Config) -> String;
-    /// Whether the agent has a fast tier `RunSpec::fast` can turn on.
-    fn has_fast_tier(&self) -> bool;
+    /// Whether `model` has a fast tier `RunSpec::fast` can turn on. `None`
+    /// is the agent's default model.
+    fn has_fast_tier(&self, model: Option<&str>) -> bool;
     fn detect<'a>(&'a self, bin: &'a str) -> BoxFuture<'a, Detected>;
     /// Starts the agent. Events arrive on `tx` until its output closes.
     fn start<'a>(
@@ -241,7 +242,7 @@ impl Harness for Codex {
     fn bin(&self, cfg: &Config) -> String {
         cfg.codex_bin()
     }
-    fn has_fast_tier(&self) -> bool {
+    fn has_fast_tier(&self, _model: Option<&str>) -> bool {
         true
     }
 
@@ -405,8 +406,8 @@ impl Harness for ClaudeCode {
     fn bin(&self, cfg: &Config) -> String {
         cfg.claude_bin()
     }
-    fn has_fast_tier(&self) -> bool {
-        false
+    fn has_fast_tier(&self, model: Option<&str>) -> bool {
+        claude::has_fast(model)
     }
 
     fn detect<'a>(&'a self, bin: &'a str) -> BoxFuture<'a, Detected> {
@@ -436,6 +437,7 @@ impl Harness for ClaudeCode {
                 env: Some(spec.env.clone()),
                 model: spec.model.clone(),
                 effort: spec.effort.clone(),
+                fast: spec.fast,
             };
             let tx = forward(tx, |ev| match ev {
                 claude::Event::Task(kind) => HarnessEvent::Task(kind),
@@ -469,6 +471,7 @@ impl Harness for ClaudeCode {
                 env: Some(spec.env.clone()),
                 model: spec.model.clone(),
                 effort: spec.effort.clone(),
+                fast: spec.fast,
                 resume: spec.resume.clone(),
             };
             let (run, reader) = claude::Run::start_chat(&opts, tx).await?;

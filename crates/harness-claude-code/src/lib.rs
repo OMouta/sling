@@ -84,21 +84,52 @@ pub const EFFORTS: &[&str] = &["low", "medium", "high", "xhigh", "max"];
 /// this list is fixed.
 pub fn models() -> Vec<AgentModel> {
     [
-        ("claude-fable-5-1", "Claude Fable 5.1", "high", false),
-        ("claude-opus-5-5", "Claude Opus 5.5", "medium", true),
-        ("claude-sonnet-5-5", "Claude Sonnet 5.5", "high", false),
-        ("claude-haiku-5-5", "Claude Haiku 5.5", "medium", false),
+        ("claude-fable-5-1", "Claude Fable 5.1", "high", false, false),
+        ("claude-opus-5-5", "Claude Opus 5.5", "medium", true, true),
+        (
+            "claude-sonnet-5-5",
+            "Claude Sonnet 5.5",
+            "high",
+            false,
+            false,
+        ),
+        (
+            "claude-haiku-5-5",
+            "Claude Haiku 5.5",
+            "medium",
+            false,
+            false,
+        ),
     ]
     .into_iter()
-    .map(|(id, name, default_effort, is_default)| AgentModel {
+    .map(|(id, name, default_effort, is_default, fast)| AgentModel {
         id: id.into(),
         display_name: name.into(),
         efforts: EFFORTS.iter().map(|e| e.to_string()).collect(),
         default_effort: default_effort.into(),
         is_default,
+        fast,
         ..Default::default()
     })
     .collect()
+}
+
+/// Whether Claude Code's fast mode works with `model`. Only Opus has it.
+/// `None` is Claude Code's default model, which is Opus.
+pub fn has_fast(model: Option<&str>) -> bool {
+    match model {
+        None | Some("opus") => true,
+        Some(id) => models().iter().any(|m| m.id == id && m.fast),
+    }
+}
+
+/// `--settings` that turns fast mode on for this run only. On a Claude
+/// subscription, fast mode is billed to usage credits, not the plan.
+fn with_fast(mut settings: Value) -> Value {
+    if let Some(obj) = settings.as_object_mut() {
+        obj.insert("fastMode".into(), Value::Bool(true));
+    }
+    settings
 }
 
 impl Detection {
@@ -210,6 +241,8 @@ pub struct RunOptions {
     pub model: Option<String>,
     /// `--effort`, such as `high`. `None` uses the model's default.
     pub effort: Option<String>,
+    /// Fast mode, for a model that has it.
+    pub fast: bool,
 }
 
 /// The `--settings` JSON for each access level. Passed on every run so the
@@ -255,8 +288,12 @@ pub fn args_for(opts: &RunOptions) -> Vec<String> {
     if let Some(effort) = &opts.effort {
         args.extend(["--effort".into(), effort.clone()]);
     }
+    let mut settings = settings_for(opts.access, opts.network);
+    if opts.fast && has_fast(opts.model.as_deref()) {
+        settings = with_fast(settings);
+    }
     args.push("--settings".into());
-    args.push(settings_for(opts.access, opts.network).to_string());
+    args.push(settings.to_string());
     // The prompt goes on stdin, so it never shows up in `ps`.
     args
 }
@@ -844,6 +881,7 @@ mod tests {
             env: None,
             model: None,
             effort: None,
+            fast: false,
         };
         let args = args_for(&opts);
         assert!(!args.iter().any(|a| a == "--model" || a == "--effort"));
@@ -901,6 +939,7 @@ mod tests {
             env: None,
             model: Some("opus".into()),
             effort: Some("xhigh".into()),
+            fast: false,
         };
         let args = args_for(&opts);
         assert!(args.windows(2).any(|w| w == ["--model", "opus"]));
@@ -909,6 +948,36 @@ mod tests {
             serde_json::from_str::<Value>(args.last().unwrap()).is_ok(),
             "settings stay last"
         );
+    }
+
+    #[test]
+    fn turns_on_fast_mode_only_for_a_model_that_has_it() {
+        let settings = |model: &str, fast: bool| {
+            let args = args_for(&RunOptions {
+                bin: "claude".into(),
+                cwd: "/tmp/w".into(),
+                prompt: String::new(),
+                access: Access::Edit,
+                network: false,
+                env: None,
+                model: Some(model.into()),
+                effort: None,
+                fast,
+            });
+            serde_json::from_str::<Value>(args.last().unwrap()).unwrap()
+        };
+        let on = settings("claude-opus-5-5", true);
+        assert_eq!(on["fastMode"], true);
+        // The sandbox settings are still there.
+        assert_eq!(on["sandbox"]["enabled"], true);
+        assert!(settings("claude-opus-5-5", false).get("fastMode").is_none());
+        assert!(
+            settings("claude-sonnet-5-5", true)
+                .get("fastMode")
+                .is_none()
+        );
+        assert!(has_fast(None));
+        assert!(!has_fast(Some("claude-haiku-5-5")));
     }
 
     #[test]
@@ -942,7 +1011,12 @@ mod tests {
             .map(|m| m.id.as_str())
             .collect();
         assert_eq!(default, ["claude-opus-5-5"]);
-        assert!(models.iter().all(|m| !m.fast));
+        let fast: Vec<&str> = models
+            .iter()
+            .filter(|m| m.fast)
+            .map(|m| m.id.as_str())
+            .collect();
+        assert_eq!(fast, ["claude-opus-5-5"]);
         assert!(
             models
                 .iter()

@@ -49,6 +49,7 @@ async fn run(
         env: None,
         model: None,
         effort: None,
+        fast: false,
     };
     let (mut run, reader) = Run::start(&opts, tx).await.unwrap();
     let mut kinds = Vec::new();

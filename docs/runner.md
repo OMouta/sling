@@ -120,14 +120,14 @@ The agent's environment never includes `SLING_*` variables, `GH_TOKEN`, or `GITH
 
 ## Models
 
-A task can pick the agent's model and reasoning effort, and for Codex the fast tier. An empty value leaves the agent's own default. The Runner tells Sling which models each agent offers:
+A task or chat turn can pick the agent's model, its reasoning effort, and the fast tier where the model has one. An empty value leaves the agent's own default. The Runner tells Sling which models each agent offers:
 
 | | Codex | Claude Code |
 |---|---|---|
 | Models offered | The ones `codex debug models` lists in Codex's own picker. The first by Codex's priority is the default. | `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`, and `claude-haiku-5-5`, by their full names. Opus 5.5 is the default. Opus 5.5 and Haiku 5.5 default to medium effort, the other two to high. |
 | Model | `-m <model>` | `--model <model>` |
 | Effort | `-c model_reasoning_effort="<effort>"` | `--effort <effort>` |
-| Fast | `-c service_tier="fast"` | Claude Code has no fast tier, so the Runner ignores it |
+| Fast | `-c service_tier="fast"` | `"fastMode": true` in `--settings`, for Opus 5.5 only. Other models ignore it. On a Claude subscription, fast mode is paid from usage credits, not the plan's limits. |
 
 The Runner refuses a task whose model or effort is longer than 64 characters, starts with anything but a letter or digit, or uses anything but letters, digits, `.`, `_`, `:`, and `-`. Codex reads the effort as TOML, and this keeps a value from adding its own settings or flags. The task log names the model settings a task ran with.
 

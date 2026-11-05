@@ -19,6 +19,7 @@ fn opts(dir: &std::path::Path, prompt: String, access: Access) -> RunOptions {
         ]),
         model: None,
         effort: None,
+        fast: false,
     }
 }
 
@@ -229,6 +230,7 @@ mod chat {
             env: None,
             model: Some("claude-haiku-5-5".into()),
             effort: Some("low".into()),
+            fast: false,
             resume,
         }
     }

@@ -258,7 +258,7 @@ impl Manager {
             resume,
             model: harness::setting(&t.model),
             effort: harness::setting(&t.effort),
-            fast: t.fast && agent.has_fast_tier(),
+            fast: t.fast && agent.has_fast_tier(harness::setting(&t.model).as_deref()),
             env: self.agent_env(agent.name()),
             mcp_command: self.chats.mcp_command()?,
             tools_url: t.tools_url.clone(),

@@ -38,7 +38,7 @@ const claudeModels = [
     description: "",
     efforts: ["low", "medium", "high", "xhigh", "max"],
     defaultEffort: "medium",
-    fast: false,
+    fast: true,
   },
   {
     id: "claude-sonnet-5-5",
@@ -267,11 +267,17 @@ describe("model picker", () => {
       within(screen.getByRole("radiogroup", { name: "Speed" })).getByRole("radio", {
         name: /Fast/,
       }) as HTMLButtonElement;
+    // Opus has fast mode on Claude Code, paid from usage credits.
+    expect(fast().disabled).toBe(false);
+    fireEvent.click(fast());
+    expect(screen.getByText("Billed to usage credits")).toBeTruthy();
+    fireEvent.click(screen.getByRole("option", { name: /Claude Sonnet 5\.5/ }));
     expect(fast().disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Codex on devbox" }));
     fireEvent.click(screen.getByRole("option", { name: /GPT-6\.1-Sol/ }));
     fireEvent.click(fast());
     expect(screen.getAllByLabelText("Fast").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Billed to usage credits")).toBeNull();
   });
 
   it("holds the permission mode in its footer", () => {
