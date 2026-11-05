@@ -31,7 +31,68 @@ export interface ConnectorDefinition<
   }): Promise<TestResult>;
   nodes: AnyNodeSpec[];
   source?: EventSourceFactory<Credentials, Config>;
+  /** Present on connectors that create sandboxes, such as Docker or Railway. */
+  executionProvider?: ExecutionProvider<Credentials, Config>;
 }
+
+/**
+ * Config keys the control plane reads from every execution provider's
+ * installation config. Providers include them in their `configSchema`.
+ */
+export interface ProviderConfigBase {
+  /** Image to run. Defaults to the server's sandbox image. */
+  image?: string;
+  /** URL a sandbox uses to reach the control plane. Defaults to SLING_PUBLIC_URL. */
+  controlPlaneUrl?: string;
+  cpus?: number;
+  memoryMb?: number;
+}
+
+/** What to start. `env` carries the sandbox boot contract, secrets included: never log it. */
+export interface SandboxSpec {
+  sandboxId: string;
+  workspaceId: string;
+  image: string;
+  env: Record<string, string>;
+  /** Attach these to whatever the provider creates, so `list` can find it again. */
+  labels: Record<string, string>;
+  cpus?: number;
+  memoryMb?: number;
+  /** Hard limit. Providers that support one should enforce it themselves too. */
+  lifetimeSeconds: number;
+}
+
+export interface ProviderContext<Credentials, Config> {
+  installationId: string;
+  workspaceId: string;
+  credentials: Credentials;
+  config: Config;
+  log: NodeLogger;
+  signal: AbortSignal;
+}
+
+export interface ProvidedSandbox {
+  /** The provider's own ID, for example a container ID. */
+  externalId: string;
+  detail?: string;
+}
+
+export interface ExecutionProvider<Credentials, Config> {
+  /** Starts the image and returns once the provider has accepted it, not when the Runner connects. */
+  create(ctx: ProviderContext<Credentials, Config>, spec: SandboxSpec): Promise<ProvidedSandbox>;
+  /** Removes it. A missing sandbox counts as destroyed. */
+  destroy(ctx: ProviderContext<Credentials, Config>, externalId: string): Promise<void>;
+  /** Everything this provider runs that carries the `sling.sandbox` label, for orphan cleanup. */
+  list(
+    ctx: ProviderContext<Credentials, Config>,
+  ): Promise<{ externalId: string; sandboxId: string | null }[]>;
+}
+
+/** Labels every provider attaches. */
+export const SANDBOX_LABELS = {
+  sandbox: "sling.sandbox",
+  workspace: "sling.workspace",
+} as const;
 
 export type SourceStatus = "connecting" | "connected" | "error";
 
