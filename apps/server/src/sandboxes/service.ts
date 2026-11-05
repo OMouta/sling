@@ -73,7 +73,8 @@ export class SandboxService {
   readonly #ctx: AppContext;
   /** Per-workspace chain, so two requests never race for the last slot. */
   readonly #pumps = new Map<string, Promise<void>>();
-  readonly #tearingDown = new Set<string>();
+  /** Teardowns in flight, so a second caller waits for the first instead of racing it. */
+  readonly #tearingDown = new Map<string, Promise<void>>();
   readonly #background = new Set<Promise<unknown>>();
 
   constructor(ctx: AppContext) {
@@ -591,10 +592,16 @@ export class SandboxService {
    * records its minutes. A failed sandbox keeps its failure. Safe to call more
    * than once.
    */
-  async teardown(sandboxId: string): Promise<void> {
-    if (this.#tearingDown.has(sandboxId)) return;
-    this.#tearingDown.add(sandboxId);
-    try {
+  teardown(sandboxId: string): Promise<void> {
+    const running = this.#tearingDown.get(sandboxId);
+    if (running) return running;
+    const work = this.#teardown(sandboxId).finally(() => this.#tearingDown.delete(sandboxId));
+    this.#tearingDown.set(sandboxId, work);
+    return work;
+  }
+
+  async #teardown(sandboxId: string): Promise<void> {
+    {
       const [sbx] = await this.#db
         .select()
         .from(schema.sandboxes)
@@ -659,9 +666,8 @@ export class SandboxService {
       });
       await this.publish(sandboxId);
       await this.#publishTask(row.taskId);
-      await this.pump(row.workspaceId);
-    } finally {
-      this.#tearingDown.delete(sandboxId);
+      // Not awaited: a teardown can run inside the pump, and the freed slot is the pump's next turn.
+      this.#inBackground("sandbox pump", () => this.pump(row.workspaceId));
     }
   }
 
@@ -800,13 +806,8 @@ export class SandboxService {
         ),
       );
     for (const s of expired) {
-      const limit =
-        s.expiresAt && s.provisioningAt
-          ? Math.round((s.expiresAt.getTime() - s.provisioningAt.getTime()) / 60_000)
-          : null;
-      const failure = limit
-        ? `It reached its ${limit}-minute lifetime.`
-        : "It reached its lifetime limit.";
+      const { settings } = await workspaceSettings(this.#ctx, s.workspaceId);
+      const failure = `It reached its ${settings.lifetimeMinutes}-minute lifetime.`;
       await this.#markFailed(s.id, failure);
       if (s.taskId) await this.#ctx.tasks.end(s.taskId, `The sandbox was destroyed: ${failure}`);
       await this.teardown(s.id);
