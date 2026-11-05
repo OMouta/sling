@@ -371,6 +371,14 @@ export declare type Inventory = Message<"sling.runner.v1.Inventory"> & {
    * @generated from field: uint32 max_concurrent_tasks = 4;
    */
   maxConcurrentTasks: number;
+
+  /**
+   * Labels set in the Runner's local config, plus automatic "os:<os>" and
+   * "arch:<arch>". Tasks can require labels. The server cannot change them.
+   *
+   * @generated from field: repeated string labels = 5;
+   */
+  labels: string[];
 };
 
 /**
@@ -384,7 +392,8 @@ export declare const InventorySchema: GenMessage<Inventory>;
  */
 export declare type Capability = Message<"sling.runner.v1.Capability"> & {
   /**
-   * For example "coding.codex", "git", "git.pr.github".
+   * "coding.codex" and "coding.claude-code" for coding agents, plus "git" and
+   * "git.pr.github".
    *
    * @generated from field: string name = 1;
    */
@@ -481,7 +490,7 @@ export declare type TaskAssign = Message<"sling.runner.v1.TaskAssign"> & {
   mode: PermissionMode;
 
   /**
-   * Harness to run, for example "codex".
+   * Coding agent to run: "codex" or "claude-code".
    *
    * @generated from field: string harness = 6;
    */
