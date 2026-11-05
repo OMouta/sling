@@ -24,10 +24,12 @@ export const LAUNCH_TIMEOUT_SECONDS = 600;
 
 /**
  * Extra time the container gets past its lifetime before the sandbox removes
- * it on its own. The control plane destroys it first and marks the task
+ * it on its own. The lifetime counts from create, while the control plane may
+ * count it from when the Runner connected, up to its 10-minute boot timeout
+ * later. The control plane destroys the sandbox first and marks the task
  * interrupted; this only matters when the control plane can't.
  */
-export const LIFETIME_GRACE_SECONDS = 60;
+export const LIFETIME_GRACE_SECONDS = 600;
 
 /** A sandbox younger than this with no marker may still be starting, so it isn't written off yet. */
 export const PROBE_SETTLE_MS = 120_000;

@@ -68,7 +68,7 @@ The pairing code, the agent's API key, and the git token travel as environment v
 
 Railway destroys a sandbox that sits idle for its idle timeout. A container running in the background doesn't count as activity. A running command does, so step 4 keeps the sandbox alive for as long as the container runs, however long the task takes. When the container stops, the sandbox goes idle, and Railway destroys it once the idle timeout passes.
 
-Sling destroys the sandbox itself when the task delivers its pull request, or when the task's lifetime runs out. If Sling is down when the lifetime ends, `docker wait` gives up a minute later and removes the container. Railway then destroys the idle sandbox, with no help from Sling.
+Sling destroys the sandbox itself when the task delivers its pull request, or when the task's lifetime runs out. If Sling is down when the lifetime ends, `docker wait` gives up 10 minutes later and removes the container. The 10 minutes cover the time a sandbox may take to boot, since that clock starts when the sandbox is created. Railway then destroys the idle sandbox, with no help from Sling.
 
 To find sandboxes it lost track of, Sling reads the marker file once in each running sandbox it doesn't already know, and remembers what it found. A sandbox without the file is left alone. If Sling crashed before writing the file, nothing runs in that sandbox, so Railway idles it out.
 

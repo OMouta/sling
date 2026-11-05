@@ -90,7 +90,7 @@ Then store an API key for the coding agent and a GitHub token under **Settings**
 - No published ports, no privileged mode, and no restart policy.
 - The labels `sling.sandbox`, `sling.workspace`, and `sling.expires-at`, plus whatever Sling adds.
 
-Sling finds its containers by those labels. Every minute it lists the workspace's containers and removes any it no longer tracks. A sandbox that outlives its lifetime, 60 minutes by default, gets destroyed and its task is marked interrupted. As a backstop for when Sling has lost track of one, a container more than a minute past its `sling.expires-at` time is removed the next time Sling lists containers.
+Sling finds its containers by those labels. Every minute it lists the workspace's containers and removes any it no longer tracks. A sandbox that outlives its lifetime, 60 minutes by default, gets destroyed and its task is marked interrupted. As a backstop for when Sling has lost track of one, a container more than 10 minutes past its `sling.expires-at` time is removed the next time Sling lists containers. The 10 minutes cover the time a sandbox may take to boot, since the label counts from when the container was created.
 
 ## When it doesn't work
 

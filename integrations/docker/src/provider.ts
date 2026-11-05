@@ -23,10 +23,12 @@ export const STOP_TIMEOUT_SECONDS = 5;
 
 /**
  * How long past its lifetime a container may run before `list` removes it.
- * The control plane's own sweep destroys it first and marks the task interrupted;
- * this only catches containers the control plane lost track of.
+ * The deadline counts from create, while the control plane may count the
+ * lifetime from when the Runner connected, up to its 10-minute boot timeout
+ * later. The control plane's sweep destroys the sandbox first and marks the
+ * task interrupted; this only catches containers it lost track of.
  */
-export const EXPIRY_GRACE_MS = 60_000;
+export const EXPIRY_GRACE_MS = 10 * 60_000;
 
 /** Enough for parallel builds, low enough that a fork bomb doesn't take the host down. */
 export const PIDS_LIMIT = 4096;
