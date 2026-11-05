@@ -149,6 +149,32 @@ A webhook token is an HMAC of the server secret, the workflow ID, and the trigge
 ### D39. Template wiring follows the port rules
 A data input takes one edge, so in the Discord assistant both triggers rejoin at **Conversation**, which works out the key with an expression, rather than each feeding the assistant directly. Where a node's text comes from config rather than an input port (for example a Discord message built from an email's subject and an AI summary), the template stores the value with **Set variable** and reads it as `vars.<name>` in the expression.
 
+## Stage 3
+
+### D40. A sandbox is a Runner that pairs itself
+An execution provider starts an image that runs `sling-runner sandbox`, which pairs with a one-time code bound to that sandbox and connects back like any machine. Dispatch, events, actions, and approvals stay exactly as they are. The sandbox's Runner is ephemeral: hidden from Machines, and revoked when the sandbox is destroyed.
+
+### D41. Routing picks the machine, and explains itself
+Repos are matched across machines by their normalized remote. A machine is eligible when it's online, has the repo, has the requested agent ready, has the required labels, and allows the conversation's mode. Among those, the named machine wins, then the most free slots, then the one that ran the repo last. Every decision records a one-line reason per machine, shown on the task.
+
+### D42. Sandbox credentials: stored keys by default, custom images allowed
+An OpenAI key, an Anthropic key, and a GitHub token are stored encrypted under Settings and injected only into the sandbox running the task. The Runner uses the git token itself and strips it, and every `SLING_*` variable, from the agent's environment. A provider can name a custom image with its own credentials instead.
+
+### D43. Only repos you allow go to sandboxes, and only from their remote
+The workspace keeps a list of repos allowed in sandboxes, keyed by normalized remote. A sandbox clones from that remote and nothing else, so local files and uncommitted work never leave your machines. The list lives in the control plane, because sandboxes are disposable and don't touch your machines.
+
+### D44. Providers: Docker and Railway Sandboxes, as connectors
+Execution providers are connectors with an `executionProvider` section, so they reuse installations, encrypted credentials, and connection tests. Docker uses the Engine API. Railway uses Railway Sandboxes (beta) through its TypeScript SDK, running the same `sling-sandbox` image with the Docker that ships in every sandbox. Both label what they create, so a sweep can find and remove orphans.
+
+### D45. Sandbox limits are on by default
+2 concurrent sandboxes, a 60-minute lifetime, and 600 minutes a month, all changeable in Settings. Requests over the concurrent limit wait. Requests over the budget are refused with a reason. A sandbox past its lifetime is destroyed and its task interrupted.
+
+### D46. Claude Code is the second agent
+It runs headless with `claude -p --output-format stream-json --verbose`. Read-only maps to plan mode, Supervised and Auto to accept-edits with Claude Code's sandbox on, and Full access to skipping permissions. Spike S4 confirms the details. The Runner's task code moves behind a `Harness` trait shared by Codex and Claude Code.
+
+### D47. Machine labels are set on the machine
+`sling-runner config set labels …` adds labels to the Runner's inventory, alongside automatic `os:` and `arch:` labels. Tasks can require labels. The control plane can't change a machine's labels.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.
