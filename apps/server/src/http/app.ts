@@ -11,6 +11,7 @@ import {
 import type { Config } from "../config.ts";
 import type { AppContext } from "../context.ts";
 import { authRoutes } from "../routes/auth.ts";
+import { settingsRoutes } from "../routes/settings.ts";
 import { setupRoutes } from "../routes/setup.ts";
 
 export function createServer(config: Config): FastifyInstance {
@@ -50,6 +51,9 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   await app.register(async (scope) => {
     const r = scope.withTypeProvider<ZodTypeProvider>();
     await setupRoutes(r, ctx);
+  });
+  await app.register(async (scope) => {
+    await settingsRoutes(scope, ctx);
   });
 
   serveWebApp(app, ctx.config);
