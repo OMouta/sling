@@ -2,6 +2,31 @@
 
 One assistant, one Runner, one specialist. This is spec section 15, Stage 1, with the choices in `decisions.md` applied. Decision numbers like D14 refer to that file.
 
+## Status (2026-11-05)
+
+Everything in M0 to M7 is built and committed. What has been checked, and how:
+
+| Item | Verified by |
+|---|---|
+| Docker Compose install, first-run setup, encrypted API key | Built and ran the image; checked the database row is ciphertext |
+| Pairing, reconnect, revoke | End-to-end suite plus manual runs. A revoked Runner exits with code 78 |
+| Task pipeline, ordered events, acks | End-to-end suite with fake-codex |
+| Supervised approval surviving a server restart | Manual run, plus the end-to-end suite |
+| Kill -9 mid-task leaves the task `interrupted` with logs | End-to-end suite. A restarted Runner also kills the orphaned Codex process |
+| Runner guards (default branch, cap, allowlist, read-only push) | Rust tests against real git repos |
+| Master agent delegating and reporting back | Mock model in the end-to-end suite, and a real model through local Ollama |
+| Real Codex end to end on macOS | One run: Codex fixed a bug, ran the check, the Runner committed and pushed. That run is how D25 was found |
+| Service install on macOS | Installed, checked status, uninstalled |
+| Budgets | Release binary 3.3 MB, idle memory 7.2 MB, event latency p95 26 ms on localhost |
+
+Not done or not verified yet:
+
+- **Phone over Tailscale or Cloudflare Tunnel.** Documented in `docs/remote-access.md`, not tried here.
+- **Linux and Windows.** CI builds and tests the Runner on both, but CI has never run, because the repo has no remote yet. Spike S2's sandbox probe still needs a Linux and a Windows machine, and the Windows logon task hasn't run on real hardware.
+- **Release artifacts.** The install scripts need `SLING_REPO` until the repo is published.
+- **Signing.** macOS notarization and Windows code signing aren't set up.
+- **Size.** The Docker image is 618 MB and the web bundle is 546 KB before gzip (172 KB after). Both can shrink.
+
 ## Goal
 
 From a phone, open the Sling web app, ask for a change in a repo that lives on a paired machine, and get back a pull request that Codex wrote on that machine. Sling coordinates. Codex writes the code.

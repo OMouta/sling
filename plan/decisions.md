@@ -96,9 +96,24 @@ From spike S1. `codex app-server` is still marked experimental in codex-cli 0.16
 ### D22. Codex network: off, with a per-repo opt-in on the Runner
 From spike S2. On macOS, `workspace-write` blocks writes outside the worktree and blocks network, but reads are unrestricted. Network stays off in Read-only, Supervised, and Auto. A repo entry in the Runner's local config can set `network = true`. The control plane can't change it.
 
+### D23. Agent turns run in-process, one at a time per conversation
+Not pg-boss. A turn that died halfway can't be retried safely, because it may already have started a task, and a retry would start it again. Each conversation has an in-memory queue instead. On startup the server answers any conversation from the last hour whose last message (from the user or a task update) never got a reply.
+
+### D24. The server runs TypeScript source with Node's type stripping
+There's no build step for the server or the shared packages. That rules out TS enums and parameter properties (`erasableSyntaxOnly` enforces it), and it's why protobuf codegen emits `.js` plus `.d.ts`. Node won't strip types inside `node_modules`, so the Docker image keeps the monorepo layout with workspace packages symlinked from `/app/packages`.
+
+### D25. The Runner commits tracked changes plus files Codex reports
+Found in the first real Codex run: Codex ran the tests, Python wrote `__pycache__`, and `git add -A` committed it. Now the Runner stages changes to tracked files, plus new files that Codex reported in a `file_change` event. Other untracked files stay out of the commit, and the task log lists them.
+
+### D26. One approval per action, decided together per task
+Push and PR each get an approval record, so the audit log shows exactly what was approved. The web app's **Approve** button approves every pending step of a task at once, since asking twice for one change is noise.
+
+### D27. Tests use a fake Codex and a scripted model
+`fake-codex` (in `crates/harness-codex`) speaks the same JSONL as `codex exec --json`, with scenarios for success, failure, hanging, and crashing. The end-to-end suite runs real Postgres, the server, and the real Runner binary against it, with the AI SDK's mock model playing the agent. Real Codex stays out of CI because it needs a login.
+
 ## Defaults I picked (override any of these)
 
-- Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router and TanStack Query, styled with Tailwind.
+- Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.
 - HTTP and WebSocket API run on Fastify, with Zod schemas (spec section 14) through `fastify-type-provider-zod`.
 - Tooling is Vitest for TS tests, Biome for TS lint and format, and rustfmt plus clippy for Rust. Turborepo gets added only if builds get slow.
 - Runner crates are tokio, tokio-tungstenite with rustls, and prost.
