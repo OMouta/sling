@@ -18,8 +18,8 @@ import { useQuery } from "@tanstack/react-query";
 import { ApiError, api } from "./api.ts";
 
 /**
- * React Query keys for workflows and connectors. Pages read these and
- * `realtime.ts` patches the same keys from server events:
+ * React Query keys for workflows, connectors, and sandboxes. Pages read these
+ * and `realtime.ts` patches the same keys from server events:
  *
  *   ["workflows"]                       WorkflowSummaryView[]  GET /api/workflows
  *   ["workflow", id]                    WorkflowDetailView     GET /api/workflows/:id
@@ -31,9 +31,16 @@ import { ApiError, api } from "./api.ts";
  *   ["templates"]                       TemplateView[]         GET /api/templates
  *   ["connectors"]                      ConnectorView[]        GET /api/connectors
  *   ["installations"]                   InstallationView[]     GET /api/installations
+ *   ["sandboxes"]                       SandboxListView        GET /api/sandboxes
+ *   ["sandbox-repos"]                   SandboxRepoView[]      GET /api/sandbox-repos
+ *   ["sandbox-settings"]                SandboxSettingsView    GET /api/settings/sandboxes
  *
  * Runs and versions have their own roots so invalidating a workflow's detail
- * doesn't refetch its run list.
+ * doesn't refetch its run list. Sandbox settings have their own root, apart
+ * from ["settings"], so saving the model doesn't refetch them.
+ *
+ * `sandbox.updated` also patches its task's `environment` under ["task", id]
+ * and in every cached ["conversation", id].
  */
 export const qk = {
   workflows: () => ["workflows"] as const,
@@ -46,6 +53,9 @@ export const qk = {
   templates: () => ["templates"] as const,
   connectors: () => ["connectors"] as const,
   installations: () => ["installations"] as const,
+  sandboxes: () => ["sandboxes"] as const,
+  sandboxRepos: () => ["sandbox-repos"] as const,
+  sandboxSettings: () => ["sandbox-settings"] as const,
 };
 
 export function useWorkflows() {

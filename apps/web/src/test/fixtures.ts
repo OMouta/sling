@@ -3,11 +3,18 @@
  * DOM tests. Config schemas are what zod's `toJSONSchema` writes.
  */
 import type {
+  ApprovalView,
   ConnectorView,
   InstallationView,
   NodeRunView,
   RunDetailView,
+  RunnerView,
   RunView,
+  SandboxListView,
+  SandboxRepoView,
+  SandboxSettingsView,
+  SandboxView,
+  TaskView,
   WorkflowSummaryView,
 } from "@sling/core";
 import {
@@ -570,3 +577,355 @@ export function bigDefinition(count: number): WorkflowDefinition {
   }
   return { schema: "sling.workflow/v1", name: "Big", description: "", nodes, edges };
 }
+
+// Machines, sandboxes, and where tasks run.
+
+export const devbox: RunnerView = {
+  id: "rnr_1",
+  name: "devbox",
+  online: true,
+  lastSeenAt: "2026-11-05T10:00:00.000Z",
+  version: "0.3.0",
+  os: "macos",
+  arch: "aarch64",
+  hostname: "devbox.local",
+  capabilities: [
+    { name: "coding.codex", version: "0.166.0", ready: true, detail: "" },
+    {
+      name: "coding.claude-code",
+      version: "2.1.4",
+      ready: false,
+      detail: "Not logged in. Run claude and sign in.",
+    },
+    { name: "git", version: "2.47.1", ready: true, detail: "" },
+  ],
+  maxMode: "auto",
+  maxConcurrentTasks: 2,
+  pairedAt: "2026-10-01T09:00:00.000Z",
+  revokedAt: null,
+  repos: [
+    {
+      id: "rpo_1",
+      name: "site",
+      defaultBranch: "main",
+      remoteUrl: "git@github.com:a/site.git",
+      network: false,
+      remoteKey: "github.com/a/site",
+    },
+    {
+      id: "rpo_2",
+      name: "notes",
+      defaultBranch: "main",
+      remoteUrl: "",
+      network: false,
+      remoteKey: null,
+    },
+  ],
+  labels: ["ios", "os:macos", "arch:aarch64"],
+  ephemeral: false,
+  sandboxId: null,
+};
+
+export const buildbox: RunnerView = {
+  id: "rnr_2",
+  name: "buildbox",
+  online: false,
+  lastSeenAt: "2026-11-05T08:00:00.000Z",
+  version: "0.3.0",
+  os: "linux",
+  arch: "x86_64",
+  hostname: "buildbox",
+  capabilities: [{ name: "coding.claude-code", version: "2.1.4", ready: true, detail: "" }],
+  maxMode: "full-access",
+  maxConcurrentTasks: 4,
+  pairedAt: "2026-10-02T09:00:00.000Z",
+  revokedAt: null,
+  repos: [
+    {
+      id: "rpo_3",
+      name: "api",
+      defaultBranch: "trunk",
+      remoteUrl: "https://github.com/a/api.git",
+      network: true,
+      remoteKey: "github.com/a/api",
+    },
+  ],
+  labels: ["gpu", "os:linux", "arch:x86_64"],
+  ephemeral: false,
+  sandboxId: null,
+};
+
+/** A sandbox's own Runner, which the Machines page never shows. */
+export const sandboxRunner: RunnerView = {
+  ...buildbox,
+  id: "rnr_sbx",
+  name: "sandbox-sbx_1",
+  online: true,
+  hostname: "3f9c2a1b7d4e",
+  repos: [],
+  labels: ["os:linux", "arch:x86_64"],
+  ephemeral: true,
+  sandboxId: "sbx_1",
+};
+
+export const providerConnectors: ConnectorView[] = [
+  {
+    id: "docker",
+    name: "Docker",
+    description: "Runs each sandbox as a container on a Docker host.",
+    setupHelp: "Point it at the Docker socket, or at a remote host over TLS.",
+    credentialsSchema: {
+      $schema: SCHEMA,
+      type: "object",
+      properties: { host: { type: "string", description: "Docker host" } },
+      required: ["host"],
+      additionalProperties: false,
+    },
+    secretFields: [],
+    configSchema: {
+      $schema: SCHEMA,
+      type: "object",
+      properties: {
+        image: { default: "ghcr.io/sling/sling-sandbox:latest", type: "string" },
+        controlPlaneUrl: { type: "string", description: "Control plane URL" },
+      },
+      required: ["image"],
+      additionalProperties: false,
+    },
+    nodeTypes: [],
+  },
+  {
+    id: "railway",
+    name: "Railway",
+    description: "Runs each sandbox in a Railway Sandbox on your own account.",
+    setupHelp: null,
+    credentialsSchema: {
+      $schema: SCHEMA,
+      type: "object",
+      properties: {
+        apiToken: { type: "string", description: "API token" },
+        environmentId: { type: "string", description: "Environment ID" },
+      },
+      required: ["apiToken", "environmentId"],
+      additionalProperties: false,
+    },
+    secretFields: ["apiToken"],
+    configSchema: { $schema: SCHEMA, type: "object", properties: {}, additionalProperties: false },
+    nodeTypes: [],
+  },
+];
+
+export const dockerInstallation: InstallationView = {
+  id: "ins_docker",
+  connectorId: "docker",
+  name: "Docker host",
+  enabled: true,
+  status: "idle",
+  statusDetail: null,
+  config: { image: "ghcr.io/sling/sling-sandbox:latest" },
+  hasCredentials: true,
+  createdAt: t0,
+  updatedAt: t0,
+};
+
+export const busySandbox: SandboxView = {
+  id: "sbx_1",
+  state: "busy",
+  providerInstallationId: "ins_docker",
+  providerName: "Docker host",
+  connectorId: "docker",
+  taskId: "tsk_sbx",
+  taskTitle: "Fix the signup form",
+  image: "ghcr.io/sling/sling-sandbox:latest",
+  externalId: "3f9c2a1b7d4e8f60a1b2c3d4e5f60718293a4b5c6d7e8f90",
+  failure: null,
+  runnerId: "rnr_sbx",
+  requestedAt: "2026-11-05T10:00:00.000Z",
+  readyAt: "2026-11-05T10:00:12.000Z",
+  destroyedAt: null,
+  minutes: 4,
+};
+
+export const failedSandbox: SandboxView = {
+  id: "sbx_2",
+  state: "failed",
+  providerInstallationId: "ins_docker",
+  providerName: "Docker host",
+  connectorId: "docker",
+  taskId: "tsk_old",
+  taskTitle: "Bump the linter",
+  image: "ghcr.io/sling/sling-sandbox:latest",
+  externalId: null,
+  failure: "The Runner didn't connect within 10 minutes.",
+  runnerId: null,
+  requestedAt: "2026-11-04T09:00:00.000Z",
+  readyAt: null,
+  destroyedAt: "2026-11-04T09:10:00.000Z",
+  minutes: 0,
+};
+
+export const destroyedSandbox: SandboxView = {
+  id: "sbx_3",
+  state: "destroyed",
+  providerInstallationId: "ins_docker",
+  providerName: "Docker host",
+  connectorId: "docker",
+  taskId: "tsk_done",
+  taskTitle: "Add a changelog",
+  image: "ghcr.io/sling/sling-sandbox:latest",
+  externalId: "9a8b7c6d5e4f",
+  failure: null,
+  runnerId: null,
+  requestedAt: "2026-11-03T15:00:00.000Z",
+  readyAt: "2026-11-03T15:00:10.000Z",
+  destroyedAt: "2026-11-03T15:12:10.000Z",
+  minutes: 12,
+};
+
+export const sandboxList: SandboxListView = {
+  sandboxes: [busySandbox, failedSandbox, destroyedSandbox],
+  usage: {
+    monthMinutes: 150,
+    monthlyMinutesBudget: 600,
+    running: 1,
+    concurrentLimit: 2,
+    estimatedMonthCost: 1.25,
+  },
+};
+
+export const sandboxRepos: SandboxRepoView[] = [
+  {
+    remoteKey: "github.com/a/api",
+    cloneUrl: "https://github.com/a/api.git",
+    defaultBranch: "trunk",
+    network: true,
+    createdAt: t0,
+  },
+];
+
+export const sandboxSettings: SandboxSettingsView = {
+  defaultHarness: "codex",
+  concurrentLimit: 2,
+  lifetimeMinutes: 60,
+  monthlyMinutesBudget: 600,
+  costPerHour: {},
+  secrets: { openaiApiKey: true, anthropicApiKey: false, gitToken: false },
+};
+
+const baseTask: TaskView = {
+  id: "tsk_1",
+  conversationId: "cnv_1",
+  runnerId: "rnr_1",
+  runnerName: "devbox",
+  harness: "codex",
+  environment: { kind: "machine", sandboxId: null, sandboxState: null, providerName: null },
+  routing: null,
+  repoName: "site",
+  title: "Make footer year dynamic",
+  objective: "Use the current year.",
+  mode: "supervised",
+  deliver: "pr",
+  state: "running",
+  branch: "sling/abc123-make-footer-year-dynamic",
+  commitSha: null,
+  diffStats: null,
+  summary: null,
+  error: null,
+  harnessVersion: "0.166.0",
+  runnerOffline: false,
+  cancelRequested: false,
+  createdAt: "2026-11-05T10:01:00.000Z",
+  startedAt: "2026-11-05T10:01:01.000Z",
+  finishedAt: null,
+  actions: [],
+};
+
+/** Routed to one of two machines that have the repo. */
+export const machineTask: TaskView = {
+  ...baseTask,
+  routing: {
+    target: { kind: "machine", runnerId: "rnr_1", runnerName: "devbox" },
+    reason: "devbox has site and Codex ready, and the most free slots.",
+    considered: [
+      { runnerId: "rnr_2", runnerName: "buildbox", eligible: false, reason: "Offline." },
+      { runnerId: "rnr_1", runnerName: "devbox", eligible: true, reason: "2 of 2 slots free." },
+    ],
+    decidedAt: "2026-11-05T10:01:00.000Z",
+  },
+};
+
+/** Running in a sandbox, after its fallback was approved. */
+export const sandboxTask: TaskView = {
+  ...baseTask,
+  id: "tsk_sbx",
+  runnerId: "rnr_sbx",
+  runnerName: "sandbox-sbx_1",
+  harness: "claude-code",
+  harnessVersion: "2.1.4",
+  title: "Fix the signup form",
+  environment: {
+    kind: "sandbox",
+    sandboxId: "sbx_1",
+    sandboxState: "busy",
+    providerName: "Docker host",
+  },
+  routing: {
+    target: { kind: "sandbox", providerInstallationId: "ins_docker", providerName: "Docker host" },
+    reason: "No machine with site is online, so it runs in a sandbox you approved.",
+    considered: [{ runnerId: "rnr_1", runnerName: "devbox", eligible: false, reason: "Offline." }],
+    decidedAt: "2026-11-05T10:00:00.000Z",
+  },
+};
+
+/** Not bound yet: no machine could take it, and the fallback waits for you. */
+export const waitingTask: TaskView = {
+  ...baseTask,
+  id: "tsk_wait",
+  runnerId: null,
+  runnerName: null,
+  state: "queued",
+  title: "Update the README badges",
+  harnessVersion: null,
+  startedAt: null,
+  environment: { kind: "sandbox", sandboxId: null, sandboxState: null, providerName: null },
+  routing: {
+    target: null,
+    reason: "No machine can take it right now.",
+    considered: [
+      { runnerId: "rnr_1", runnerName: "devbox", eligible: false, reason: "Offline." },
+      {
+        runnerId: "rnr_2",
+        runnerName: "buildbox",
+        eligible: false,
+        reason: "Doesn't have site.",
+      },
+    ],
+    decidedAt: "2026-11-05T10:02:00.000Z",
+  },
+};
+
+export const fallbackApproval: ApprovalView = {
+  id: "apv_fb",
+  kind: "sandbox_fallback",
+  title: "Run Update the README badges in a sandbox?",
+  state: "pending",
+  expiresAt: "2026-11-06T10:02:00.000Z",
+  createdAt: "2026-11-05T10:02:00.000Z",
+  taskId: "tsk_wait",
+  actionId: null,
+  actionKind: null,
+  task: null,
+  prTitle: null,
+  prBody: null,
+  runId: null,
+  payload: {
+    taskId: "tsk_wait",
+    taskTitle: "Update the README badges",
+    remoteKey: "github.com/a/site",
+    cloneUrl: "https://github.com/a/site.git",
+    providerInstallationId: "ins_docker",
+    providerName: "Docker host",
+    harness: "codex",
+    reasons: ["devbox: Offline.", "buildbox: Doesn't have site."],
+  },
+};
