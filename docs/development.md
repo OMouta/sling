@@ -31,6 +31,8 @@ export SLING_RUNNER_HOME=/tmp/sling-dev-runner
 
 `fake-codex` behaves like `codex exec --json`. Put `[fake:fail]`, `[fake:hang]`, `[fake:crash]`, or `[fake:noop]` in a task objective to pick a scenario.
 
+The routing and sandbox end-to-end tests (`apps/server/test/stage3.e2e.test.ts`) register two test execution providers from `test/fixtures/providers.ts`. `test-fake` boots a TypeScript Runner in the test process that pairs with the sandbox's code. `test-process` runs the real `target/debug/sling-runner sandbox` as a child process with the sandbox's environment, cloning from a local bare repo and running `fake-codex`; its test skips itself when the Runner build has no `sandbox` command. The server's `testing` config passes `SLING_CODEX_BIN` to sandboxes and allows `file://` clone URLs.
+
 ## Layout
 
 | Path | What |

@@ -7,6 +7,7 @@ What Sling protects, what it trusts, and where the known gaps are.
 - Shell-level access to your paired machines, through Codex
 - Source code in the allowed repos, and the git credentials that push them
 - Model API keys and connector credentials (Discord bot token, mailbox password) stored in the control plane
+- Sandbox secrets (OpenAI and Anthropic keys, a GitHub token) and execution provider credentials (access to a Docker host, a Railway token)
 - Your login to the web app, which can start all of the above
 - The Discord account of anyone on an installation's approver list, which can approve pushes and PRs
 
@@ -18,7 +19,9 @@ What Sling protects, what it trusts, and where the known gaps are.
 | Control plane | Deciding what to run and when | Widening a Runner's limits |
 | Runner | Enforcing local limits | |
 | Master agent (LLM) | Choosing tools within the limits | Picking the mode, reaching other workspaces, running commands |
-| Codex | Editing files in its worktree, within its sandbox | Committing or pushing |
+| Codex, Claude Code | Editing files in its worktree, within its sandbox | Committing or pushing |
+| Sandbox | Running one task on a fresh clone of one allowed repo, with that task's secrets | Reaching your machines, other repos, or other tasks' secrets |
+| Execution provider (Docker, Railway) | Starting and removing sandboxes | Seeing anything but the sandbox it was asked to start |
 | Workflows | Whatever their nodes do. You write them | |
 | Discord users on the allowed list | Chatting with the assistant, as you would | Approving anything, unless also on the approver list |
 | Discord users on the approver list | Approving and rejecting pending approvals | Anything else |
@@ -29,11 +32,13 @@ What Sling protects, what it trusts, and where the known gaps are.
 
 **Login.** Email and password with optional TOTP and passkeys (Better Auth). Sessions are HttpOnly cookies. State-changing requests with a cookie must come from `SLING_PUBLIC_URL`'s origin, and the browser WebSocket checks the origin too. There's exactly one account: the setup page refuses a second signup.
 
-**Runner identity.** Each Runner makes an Ed25519 key at pairing and keeps the private key on the machine. Pairing codes are single-use, stored hashed, and expire after 10 minutes, and the pairing endpoint is rate-limited. Every connection signs a fresh server nonce with a timestamp. Revoking a Runner closes its socket and refuses later handshakes.
+**Runner identity.** Each Runner makes an Ed25519 key at pairing and keeps the private key on the machine. Pairing codes are single-use, stored hashed, and expire after 10 minutes, and the pairing endpoint is rate-limited on failed attempts. Every connection signs a fresh server nonce with a timestamp. Revoking a Runner closes its socket and refuses later handshakes.
+
+**Sandboxes.** Only repos on the workspace's sandbox list go to a sandbox, and a sandbox clones only from that entry's HTTPS URL. Clone URLs with credentials in them are refused. Each sandbox gets its own pairing code, stored hashed, valid for 15 minutes and only while that sandbox is starting, and its Runner is marked as that sandbox's. When the task is delivered, or the sandbox fails, times out, or passes its lifetime, Sling revokes its Runner and has the provider destroy it. Every minute, Sling also destroys anything the provider still runs with Sling's label that isn't a live sandbox. A sandbox gets the GitHub token and only the API key for the agent its task runs. The Runner uses the token itself and strips it, and every `SLING_` variable, from the agent's environment. Running a task in a sandbox because no machine could take it always waits for your approval.
 
 **Local limits.** Repos and the mode cap live only in the Runner's config. See [modes.md](modes.md#what-enforces-what).
 
-**Secrets at rest.** Model API keys and connector credentials are encrypted with AES-256-GCM under a key derived from `SLING_SECRET_KEY`. Connector credentials are write-only in the API, and their values are scrubbed from stored node inputs and outputs. Logs redact cookies and auth headers.
+**Secrets at rest.** Model API keys, connector credentials, and sandbox secrets are encrypted with AES-256-GCM under a key derived from `SLING_SECRET_KEY`. Connector credentials and sandbox secrets are write-only in the API. Connector credential values are scrubbed from stored node inputs and outputs, and from sandbox provider errors. Audit entries name which sandbox variables a sandbox got, never their values. Logs redact cookies and auth headers.
 
 **Secrets in task output.** The Runner masks values of its own secret-looking environment variables and common token shapes (GitHub, OpenAI-style, Slack, AWS key IDs) before events leave the machine. This is best effort.
 
@@ -45,13 +50,16 @@ What Sling protects, what it trusts, and where the known gaps are.
 
 **Prompt injection.** Codex summaries, emails, and Discord messages reach models as data inside the user turn. AI nodes (`ai.prompt`, `ai.extract`, `ai.classify`) have no tools at all. The assistant has no shell, file, or web tools on the control plane, so the worst a manipulated assistant can do is start or cancel tasks inside the conversation's mode, on machines and repos you allowed.
 
-**Audit.** Task creation (with mode), mode changes, approvals (with where they were decided), refused approval clicks, push and PR results, pairing, revokes, and installation changes go to an append-only audit table.
+**Audit.** Task creation (with mode and routing), mode changes, approvals (with where they were decided), refused approval clicks, push and PR results, pairing, revokes, installation changes, every sandbox state change, orphans removed, sandbox list changes, and which sandbox secrets were set or cleared go to an append-only audit table.
 
 ## Known gaps
 
 - **Reads aren't sandboxed.** On macOS, Codex's `workspace-write` blocks writes outside the worktree and blocks network, but it can read anything the user can, `~/.ssh` included. With network off it can't send that anywhere. With `--network` on a repo, or in Full access, it could.
 - **Linux and Windows sandboxes are untested.** The sandbox probe covered macOS only. Linux uses Landlock and seccomp, and Windows support in Codex has been weaker.
-- **The Runner runs as you.** There's no separate OS user. Docker-per-task isolation is planned for a later stage.
+- **The Runner runs as you.** There's no separate OS user on your machines. Sandboxes give a task its own container, but only for repos you allow there.
+- **Sandbox secrets share the container with the agent.** The agent's environment doesn't carry the GitHub token or API keys, but in Full access the agent runs as the same user as the Runner in that container, and could read them from the Runner's process. Scope the GitHub token to the repos you allow, with contents and pull requests only.
+- **A sandbox's limits come from the control plane.** Its repo list and mode cap are set when Sling starts it, unlike a machine's local config. A compromised control plane can run anything in a sandbox, though not on your machines.
+- **Providers shared between Sling servers.** Each server's orphan sweep removes sandboxes it doesn't know, including another server's. Give each server its own Docker host or Railway environment.
 - **Discord approvers hold an approval key.** Anyone who takes over an approver's Discord account can approve pushes and PRs. Keep the approver list short, and turn on 2FA in Discord.
 - **`http.request` can reach your internal network.** It doesn't block private or loopback addresses, so a workflow that builds a URL from email or Discord content could be steered at internal services. Don't build URLs from untrusted text.
 - **Webhook URLs are bearer secrets.** Anyone holding one can start that workflow with any body. Rotating a URL means changing the trigger node's ID.

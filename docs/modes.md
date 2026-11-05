@@ -19,7 +19,7 @@ The assistant never picks the mode. It isn't a tool parameter, and the server re
 
 **On the control plane**
 - The task gets the conversation's current mode.
-- A task above the machine's reported cap is refused before it's sent.
+- A machine whose reported cap is below the conversation's mode isn't picked for the task. If no machine qualifies, the task is refused, or offered to a sandbox (see [sandboxes.md](sandboxes.md)).
 - Push and PR steps that need approval wait as approval records. They survive restarts and expire after 24 hours.
 
 **On the Runner** (holds even if the control plane is compromised)
@@ -41,3 +41,9 @@ Full access runs Codex with no sandbox and skips every approval. A prompt inject
 ```sh
 sling-runner config set max-mode auto
 ```
+
+## Sandboxes
+
+A task in a [sandbox](sandboxes.md) runs in the conversation's mode, the same as on a machine. The agent's sandbox level and the steps that ask first don't change, so a Supervised task in a sandbox still waits for your approval before it pushes.
+
+What does differ is the Runner's own limits. A sandbox's Runner allows up to Full access, and its only repo is the one it cloned from the sandbox list. The control plane sets both when it starts the sandbox, so unlike a machine's `max-mode` they don't hold if the control plane is compromised. The container is the boundary instead: it holds one fresh clone and that task's secrets, can't reach your machines, and is destroyed when the task is done.
