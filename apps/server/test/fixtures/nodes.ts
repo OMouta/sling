@@ -375,18 +375,26 @@ export const fakeDiscord: AnyConnector = defineConnector({
         installationId: z.string().describe("Installation."),
         channelId: z.string().optional().describe("Channel."),
         userId: z.string().optional().describe("User for a DM."),
-        content: z.string().describe("Text."),
+        content: z.string().optional().describe("Text, unless the content input is wired."),
         approvalButtons: z.boolean().default(false).describe("Buttons."),
       }),
       expressionFields: ["channelId", "userId", "content"],
       installationFields: ["installationId"],
-      inputs: [],
-      outputs: [{ name: "messageId", type: "string" }],
+      // Same ports as the real connector's node.
+      inputs: [
+        { name: "content", type: "string" },
+        { name: "approval", type: "approval" },
+      ],
+      outputs: [
+        { name: "messageId", type: "string" },
+        { name: "channelId", type: "string" },
+      ],
       execInput: true,
       execOutputs: [{ name: "next" }],
       idempotent: false,
-      run: async (ctx, { config }) => {
-        discordSent.push({ ...config, nonce: ctx.idempotencyKey });
+      run: async (ctx, { config, inputs }) => {
+        const content = typeof inputs.content === "string" ? inputs.content : config.content;
+        discordSent.push({ ...config, content, nonce: ctx.idempotencyKey });
         return { exec: "next", outputs: { messageId: `m${discordSent.length}` } };
       },
     }),
