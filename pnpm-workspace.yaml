@@ -2,6 +2,7 @@ packages:
   - apps/server
   - apps/web
   - packages/*
+  - integrations/*
 allowBuilds:
   "@bufbuild/buf": false
   cpu-features: false

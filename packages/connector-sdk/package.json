@@ -1,0 +1,17 @@
+{
+  "name": "@sling/connector-sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@sling/workflow": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}
