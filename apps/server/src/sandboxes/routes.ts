@@ -286,7 +286,10 @@ export async function sandboxRoutes(app: FastifyInstance, ctx: AppContext) {
       const actor = actorOf(request);
       const body = request.body;
       const [ws] = await ctx.db
-        .select({ sandboxSettings: schema.workspaces.sandboxSettings })
+        .select({
+          sandboxSettings: schema.workspaces.sandboxSettings,
+          chatDefaults: schema.workspaces.chatDefaults,
+        })
         .from(schema.workspaces)
         .where(eq(schema.workspaces.id, actor.workspaceId));
       const current = resolveSettings(ws?.sandboxSettings);
@@ -301,6 +304,17 @@ export async function sandboxRoutes(app: FastifyInstance, ctx: AppContext) {
         .set({
           sandboxSettings: next,
           ...(body.defaultHarness ? { defaultHarness: body.defaultHarness } : {}),
+          // New chats use the same default agent. Its model belonged to the old one.
+          ...(body.defaultHarness &&
+          ws?.chatDefaults?.agent &&
+          ws.chatDefaults.agent.harness !== body.defaultHarness
+            ? {
+                chatDefaults: {
+                  ...ws.chatDefaults,
+                  agent: { harness: body.defaultHarness, model: null, effort: null, fast: false },
+                },
+              }
+            : {}),
         })
         .where(eq(schema.workspaces.id, actor.workspaceId));
       await audit(ctx, {
