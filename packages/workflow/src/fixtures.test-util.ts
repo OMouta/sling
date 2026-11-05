@@ -71,6 +71,13 @@ export const SPECS: PortedSpec[] = [
   },
   {
     ...base,
+    type: "t.num",
+    execInput: true,
+    inputs: [{ name: "n", type: "number" }],
+    configSchema: z.object({ n: z.number().optional().describe("Default for the n input") }),
+  },
+  {
+    ...base,
     type: "t.cfg",
     execInput: true,
     expressionFields: ["url"],

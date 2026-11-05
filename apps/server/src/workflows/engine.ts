@@ -11,6 +11,7 @@ import {
   evaluateConfig,
   evaluateExpression,
   execOutputNames,
+  expressionKeys,
   expressionSource,
   type Graph,
   hasErrorRoute,
@@ -35,7 +36,7 @@ import {
   type WorkflowDefinition,
   WorkflowDefinitionSchema,
 } from "@sling/workflow";
-import { and, eq, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lt, or, type SQL, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
@@ -101,6 +102,8 @@ type Step =
 
 interface NodeRunState {
   id: string;
+  nodeId: string;
+  nodeType: string;
   iteration: number;
   attempt: number;
   startedAt: Date;
@@ -205,6 +208,7 @@ export class Engine {
   #stopping = false;
   readonly #active = new Map<string, AbortController>();
   readonly #versions = new Map<string, CachedVersion>();
+  #workers: string[] = [];
   /** Engine time per node, excluding the node's own work, in ms. Most recent last. */
   readonly overheadMs: number[] = [];
 
@@ -214,6 +218,20 @@ export class Engine {
 
   get #db() {
     return this.#ctx.db;
+  }
+
+  /**
+   * Runs one engine write. A durable write waits for the WAL flush. The
+   * others commit without waiting: if Postgres itself crashed and lost one,
+   * the node would look interrupted, which is handled the safe way, so the
+   * flush only matters before a node with side effects runs.
+   */
+  async #write<T extends Record<string, unknown>>(statement: SQL, durable: boolean) {
+    if (durable) return this.#db.execute<T>(statement);
+    return this.#db.transaction(async (tx) => {
+      await tx.execute(sql`set local synchronous_commit = off`);
+      return tx.execute<T>(statement);
+    });
   }
 
   // ------------------------------------------------------------- lifecycle
@@ -229,18 +247,43 @@ export class Engine {
       retryDelay: 1,
       expireInSeconds: 6 * 60 * 60,
     });
-    await boss.createQueue(TIMER_QUEUE, { notify: true, retryLimit: 5, retryDelay: 5 });
+    // Timer jobs are created long before they're due, so a NOTIFY at creation
+    // wakes nobody at the right time. Plain polling keeps them on time.
+    await boss.createQueue(TIMER_QUEUE, { retryLimit: 5, retryDelay: 5 });
+    await this.#dropStaleJobs(boss);
     await this.recover();
-    await boss.work<RunJob>(
-      RUN_QUEUE,
-      { localConcurrency: opts.concurrency ?? 10, pollingIntervalSeconds: 1 },
-      async (jobs) => {
-        for (const job of jobs) await this.#execute(job.data.runId);
-      },
-    );
-    await boss.work<TimerJob>(TIMER_QUEUE, { pollingIntervalSeconds: 0.5 }, async (jobs) => {
+    // Separate workers, so each can be woken by ID when a key frees up.
+    this.#workers = [];
+    for (let i = 0; i < (opts.concurrency ?? 10); i++) {
+      this.#workers.push(
+        await boss.work<RunJob>(
+          RUN_QUEUE,
+          { pollingIntervalSeconds: 2, notifyPollingIntervalSeconds: 5 },
+          async (jobs) => {
+            for (const job of jobs) await this.#execute(job.data.runId);
+          },
+        ),
+      );
+    }
+    await boss.work<TimerJob>(TIMER_QUEUE, { pollingIntervalSeconds: 1 }, async (jobs) => {
       for (const job of jobs) await this.#timerFired(job.data.waitId);
     });
+  }
+
+  /**
+   * A run with a concurrency key finished its job. A queued run behind it got
+   * no NOTIFY when the key freed up, so wake the workers to fetch it now.
+   */
+  async #wakeForKey(key: string) {
+    const [next] = await this.#db
+      .select({ id: schema.workflowRuns.id })
+      .from(schema.workflowRuns)
+      .where(
+        and(eq(schema.workflowRuns.concurrencyKey, key), eq(schema.workflowRuns.status, "queued")),
+      )
+      .limit(1);
+    if (!next || !this.#boss) return;
+    for (const id of this.#workers) this.#boss.notifyWorker(id);
   }
 
   /**
@@ -252,30 +295,39 @@ export class Engine {
   }
 
   /**
-   * Startup recovery. Jobs left behind by a previous process are dropped,
-   * and every run that was queued or running gets a fresh job. A node that
-   * was mid-run is handled when that job starts.
+   * Drops run jobs a previous process left active, retrying, or failed. A
+   * failed job would hold its key forever, and an active one until it
+   * expires. Only safe before this process starts its own workers.
+   */
+  async #dropStaleJobs(boss: PgBoss) {
+    const stale = (await boss.findJobs(RUN_QUEUE, { limit: 10_000 })).filter((j) =>
+      ["active", "retry", "failed"].includes((j as { state?: string }).state ?? ""),
+    );
+    if (stale.length > 0) {
+      await boss.deleteJob(
+        RUN_QUEUE,
+        stale.map((j) => j.id),
+      );
+    }
+  }
+
+  /**
+   * Gives every queued or running run that isn't executing in this process a
+   * fresh job. A node that was mid-run is dealt with when that job starts.
    */
   async recover(): Promise<void> {
-    const boss = this.#boss;
-    if (boss) {
-      const stale = (await boss.findJobs(RUN_QUEUE, { limit: 10_000 })).filter((j) =>
-        ["active", "retry", "failed"].includes((j as { state?: string }).state ?? ""),
-      );
-      if (stale.length > 0) {
-        await boss.deleteJob(
-          RUN_QUEUE,
-          stale.map((j) => j.id),
-        );
-      }
-    }
     const runs = await this.#db
       .select()
       .from(schema.workflowRuns)
       .where(inArray(schema.workflowRuns.status, ["queued", "running"]))
       .orderBy(schema.workflowRuns.createdAt);
-    for (const r of runs) await this.enqueue(r);
-    if (runs.length > 0) this.#ctx.log.info({ runs: runs.length }, "requeued workflow runs");
+    let n = 0;
+    for (const r of runs) {
+      if (this.#active.has(r.id)) continue;
+      await this.enqueue(r);
+      n++;
+    }
+    if (n > 0) this.#ctx.log.info({ runs: n }, "requeued workflow runs");
   }
 
   // ------------------------------------------------------------- versions
@@ -390,8 +442,9 @@ export class Engine {
     if (this.#stopping || this.#active.has(runId)) return;
     const abort = new AbortController();
     this.#active.set(runId, abort);
+    const seen: { key: string | null } = { key: null };
     try {
-      await this.#drive(runId, abort.signal);
+      await this.#drive(runId, abort.signal, seen);
     } catch (err) {
       if (err instanceof RunGone) return;
       this.#ctx.log.error({ err, runId }, "workflow run failed in the engine");
@@ -408,6 +461,11 @@ export class Engine {
       }
     } finally {
       this.#active.delete(runId);
+      if (seen.key) {
+        await this.#wakeForKey(seen.key).catch((err) =>
+          this.#ctx.log.warn({ err, runId }, "couldn't wake run workers"),
+        );
+      }
     }
   }
 
@@ -419,9 +477,10 @@ export class Engine {
     return run ?? null;
   }
 
-  async #drive(runId: string, signal: AbortSignal): Promise<void> {
+  async #drive(runId: string, signal: AbortSignal, seen: { key: string | null }): Promise<void> {
     let run = await this.#loadRun(runId);
     if (!run || (run.status !== "queued" && run.status !== "running")) return;
+    seen.key = run.concurrencyKey;
     const version = await this.version(run.versionId);
     if (!version) {
       await this.#finishRun(run, "failed", null, {
@@ -518,7 +577,7 @@ export class Engine {
     const scope: ExpressionScope = { inputs, trigger, vars: cursor.vars, execution };
     const { config: raw, evaluated } = await evaluateConfig(
       node.config,
-      spec.expressionFields ?? [],
+      expressionKeys(spec),
       scope,
     );
     const config = parseConfig(spec, raw, evaluated);
@@ -631,13 +690,15 @@ export class Engine {
       // Nothing ran. Record the failure on its own node run.
       const state: NodeRunState = {
         id: newId("nrn"),
+        nodeId: node.id,
+        nodeType: node.type,
         iteration,
         attempt: firstAttempt,
         startedAt: new Date(),
         inputs: prepared?.inputs ?? {},
         config: {},
       };
-      await this.#beginNodeRun(run, cursor, node, state, null);
+      await this.#beginNodeRun(run, cursor, node, state, null, false);
       this.#recordOverhead(performance.now() - started);
       return this.#fail(run, graph, cursor, node, state, failure as NodeError, vars, secrets);
     }
@@ -651,13 +712,15 @@ export class Engine {
       const t0 = performance.now();
       const state: NodeRunState = {
         id: newId("nrn"),
+        nodeId: node.id,
+        nodeType: node.type,
         iteration,
         attempt,
         startedAt: new Date(),
         inputs,
         config,
       };
-      await this.#beginNodeRun(run, cursor, node, state, inputs);
+      await this.#beginNodeRun(run, cursor, node, state, inputs, !idempotent);
       const ctx = this.#nodeContext(run, node, state, scope, vars, secrets, signal);
       const t1 = performance.now();
       overhead += t1 - t0;
@@ -707,6 +770,7 @@ export class Engine {
     node: NodeInstance,
     state: NodeRunState,
     inputs: Record<string, unknown> | null,
+    durable: boolean,
   ): Promise<void> {
     const next: Cursor = {
       ...cursor,
@@ -730,16 +794,25 @@ export class Engine {
       idempotencyKey: idempotencyKey(run.id, node.id, state.iteration),
       startedAt: state.startedAt,
     };
-    const ok = await this.#db.transaction(async (tx) => {
-      const [r] = await tx
-        .update(schema.workflowRuns)
-        .set({ cursor: next as unknown as Record<string, unknown> })
-        .where(and(eq(schema.workflowRuns.id, run.id), eq(schema.workflowRuns.status, "running")))
-        .returning({ id: schema.workflowRuns.id });
-      if (!r) return false;
-      await tx.insert(schema.nodeRuns).values(row);
-      return true;
-    });
+    // One statement, so the node run and the in-flight marker land together
+    // without a transaction's extra round trips.
+    const res = await this.#write(
+      sql`
+      with r as (
+        update workflow_runs set cursor = ${JSON.stringify(next)}::jsonb, updated_at = now()
+        where id = ${run.id} and status = 'running'
+        returning id
+      )
+      insert into node_runs
+        (id, run_id, workspace_id, node_id, node_type, iteration, attempt, status, inputs, idempotency_key, started_at)
+      select ${row.id}, ${row.runId}, ${row.workspaceId}, ${row.nodeId}, ${row.nodeType}, ${row.iteration},
+        ${row.attempt}, 'running', ${row.inputs === null ? null : JSON.stringify(row.inputs)}::jsonb,
+        ${row.idempotencyKey}, ${row.startedAt.toISOString()}::timestamptz
+      from r
+      returning id`,
+      durable,
+    );
+    const ok = res.rows.length > 0;
     if (!ok) throw new RunGone();
     this.#ctx.hub.publish(run.workspaceId, {
       type: "node_run.updated",
@@ -799,39 +872,67 @@ export class Engine {
   ): Promise<RunRow> {
     const finishedAt = patch.status === "waiting" ? null : new Date();
     const outputs = redactPayload(patch.outputs ?? null, [...secrets]);
-    const updated = await this.#db.transaction(async (tx) => {
-      const [r] = await tx
-        .update(schema.workflowRuns)
-        .set({
-          cursor: cursor as unknown as Record<string, unknown>,
-          nodeRunCount: cursor.nodeRuns,
-          ...runPatch,
-        })
-        .where(and(eq(schema.workflowRuns.id, run.id), eq(schema.workflowRuns.status, "running")))
-        .returning();
-      if (!r) return null;
-      const [nr] = await tx
-        .update(schema.nodeRuns)
-        .set({
-          status: patch.status,
-          execPort: patch.execPort ?? null,
-          outputs,
-          error: patch.error ?? null,
-          finishedAt,
-        })
-        .where(eq(schema.nodeRuns.id, state.id))
-        .returning();
-      if (wait) await tx.insert(schema.runWaits).values(wait);
-      return { run: r, nodeRun: nr };
+    const status = runPatch.status ?? run.status;
+    const waitCte = wait
+      ? sql`, w as (
+          insert into run_waits (id, run_id, node_run_id, workspace_id, kind, key, event_type, resume_at)
+          select ${wait.id}, ${wait.runId}, ${wait.nodeRunId}, ${wait.workspaceId}, ${wait.kind},
+            ${wait.key ?? null}, ${wait.eventType ?? null}, ${wait.resumeAt ? wait.resumeAt.toISOString() : null}::timestamptz
+          from r
+          returning id
+        )`
+      : sql``;
+    // The run's cursor, the node run, and any wait land together in one statement.
+    const res = await this.#write<{ runs: number; started_at: string | Date | null }>(
+      sql`
+      with r as (
+        update workflow_runs
+        set cursor = ${JSON.stringify(cursor)}::jsonb, node_run_count = ${cursor.nodeRuns},
+          status = ${status}, updated_at = now()
+        where id = ${run.id} and status = 'running'
+        returning id
+      ), n as (
+        update node_runs
+        set status = ${patch.status}, exec_port = ${patch.execPort ?? null},
+          outputs = ${outputs === null ? null : JSON.stringify(outputs)}::jsonb,
+          error = ${patch.error ? JSON.stringify(patch.error) : null}::jsonb,
+          finished_at = ${finishedAt ? finishedAt.toISOString() : null}::timestamptz
+        where id = ${state.id} and exists (select 1 from r)
+        returning started_at
+      )${waitCte}
+      select (select count(*) from r)::int as runs, (select started_at from n) as started_at`,
+      false,
+    );
+    const row = res.rows[0];
+    if (!row || Number(row.runs) === 0) throw new RunGone();
+    const startedAt = row.started_at ? new Date(row.started_at) : state.startedAt;
+    this.#ctx.hub.publish(run.workspaceId, {
+      type: "node_run.updated",
+      nodeRun: toNodeRunView({
+        id: state.id,
+        runId: run.id,
+        workspaceId: run.workspaceId,
+        nodeId: state.nodeId,
+        nodeType: state.nodeType,
+        iteration: state.iteration,
+        attempt: state.attempt,
+        status: patch.status,
+        execPort: patch.execPort ?? null,
+        inputs: redactPayload(state.inputs, [...secrets]),
+        outputs,
+        error: patch.error ?? null,
+        idempotencyKey: idempotencyKey(run.id, state.nodeId, state.iteration),
+        startedAt,
+        finishedAt,
+      }),
     });
-    if (!updated) throw new RunGone();
-    if (updated.nodeRun) {
-      this.#ctx.hub.publish(run.workspaceId, {
-        type: "node_run.updated",
-        nodeRun: toNodeRunView(updated.nodeRun),
-      });
-    }
-    return updated.run;
+    return {
+      ...run,
+      status,
+      cursor: cursor as unknown as Record<string, unknown>,
+      nodeRunCount: cursor.nodeRuns,
+      updatedAt: new Date(),
+    };
   }
 
   /** Handles what a node returned: follow an exec output, enter a loop, return, or park. */
@@ -1115,6 +1216,8 @@ export class Engine {
     const spec = node ? this.#ctx.registry.get(node.type, node.version) : undefined;
     const state: NodeRunState = {
       id: p.nodeRunId,
+      nodeId: p.nodeId,
+      nodeType: node?.type ?? "",
       iteration: p.iteration,
       attempt: p.attempt,
       startedAt: new Date(),
@@ -1203,6 +1306,8 @@ export class Engine {
     const spec = node ? this.#ctx.registry.get(node.type, node.version) : undefined;
     const state: NodeRunState = {
       id: f.nodeRunId,
+      nodeId: f.nodeId,
+      nodeType: node?.type ?? "",
       iteration: f.iteration,
       attempt: f.attempt,
       startedAt: new Date(),

@@ -260,3 +260,36 @@ describe("validate", () => {
     expect(ok.ok).toBe(true);
   });
 });
+
+describe("input defaults", () => {
+  it("lets a config key named after an input hold an expression, whatever its schema type", () => {
+    const ok = validate(
+      definition(
+        [node("t", "t.trigger"), node("c", "t.num", { n: "={{ trigger.payload.n }}" })],
+        [exec("t.next", "c")],
+      ),
+      registry,
+    );
+    expect(ok).toEqual([]);
+    const literal = validate(
+      definition(
+        [node("t", "t.trigger"), node("c", "t.num", { n: "seven" })],
+        [exec("t.next", "c")],
+      ),
+      registry,
+    );
+    expect(literal.map((i) => i.code)).toEqual(["invalid_config"]);
+    // Other keys still need to be listed as expression fields.
+    const notListed = validate(
+      definition(
+        [
+          node("t", "t.trigger"),
+          node("c", "t.cfg", { url: "https://example.com", count: "={{ 2 }}" }),
+        ],
+        [exec("t.next", "c")],
+      ),
+      registry,
+    );
+    expect(notListed.map((i) => i.code)).toEqual(["invalid_config"]);
+  });
+});

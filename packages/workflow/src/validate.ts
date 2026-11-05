@@ -48,8 +48,18 @@ export function parseDefinition(
   };
 }
 
+/**
+ * Config keys that may hold `={{ … }}`: the spec's expression fields, and
+ * keys named after an input, which are that input's default.
+ */
+export function expressionKeys(spec: Pick<PortedSpec, "expressionFields" | "inputs">): string[] {
+  const keys = new Set(spec.expressionFields ?? []);
+  for (const p of spec.inputs) keys.add(p.name);
+  return [...keys];
+}
+
 function checkConfig(node: NodeInstance, spec: PortedSpec, issues: ValidationIssue[]) {
-  const exprFields = new Set(spec.expressionFields ?? []);
+  const exprFields = new Set(expressionKeys(spec));
   const holdsExpression = (field: unknown) =>
     typeof field === "string" && exprFields.has(field) && isExpression(node.config[field]);
 
@@ -69,9 +79,7 @@ function checkConfig(node: NodeInstance, spec: PortedSpec, issues: ValidationIss
       }
     }
   }
-  const exprKeys = new Set(exprFields);
-  for (const p of spec.inputs) exprKeys.add(p.name);
-  for (const key of exprKeys) {
+  for (const key of exprFields) {
     const v = node.config[key];
     if (!isExpression(v)) continue;
     const err = checkExpression(expressionSource(v));
