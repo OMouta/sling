@@ -105,6 +105,8 @@ export function buildContainerSpec(args: {
       // Swap equal to memory means no swap, so the limit is real.
       ...(memoryBytes ? { Memory: memoryBytes, MemorySwap: memoryBytes } : {}),
       PidsLimit: PIDS_LIMIT,
+      // An init process as PID 1 reaps the processes agents leave behind.
+      Init: true,
       // git, Node, and the coding agents need no capabilities as a normal user.
       CapDrop: ["ALL"],
       CapAdd: [],

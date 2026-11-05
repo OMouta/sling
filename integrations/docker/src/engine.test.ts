@@ -199,6 +199,7 @@ describe("Engine API client", () => {
       HostConfig: {
         NetworkMode: "bridge",
         PidsLimit: 1,
+        Init: true,
         CapDrop: ["ALL"],
         CapAdd: [],
         SecurityOpt: [],

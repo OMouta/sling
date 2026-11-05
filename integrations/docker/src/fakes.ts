@@ -170,6 +170,7 @@ export class FakeDocker implements DockerApi {
         HostConfig: {
           NetworkMode: "bridge",
           PidsLimit: 0,
+          Init: true,
           CapDrop: [],
           CapAdd: [],
           SecurityOpt: [],

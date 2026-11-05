@@ -71,6 +71,7 @@ export interface ContainerSpec {
     Memory?: number;
     MemorySwap?: number;
     PidsLimit: number;
+    Init: true;
     CapDrop: string[];
     CapAdd: string[];
     SecurityOpt: string[];

@@ -126,6 +126,10 @@ describe("container create options", () => {
     expect(body.HostConfig.PidsLimit).toBeGreaterThan(0);
   });
 
+  it("runs an init process so leftover agent processes are reaped", () => {
+    expect(body.HostConfig.Init).toBe(true);
+  });
+
   it("publishes no ports and doesn't remove itself", () => {
     expect(body.HostConfig.PortBindings).toEqual({});
     expect(body.HostConfig.PublishAllPorts).toBe(false);
