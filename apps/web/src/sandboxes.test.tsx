@@ -23,10 +23,13 @@ import {
   dockerInstallation,
   connectors as integrationConnectors,
   installations as integrationInstallations,
+  machineTask,
   providerConnectors,
   sandboxList,
   sandboxRunner,
   sandboxSettings,
+  sandboxTask,
+  waitingTask,
 } from "./test/fixtures.ts";
 
 // The auth client keeps the fetch it found at import, before the stub below, so
@@ -72,6 +75,20 @@ function route(method: string, path: string, body: unknown): unknown {
       return installations;
     case "GET /api/runners":
       return runners;
+    case "GET /api/conversations/cnv_1":
+      return {
+        conversation: {
+          id: "cnv_1",
+          title: "Site chores",
+          mode: "supervised",
+          createdAt: "2026-11-05T10:00:00.000Z",
+          updatedAt: "2026-11-05T10:05:00.000Z",
+        },
+        messages: [],
+        tasks: tasks.filter((t) => t.conversationId === "cnv_1"),
+        agentStatus: "idle",
+        usage: { inputTokens: 0, outputTokens: 0 },
+      };
     case "GET /api/sandbox-repos":
       return sandboxRepos;
     case "GET /api/settings/sandboxes":
@@ -494,5 +511,55 @@ describe("machines", () => {
     expect(dev.getByText("notes")).toBeTruthy();
     expect(dev.getByText("No remote, so a sandbox has nothing to clone")).toBeTruthy();
     expect(dev.queryByRole("switch", { name: "Allow notes in sandboxes" })).toBeNull();
+  });
+});
+
+describe("task card", () => {
+  it("says which machine and agent, and why it picked that machine", async () => {
+    tasks = [machineTask];
+    renderAt("/tasks/tsk_1");
+    expect(await screen.findByText("Codex task")).toBeTruthy();
+    expect(screen.getByText("on devbox")).toBeTruthy();
+    expect(screen.getByText("What Codex was asked")).toBeTruthy();
+    const why = screen.getByText("Why here?").closest("details") as HTMLDetailsElement;
+    expect(why.open).toBe(false);
+    const w = within(why);
+    expect(w.getByText("devbox has site and Codex ready, and the most free slots.")).toBeTruthy();
+    // Eligible machines first, whatever order the router looked at them in.
+    const rows = within(w.getByRole("list", { name: "Machines considered" })).getAllByRole(
+      "listitem",
+    );
+    expect(rows.map((r) => r.textContent)).toEqual([
+      "devboxpickedEligible. 2 of 2 slots free.",
+      "buildboxNot eligible. Offline.",
+    ]);
+  });
+
+  it("shows the sandbox, its provider and state, and links to the Sandboxes page", async () => {
+    tasks = [sandboxTask];
+    renderAt("/tasks/tsk_sbx");
+    expect(await screen.findByText("Claude Code task")).toBeTruthy();
+    const badge = screen.getByText("in a sandbox on Docker host");
+    expect(badge.closest("a")?.getAttribute("href")).toBe("/sandboxes");
+    expect(within(badge.closest("a") as HTMLElement).getByText("busy")).toBeTruthy();
+    expect(screen.getByText(/^running \d/)).toBeTruthy();
+    expect(screen.getByText("What Claude Code was asked")).toBeTruthy();
+    expect(screen.queryByText("picked")).toBeNull();
+  });
+
+  it("follows the sandbox's state live", async () => {
+    tasks = [sandboxTask];
+    renderAt("/tasks/tsk_sbx");
+    expect(await screen.findByText("busy")).toBeTruthy();
+    emit({ type: "sandbox.updated", sandbox: { ...busySandbox, state: "releasing" } });
+    expect(await screen.findByText("releasing")).toBeTruthy();
+  });
+
+  it("says what a task with no machine yet is waiting for", async () => {
+    tasks = [{ ...waitingTask, conversationId: "cnv_1" }];
+    renderAt("/c/cnv_1");
+    expect(await screen.findByText("waiting for a sandbox")).toBeTruthy();
+    expect(screen.queryByText(/null/)).toBeNull();
+    expect(screen.getByText("No machine can take it right now.")).toBeTruthy();
   });
 });

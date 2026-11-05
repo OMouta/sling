@@ -1,4 +1,4 @@
-import type { TaskEventView } from "@sling/core";
+import { HARNESS_LABELS, type Harness, isHarness, type TaskEventView } from "@sling/core";
 import { useState } from "react";
 import { cx } from "./ui.tsx";
 
@@ -6,7 +6,7 @@ type P = Record<string, unknown>;
 const s = (v: unknown) => (typeof v === "string" ? v : "");
 
 /** A task's event stream as a readable timeline. */
-export function Timeline({ events }: { events: TaskEventView[] }) {
+export function Timeline({ events, harness }: { events: TaskEventView[]; harness: Harness }) {
   // Show a command once: its completed event replaces the started one.
   const finishedCommands = new Set(
     events
@@ -27,7 +27,9 @@ export function Timeline({ events }: { events: TaskEventView[] }) {
   return (
     <ol className="space-y-2">
       {visible.map((e) =>
-        e.type === "plan" && e !== lastPlan ? null : <EventRow key={e.seq} event={e} />,
+        e.type === "plan" && e !== lastPlan ? null : (
+          <EventRow key={e.seq} event={e} harness={harness} />
+        ),
       )}
     </ol>
   );
@@ -56,7 +58,7 @@ function Row({
   );
 }
 
-function EventRow({ event }: { event: TaskEventView }) {
+function EventRow({ event, harness }: { event: TaskEventView; harness: Harness }) {
   const p = event.payload as P;
   switch (event.type) {
     case "accepted":
@@ -70,8 +72,8 @@ function EventRow({ event }: { event: TaskEventView }) {
     case "started":
       return (
         <Row time={event.at}>
-          Started Codex {s(p.harnessVersion)} on{" "}
-          <code className="font-mono text-xs">{s(p.branch)}</code>
+          Started {HARNESS_LABELS[isHarness(p.harness) ? p.harness : harness]} {s(p.harnessVersion)}{" "}
+          on <code className="font-mono text-xs">{s(p.branch)}</code>
         </Row>
       );
     case "agent_message":

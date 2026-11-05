@@ -1,3 +1,4 @@
+import { HARNESS_LABELS } from "@sling/core";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { TaskCard } from "../components/TaskCard.tsx";
@@ -43,7 +44,9 @@ export function TaskPage() {
       <TaskCard task={task} />
       <Card className="p-4">
         <details>
-          <summary className="cursor-pointer text-sm font-medium">What Codex was asked</summary>
+          <summary className="cursor-pointer text-sm font-medium">
+            What {HARNESS_LABELS[task.harness]} was asked
+          </summary>
           <p className="mt-2 text-sm whitespace-pre-wrap text-muted">{task.objective}</p>
         </details>
       </Card>
@@ -52,7 +55,7 @@ export function TaskPage() {
         {events.length === 0 ? (
           <p className="text-sm text-muted">No events yet.</p>
         ) : (
-          <Timeline events={events} />
+          <Timeline events={events} harness={task.harness} />
         )}
       </div>
     </div>

@@ -80,7 +80,7 @@ export function ChatPage() {
     if (
       mode === "full-access" &&
       !window.confirm(
-        "Full access runs Codex without a sandbox and skips every approval, including pushes. Use it only for repos and machines you trust. Switch?",
+        "Full access runs the coding agent without its sandbox and skips every approval, including pushes. Use it only for repos and machines you trust. Switch?",
       )
     ) {
       return;
@@ -115,7 +115,7 @@ export function ChatPage() {
       </header>
       {conversation.mode === "full-access" && (
         <div className="border-b border-danger/30 bg-danger/10 px-4 py-2 text-sm text-danger">
-          Full access: Codex runs without a sandbox and nothing asks before pushing.
+          Full access: the coding agent runs without its sandbox and nothing asks before pushing.
         </div>
       )}
 

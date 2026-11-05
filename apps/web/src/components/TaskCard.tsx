@@ -1,10 +1,23 @@
-import type { ActionView, TaskState, TaskView } from "@sling/core";
+import {
+  type ActionView,
+  HARNESS_LABELS,
+  type RoutingView,
+  type TaskState,
+  type TaskView,
+} from "@sling/core";
 import { useMutation } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { api } from "../lib/api.ts";
-import { plural, shortSha } from "../lib/format.ts";
+import { between, duration, plural, shortSha } from "../lib/format.ts";
+import {
+  type EnvironmentSummary,
+  environmentSummary,
+  sortConsidered,
+} from "../lib/taskEnvironment.ts";
+import { useNow } from "../lib/useNow.ts";
 import { ModeBadge } from "./ModeBadge.tsx";
-import { Badge, Button, Card, ErrorText, Spinner } from "./ui.tsx";
+import { SandboxStateBadge } from "./StatusBadge.tsx";
+import { Badge, Button, Card, Dot, ErrorText, Spinner } from "./ui.tsx";
 
 const STATE: Record<
   TaskState,
@@ -53,6 +66,8 @@ export function TaskStateBadge({ task }: { task: TaskView }) {
 export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean }) {
   const awaiting = task.actions.filter((a) => a.state === "awaiting_approval");
   const active = task.state === "queued" || task.state === "dispatched" || task.state === "running";
+  const now = useNow(1000, task.state === "running" && !task.finishedAt);
+  const ran = task.startedAt ? between(task.startedAt, task.finishedAt, now) : null;
 
   const decide = useMutation({
     mutationFn: (decision: "approve" | "reject") =>
@@ -64,7 +79,9 @@ export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean 
     <Card className="overflow-hidden">
       <div className="space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium tracking-wide text-muted uppercase">Codex task</span>
+          <span className="text-xs font-medium tracking-wide text-muted uppercase">
+            {HARNESS_LABELS[task.harness] ?? task.harness} task
+          </span>
           <TaskStateBadge task={task} />
           <ModeBadge mode={task.mode} />
           {task.runnerOffline && <Badge tone="warn">Machine offline</Badge>}
@@ -77,16 +94,18 @@ export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean 
           >
             {task.title}
           </Link>
-          <p className="mt-0.5 text-sm text-muted">
-            {task.repoName} on {task.runnerName}
-            {task.branch && (
-              <>
-                {" · "}
-                <code className="font-mono text-xs">{task.branch}</code>
-              </>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+            <span>{task.repoName}</span>
+            <EnvironmentBadge summary={environmentSummary(task, false)} />
+            {ran !== null && (
+              <span className="tabular-nums">
+                {task.finishedAt ? "ran" : "running"} {duration(ran)}
+              </span>
             )}
+            {task.branch && <code className="font-mono text-xs">{task.branch}</code>}
           </p>
         </div>
+        {task.routing && <WhyHere routing={task.routing} />}
 
         {task.diffStats && (
           <p className="text-sm">
@@ -164,6 +183,53 @@ export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean 
         </div>
       )}
     </Card>
+  );
+}
+
+/** Where the task runs. A sandbox links to the Sandboxes page, where it can be destroyed. */
+function EnvironmentBadge({ summary }: { summary: EnvironmentSummary }) {
+  switch (summary.kind) {
+    case "machine":
+      return <Badge>{summary.text}</Badge>;
+    case "sandbox":
+      return (
+        <Link
+          to="/sandboxes"
+          title="See it on the Sandboxes page"
+          className="inline-flex items-center gap-1 hover:opacity-80"
+        >
+          <Badge tone="accent">{summary.text}</Badge>
+          <SandboxStateBadge state={summary.state} />
+        </Link>
+      );
+    case "waiting":
+      return <Badge tone="warn">{summary.text}</Badge>;
+    case "none":
+      return <Badge>{summary.text}</Badge>;
+  }
+}
+
+function WhyHere({ routing }: { routing: RoutingView }) {
+  const picked = routing.target?.kind === "machine" ? routing.target.runnerId : null;
+  return (
+    <details className="rounded-lg border border-border px-3 py-2 text-sm">
+      <summary className="cursor-pointer font-medium">Why here?</summary>
+      <p className="mt-2">{routing.reason}</p>
+      {routing.considered.length > 0 && (
+        <ul aria-label="Machines considered" className="mt-2 space-y-1">
+          {sortConsidered(routing.considered).map((c) => (
+            <li key={c.runnerId} className="flex flex-wrap items-center gap-x-2">
+              <Dot tone={c.eligible ? "ok" : "neutral"} />
+              <span className="font-medium">{c.runnerName}</span>
+              {c.runnerId === picked && <Badge tone="accent">picked</Badge>}
+              <span className="text-muted">
+                {c.eligible ? "Eligible." : "Not eligible."} {c.reason}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
   );
 }
 
