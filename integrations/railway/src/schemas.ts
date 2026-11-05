@@ -18,6 +18,7 @@ export const credentialsSchema = z.object({
     .string()
     .trim()
     .min(1)
+    .meta({ title: "API token" })
     .describe(
       "A Railway account or workspace token, from Account Settings > Tokens or the workspace's settings. A project token works too: set the token type to project",
     ),
@@ -31,6 +32,7 @@ export const credentialsSchema = z.object({
     .string()
     .trim()
     .min(1)
+    .meta({ title: "Environment ID" })
     .describe(
       "ID of the Railway environment sandboxes run in. Press Cmd+K or Ctrl+K in the project to copy it. Use an environment that holds nothing else",
     ),
@@ -61,6 +63,7 @@ export const configSchema = z.object({
     .string()
     .trim()
     .refine(isHttpsUrl, "Railway sandboxes reach Sling over the internet: use an https:// URL")
+    .meta({ title: "Control plane URL" })
     .describe(
       "Sling's public HTTPS URL, which sandboxes connect back to. Usually SLING_PUBLIC_URL",
     ),
@@ -69,12 +72,14 @@ export const configSchema = z.object({
     .positive()
     .max(32)
     .optional()
+    .meta({ title: "CPUs" })
     .describe("vCPUs per sandbox. Empty uses your workspace's sandbox default"),
   memoryMb: z
     .number()
     .int()
     .min(512)
     .optional()
+    .meta({ title: "Memory in MB" })
     .describe("Memory per sandbox, in MB. Empty uses your workspace's sandbox default"),
   idleTimeoutMinutes: z
     .number()
@@ -82,12 +87,14 @@ export const configSchema = z.object({
     .min(1)
     .max(MAX_IDLE_TIMEOUT_MINUTES)
     .default(5)
+    .meta({ title: "Idle timeout in minutes" })
     .describe(
       "Minutes Railway keeps a sandbox after its container stops before destroying it. 1 to 5 on Trial and Free, up to 120 on Hobby and Pro",
     ),
   testCreatesSandbox: z
     .boolean()
     .default(false)
+    .meta({ title: "Check in a test sandbox" })
     .describe(
       "Make Test start a small sandbox, check Docker and the image in it, and destroy it. Takes about a minute and bills for that time",
     ),
