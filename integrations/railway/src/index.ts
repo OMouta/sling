@@ -66,10 +66,10 @@ async function checkInSandbox(
       ),
     };
   }
-  const version = outcome.stdout.trim().split("\n")[0] || "unknown";
+  const [version = "unknown", arch = "unknown"] = outcome.stdout.trim().split("\n");
   return {
     ok: true,
-    detail: `A test sandbox ran Docker ${version} and found ${config.image} on its registry.`,
+    detail: `A test sandbox on ${arch} ran Docker ${version} and found ${config.image} on its registry.`,
   };
 }
 
@@ -136,7 +136,7 @@ export function createRailwayConnector(
     description:
       "Runs coding tasks in fresh Railway Sandboxes on your own Railway account, when no machine can take them or you ask for a sandbox.",
     setupHelp:
-      "In Railway, create a project for Sling and copy its environment ID from the environment's settings. Under Project Settings > Tokens, create a project token for that environment. Push the sandbox image to a registry the sandbox can pull from, such as ghcr.io, and add a registry login if it's private. The control plane URL must be Sling's public HTTPS address, since sandboxes connect back over the internet.",
+      "In Railway, create a project for Sling with nothing else in it, open it, and press Cmd+K or Ctrl+K to copy its environment ID. Create a token under Account Settings > Tokens. Push the sandbox image to a registry the sandbox can pull from, such as ghcr.io, and add a registry login if it's private. The control plane URL must be Sling's public HTTPS address, since sandboxes connect back over the internet.",
     credentialsSchema,
     secretFields: ["apiToken", "registryUsername", "registryPassword"],
     configSchema,

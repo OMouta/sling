@@ -11,7 +11,7 @@ import type { ExecOutcome } from "./api.ts";
 import { EXIT_DOCKER_DOWN, EXIT_NO_DOCKER } from "./launch.ts";
 
 export const BAD_TOKEN =
-  "Railway rejected the API token. Create a project token under Project Settings > Tokens for the environment's project, or an account token under Account Settings > Tokens, and check that the token type matches.";
+  "Railway rejected the API token. Create an account or workspace token under Account Settings > Tokens, or a project token on the project's Tokens settings page, and check that the token type matches it.";
 
 export class RailwayProviderError extends Error {
   constructor(message: string, options?: ErrorOptions) {

@@ -176,9 +176,10 @@ describe("keepalive script", () => {
 });
 
 describe("check script", () => {
-  it("prints the Docker version and checks the image's manifest", async () => {
+  it("prints the Docker version and architecture, and checks the image's manifest", async () => {
     const result = await sh(checkScript("alpine:3", false));
-    expect(result).toMatchObject({ code: 0, stdout: "29.1.0\n" });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/^29\.1\.0\n(x86_64|arm64|aarch64)\n$/);
     expect((await calls()).slice(1)).toEqual([
       "version --format {{.Server.Version}}",
       "manifest inspect alpine:3",

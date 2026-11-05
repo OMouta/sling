@@ -19,20 +19,20 @@ export const credentialsSchema = z.object({
     .trim()
     .min(1)
     .describe(
-      "A Railway project token for the project that holds the environment, from Project Settings > Tokens. An account or workspace token works too: set the token type to match",
+      "A Railway account or workspace token, from Account Settings > Tokens or the workspace's settings. A project token works too: set the token type to project",
     ),
   tokenType: z
-    .enum(["project", "account"])
-    .default("project")
+    .enum(["account", "project"])
+    .default("account")
     .describe(
-      "project for a project token (recommended: it reaches only that project). account for an account or workspace token",
+      "account for an account or workspace token, which Railway's sandbox docs use. project for a project token, which reaches only one environment",
     ),
   environmentId: z
     .string()
     .trim()
     .min(1)
     .describe(
-      "ID of the Railway environment sandboxes run in. Use one that holds nothing else, such as a project made for Sling",
+      "ID of the Railway environment sandboxes run in. Press Cmd+K or Ctrl+K in the project to copy it. Use an environment that holds nothing else",
     ),
   registryUsername: z
     .string()

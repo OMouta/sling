@@ -5,8 +5,8 @@
  *   RAILWAY_API_TOKEN=... RAILWAY_ENVIRONMENT_ID=... \
  *     pnpm --filter @sling/integration-railway test:integration
  *
- * Set RAILWAY_TOKEN_TYPE=account for an account or workspace token. Use an
- * environment with nothing else in it.
+ * Set RAILWAY_TOKEN_TYPE=project for a project token. Use an environment
+ * with nothing else in it.
  */
 import { randomUUID } from "node:crypto";
 import type { ProviderContext, SandboxSpec } from "@sling/connector-sdk";
@@ -48,7 +48,7 @@ function credentials(): RailwayCredentials {
   return credentialsSchema.parse({
     apiToken: TOKEN,
     environmentId: ENVIRONMENT,
-    tokenType: process.env.RAILWAY_TOKEN_TYPE === "account" ? "account" : "project",
+    tokenType: process.env.RAILWAY_TOKEN_TYPE === "project" ? "project" : "account",
   });
 }
 

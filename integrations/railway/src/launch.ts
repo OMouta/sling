@@ -106,13 +106,17 @@ export function keepaliveScript(sandboxId: string, seconds: number): string {
   return `timeout ${Math.ceil(seconds)} docker wait ${name} >/dev/null 2>&1; docker rm -f ${name} >/dev/null 2>&1`;
 }
 
-/** For the connection test: checks Docker runs, and that the image can be pulled from here. */
+/**
+ * For the connection test: prints the Docker version and the CPU architecture,
+ * then checks the image can be pulled from here.
+ */
 export function checkScript(image: string, withLogin: boolean): string {
   return [
     "set -eu",
     WAIT_FOR_DOCKER,
     ...registryLogin(image, withLogin),
     "docker version --format '{{.Server.Version}}'",
+    "uname -m",
     `docker manifest inspect ${shellQuote(image)} >/dev/null`,
   ].join("\n");
 }

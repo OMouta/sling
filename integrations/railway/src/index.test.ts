@@ -83,12 +83,17 @@ describe("Railway connection test", () => {
 
   it("with the sandbox check on, runs Docker in a small sandbox and destroys it", async () => {
     const railway = new FakeRailway();
-    railway.respond = () => ({ exitCode: 0, stdout: "29.1.0\n", stderr: "", timedOut: false });
+    railway.respond = () => ({
+      exitCode: 0,
+      stdout: "29.1.0\nx86_64\n",
+      stderr: "",
+      timedOut: false,
+    });
     const result = await runTest(railway, { testCreatesSandbox: true });
     expect(result).toEqual({
       ok: true,
       detail:
-        "Railway accepted the token, and environment env-1 is reachable. A test sandbox ran Docker 29.1.0 and found ghcr.io/acme/sling-sandbox:1 on its registry.",
+        "Railway accepted the token, and environment env-1 is reachable. A test sandbox on x86_64 ran Docker 29.1.0 and found ghcr.io/acme/sling-sandbox:1 on its registry.",
     });
     expect(railway.creates).toEqual([
       { idleTimeoutMinutes: 5, resources: { cpu: 1, memoryGB: 1 } },
@@ -144,7 +149,7 @@ describe("Railway connector definition", () => {
     expect(connector.nodes).toEqual([]);
     expect(connector.source).toBeUndefined();
     expect(connector.executionProvider).toBeDefined();
-    expect(connector.setupHelp).toMatch(/project token/);
+    expect(connector.setupHelp).toMatch(/environment ID/);
   });
 
   it("keeps the token and registry login secret", () => {
@@ -156,7 +161,7 @@ describe("Railway connector definition", () => {
     expect(connector.credentialsSchema.parse({ apiToken: "t", environmentId: "e" })).toEqual({
       apiToken: "t",
       environmentId: "e",
-      tokenType: "project",
+      tokenType: "account",
     });
     expect(() => connector.configSchema.parse({ controlPlaneUrl: "https://s" })).toThrow();
     expect(() => connector.configSchema.parse({ image: "x" })).toThrow();
