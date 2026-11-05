@@ -391,6 +391,55 @@ describe("Stage 1", () => {
     ).rejects.toThrow(/at most supervised/);
   });
 
+  it("doesn't rerun a turn that already started a task when the server restarts", async () => {
+    const { schema } = await import("@sling/db");
+    const { newId, taskBranch } = await import("@sling/core");
+    const { eq } = await import("drizzle-orm");
+    const db = server.ctx.db;
+    const conv = await api<{ id: string }>("POST", "/api/conversations");
+    const [row] = await db
+      .select()
+      .from(schema.conversations)
+      .where(eq(schema.conversations.id, conv.id));
+    if (!row) throw new Error("no conversation");
+    const r = await machine();
+    const [repo] = await db.select().from(schema.repos).where(eq(schema.repos.runnerId, r.id));
+    if (!repo) throw new Error("no repo");
+    // A user message, then a task the interrupted turn had already created.
+    await db.insert(schema.messages).values({
+      id: newId("msg"),
+      workspaceId: row.workspaceId,
+      ownerId: row.ownerId,
+      conversationId: row.id,
+      role: "user",
+      content: { role: "user", content: "Do the thing." },
+      createdAt: new Date(Date.now() - 5000),
+    });
+    const taskId = newId("tsk");
+    await db.insert(schema.tasks).values({
+      id: taskId,
+      workspaceId: row.workspaceId,
+      ownerId: row.ownerId,
+      conversationId: row.id,
+      runnerId: r.id,
+      repoId: repo.id,
+      repoName: repo.name,
+      title: "Half-finished turn",
+      objective: "x",
+      mode: "auto",
+      state: "cancelled",
+      branch: taskBranch(taskId, "x"),
+    });
+    const calls = model.doStreamCalls.length;
+    await server.ctx.agent.recover();
+    const d = await api<{ messages: { role: string; text: string }[] }>(
+      "GET",
+      `/api/conversations/${conv.id}`,
+    );
+    expect(d.messages.at(-1)?.text).toMatch(/server restarted/);
+    expect(model.doStreamCalls.length).toBe(calls);
+  });
+
   it("revokes a Runner, which then stops for good", async () => {
     const r = await machine();
     const proc = runner;

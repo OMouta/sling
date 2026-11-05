@@ -72,19 +72,37 @@ export class Agent {
   async recover(): Promise<void> {
     const since = new Date(Date.now() - 60 * 60 * 1000);
     const convs = await this.#ctx.db
-      .select({ id: schema.conversations.id })
+      .select()
       .from(schema.conversations)
       .where(
         and(gt(schema.conversations.updatedAt, since), isNull(schema.conversations.archivedAt)),
       );
     for (const c of convs) {
       const [last] = await this.#ctx.db
-        .select({ role: schema.messages.role })
+        .select({ role: schema.messages.role, createdAt: schema.messages.createdAt })
         .from(schema.messages)
         .where(eq(schema.messages.conversationId, c.id))
         .orderBy(desc(schema.messages.id))
         .limit(1);
-      if (last && (last.role === "user" || last.role === "system")) void this.enqueue(c.id);
+      if (!last || (last.role !== "user" && last.role !== "system")) continue;
+      // If the interrupted turn already started a task, running it again would
+      // start a second one. Say what happened instead.
+      const [started] = await this.#ctx.db
+        .select({ id: schema.tasks.id })
+        .from(schema.tasks)
+        .where(
+          and(eq(schema.tasks.conversationId, c.id), gt(schema.tasks.createdAt, last.createdAt)),
+        )
+        .limit(1);
+      if (started) {
+        await this.#addMessage(c, "assistant", {
+          role: "assistant",
+          content:
+            "The server restarted while I was replying. The task I started is still tracked above, and I'll report when it finishes.",
+        });
+        continue;
+      }
+      void this.enqueue(c.id);
     }
   }
 
