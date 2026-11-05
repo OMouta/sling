@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { Button, Card, Empty, ErrorText, PageHeader, Spinner } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { ago, plural } from "../lib/format.ts";
+import { useRun } from "../lib/workflowApi.ts";
 
 const LABEL = {
   push: "Push branch",
@@ -119,11 +120,38 @@ function WorkflowApproval({ approval }: { approval: ApprovalView }) {
       api.post(`/api/approvals/${approval.id}`, { decision }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["approvals"] }),
   });
+  // The approval names its run; the run says which workflow it belongs to.
+  const run = useRun(approval.runId);
+  const r = run.data?.run;
   return (
     <Card className="overflow-hidden">
       <div className="space-y-2 p-4">
         <p className="font-medium">{approval.title}</p>
-        <p className="text-sm text-muted">From a workflow · expires {ago(approval.expiresAt)}</p>
+        <p className="text-sm text-muted">
+          {r ? (
+            <>
+              From{" "}
+              <Link
+                to="/workflows/$id"
+                params={{ id: r.workflowId }}
+                className="text-text hover:underline"
+              >
+                {r.workflowName}
+              </Link>{" "}
+              v{r.versionNumber} ·{" "}
+              <Link
+                to="/workflows/$id/runs/$runId"
+                params={{ id: r.workflowId, runId: r.id }}
+                className="text-accent hover:underline"
+              >
+                view run
+              </Link>
+            </>
+          ) : (
+            "From a workflow"
+          )}{" "}
+          · expires {ago(approval.expiresAt)}
+        </p>
         {approval.payload && (
           <pre className="max-h-60 overflow-auto rounded-lg bg-surface-2 p-3 font-mono text-xs whitespace-pre-wrap">
             {JSON.stringify(approval.payload, null, 2)}
