@@ -246,6 +246,8 @@ export class Engine {
       retryLimit: 20,
       retryDelay: 1,
       expireInSeconds: 6 * 60 * 60,
+      // A run's state lives in workflow_runs; finished jobs aren't needed for long.
+      deleteAfterSeconds: 24 * 60 * 60,
     });
     // Timer jobs are created long before they're due, so a NOTIFY at creation
     // wakes nobody at the right time. Plain polling keeps them on time.
@@ -300,15 +302,11 @@ export class Engine {
    * expires. Only safe before this process starts its own workers.
    */
   async #dropStaleJobs(boss: PgBoss) {
-    const stale = (await boss.findJobs(RUN_QUEUE, { limit: 10_000 })).filter((j) =>
-      ["active", "retry", "failed"].includes((j as { state?: string }).state ?? ""),
-    );
-    if (stale.length > 0) {
-      await boss.deleteJob(
-        RUN_QUEUE,
-        stale.map((j) => j.id),
-      );
-    }
+    const res = await this.#db.execute<{ id: string }>(sql`
+      select id from pgboss.job
+      where name = ${RUN_QUEUE} and state in ('active', 'retry', 'failed')`);
+    const ids = res.rows.map((r) => r.id);
+    if (ids.length > 0) await boss.deleteJob(RUN_QUEUE, ids);
   }
 
   /**
@@ -735,7 +733,7 @@ export class Engine {
       if (signal.aborted) return { kind: "stop" };
       if (error) {
         if (error.retryable && attempt < maxAttempts) {
-          await this.#markNodeRun(run, state, "failed", { error: errorOf(error) }, secrets);
+          await this.#markNodeRun(run, state, errorOf(error));
           const backoff = (spec.retry?.backoffMs ?? 1000) * 2 ** (attempt - firstAttempt);
           this.#recordOverhead(overhead + (performance.now() - t2));
           overhead = 0;
@@ -827,23 +825,13 @@ export class Engine {
   }
 
   /** Updates a node run on its own, outside a cursor change. */
-  async #markNodeRun(
-    run: RunRow,
-    state: NodeRunState,
-    status: "failed" | "running",
-    patch: { error?: { message: string; code: string } },
-    secrets: Set<string>,
-  ) {
+  async #markNodeRun(run: RunRow, state: NodeRunState, error: { message: string; code: string }) {
+    // Only a run still marked running: an attempt that already failed keeps its own error.
     const [row] = await this.#db
       .update(schema.nodeRuns)
-      .set({
-        status,
-        error: patch.error ?? null,
-        finishedAt: status === "failed" ? new Date() : null,
-      })
-      .where(eq(schema.nodeRuns.id, state.id))
+      .set({ status: "failed", error, finishedAt: new Date() })
+      .where(and(eq(schema.nodeRuns.id, state.id), eq(schema.nodeRuns.status, "running")))
       .returning();
-    void secrets;
     if (row) {
       this.#ctx.hub.publish(run.workspaceId, {
         type: "node_run.updated",
@@ -1317,13 +1305,10 @@ export class Engine {
     const clean: Cursor = { ...cursor, inFlight: null, next: f.nodeId };
     const idempotent = spec && node ? isIdempotent(spec, node.config) : false;
     if (node && spec && idempotent && f.attempt < MAX_INTERRUPTED_ATTEMPTS) {
-      await this.#markNodeRun(
-        run,
-        state,
-        "failed",
-        { error: { message: "Interrupted by a restart. Running it again.", code: "interrupted" } },
-        new Set(),
-      );
+      await this.#markNodeRun(run, state, {
+        message: "Interrupted by a restart. Running it again.",
+        code: "interrupted",
+      });
       this.#ctx.log.info({ runId: run.id, nodeId: f.nodeId }, "re-running an interrupted node");
       return this.#runNext(run, graph, clean, signal, f.attempt + 1);
     }

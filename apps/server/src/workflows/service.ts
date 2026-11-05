@@ -73,6 +73,15 @@ export class WorkflowService {
       this.#templates = loadTemplates(this.#dir, (key, err) =>
         this.#ctx.log.error({ err, key }, "skipping a broken workflow template"),
       );
+      for (const t of this.#templates) {
+        const missing = missingNodeTypes(this.#ctx.registry, t.definition);
+        if (missing.length > 0) {
+          this.#ctx.log.info(
+            { key: t.view.key, missing },
+            "template not offered: missing node types",
+          );
+        }
+      }
     }
     return this.#templates;
   }
@@ -81,11 +90,7 @@ export class WorkflowService {
   availableTemplates(): TemplateView[] {
     const out: TemplateView[] = [];
     for (const t of this.templates()) {
-      const missing = missingNodeTypes(this.#ctx.registry, t.definition);
-      if (missing.length > 0) {
-        this.#ctx.log.debug({ key: t.view.key, missing }, "template unavailable");
-        continue;
-      }
+      if (missingNodeTypes(this.#ctx.registry, t.definition).length > 0) continue;
       out.push(t.view);
     }
     return out;
