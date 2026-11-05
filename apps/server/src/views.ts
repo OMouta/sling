@@ -7,6 +7,7 @@ import type {
   TaskEventView,
   TaskView,
 } from "@sling/core";
+import { isHarness, remoteKey } from "@sling/core";
 import { schema } from "@sling/db";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { AppContext } from "./context.ts";
@@ -43,7 +44,11 @@ export function toRunnerView(r: RunnerRow, repos: RepoRow[]): RunnerView {
         defaultBranch: p.defaultBranch,
         remoteUrl: p.remoteUrl,
         network: p.network,
+        remoteKey: remoteKey(p.remoteUrl),
       })),
+    labels: [],
+    ephemeral: false,
+    sandboxId: null,
   };
 }
 
@@ -120,6 +125,9 @@ function toTaskView(t: TaskRow, runnerName: string, actions: ActionView[]): Task
     conversationId: t.conversationId,
     runnerId: t.runnerId,
     runnerName,
+    harness: isHarness(t.harness) ? t.harness : "codex",
+    environment: { kind: "machine", sandboxId: null, sandboxState: null, providerName: null },
+    routing: null,
     repoName: t.repoName,
     title: t.title,
     objective: t.objective,

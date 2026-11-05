@@ -27,8 +27,12 @@ const runner: RunnerView = {
       defaultBranch: "main",
       remoteUrl: "git@github.com:a/site.git",
       network: false,
+      remoteKey: "github.com/a/site",
     },
   ],
+  labels: ["os:macos", "arch:aarch64"],
+  ephemeral: false,
+  sandboxId: null,
 };
 
 const conversation: ConversationView = {
@@ -44,6 +48,9 @@ const task: TaskView = {
   conversationId: "cnv_1",
   runnerId: "rnr_1",
   runnerName: "devbox",
+  harness: "codex",
+  environment: { kind: "machine", sandboxId: null, sandboxState: null, providerName: null },
+  routing: null,
   repoName: "site",
   title: "Make footer year dynamic",
   objective: "Use the current year.",
