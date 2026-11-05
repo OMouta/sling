@@ -9,6 +9,7 @@ import {
 import { AppLayout } from "./components/Shell.tsx";
 import { ApprovalsPage } from "./pages/Approvals.tsx";
 import { ChatPage } from "./pages/Chat.tsx";
+import { ConnectorsPage } from "./pages/Connectors.tsx";
 import { HomePage } from "./pages/Home.tsx";
 import { LoginPage } from "./pages/Login.tsx";
 import { MachinesPage } from "./pages/Machines.tsx";
@@ -60,6 +61,12 @@ export const taskRoute = createRoute({
   component: TaskPage,
 });
 
+const connectorsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/connectors",
+  component: ConnectorsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
@@ -70,6 +77,7 @@ const routeTree = rootRoute.addChildren([
     approvalsRoute,
     settingsRoute,
     taskRoute,
+    connectorsRoute,
   ]),
 ]);
 
