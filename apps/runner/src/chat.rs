@@ -119,6 +119,17 @@ fn done(turn_id: &str, done: ChatDone) -> Body {
     event(turn_id, chat_event::Kind::Done(done))
 }
 
+/// `scheme://host[:port]`, lowercased, or None when `url` has no scheme.
+fn origin(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    let host = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    Some(format!(
+        "{}://{}",
+        scheme.to_ascii_lowercase(),
+        host.to_ascii_lowercase()
+    ))
+}
+
 /// Why this machine won't run a turn, if it won't.
 fn refusal(t: &ChatTurn, agent: Option<&dyn Harness>, ready: &[String]) -> Option<String> {
     let Some(agent) = agent else {
@@ -153,6 +164,16 @@ impl Manager {
     pub fn chat_turn(self: &Arc<Self>, turn: ChatTurn, ready: &[String], out: mpsc::Sender<Body>) {
         let agent = harness::find(&turn.harness);
         let mut refused = refusal(&turn, agent, ready);
+        // The bridge only ever calls the control plane this machine is paired with.
+        if refused.is_none()
+            && let Some(server) = self.config().server_url
+            && origin(&turn.tools_url) != origin(&server)
+        {
+            refused = Some(format!(
+                "Refusing tools URL {:?}: it isn't on {server}, which this machine is paired with.",
+                turn.tools_url
+            ));
+        }
         let (cancel_tx, cancel_rx) = watch::channel(false);
         if refused.is_none() {
             let mut running = self.chats.running.lock().unwrap();
@@ -311,5 +332,27 @@ impl Manager {
             }
         }
         Ok((run.finish().await?, cancelled))
+    }
+}
+
+#[cfg(test)]
+mod origin_tests {
+    use super::origin;
+
+    #[test]
+    fn compares_scheme_host_and_port() {
+        assert_eq!(
+            origin("http://LocalHost:5173/api/agent/tools"),
+            origin("http://localhost:5173")
+        );
+        assert_ne!(
+            origin("http://localhost:5173/x"),
+            origin("http://localhost:8080")
+        );
+        assert_ne!(
+            origin("https://sling.example.com/a"),
+            origin("http://sling.example.com")
+        );
+        assert_eq!(origin("not a url"), None);
     }
 }

@@ -11,6 +11,8 @@ use crate::sys::run;
 
 pub const GIT: &str = "git";
 pub const GITHUB_PR: &str = "git.pr.github";
+/// Sent so Sling knows it can run chat turns here.
+pub const CHAT: &str = "chat";
 
 /// `found` is the latest repo scan. It's only offered while `remote-repos`
 /// is on.
@@ -69,6 +71,15 @@ pub async fn build(cfg: &Config, found: &[Found]) -> Inventory {
             (true, false) => "gh is not logged in. Run `gh auth login`.".into(),
             _ => String::new(),
         },
+        models: Vec::new(),
+    });
+
+    // This Runner can run assistant turns on its coding agents' CLIs.
+    capabilities.push(Capability {
+        name: CHAT.into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        ready: true,
+        detail: String::new(),
         models: Vec::new(),
     });
 

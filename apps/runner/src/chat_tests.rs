@@ -55,25 +55,6 @@ fn setup() -> Env {
         config_dir: root.join("home"),
         data_dir: root.join("home/data"),
     };
-    let cfg = Config {
-        server_url: Some("http://localhost".into()),
-        runner_id: Some("rnr_test".into()),
-        max_concurrent_tasks: 1,
-        codex_bin: Some(
-            workspace_bin("sling-harness-codex", "fake-codex")
-                .display()
-                .to_string(),
-        ),
-        claude_bin: Some(
-            workspace_bin("sling-harness-claude-code", "fake-claude")
-                .display()
-                .to_string(),
-        ),
-        ..Config::default()
-    };
-    let mgr = Manager::new(paths.clone(), cfg).unwrap();
-    mgr.chats
-        .set_mcp_command(workspace_bin("sling-runner", "sling-runner"));
     let tools = Stub::start(|req| {
         if req.auth.as_deref() != Some(&format!("Bearer {TOKEN}")) {
             return (401, r#"{"error":"bad token"}"#.into());
@@ -93,6 +74,26 @@ fn setup() -> Env {
             _ => (404, r#"{"error":"no such tool"}"#.into()),
         }
     });
+    let cfg = Config {
+        // Paired with the stub, so the bridge may call it.
+        server_url: Some(tools.url.clone()),
+        runner_id: Some("rnr_test".into()),
+        max_concurrent_tasks: 1,
+        codex_bin: Some(
+            workspace_bin("sling-harness-codex", "fake-codex")
+                .display()
+                .to_string(),
+        ),
+        claude_bin: Some(
+            workspace_bin("sling-harness-claude-code", "fake-claude")
+                .display()
+                .to_string(),
+        ),
+        ..Config::default()
+    };
+    let mgr = Manager::new(paths.clone(), cfg).unwrap();
+    mgr.chats
+        .set_mcp_command(workspace_bin("sling-runner", "sling-runner"));
     Env {
         _dir: dir,
         mgr,
