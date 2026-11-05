@@ -15,6 +15,7 @@
   --warn: #b46b00;
   --danger: #c2372f;
   --ring: rgba(47, 91, 216, 0.35);
+  --edge-exec: #8a8984;
   color-scheme: light;
 }
 
@@ -32,6 +33,7 @@
     --warn: #e0a23b;
     --danger: #f06b62;
     --ring: rgba(123, 156, 255, 0.4);
+    --edge-exec: #9b9a94;
     color-scheme: dark;
   }
 }
@@ -49,6 +51,7 @@
   --warn: #e0a23b;
   --danger: #f06b62;
   --ring: rgba(123, 156, 255, 0.4);
+  --edge-exec: #9b9a94;
   color-scheme: dark;
 }
 
@@ -121,4 +124,217 @@ body {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* Workflow canvas. React Flow's base.css handles layout; this is the look. */
+.sling-canvas .react-flow {
+  --xy-background-color: var(--bg);
+  --xy-background-pattern-dots-color: var(--border);
+  --xy-connectionline-stroke: var(--accent);
+  --xy-connectionline-stroke-width: 2;
+  --xy-selection-background-color: color-mix(in srgb, var(--accent) 8%, transparent);
+  --xy-selection-border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  --xy-attribution-background-color: transparent;
+  color: var(--text);
+}
+.sling-canvas .react-flow__attribution a {
+  color: var(--muted);
+}
+.sling-markers {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+.sling-edge-exec {
+  stroke-width: 2.5;
+}
+.react-flow__edge.selected .sling-edge-data,
+.react-flow__edge:focus .sling-edge-data {
+  stroke: var(--accent);
+}
+
+.sling-node {
+  width: 228px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  font-size: 12px;
+  line-height: 1.2;
+}
+.sling-node.is-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--ring);
+}
+.sling-node.has-issues {
+  border-color: var(--danger);
+}
+.sling-node.is-unknown {
+  border-style: dashed;
+}
+.sling-node.is-idle {
+  opacity: 0.5;
+}
+.sling-node[data-status="succeeded"] {
+  border-color: var(--ok);
+}
+.sling-node[data-status="failed"] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.sling-node[data-status="running"] {
+  border-color: var(--accent);
+  animation: sling-pulse 1.4s ease-in-out infinite;
+}
+.sling-node[data-status="waiting"] {
+  border-color: var(--warn);
+}
+@keyframes sling-pulse {
+  50% {
+    box-shadow: 0 0 0 4px var(--ring);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sling-node[data-status="running"] {
+    animation: none;
+  }
+}
+.sling-node-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px 6px;
+  border-radius: 9px 9px 0 0;
+  border-top: 3px solid var(--cat);
+  background: color-mix(in srgb, var(--cat) 10%, var(--surface));
+}
+.sling-node-title {
+  overflow: hidden;
+  font-weight: 600;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sling-node-sub {
+  overflow: hidden;
+  margin-top: 1px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sling-node-badge {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.sling-node-badge.is-issue {
+  background: var(--danger);
+  color: #fff;
+}
+.sling-node-badge.is-status {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.sling-node-badge.status-succeeded {
+  color: var(--ok);
+}
+.sling-node-badge.status-failed {
+  color: var(--danger);
+}
+.sling-node-badge.status-running {
+  color: var(--accent);
+}
+.sling-node-badge.status-waiting {
+  color: var(--warn);
+}
+.sling-node-ports {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0 6px;
+}
+.sling-port-col {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.sling-port-col + .sling-port-col {
+  align-items: flex-end;
+}
+.sling-port {
+  position: relative;
+  display: flex;
+  height: 22px;
+  max-width: 100%;
+  align-items: center;
+}
+.sling-port.is-in {
+  padding-left: 12px;
+}
+.sling-port.is-out {
+  justify-content: flex-end;
+  padding-right: 12px;
+}
+.sling-port-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sling-port.is-data .sling-port-label {
+  color: var(--muted);
+}
+.sling-port.is-exec .sling-port-label {
+  font-weight: 500;
+}
+.sling-port.is-error .sling-port-label {
+  color: var(--muted);
+  font-weight: 400;
+}
+.sling-port.has-issue .sling-port-label {
+  color: var(--danger);
+}
+.sling-handle.react-flow__handle {
+  border: none;
+  background: transparent;
+}
+.sling-handle-data.react-flow__handle {
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--port);
+  border-radius: 999px;
+  background: var(--surface);
+}
+.sling-handle-data.is-connected,
+.sling-handle-data.react-flow__handle.connectingfrom {
+  background: var(--port);
+}
+.sling-handle-data.is-list.react-flow__handle {
+  border-radius: 3px;
+}
+.sling-handle-exec.react-flow__handle {
+  width: 12px;
+  height: 14px;
+  border-radius: 0;
+  background: var(--edge-exec);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+.sling-handle-exec.react-flow__handle:not(.is-connected) {
+  background: color-mix(in srgb, var(--edge-exec) 55%, transparent);
+}
+.sling-port.is-error .sling-handle-exec.react-flow__handle {
+  background: color-mix(in srgb, var(--danger) 65%, transparent);
+}
+.sling-port.has-issue .react-flow__handle {
+  outline: 2px solid var(--danger);
+  outline-offset: 1px;
+}
+.sling-handle.react-flow__handle.connectionindicator:hover,
+.sling-handle.react-flow__handle.valid {
+  transform-origin: center;
+  scale: 1.35;
 }

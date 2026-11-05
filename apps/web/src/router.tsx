@@ -3,6 +3,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Outlet,
   type RouterHistory,
 } from "@tanstack/react-router";
@@ -16,6 +17,7 @@ import { MachinesPage } from "./pages/Machines.tsx";
 import { SettingsPage } from "./pages/Settings.tsx";
 import { SetupPage } from "./pages/Setup.tsx";
 import { TaskPage } from "./pages/Task.tsx";
+import { WorkflowsPage } from "./pages/Workflows.tsx";
 
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   component: Outlet,
@@ -61,6 +63,37 @@ export const taskRoute = createRoute({
   component: TaskPage,
 });
 
+const workflowsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/workflows",
+  component: WorkflowsPage,
+});
+
+export type EditorTab = "canvas" | "runs" | "versions";
+export interface EditorSearch {
+  tab?: EditorTab;
+  /** Version shown read-only on the Versions tab. */
+  version?: number;
+}
+
+// The editor and run view carry React Flow, so they load on first visit.
+export const workflowRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/workflows/$id",
+  validateSearch: (search: Record<string, unknown>): EditorSearch => {
+    const out: EditorSearch = {};
+    if (search.tab === "runs" || search.tab === "versions") out.tab = search.tab;
+    const v = Number(search.version);
+    if (Number.isInteger(v) && v > 0) out.version = v;
+    return out;
+  },
+  component: lazyRouteComponent(() => import("./pages/WorkflowEditor.tsx"), "WorkflowEditorPage"),
+});
+export const runRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/workflows/$id/runs/$runId",
+  component: lazyRouteComponent(() => import("./pages/WorkflowRun.tsx"), "WorkflowRunPage"),
+});
 const connectorsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/connectors",
@@ -77,6 +110,9 @@ const routeTree = rootRoute.addChildren([
     approvalsRoute,
     settingsRoute,
     taskRoute,
+    workflowsRoute,
+    workflowRoute,
+    runRoute,
     connectorsRoute,
   ]),
 ]);

@@ -152,6 +152,7 @@ function Sidebar({ email }: { email: string | null }) {
         <NavLink to="/approvals" count={approvals.data?.length}>
           Approvals
         </NavLink>
+        <NavLink to="/workflows">Workflows</NavLink>
         <NavLink to="/connectors">Connectors</NavLink>
         <NavLink to="/machines">Machines</NavLink>
         <NavLink to="/settings">Settings</NavLink>

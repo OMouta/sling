@@ -15,9 +15,7 @@ import type {
   WorkflowVersionView,
 } from "@sling/workflow";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
 import { api } from "./api.ts";
-import { type CatalogIndex, indexCatalog } from "./workflow/catalog.ts";
 
 /**
  * React Query keys for workflows and connectors. Pages read these and
@@ -64,17 +62,13 @@ export function useWorkflow(id: string) {
   });
 }
 
+/** The raw catalog. The canvas wants `useCatalogIndex` from `workflow/catalogIndex.ts`. */
 export function useCatalog() {
-  const q = useQuery({
+  return useQuery({
     queryKey: qk.catalog(),
     queryFn: () => api.get<NodeCatalog>("/api/workflow-nodes"),
     staleTime: 5 * 60_000,
   });
-  const index = useMemo<CatalogIndex | null>(
-    () => (q.data ? indexCatalog(q.data) : null),
-    [q.data],
-  );
-  return { ...q, index };
 }
 
 export function useRuns(workflowId: string) {
