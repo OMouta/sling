@@ -1,0 +1,13 @@
+[package]
+name = "sling-runner-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+prost = "0.14.4"
+
+[build-dependencies]
+prost-build = "0.14.4"
+protoc-bin-vendored = "3.3.0"

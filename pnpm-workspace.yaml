@@ -3,4 +3,4 @@ packages:
   - apps/web
   - packages/*
 allowBuilds:
-  "@bufbuild/buf": set this to true or false
+  "@bufbuild/buf": false
