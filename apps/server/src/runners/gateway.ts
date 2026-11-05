@@ -38,8 +38,10 @@ export interface RunnerSession {
 
 /** Implemented by the task service. */
 export interface GatewayHandlers {
-  /** Returns task IDs the Runner can forget. */
+  /** Returns task IDs the Runner can forget. Runs before Welcome is sent. */
   connected(session: RunnerSession, hello: Hello): Promise<string[]>;
+  /** Runs after Welcome. Safe to send tasks and actions from here. */
+  ready(session: RunnerSession, hello: Hello): Promise<void>;
   disconnected(session: RunnerSession): Promise<void>;
   taskEvent(session: RunnerSession, event: TaskEvent): Promise<void>;
 }
@@ -233,6 +235,7 @@ export class RunnerGateway {
     );
     await this.#publishRunner(session);
     this.#ctx.log.info({ runnerId: runner.id }, "runner connected");
+    await this.handlers?.ready(session, hello);
     return session;
   }
 

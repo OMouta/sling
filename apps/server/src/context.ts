@@ -4,6 +4,7 @@ import type { Auth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
 import type { Hub } from "./realtime/hub.ts";
 import type { RunnerGateway } from "./runners/gateway.ts";
+import type { TaskService } from "./tasks/service.ts";
 
 /** Everything route handlers and services share. Built once in main.ts. */
 export interface AppContext {
@@ -15,6 +16,5 @@ export interface AppContext {
   secretsKey: Buffer;
   hub: Hub;
   runners: RunnerGateway;
-  /** Set once the task service is built. */
-  tasks?: { runnerRevoked(runnerId: string): Promise<void> };
+  tasks: TaskService;
 }

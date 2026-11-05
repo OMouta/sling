@@ -145,7 +145,7 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
           .returning();
         if (!row) return reply.code(404).send({ error: "not found" });
         ctx.runners.disconnect(row.id, Error_Code.REVOKED, "this runner was revoked");
-        await ctx.tasks?.runnerRevoked(row.id);
+        await ctx.tasks.runnerRevoked(row.id);
         await audit(ctx, {
           workspaceId: actor.workspaceId,
           actorType: "user",
