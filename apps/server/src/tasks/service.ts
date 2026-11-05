@@ -203,7 +203,7 @@ export class TaskService implements GatewayHandlers {
 
   /** Sends a queued task to its Runner if the Runner has room. */
   async dispatch(taskId: string): Promise<void> {
-    const sent = await this.#db.transaction(async (tx) => {
+    const claimed = await this.#db.transaction(async (tx) => {
       const [task] = await tx
         .select()
         .from(schema.tasks)
@@ -225,16 +225,23 @@ export class TaskService implements GatewayHandlers {
         .from(schema.tasks)
         .where(and(eq(schema.tasks.runnerId, runner.id), inArray(schema.tasks.state, ACTIVE)));
       if ((active?.n ?? 0) >= runner.maxConcurrentTasks) return null;
-      const ok = this.#send(runnerId, this.#assignEnvelope(task));
-      if (!ok) return null;
       await tx
         .update(schema.tasks)
         .set({ state: "dispatched", dispatchedAt: new Date() })
         .where(eq(schema.tasks.id, task.id));
-      return task;
+      return { task, runnerId };
     });
-    if (!sent) return;
-    if (sent.sandboxId) await this.#ctx.sandboxes.taskDispatched(sent.sandboxId);
+    if (!claimed) return;
+    // Sent only once `dispatched` is committed: a fast Runner's first event can
+    // arrive before this call returns, and must find the task dispatched.
+    if (!this.#send(claimed.runnerId, this.#assignEnvelope(claimed.task))) {
+      await this.#db
+        .update(schema.tasks)
+        .set({ state: "queued", dispatchedAt: null })
+        .where(and(eq(schema.tasks.id, taskId), eq(schema.tasks.state, "dispatched")));
+      return;
+    }
+    if (claimed.task.sandboxId) await this.#ctx.sandboxes.taskDispatched(claimed.task.sandboxId);
     await this.publish(taskId);
   }
 
