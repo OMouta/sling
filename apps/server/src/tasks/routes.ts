@@ -74,7 +74,7 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
           deliver: z.enum(DELIVERY_KINDS).default("pr"),
           conversationId: z.string().optional(),
           mode: z.string().optional(),
-          /** Defaults to `machine` when a machine is named, otherwise `auto`. */
+          /** Defaults to `auto`, where `machineId` is a preference. `machine` makes it the only choice. */
           environment: z.enum(ENVIRONMENTS).optional(),
           machineId: z.string().optional(),
           /** The same as `machineId` with `environment: "machine"`. Kept for older clients. */
@@ -121,7 +121,7 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
           objective: body.objective,
           mode,
           deliver: body.deliver,
-          environment: body.environment ?? (machineId ? "machine" : "auto"),
+          environment: body.environment ?? (body.runnerId ? "machine" : "auto"),
           machineId,
           providerInstallationId: body.providerInstallationId ?? null,
           harness: body.harness ?? null,

@@ -227,8 +227,8 @@ function whyPicked(
   named: string | null,
   repo: string,
 ) {
-  if (!next) return "it's the only machine that can take it";
   if (named && best.machine.id === named) return "you asked for it";
+  if (!next) return "it's the only machine that can take it";
   if (best.free !== next.free) return `it has the most free slots (${slots(best)})`;
   const bt = best.repo?.lastTaskAt?.getTime() ?? -1;
   const nt = next.repo?.lastTaskAt?.getTime() ?? -1;

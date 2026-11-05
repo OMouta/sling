@@ -47,7 +47,8 @@ export async function loadRouterInput(
         isNull(schema.runners.revokedAt),
         eq(schema.runners.ephemeral, false),
       ),
-    );
+    )
+    .orderBy(asc(schema.runners.pairedAt));
   const runnerIds = runners.map((r) => r.id);
   const [repos, loads, sandboxRepos, providers, { settings }] = await Promise.all([
     runnerIds.length
