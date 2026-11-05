@@ -69,8 +69,12 @@ export function TaskStateBadge({ task }: { task: TaskView }) {
 export function TaskCard({ task, compact }: { task: TaskView; compact?: boolean }) {
   const awaiting = task.actions.filter((a) => a.state === "awaiting_approval");
   const active = task.state === "queued" || task.state === "dispatched" || task.state === "running";
-  const now = useNow(1000, task.state === "running" && !task.finishedAt);
-  const ran = task.startedAt ? between(task.startedAt, task.finishedAt, now) : null;
+  const running = task.state === "running" && !task.finishedAt;
+  const now = useNow(1000, running);
+  const ran =
+    task.startedAt && (task.finishedAt || running)
+      ? between(task.startedAt, task.finishedAt, now)
+      : null;
 
   const decide = useMutation({
     mutationFn: (decision: "approve" | "reject") =>

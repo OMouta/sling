@@ -104,7 +104,7 @@ export function MachinesPage() {
       />
       {pairing && <PairPanel onClose={() => setPairing(false)} known={machines ?? []} />}
       {runners.isPending && <Spinner />}
-      <ErrorText error={runners.error} />
+      <ErrorText error={runners.error ?? access.error} />
       {machines?.length === 0 && !pairing && (
         <Empty title="No machines yet">Add one to let Sling run Codex or Claude Code on it.</Empty>
       )}
@@ -270,7 +270,6 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
             )}
           </>
         )}
-        <ErrorText error={access.error} />
       </div>
       <div className="mt-3 flex justify-end">
         <Button

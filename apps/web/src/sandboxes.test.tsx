@@ -555,6 +555,14 @@ describe("task card", () => {
     expect(screen.queryByText("picked")).toBeNull();
   });
 
+  it("doesn't count time for a task that stopped without finishing", async () => {
+    tasks = [{ ...sandboxTask, state: "interrupted" }];
+    renderAt("/tasks/tsk_sbx");
+    expect(await screen.findByText("Interrupted")).toBeTruthy();
+    expect(screen.queryByText(/^running /)).toBeNull();
+    expect(screen.queryByText(/^ran /)).toBeNull();
+  });
+
   it("follows the sandbox's state live", async () => {
     tasks = [sandboxTask];
     renderAt("/tasks/tsk_sbx");
