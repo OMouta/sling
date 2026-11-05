@@ -1,0 +1,77 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import fastifyStatic from "@fastify/static";
+import websocket from "@fastify/websocket";
+import Fastify, { type FastifyInstance } from "fastify";
+import {
+  serializerCompiler,
+  validatorCompiler,
+  type ZodTypeProvider,
+} from "fastify-type-provider-zod";
+import type { Config } from "../config.ts";
+import type { AppContext } from "../context.ts";
+import { authRoutes } from "../routes/auth.ts";
+import { setupRoutes } from "../routes/setup.ts";
+
+export function createServer(config: Config): FastifyInstance {
+  const app = Fastify({
+    logger: {
+      level: config.logLevel,
+      redact: ["req.headers.cookie", "req.headers.authorization", 'res.headers["set-cookie"]'],
+    },
+    trustProxy: true,
+    bodyLimit: 1024 * 1024,
+  });
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+  return app;
+}
+
+export type Routes = ReturnType<FastifyInstance["withTypeProvider"]>;
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
+  await app.register(websocket, { options: { maxPayload: 4 * 1024 * 1024 } });
+
+  // Cookie-authenticated requests that change state must come from our own origin.
+  app.addHook("onRequest", async (request, reply) => {
+    if (SAFE_METHODS.has(request.method) || !request.url.startsWith("/api/")) return;
+    if (!request.headers.cookie) return;
+    const origin = request.headers.origin;
+    if (origin && origin !== ctx.config.publicUrl.origin) {
+      return reply.code(403).send({ error: "bad origin" });
+    }
+  });
+
+  app.get("/healthz", async () => ({ ok: true }));
+
+  await app.register(async (scope) => authRoutes(scope, ctx));
+  await app.register(async (scope) => {
+    const r = scope.withTypeProvider<ZodTypeProvider>();
+    await setupRoutes(r, ctx);
+  });
+
+  serveWebApp(app, ctx.config);
+}
+
+function serveWebApp(app: FastifyInstance, config: Config) {
+  const dist = config.webDist;
+  if (!dist || !existsSync(join(dist, "index.html"))) {
+    app.log.info("no built web app found, serving the API only");
+    return;
+  }
+  app.register(fastifyStatic, { root: dist, wildcard: false, index: false });
+  const sendIndex = (_req: unknown, reply: { sendFile: (f: string) => unknown }) =>
+    reply.sendFile("index.html");
+  app.get("/", sendIndex);
+  app.get("/*", (request, reply) => {
+    const path = request.url.split("?")[0] ?? "/";
+    if (path.startsWith("/api/") || path.startsWith("/runner/")) {
+      return reply.code(404).send({ error: "not found" });
+    }
+    const file = path.slice(1);
+    if (file && existsSync(join(dist, file))) return reply.sendFile(file);
+    return reply.sendFile("index.html");
+  });
+}
