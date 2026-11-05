@@ -1,17 +1,20 @@
 //! What this machine offers: capabilities and repos, built fresh from the
-//! local config and installed tools.
+//! local config and installed tools, plus the repos the latest scan found.
 
 use sling_runner_protocol::{Capability, Inventory, Repo};
 
 use crate::config::Config;
 use crate::git;
 use crate::harness;
+use crate::scan::{self, Found};
 use crate::sys::run;
 
 pub const GIT: &str = "git";
 pub const GITHUB_PR: &str = "git.pr.github";
 
-pub async fn build(cfg: &Config) -> Inventory {
+/// `found` is the latest repo scan. It's only offered while `remote-repos`
+/// is on.
+pub async fn build(cfg: &Config, found: &[Found]) -> Inventory {
     let mut capabilities = Vec::new();
 
     let git_version = run("git", &["--version"], None)
@@ -85,8 +88,12 @@ pub async fn build(cfg: &Config) -> Inventory {
         max_mode: cfg.max_mode.to_proto() as i32,
         max_concurrent_tasks: cfg.max_concurrent_tasks,
         labels: cfg.all_labels(),
-        found_repos: Vec::new(),
-        remote_repos: false,
+        found_repos: if cfg.remote_repos {
+            scan::suggest(found, cfg)
+        } else {
+            Vec::new()
+        },
+        remote_repos: cfg.remote_repos,
     }
 }
 

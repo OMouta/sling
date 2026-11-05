@@ -471,6 +471,8 @@ async fn boot(
         codex_bin: settings.codex_bin.clone(),
         claude_bin: settings.claude_bin.clone(),
         disposable: true,
+        // A sandbox works only in the repos it was given.
+        remote_repos: false,
         repos,
         ..Config::default()
     };

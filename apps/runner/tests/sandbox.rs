@@ -20,9 +20,10 @@ use base64::Engine;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use futures_util::{SinkExt, StreamExt};
 use sling_runner_protocol::{
-    ActionRequest, Challenge, Envelope, EventAck, HeartbeatAck, Hello, Message as _,
-    PermissionMode, TaskAssign, TaskEvent, Welcome, action_request, action_result, auth_payload,
-    envelope::Body, error, task_event::Kind, task_finished,
+    ActionRequest, Challenge, Envelope, EventAck, HeartbeatAck, Hello, Inventory, Message as _,
+    PermissionMode, RepoChange, RepoChangeResult, RepoScan, TaskAssign, TaskEvent, Welcome,
+    action_request, action_result, auth_payload, envelope::Body, error, repo_change,
+    task_event::Kind, task_finished,
 };
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -138,6 +139,8 @@ enum Seen {
     Paired(serde_json::Value),
     Hello(Hello),
     Event(TaskEvent),
+    Inventory(Inventory),
+    RepoChangeResult(RepoChangeResult),
     Closed,
 }
 
@@ -298,6 +301,8 @@ async fn websocket(
                         let _ = seen.send(Seen::Event(ev));
                         if sink.send(send(Body::EventAck(ack))).await.is_err() { return }
                     }
+                    Some(Body::Inventory(inv)) => { let _ = seen.send(Seen::Inventory(inv)); }
+                    Some(Body::RepoChangeResult(r)) => { let _ = seen.send(Seen::RepoChangeResult(r)); }
                     _ => {}
                 }
             }
@@ -529,6 +534,35 @@ async fn boots_runs_a_task_pushes_and_exits_when_revoked() {
         .find(|c| c.name == "coding.codex")
         .unwrap();
     assert!(codex.ready, "{codex:?}");
+    // A sandbox works only in the repos it was given.
+    assert!(!inv.remote_repos);
+    assert!(inv.found_repos.is_empty());
+    stub.send(Body::RepoChange(RepoChange {
+        request_id: "rc_sbx".into(),
+        op: repo_change::Op::Add as i32,
+        path: root.display().to_string(),
+        name: String::new(),
+    }));
+    let result = loop {
+        if let Seen::RepoChangeResult(r) = stub.next().await {
+            break r;
+        }
+    };
+    assert_eq!(result.request_id, "rc_sbx");
+    assert!(!result.ok);
+    assert!(
+        result.message.contains("remote-repos"),
+        "{}",
+        result.message
+    );
+    stub.send(Body::RepoScan(RepoScan {}));
+    let rescanned = loop {
+        if let Seen::Inventory(i) = stub.next().await {
+            break i;
+        }
+    };
+    assert!(!rescanned.remote_repos && rescanned.found_repos.is_empty());
+    assert_eq!(rescanned.repos.len(), 1);
 
     // It runs the task and commits.
     stub.send(Body::TaskAssign(TaskAssign {

@@ -7,19 +7,21 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use sling_runner_protocol::{
-    ActionRequest, ActionResult, DiffStats, HeldTask, LogLine, TaskAccepted, TaskAssign, TaskEvent,
-    TaskFinished, TaskRejected, TaskStarted, action_request, action_result, log_line,
-    task_event::Kind, task_finished, task_rejected,
+    ActionRequest, ActionResult, DiffStats, HeldTask, LogLine, RepoChange, RepoChangeResult,
+    TaskAccepted, TaskAssign, TaskEvent, TaskFinished, TaskRejected, TaskStarted, action_request,
+    action_result, log_line, task_event::Kind, task_finished, task_rejected,
 };
 use tokio::sync::{Notify, mpsc, watch};
 
 use crate::config::{Config, Mode, Paths};
 use crate::git;
 use crate::harness::{self, HarnessEvent, RunSpec};
+use crate::repos;
+use crate::scan::{self, Found};
 use crate::spool::{SpoolState, TaskMeta, TaskSpool, open_all};
 use crate::sys::now_ms;
 
@@ -43,6 +45,11 @@ pub struct Manager {
     agent_env_removed: Mutex<HashMap<String, Vec<String>>>,
     /// Push and PR actions still running.
     actions_in_flight: AtomicUsize,
+    /// Repos the latest scan found, and when it ran. Only these can be
+    /// added from Sling.
+    found: Mutex<(Vec<Found>, Option<Instant>)>,
+    /// Keeps scans and repo changes from running at the same time.
+    repo_lock: tokio::sync::Mutex<()>,
     /// Wakes the connection to flush new events.
     pub outbox: Notify,
 }
@@ -80,6 +87,8 @@ impl Manager {
             early_cancels: Mutex::new(HashSet::new()),
             agent_env_removed: Mutex::new(HashMap::new()),
             actions_in_flight: AtomicUsize::new(0),
+            found: Mutex::new((Vec::new(), None)),
+            repo_lock: tokio::sync::Mutex::new(()),
             outbox: Notify::new(),
         }))
     }
@@ -115,6 +124,82 @@ impl Manager {
 
     pub fn running_count(&self) -> usize {
         self.running.lock().unwrap().len()
+    }
+
+    /// A task that was accepted for `repo` hasn't finished yet.
+    pub fn running_in_repo(&self, repo: &str) -> bool {
+        self.spools.lock().unwrap().values().any(|s| {
+            let s = s.lock().unwrap();
+            s.meta.repo == repo && s.meta.state == SpoolState::Running
+        })
+    }
+
+    /// Repos the latest scan found.
+    pub fn found(&self) -> Vec<Found> {
+        self.found.lock().unwrap().0.clone()
+    }
+
+    /// Scans for repos again. Finds nothing while `remote-repos` is off,
+    /// because Sling can't add them then anyway.
+    pub async fn rescan(&self) {
+        let _guard = self.repo_lock.lock().await;
+        self.rescan_locked().await;
+    }
+
+    /// Scans unless the latest scan is younger than `max_age`. While
+    /// `remote-repos` is off this just drops the latest scan.
+    pub async fn rescan_if_older(&self, max_age: Duration) {
+        let _guard = self.repo_lock.lock().await;
+        let fresh = self.config().remote_repos
+            && self
+                .found
+                .lock()
+                .unwrap()
+                .1
+                .is_some_and(|at| at.elapsed() < max_age);
+        if !fresh {
+            self.rescan_locked().await;
+        }
+    }
+
+    async fn rescan_locked(&self) {
+        let cfg = self.config();
+        let result = if cfg.remote_repos {
+            (scan::scan(&cfg, &self.paths).await, Some(Instant::now()))
+        } else {
+            (Vec::new(), None)
+        };
+        *self.found.lock().unwrap() = result;
+    }
+
+    /// Handles a RepoChange from Sling. Returns the result to send, and
+    /// whether the repos changed. After a change the config is reloaded and
+    /// the machine scanned again.
+    pub async fn repo_change(&self, req: RepoChange) -> (RepoChangeResult, bool) {
+        let _guard = self.repo_lock.lock().await;
+        let found = self.found();
+        let outcome = repos::change(&self.paths, &req, &found, |r| self.running_in_repo(r)).await;
+        let ok = outcome.is_ok();
+        let message = match outcome {
+            Ok(m) => m,
+            Err(e) => format!("{e:#}"),
+        };
+        tracing::info!(op = ?req.op(), ok, "repo change from Sling: {message}");
+        if ok {
+            match Config::load(&self.paths) {
+                Ok(cfg) => self.set_config(cfg),
+                Err(e) => tracing::warn!("could not reload config: {e:#}"),
+            }
+            self.rescan_locked().await;
+        }
+        (
+            RepoChangeResult {
+                request_id: req.request_id,
+                ok,
+                message,
+            },
+            ok,
+        )
     }
 
     /// A task or an action is running.

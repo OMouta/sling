@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use sling_runner_protocol::{
-    ActionRequest, PermissionMode, TaskAssign, TaskEvent, action_request, action_result,
-    task_event::Kind, task_finished, task_rejected,
+    ActionRequest, PermissionMode, RepoChange, TaskAssign, TaskEvent, action_request,
+    action_result, repo_change, task_event::Kind, task_finished, task_rejected,
 };
 
 use crate::config::{Config, Mode, Paths, RepoEntry};
@@ -720,4 +720,250 @@ async fn a_restart_stops_an_agent_left_running() {
             "{agent}"
         );
     }
+}
+
+/// Makes a committed repo at `root/<rel>` and returns its canonical path.
+fn make_repo(root: &Path, rel: &str) -> PathBuf {
+    let dir = root.join(rel);
+    std::fs::create_dir_all(&dir).unwrap();
+    git(&dir, &["init", "-q", "-b", "main"]);
+    git(&dir, &["commit", "-q", "--allow-empty", "-m", "init"]);
+    std::fs::canonicalize(dir).unwrap()
+}
+
+/// Saves the manager's config with the temp dir as the only scan root, so
+/// repo changes (which read the config from disk) see it.
+fn scan_here(env: &Env, edit: impl FnOnce(&mut Config)) -> PathBuf {
+    let root = std::fs::canonicalize(env._dir.path()).unwrap();
+    let mut cfg = env.mgr.config();
+    cfg.scan_roots = vec![root.clone()];
+    edit(&mut cfg);
+    cfg.save(&env.mgr.paths).unwrap();
+    env.mgr.set_config(cfg);
+    root
+}
+
+fn repo_change(op: repo_change::Op, path: &Path, name: &str) -> RepoChange {
+    RepoChange {
+        request_id: "rc1".into(),
+        op: op as i32,
+        path: path.display().to_string(),
+        name: name.into(),
+    }
+}
+
+#[tokio::test]
+async fn adds_a_repo_the_scan_found() {
+    let env = setup(Mode::FullAccess);
+    let root = scan_here(&env, |_| {});
+    let api = make_repo(&root, "code/api");
+    let other_site = make_repo(&root, "work/site");
+    env.mgr.rescan().await;
+    let found: Vec<PathBuf> = env.mgr.found().into_iter().map(|f| f.path).collect();
+    assert_eq!(
+        found,
+        [api.clone(), other_site.clone()],
+        "site is configured"
+    );
+
+    let (r, changed) = env
+        .mgr
+        .repo_change(repo_change(repo_change::Op::Add, &api, ""))
+        .await;
+    assert!(r.ok && changed, "{}", r.message);
+    assert_eq!(r.request_id, "rc1");
+    assert!(r.message.starts_with("Added api"), "{}", r.message);
+    let saved = Config::load(&env.mgr.paths).unwrap();
+    let entry = saved.repo("api").expect("saved");
+    assert_eq!(entry.path, api);
+    assert!(!entry.network, "network stays off");
+    assert!(env.mgr.config().repo("api").is_some(), "config reloaded");
+    let found: Vec<PathBuf> = env.mgr.found().into_iter().map(|f| f.path).collect();
+    assert_eq!(found, std::slice::from_ref(&other_site), "scanned again");
+
+    // The suggested name is made unique against configured repos.
+    let (r, _) = env
+        .mgr
+        .repo_change(repo_change(repo_change::Op::Add, &other_site, ""))
+        .await;
+    assert!(r.ok, "{}", r.message);
+    let saved = Config::load(&env.mgr.paths).unwrap();
+    assert_eq!(saved.repo("site-2").unwrap().path, other_site);
+}
+
+#[tokio::test]
+async fn adding_takes_a_valid_name() {
+    let env = setup(Mode::FullAccess);
+    let root = scan_here(&env, |_| {});
+    let api = make_repo(&root, "code/api");
+    env.mgr.rescan().await;
+    for bad in ["has space", "../up", "site"] {
+        let (r, changed) = env
+            .mgr
+            .repo_change(repo_change(repo_change::Op::Add, &api, bad))
+            .await;
+        assert!(!r.ok && !changed, "{bad}");
+    }
+    let (r, _) = env
+        .mgr
+        .repo_change(repo_change(repo_change::Op::Add, &api, "backend"))
+        .await;
+    assert!(r.ok, "{}", r.message);
+    assert_eq!(
+        Config::load(&env.mgr.paths)
+            .unwrap()
+            .repo("backend")
+            .unwrap()
+            .path,
+        api
+    );
+}
+
+#[tokio::test]
+async fn refuses_to_add_a_path_the_scan_did_not_find() {
+    let env = setup(Mode::FullAccess);
+    let root = scan_here(&env, |_| {});
+    let api = make_repo(&root, "code/api");
+    env.mgr.rescan().await;
+    let later = make_repo(&root, "code/later");
+    let not_a_repo = root.join("code");
+    let configured = env.mgr.config().repo("site").unwrap().path.clone();
+    let with_slash = PathBuf::from(format!("{}/", api.display()));
+    for path in [
+        later.as_path(),
+        not_a_repo.as_path(),
+        configured.as_path(),
+        with_slash.as_path(),
+        Path::new("/etc"),
+        Path::new(""),
+    ] {
+        let (r, changed) = env
+            .mgr
+            .repo_change(repo_change(repo_change::Op::Add, path, "x"))
+            .await;
+        assert!(!r.ok && !changed, "{}", path.display());
+        assert!(
+            r.message.contains("isn't a repo this machine found"),
+            "{}",
+            r.message
+        );
+    }
+    assert!(Config::load(&env.mgr.paths).unwrap().repo("x").is_none());
+
+    // A found repo that has since stopped being one is refused too.
+    std::fs::remove_dir_all(api.join(".git")).unwrap();
+    let (r, _) = env
+        .mgr
+        .repo_change(repo_change(repo_change::Op::Add, &api, ""))
+        .await;
+    assert!(!r.ok);
+    assert!(r.message.contains("no longer a git repo"), "{}", r.message);
+}
+
+#[tokio::test]
+async fn refuses_repo_changes_when_remote_repos_is_off() {
+    let env = setup(Mode::FullAccess);
+    let root = scan_here(&env, |_| {});
+    let api = make_repo(&root, "code/api");
+    env.mgr.rescan().await;
+    assert_eq!(env.mgr.found().len(), 1);
+    // Turned off on disk only: the change must still be refused.
+    let mut cfg = Config::load(&env.mgr.paths).unwrap();
+    cfg.remote_repos = false;
+    cfg.save(&env.mgr.paths).unwrap();
+
+    let (r, changed) = env
+        .mgr
+        .repo_change(repo_change(repo_change::Op::Add, &api, ""))
+        .await;
+    assert!(!r.ok && !changed);
+    assert_eq!(r.message, crate::repos::REMOTE_OFF);
+    let (r, _) = env
+        .mgr
+        .repo_change(repo_change(repo_change::Op::Remove, Path::new(""), "site"))
+        .await;
+    assert!(!r.ok);
+    let saved = Config::load(&env.mgr.paths).unwrap();
+    assert!(saved.repo("site").is_some() && saved.repo("api").is_none());
+
+    // While off, nothing is scanned or offered.
+    env.mgr.set_config(saved.clone());
+    env.mgr.rescan().await;
+    assert!(env.mgr.found().is_empty());
+    let inv = crate::inventory::build(&saved, &[]).await;
+    assert!(!inv.remote_repos && inv.found_repos.is_empty());
+}
+
+#[tokio::test]
+async fn removes_a_repo_unless_a_task_is_running_in_it() {
+    let env = setup(Mode::FullAccess);
+    scan_here(&env, |_| {});
+    let mut a = assign(
+        "codex",
+        "busy1",
+        PermissionMode::Auto,
+        "sling/busy1",
+        "site",
+    );
+    a.objective = "[hang]".into();
+    env.mgr.assign(a, &all_ready()).await;
+    wait_for(
+        &env.mgr,
+        "busy1",
+        |k| matches!(k, Kind::Log(l) if l.text.contains("session")),
+    )
+    .await;
+
+    let (r, changed) = env
+        .mgr
+        .repo_change(repo_change(repo_change::Op::Remove, Path::new(""), "site"))
+        .await;
+    assert!(!r.ok && !changed);
+    assert!(
+        r.message.contains("A task is running in site"),
+        "{}",
+        r.message
+    );
+    assert!(Config::load(&env.mgr.paths).unwrap().repo("site").is_some());
+
+    env.mgr.cancel("busy1");
+    wait_for(&env.mgr, "busy1", |k| matches!(k, Kind::Finished(_))).await;
+    for _ in 0..100 {
+        if !env.mgr.running_in_repo("site") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let (r, changed) = env
+        .mgr
+        .repo_change(repo_change(repo_change::Op::Remove, Path::new(""), "site"))
+        .await;
+    assert!(r.ok && changed, "{}", r.message);
+    assert!(Config::load(&env.mgr.paths).unwrap().repo("site").is_none());
+    assert!(env.mgr.config().repo("site").is_none());
+
+    let (r, _) = env
+        .mgr
+        .repo_change(repo_change(repo_change::Op::Remove, Path::new(""), "site"))
+        .await;
+    assert!(!r.ok);
+    assert!(r.message.contains("no repo named"), "{}", r.message);
+}
+
+#[tokio::test]
+async fn the_inventory_offers_found_repos_with_unique_names() {
+    let env = setup(Mode::FullAccess);
+    let root = scan_here(&env, |_| {});
+    let other_site = make_repo(&root, "work/site");
+    let remote = env.remote.display().to_string();
+    git(&other_site, &["remote", "add", "origin", &remote]);
+    env.mgr.rescan().await;
+    let inv = crate::inventory::build(&env.mgr.config(), &env.mgr.found()).await;
+    assert!(inv.remote_repos);
+    assert_eq!(inv.found_repos.len(), 1);
+    let f = &inv.found_repos[0];
+    assert_eq!(f.path, other_site.display().to_string());
+    assert_eq!(f.name, "site-2");
+    assert_eq!(f.default_branch, "main");
+    assert_eq!(f.remote_url, remote);
 }

@@ -12,6 +12,7 @@ use sling_runner_protocol::{
     Envelope, Heartbeat, Hello, Inventory, RUNNER_WS_PATH, auth_payload, envelope::Body,
     error::Code,
 };
+use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::config::Config;
@@ -22,6 +23,8 @@ use crate::tasks::Manager;
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const INVENTORY_REFRESH: Duration = Duration::from_secs(60);
+/// A reconnect reuses a repo scan younger than this.
+const SCAN_REUSE: Duration = Duration::from_secs(60);
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub fn ws_url(server: &str) -> Result<String> {
@@ -81,6 +84,8 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
         .context("not paired: run `sling-runner pair <url> <code>`")?;
     let runner_id = cfg.runner_id.as_deref().context("not paired")?;
     let url = ws_url(server)?;
+    // Scan before connecting, so the handshake never waits on the disk.
+    mgr.rescan_if_older(SCAN_REUSE).await;
     tracing::info!("connecting to {url}");
     let (ws, _) = tokio::time::timeout(HANDSHAKE_TIMEOUT, tokio_tungstenite::connect_async(&url))
         .await
@@ -95,7 +100,7 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
     };
 
     // 2. Hello
-    let mut inv = inventory::build(cfg).await;
+    let mut inv = inventory::build(cfg, &mgr.found()).await;
     let ts = now_ms();
     let hello = Hello {
         runner_id: runner_id.to_string(),
@@ -136,6 +141,8 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
     refresh.tick().await;
     let mut last_ack = Instant::now();
     let mut ready = inventory::ready_harnesses(&inv);
+    // Replies from work spawned off the read loop, such as repo changes.
+    let (reply_tx, mut reply_rx) = mpsc::channel::<Body>(16);
 
     flush(mgr, &mut sink).await?;
 
@@ -159,6 +166,28 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                                 tokio::spawn(async move { mgr.action(r).await });
                             }
                             Some(Body::EventAck(a)) => mgr.ack(&a.task_id, a.seq),
+                            Some(Body::RepoChange(c)) => {
+                                let mgr = mgr.clone();
+                                let reply = reply_tx.clone();
+                                tokio::spawn(async move {
+                                    let (result, changed) = mgr.repo_change(c).await;
+                                    let _ = reply.send(Body::RepoChangeResult(result)).await;
+                                    if changed {
+                                        let inv = inventory::build(&mgr.config(), &mgr.found()).await;
+                                        let _ = reply.send(Body::Inventory(inv)).await;
+                                    }
+                                });
+                            }
+                            Some(Body::RepoScan(_)) => {
+                                let mgr = mgr.clone();
+                                let reply = reply_tx.clone();
+                                tokio::spawn(async move {
+                                    reload_config(&mgr);
+                                    mgr.rescan().await;
+                                    let inv = inventory::build(&mgr.config(), &mgr.found()).await;
+                                    let _ = reply.send(Body::Inventory(inv)).await;
+                                });
+                            }
                             Some(Body::Error(e)) => {
                                 let fatal = matches!(e.code(), Code::Revoked | Code::UnknownRunner);
                                 if fatal {
@@ -189,17 +218,32 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                 }
             }
             _ = mgr.outbox.notified() => flush(mgr, &mut sink).await?,
+            Some(body) = reply_rx.recv() => {
+                if let Body::Inventory(next) = &body {
+                    ready = inventory::ready_harnesses(next);
+                    inv = next.clone();
+                }
+                send(&mut sink, body).await?;
+            }
         }
     }
 }
 
-/// Re-reads runner.toml and rebuilds the inventory. Returns it if it changed.
-async fn refresh_inventory(mgr: &Arc<Manager>, current: &Inventory) -> Option<Inventory> {
+fn reload_config(mgr: &Manager) {
     match Config::load(&mgr.paths) {
         Ok(cfg) => mgr.set_config(cfg),
         Err(e) => tracing::warn!("could not reload config: {e:#}"),
     }
-    let next = inventory::build(&mgr.config()).await;
+}
+
+/// Re-reads runner.toml and rebuilds the inventory. Returns it if it changed.
+/// Scans for repos only when there's no scan yet, as after `remote-repos` is
+/// turned on; otherwise the latest scan stands until the next connect or
+/// RepoScan.
+async fn refresh_inventory(mgr: &Arc<Manager>, current: &Inventory) -> Option<Inventory> {
+    reload_config(mgr);
+    mgr.rescan_if_older(Duration::MAX).await;
+    let next = inventory::build(&mgr.config(), &mgr.found()).await;
     (next != *current).then_some(next)
 }
 

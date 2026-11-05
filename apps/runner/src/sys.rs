@@ -22,6 +22,14 @@ pub fn hostname() -> String {
         .unwrap_or_else(|| "runner".into())
 }
 
+/// The user's home directory: `HOME`, or `USERPROFILE` on Windows.
+pub fn home_dir() -> Option<std::path::PathBuf> {
+    let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(var)
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+}
+
 pub fn os() -> &'static str {
     match std::env::consts::OS {
         "macos" => "macos",

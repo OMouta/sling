@@ -1,7 +1,9 @@
 //! Runner configuration (`runner.toml`) and where files live on disk.
 //!
-//! Repos and `max_mode` are set only here, on the machine. The control plane
-//! learns about them but has no way to change them.
+//! `max_mode` and labels are set only here, on the machine. The control
+//! plane learns about them but has no way to change them. Repos are set here
+//! too, and while `remote_repos` is on, Sling may also add repos the Runner
+//! found on this machine itself, or remove repos.
 
 use std::path::{Path, PathBuf};
 
@@ -96,8 +98,20 @@ pub struct Config {
     /// and their sandboxes can't start inside most containers.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub disposable: bool,
+    /// Let Sling add repos the Runner found on this machine, and remove
+    /// repos. Sling can never add a path the Runner didn't find itself.
+    #[serde(default = "default_remote_repos")]
+    pub remote_repos: bool,
+    /// Where to look for git repos to offer Sling. Defaults to the home
+    /// directory.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scan_roots: Vec<PathBuf>,
     #[serde(default)]
     pub repos: Vec<RepoEntry>,
+}
+
+fn default_remote_repos() -> bool {
+    true
 }
 
 fn default_max_mode() -> Mode {
@@ -121,6 +135,8 @@ impl Default for Config {
             claude_bin: None,
             labels: Vec::new(),
             disposable: false,
+            remote_repos: default_remote_repos(),
+            scan_roots: Vec::new(),
             repos: Vec::new(),
         }
     }
@@ -165,6 +181,15 @@ impl Config {
         self.claude_bin.clone().unwrap_or_else(|| "claude".into())
     }
 
+    /// Directories the repo scan starts from: `scan_roots`, or the home
+    /// directory.
+    pub fn scan_roots(&self) -> Vec<PathBuf> {
+        if !self.scan_roots.is_empty() {
+            return self.scan_roots.clone();
+        }
+        crate::sys::home_dir().into_iter().collect()
+    }
+
     /// Labels sent in the inventory: the configured ones plus `os:<os>` and
     /// `arch:<arch>`.
     pub fn all_labels(&self) -> Vec<String> {
@@ -204,6 +229,38 @@ pub fn parse_labels(value: &str) -> Result<Vec<String>> {
     }
     if out.len() > MAX_LABELS {
         bail!("at most {MAX_LABELS} labels");
+    }
+    Ok(out)
+}
+
+/// Parses `on` or `off` (also `true` and `false`).
+pub fn parse_on_off(value: &str) -> Result<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "on" | "true" => Ok(true),
+        "off" | "false" => Ok(false),
+        _ => bail!("expected on or off, got {value:?}"),
+    }
+}
+
+/// Parses `~/code,/srv/git` into absolute directories. `~` stands for the
+/// home directory. An empty string goes back to the default, the home
+/// directory.
+pub fn parse_scan_roots(value: &str) -> Result<Vec<PathBuf>> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    for raw in value.split(',').map(str::trim).filter(|r| !r.is_empty()) {
+        let path = match raw.strip_prefix('~') {
+            Some(rest) if rest.is_empty() || rest.starts_with(['/', '\\']) => {
+                let home = crate::sys::home_dir().context("no home directory to expand ~")?;
+                home.join(rest.trim_start_matches(['/', '\\']))
+            }
+            _ => PathBuf::from(raw),
+        };
+        if !path.is_absolute() {
+            bail!("scan roots must be absolute paths, got {raw:?}");
+        }
+        if !out.contains(&path) {
+            out.push(path);
+        }
     }
     Ok(out)
 }
@@ -321,6 +378,37 @@ mod tests {
         assert!(!text.contains("labels"), "left out unless set");
         assert!(!back.disposable);
         assert!(!text.contains("disposable"), "left out unless set");
+        assert!(text.contains("remote_repos = true"), "always shown");
+        assert!(!text.contains("scan_roots"), "left out unless set");
+    }
+
+    #[test]
+    fn remote_repos_are_on_unless_turned_off() {
+        let old: Config = toml::from_str("name = \"laptop\"\n").unwrap();
+        assert!(
+            old.remote_repos,
+            "configs from before the setting keep working"
+        );
+        let off: Config = toml::from_str("name = \"laptop\"\nremote_repos = false\n").unwrap();
+        assert!(!off.remote_repos);
+        assert!(parse_on_off("on").unwrap());
+        assert!(!parse_on_off("OFF").unwrap());
+        assert!(parse_on_off("maybe").is_err());
+    }
+
+    #[test]
+    fn scan_roots_are_absolute() {
+        let home = crate::sys::home_dir().unwrap();
+        assert_eq!(
+            parse_scan_roots("~/code, /srv/git,~/code").unwrap(),
+            vec![home.join("code"), PathBuf::from("/srv/git")]
+        );
+        assert_eq!(parse_scan_roots("~").unwrap(), vec![home.clone()]);
+        assert!(parse_scan_roots("").unwrap().is_empty());
+        assert!(parse_scan_roots("code").is_err());
+        assert!(parse_scan_roots("~bob/code").is_err());
+        let c = Config::default();
+        assert_eq!(c.scan_roots(), vec![home]);
     }
 
     #[test]

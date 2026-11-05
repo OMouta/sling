@@ -12,6 +12,7 @@ mod pair;
 mod redact;
 mod repos;
 mod sandbox;
+mod scan;
 mod service;
 mod spool;
 mod sys;
@@ -45,7 +46,8 @@ enum Command {
         #[arg(long)]
         name: Option<String>,
     },
-    /// Manage the repos Sling may work in.
+    /// Manage the repos Sling may work in. You can also choose them under
+    /// Machines in Sling, from the repos this machine found.
     Repo {
         #[command(subcommand)]
         command: RepoCommand,
@@ -102,7 +104,8 @@ enum ServiceCommand {
 #[derive(Subcommand)]
 enum ConfigCommand {
     Show,
-    /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, claude-bin, worktree-root.
+    /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, claude-bin, worktree-root,
+    /// remote-repos (on or off), scan-roots (comma-separated directories; "" means your home).
     Set {
         key: String,
         value: String,
@@ -210,7 +213,9 @@ async fn real_main(cli: Cli) -> Result<()> {
             RepoCommand::List => {
                 let cfg = Config::load(&paths)?;
                 if cfg.repos.is_empty() {
-                    println!("No repos yet. Add one with `sling-runner repo add <path>`.");
+                    println!(
+                        "No repos yet. Choose some under Machines in Sling, or add one with `sling-runner repo add <path>`."
+                    );
                 }
                 for r in cfg.repos {
                     let net = if r.network { "  network" } else { "" };
@@ -227,6 +232,7 @@ async fn real_main(cli: Cli) -> Result<()> {
                 let cfg = Config::load(&paths)?;
                 println!("config file:  {}", paths.config_file().display());
                 println!("labels sent:  {}", cfg.all_labels().join(", "));
+                println!("remote repos: {}", remote_repos_summary(&cfg));
                 println!("{}", toml::to_string_pretty(&cfg)?);
             }
             ConfigCommand::Set { key, value } => {
@@ -245,6 +251,8 @@ async fn real_main(cli: Cli) -> Result<()> {
                     "codex-bin" => cfg.codex_bin = Some(value),
                     "claude-bin" => cfg.claude_bin = Some(value),
                     "worktree-root" => cfg.worktree_root = Some(PathBuf::from(value)),
+                    "remote-repos" => cfg.remote_repos = config::parse_on_off(&value)?,
+                    "scan-roots" => cfg.scan_roots = config::parse_scan_roots(&value)?,
                     _ => bail!("unknown key {key:?}"),
                 }
                 cfg.save(&paths)?;
@@ -314,7 +322,12 @@ async fn doctor(paths: &Paths) -> Result<()> {
         "key",
         paths.key_file().display()
     );
-    let inv = inventory::build(&cfg).await;
+    let found = if cfg.remote_repos {
+        scan::scan(&cfg, paths).await
+    } else {
+        Vec::new()
+    };
+    let inv = inventory::build(&cfg, &found).await;
     for c in &inv.capabilities {
         println!(
             "{} {:<18} {} {}",
@@ -335,5 +348,27 @@ async fn doctor(paths: &Paths) -> Result<()> {
     }
     println!("     {:<18} {}", "max mode", cfg.max_mode.as_str());
     println!("     {:<18} {}", "labels", inv.labels.join(", "));
+    let found = if cfg.remote_repos {
+        format!(" ({} not added yet)", inv.found_repos.len())
+    } else {
+        String::new()
+    };
+    println!(
+        "     {:<18} {}{found}",
+        "remote repos",
+        remote_repos_summary(&cfg)
+    );
     Ok(())
+}
+
+fn remote_repos_summary(cfg: &Config) -> String {
+    if !cfg.remote_repos {
+        return "off: only `sling-runner repo add` adds repos".into();
+    }
+    let roots: Vec<String> = cfg
+        .scan_roots()
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect();
+    format!("on: Sling may add repos found under {}", roots.join(", "))
 }
