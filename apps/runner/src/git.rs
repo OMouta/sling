@@ -263,6 +263,80 @@ pub fn web_url(remote: &str) -> Option<String> {
     None
 }
 
+/// `host/owner/name` from a git remote, lowercased and without `.git`, so the
+/// same repo matches across machines. `None` for remotes it can't read, such
+/// as local paths. Gives the same result as the control plane's `remoteKey`.
+pub fn remote_key(remote: &str) -> Option<String> {
+    let mut r = remote.trim();
+    if r.is_empty() {
+        return None;
+    }
+    r = strip_suffix_ignore_case(r, ".git");
+    let r = r.trim_end_matches('/');
+    let (host, path) = match scp_like(r) {
+        Some(parts) => parts,
+        None => url_parts(r)?,
+    };
+    let path = strip_suffix_ignore_case(path.trim_start_matches('/'), ".git");
+    if host.is_empty() || !path.contains('/') {
+        return None;
+    }
+    Some(format!("{host}/{path}").to_lowercase())
+}
+
+fn strip_suffix_ignore_case<'a>(s: &'a str, suffix: &str) -> &'a str {
+    if s.len() >= suffix.len()
+        && s.is_char_boundary(s.len() - suffix.len())
+        && s[s.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+    {
+        &s[..s.len() - suffix.len()]
+    } else {
+        s
+    }
+}
+
+/// `user@host:path`, where the user is word characters, `.` and `-`.
+fn scp_like(r: &str) -> Option<(&str, &str)> {
+    let (user, rest) = r.split_once('@')?;
+    if user.is_empty()
+        || !user
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+    {
+        return None;
+    }
+    let (host, path) = rest.split_once(':')?;
+    if host.is_empty() || host.contains('/') || path.is_empty() {
+        return None;
+    }
+    Some((host, path))
+}
+
+/// Host and path of an `http`, `https`, `ssh`, or `git` URL, without the
+/// user, port, query, or fragment.
+fn url_parts(r: &str) -> Option<(&str, &str)> {
+    let (scheme, rest) = r.split_once("://")?;
+    if !["http", "https", "ssh", "git"]
+        .iter()
+        .any(|s| scheme.eq_ignore_ascii_case(s))
+    {
+        return None;
+    }
+    let end = rest.find(['?', '#']).unwrap_or(rest.len());
+    let rest = &rest[..end];
+    let (authority, path) = match rest.find('/') {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, ""),
+    };
+    let host_port = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
+    let host = if host_port.starts_with('[') {
+        &host_port[..=host_port.find(']')?]
+    } else {
+        host_port.split(':').next().unwrap_or_default()
+    };
+    Some((host, path))
+}
+
 pub fn compare_url(remote: &str, base: &str, branch: &str) -> Option<String> {
     web_url(remote).map(|u| format!("{u}/compare/{base}...{branch}?expand=1"))
 }
@@ -353,5 +427,76 @@ mod tests {
             compare_url("git@github.com:a/site.git", "main", "sling/x").as_deref(),
             Some("https://github.com/a/site/compare/main...sling/x?expand=1")
         );
+    }
+
+    #[test]
+    fn remote_keys_match_the_control_plane() {
+        // Outputs of `remoteKey` in packages/core for the same inputs.
+        let cases: &[(&str, Option<&str>)] = &[
+            ("git@github.com:Acme/site.git", Some("github.com/acme/site")),
+            ("https://github.com/acme/site", Some("github.com/acme/site")),
+            (
+                "https://user:tok@github.com/acme/site.git/",
+                Some("github.com/acme/site"),
+            ),
+            (
+                "ssh://git@github.com/acme/site.git",
+                Some("github.com/acme/site"),
+            ),
+            ("", None),
+            ("   ", None),
+            ("/srv/git/site.git", None),
+            ("file:///srv/git/site.git", None),
+            ("https://github.com/", None),
+            ("https://github.com", None),
+            (
+                "https://GitHub.com/Acme/Site.GIT",
+                Some("github.com/acme/site"),
+            ),
+            ("http://localhost:3000/a/b.git", Some("localhost/a/b")),
+            (
+                "https://gitlab.com/group/sub/repo.git",
+                Some("gitlab.com/group/sub/repo"),
+            ),
+            ("git://example.org/a/b", Some("example.org/a/b")),
+            (
+                "ssh://git@host.example:2222/team/repo.git",
+                Some("host.example/team/repo"),
+            ),
+            (
+                "user.name@host.example:team/repo",
+                Some("host.example/team/repo"),
+            ),
+            (
+                "git@github.com:acme/site.git/",
+                Some("github.com/acme/site"),
+            ),
+            (
+                "https://github.com/acme/site/",
+                Some("github.com/acme/site"),
+            ),
+            (
+                "https://github.com//acme/site",
+                Some("github.com/acme/site"),
+            ),
+            ("https://github.com/acme", None),
+            ("ftp://github.com/a/b", None),
+            ("github.com:acme/site", None),
+            ("https://[::1]:8080/a/b", Some("[::1]/a/b")),
+            ("https://github.com/a/b?x=1#frag", Some("github.com/a/b")),
+            (
+                "https://bitbucket.org/team/repo.git ",
+                Some("bitbucket.org/team/repo"),
+            ),
+            ("  git@github.com:a/b.git  ", Some("github.com/a/b")),
+            ("https://github.com/a/b.git.git", Some("github.com/a/b")),
+            ("C:\\repos\\site", None),
+            ("https://github.com/a%20b/c", Some("github.com/a%20b/c")),
+            ("ssh://github.com/a/b", Some("github.com/a/b")),
+            ("https://:tok@github.com/a/b", Some("github.com/a/b")),
+        ];
+        for (remote, want) in cases {
+            assert_eq!(remote_key(remote).as_deref(), *want, "{remote:?}");
+        }
     }
 }

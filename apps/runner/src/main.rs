@@ -297,8 +297,11 @@ async fn doctor(paths: &Paths) -> Result<()> {
         );
     }
     for r in &inv.repos {
+        let identity = git::remote_key(&r.remote_url)
+            .map(|k| format!("matches {k} on other machines"))
+            .unwrap_or_else(|| "no remote, so it matches by name on this machine only".into());
         println!(
-            "ok   {:<18} {} (default branch {})",
+            "ok   {:<18} {} (default branch {}; {identity})",
             "repo", r.name, r.default_branch
         );
     }
