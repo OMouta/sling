@@ -4,3 +4,4 @@ packages:
   - packages/*
 allowBuilds:
   "@bufbuild/buf": false
+  esbuild: true
