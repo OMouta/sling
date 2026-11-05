@@ -205,6 +205,44 @@ Within 10 minutes of signing in, turning two-factor on or off needs no password.
 ### D57. Chat runs on the CLIs, and the assistant picks the coding model
 The assistant's turns run on a paired machine's Codex or Claude Code, on its existing login, so chat uses the user's subscription. The Runner runs each turn with only Sling's tools, through `sling-runner mcp` and a per-turn token, and calls only its paired server. API keys become optional, for chatting when no machine is on. The composer has one model picker, for the assistant. The assistant chooses the coding agent, model, and effort for each task, and uses the one the user names. This replaces the two pickers in D54. Asked 2026-11-05.
 
+## Stage 4
+
+### D58. Extensions are signed `.slx` packages, from catalogs, uploads, and the catalog that ships with Sling
+An extension is one file: a gzipped tar with a `sling-extension.json` manifest, at most one prebuilt ES module with its dependencies bundled in, workflow templates, a README, and an icon. There are no install scripts and no `node_modules`. Sling gets packages from catalogs (a `sling.catalog/v1` JSON file at any HTTPS URL you add), from a file you upload, and from the catalog included with the server, which lists the example extensions. This rules out installing from npm, building from git on the server, and a hosted marketplace (spec section 16). Asked 2026-11-05.
+
+### D59. Each extension runs in its own Node process with no ambient access, and Sling moves to Node 26 LTS
+The process runs under Node's permission model. It may read its own unpacked package and Sling's child runtime, and nothing else. It can't write files, open sockets, resolve names, start processes or workers, or load addons. Its environment is empty and its heap is capped. Its only way out is the IPC channel to the server. Node 24 can't deny network to a process, so the server refuses to start extension code on a Node without `--allow-net`, and the project moves to Node 26 LTS. Measured before deciding: 33 ms to the first answer and 14 µs per round trip. This rules out running third-party code in the server process, a QuickJS isolate, and a container per extension. Asked 2026-11-05.
+
+### D60. Trust is an Ed25519 publisher key, pinned per extension
+Publishers sign the package digest with `sling-ext`. You trust a key once, after seeing its fingerprint. An installed extension stays pinned to the key that signed it, so an update signed by any other key is refused. Catalogs pin each version's digest and can revoke versions. Unsigned packages install only when the server runs with `SLING_ALLOW_UNSIGNED_EXTENSIONS=1`, which the web app can't set. Packages from the catalog included with the server are trusted because they ship with it, like the server's own code, and still run isolated. This rules out Sigstore and trust by digest alone. Asked 2026-11-05.
+
+### D61. Updates are manual, and show the permission diff
+An **Update** button appears when a catalog has a newer version. The dialog lists permissions added and removed before you approve. Nothing updates on its own. Asked 2026-11-05.
+
+### D62. Extensions reach the network only through Sling, and only the hosts they declare
+The child runtime's `fetch` and `WebSocket` ask the server, which allows a request only to a host in the manifest, or to the host in an installation config field the manifest names. The server allows only HTTPS and WSS, except to private addresses with the `localNetwork` permission. It resolves names itself, refuses private addresses without `localNetwork`, connects to the address it checked, and checks every redirect. This rules out raw TCP, UDP, and DNS for extensions, so connectors that need them (IMAP, SMTP, Discord's gateway library) stay built in.
+
+### D63. The manifest declares permissions, and the server checks each one on every call
+There are three: network (D62), `approvals` (decide approvals for people an installation allows), and `sandboxes` (provide sandboxes, which means seeing each sandbox's secrets). Everything else an extension can do is fixed and narrow. It reads only installations of its own connectors, emits only its own trigger events, and adds only names that start with its ID. The install dialog lists exactly the declared permissions, and the server stores what you granted. This rules out undeclared capabilities and permission prompts while an extension runs.
+
+### D64. Extensions are installed per server, and installations stay per workspace
+The node registry is one per server process, and extension code is server software, like the built-in connectors. Extension, package, publisher, and catalog rows have no workspace. Installations, credentials, workflows, and audit entries still do. Only the workspace owner can install or change extensions. This rules out per-workspace extension sets until there are roles.
+
+### D65. The digest covers file contents, and the server checks it on every load
+The digest is a SHA-256 over sorted `path NUL sha256(contents)` lines, leaving out `SIGNATURE.json`. So signing doesn't change it, and repacking the same files gives the same digest. The signed message binds the format, ID, version, and digest. Packages are stored in Postgres, which needs no new volume, and unpacked into a fresh directory each time the server loads them, checking the digest. A package changed in the database is refused. Archives are capped at 20 MB, 50 MB unpacked, and 2,000 regular files with no links or `..`.
+
+### D66. The SDK is `@sling/connector-sdk` 1.0, and the server owns the child runtime
+An extension's bundle default-exports `defineExtension({ connectors })`. Every export from the SDK's entry is the stable API, recorded in an API report that fails the tests when it changes. A manifest's `sdk` range must include the server's SDK version. The code that loads the bundle in the child process and speaks the protocol belongs to the server, so the protocol can change without extensions being rebuilt. Node contexts given to extensions have no `services`. The built-in connectors keep running in the server process and import only the SDK.
+
+### D67. A workflow package is an extension with templates and no code
+It gets no process and no permissions. `requires` names the extensions and built-in connectors its templates need, and the preview says what's missing. **Export as package** turns a workflow into one: installation IDs become bindings and credentials can't be included. This answers open question 8: the portable format is a `sling.workflow/v1` definition, a template file with bindings, and a package manifest with requirements.
+
+### D68. Extension processes start on demand and stop when idle
+What each package adds is stored at install, so the server registers extension nodes at startup without starting any process. A process starts on its first call and stops after 5 minutes idle with no event source running. Every call has a deadline, and a heartbeat every 5 seconds kills a process that stops answering. Five crashes in 10 minutes leave the extension in error until you turn it back on. This rules out a process per extension running all the time.
+
+### D69. Extensions stay on the control plane
+No Runner extensions, coding-agent adapters, model providers, or web UI code. The Runner never runs code that came from the control plane, and that doesn't change. Extension forms come from their schemas, as connector forms do today.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.
@@ -230,4 +268,4 @@ These became spikes S1 to S3. Notes are in `plan/spikes/`. S1 and S3 are settled
 
 - Docker and Railway execution providers, cloud cost controls (open question 10), and delivering secrets to isolated tasks (open question 7): Stage 3.
 - Desktop app (Tauri): after Stage 2.
-- Extension signing and a marketplace: Stage 4.
+- Extension signing: Stage 4 (D60). A hosted marketplace: not planned (D58).
