@@ -19,7 +19,7 @@ What Sling protects, what it trusts, and where the known gaps are.
 | Control plane | Deciding what to run and when | Widening a Runner's limits |
 | Runner | Enforcing local limits | |
 | Master agent (LLM) | Choosing tools within the limits | Picking the mode, reaching other workspaces, running commands |
-| Codex, Claude Code | Editing files in its worktree, within its sandbox | Committing or pushing |
+| Codex, Claude Code | Editing files in its worktree. On your machines, inside the agent's own sandbox. In a sandbox container, inside the container | Committing or pushing |
 | Sandbox | Running one task on a fresh clone of one allowed repo, with that task's secrets | Reaching your machines, other repos, or other tasks' secrets |
 | Execution provider (Docker, Railway) | Starting and removing sandboxes | Seeing anything but the sandbox it was asked to start |
 | Workflows | Whatever their nodes do. You write them | |
@@ -57,7 +57,11 @@ What Sling protects, what it trusts, and where the known gaps are.
 - **Reads aren't sandboxed.** On macOS, Codex's `workspace-write` blocks writes outside the worktree and blocks network, but it can read anything the user can, `~/.ssh` included. With network off it can't send that anywhere. With `--network` on a repo, or in Full access, it could.
 - **Linux and Windows sandboxes are untested.** The sandbox probe covered macOS only. Linux uses Landlock and seccomp, and Windows support in Codex has been weaker.
 - **The Runner runs as you.** There's no separate OS user on your machines. Sandboxes give a task its own container, but only for repos you allow there.
-- **Sandbox secrets share the container with the agent.** The agent's environment doesn't carry the GitHub token or API keys, but in Full access the agent runs as the same user as the Runner in that container, and could read them from the Runner's process. Scope the GitHub token to the repos you allow, with contents and pull requests only.
+- **Inside a sandbox container, the agent has no sandbox of its own.** Codex's and Claude Code's sandboxes need unprivileged user namespaces, which a normal Docker container doesn't allow. So in a sandbox, agents run with their own checks off in every mode except Read-only (Codex with `danger-full-access`, Claude Code skipping permissions), and the container is the only boundary. Read-only tasks still never commit or push, and Supervised and Auto still gate pushes and PRs.
+- **Sandbox secrets share the container with the agent.** The agent's environment doesn't carry the GitHub token, and Codex's API key is removed once Codex has logged in with it. But the agent runs as the same user as the Runner in that container, so it could read the token from the Runner's process. Scope the GitHub token to the repos you allow, with contents and pull requests only.
+- **A repo's network setting isn't enforced in sandboxes.** The agent can reach whatever the container's network reaches. Use the Docker provider's `network` setting, or a host firewall, to limit that. On your machines, the setting does apply: Codex gets the network, and Claude Code gets a list of package registries and code hosts.
+- **The Docker socket is root on its host.** Mounting it into the control plane, as `deploy/docker-compose.sandbox.yml` does, means anyone who takes over the control plane controls that host. A separate Docker host over TLS keeps that away from the machine running Sling.
+- **Railway Sandboxes are in beta.** Railway's API can change between releases, and the Railway provider hasn't been run against a live account yet.
 - **A sandbox's limits come from the control plane.** Its repo list and mode cap are set when Sling starts it, unlike a machine's local config. A compromised control plane can run anything in a sandbox, though not on your machines.
 - **Providers shared between Sling servers.** Each server's orphan sweep removes sandboxes it doesn't know, including another server's. Give each server its own Docker host or Railway environment.
 - **Discord approvers hold an approval key.** Anyone who takes over an approver's Discord account can approve pushes and PRs. Keep the approver list short, and turn on 2FA in Discord.

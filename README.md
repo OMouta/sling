@@ -4,13 +4,13 @@
 
 Your agents. Your machines. Your workflows.
 
-Sling is a self-hosted assistant that hands real work to coding agents on your own computers. You ask for a change from the web app, from your phone if you like, and Sling delegates it to Codex on a machine you paired. Codex works in a fresh git worktree, and Sling commits, pushes, and opens the pull request, asking first when your permission mode says so.
+Sling is a self-hosted assistant that hands real work to coding agents on your own computers. You ask for a change from the web app, from your phone if you like, and Sling delegates it to Codex or Claude Code on a machine you paired, or in a fresh sandbox when that machine is offline. The agent works in a fresh git worktree, and Sling commits, pushes, and opens the pull request, asking first when your permission mode says so.
 
-Sling coordinates. Codex writes the code. The control plane never edits source itself.
+Sling coordinates. The coding agent writes the code. The control plane never edits source itself.
 
-Around that sits a workflow engine with a visual editor. Workflows react to email, Discord messages, schedules, webhooks, and Sling's own events, and they can summarize with a model, ask for approval, or hand work to Codex. The chat assistant is itself a workflow, so the web app and Discord talk to the same one.
+Around that sits a workflow engine with a visual editor. Workflows react to email, Discord messages, schedules, webhooks, and Sling's own events, and they can summarize with a model, ask for approval, or hand work to a coding agent. The chat assistant is itself a workflow, so the web app and Discord talk to the same one.
 
-This repo is at **Stage 2** of the plan in [`plan/`](plan/): workflows, the editor, and the Discord and email connectors. Cloud sandboxes and routing across many machines come next.
+This repo is at **Stage 3** of the plan in [`plan/`](plan/): routing across machines, Docker and Railway sandboxes, and Claude Code next to Codex. Workflows, the editor, and the Discord and email connectors came in Stage 2.
 
 ## How it fits together
 
@@ -23,11 +23,12 @@ This repo is at **Stage 2** of the plan in [`plan/`](plan/): workflows, the edit
 
 - **Control plane** (`apps/server`, `apps/web`): the API, the master agent, task state, approvals, and the web app. Runs in Docker next to Postgres.
 - **Sling Runner** (`apps/runner`, Rust): a small daemon on each machine. It dials out to the control plane, so no ports open on your computer. Repos and the highest allowed permission mode are set on the machine, and the control plane can't change them.
-- **Codex adapter** (`crates/harness-codex`): runs `codex exec --json` with the sandbox that matches the permission mode and streams its events back.
+- **Agent adapters** (`crates/harness-codex`, `crates/harness-claude-code`): run `codex exec --json` or `claude -p` with the sandbox that matches the permission mode, and stream their events back.
+- **Sandboxes** (`integrations/docker`, `integrations/railway`): start the `sling-sandbox` image for one task. Inside it, `sling-runner sandbox` clones the repo from its remote, pairs itself, and connects back like any machine.
 
 ## Quick start
 
-You need Docker on the server, and Codex installed and logged in on the machine that has your code.
+You need Docker on the server, and Codex or Claude Code installed and logged in on the machine that has your code.
 
 ```sh
 git clone <this repo> sling && cd sling/deploy
@@ -51,12 +52,12 @@ To use Discord or email, add them under **Connectors**, then install a template 
 
 ## Permission modes
 
-| Mode | Codex sandbox | Asks before |
-|---|---|---|
-| Read-only | `read-only` | nothing gets written |
-| Supervised | `workspace-write` | push, PR, merge, deploy |
-| Auto (default) | `workspace-write` | merge, deploy |
-| Full access | `danger-full-access` | nothing |
+| Mode | Codex | Claude Code | Asks before |
+|---|---|---|---|
+| Read-only | `read-only` sandbox | plan mode | nothing gets written |
+| Supervised | `workspace-write` sandbox | accept edits, sandboxed | push, PR, merge, deploy |
+| Auto (default) | `workspace-write` sandbox | accept edits, sandboxed | merge, deploy |
+| Full access | `danger-full-access` | permissions skipped | nothing |
 
 Each conversation has a mode, and each machine can cap the mode it accepts. Details in [`docs/modes.md`](docs/modes.md).
 
@@ -67,7 +68,8 @@ Each conversation has a mode, and each machine can cap the mode it accepts. Deta
 - [Reach Sling from outside your network](docs/remote-access.md)
 - [Permission modes and what enforces them](docs/modes.md)
 - [Workflows, nodes, and templates](docs/workflows.md)
-- Connectors: [Discord](docs/connectors/discord.md), [Email](docs/connectors/email.md)
+- [Routing and sandboxes](docs/sandboxes.md), and [the sandbox image](docs/sandbox-image.md)
+- Connectors: [Discord](docs/connectors/discord.md), [Email](docs/connectors/email.md), [Docker](docs/connectors/docker.md), [Railway](docs/connectors/railway.md)
 - [Threat model](docs/threat-model.md)
 - [Development](docs/development.md)
 - Product spec, decisions, and plan: [`plan/`](plan/)

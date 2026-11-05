@@ -70,7 +70,7 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | AI classify | Picks one of your labels and leaves through that exec output |
 | **Agents and people** | |
 | Assistant | One turn of the Sling assistant in a conversation, with its machines and the conversation's permission mode |
-| Delegate coding task | Starts a Codex task and waits for it to settle |
+| Delegate coding task | Starts a Codex or Claude Code task, on the best machine or in a sandbox, and waits for it to settle |
 | Approval | Waits for you to approve, reject, or let it expire |
 | Conversation | Finds or creates the conversation for a key |
 | **Actions** | |
