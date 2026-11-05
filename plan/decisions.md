@@ -90,6 +90,12 @@ Codex runs with approval policy `never` and is told to leave its changes uncommi
 ### D20. The Runner runs as a user-level service
 It uses launchd on macOS and a systemd user unit on Linux. Windows gets settled in spike S3. Running as the logged-in user lets the Runner use that user's Codex login and git credentials, consistent with D11.
 
+### D21. Codex interface: `codex exec --json`
+From spike S1. `codex app-server` is still marked experimental in codex-cli 0.166.0. The Runner spawns `codex exec --json -s <sandbox> -C <worktree>` with stdin closed and reads JSONL events from stdout. Cancel is SIGINT, then SIGKILL after 10 seconds.
+
+### D22. Codex network: off, with a per-repo opt-in on the Runner
+From spike S2. On macOS, `workspace-write` blocks writes outside the worktree and blocks network, but reads are unrestricted. Network stays off in Read-only, Supervised, and Auto. A repo entry in the Runner's local config can set `network = true`. The control plane can't change it.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router and TanStack Query, styled with Tailwind.
@@ -104,7 +110,7 @@ It uses launchd on macOS and a systemd user unit on Linux. Windows gets settled 
 
 ## To verify before building Stage 1
 
-These are now spikes S1 to S3 in `stage1.md` M0.
+These became spikes S1 to S3. Notes are in `plan/spikes/`. S1 and S3 are settled. S2 still needs a Linux and a Windows run.
 
 - Which Codex interface to wrap (open question 2). The Runner is Rust, so the Codex TypeScript SDK would mean shipping Node to every Runner machine. That points to `codex exec --json` or `codex app-server` (JSON-RPC over stdio). Check which one gives structured progress, cancellation, and resumable sessions.
 - How strong Codex's sandbox is on Windows compared with macOS and Linux.
