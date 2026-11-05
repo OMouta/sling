@@ -1,4 +1,4 @@
-//! Git operations the Runner performs itself. Codex never commits or pushes;
+//! Git operations the Runner performs itself. Agents never commit or push;
 //! everything that leaves the machine goes through here.
 
 use std::path::{Path, PathBuf};

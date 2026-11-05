@@ -1,5 +1,5 @@
 //! `sling-runner service install|uninstall|status`. The Runner
-//! runs as the logged-in user so it can use that user's Codex login and git
+//! runs as the logged-in user so it can use that user's agent logins and git
 //! credentials: a launchd LaunchAgent on macOS, a systemd user unit on Linux,
 //! and a logon scheduled task on Windows.
 
@@ -22,7 +22,7 @@ fn exe() -> Result<PathBuf> {
 }
 
 /// PATH at install time. Service managers start with a bare PATH, which would
-/// hide codex, git, and gh.
+/// hide codex, claude, git, and gh.
 fn path_env() -> String {
     std::env::var("PATH").unwrap_or_default()
 }
