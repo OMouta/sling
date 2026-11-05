@@ -2,3 +2,5 @@ packages:
   - apps/server
   - apps/web
   - packages/*
+allowBuilds:
+  "@bufbuild/buf": set this to true or false

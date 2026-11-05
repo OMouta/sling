@@ -1,0 +1,24 @@
+{
+  "name": "@sling/runner-protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "gen": "buf generate",
+    "lint:proto": "buf lint",
+    "typecheck": "tsc -p .",
+    "test": "vitest run",
+    "fixtures": "node src/write-fixtures.ts"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.16.0"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "^1.75.0",
+    "@bufbuild/protoc-gen-es": "^2.16.0",
+    "@types/node": "^26.6.6"
+  }
+}
