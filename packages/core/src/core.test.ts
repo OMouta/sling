@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   canTransitionTask,
+  cloneUrlFor,
   isTerminalTask,
   MODE_POLICY,
   modeWithinCap,
   needsApproval,
   newId,
+  remoteKey,
   TASK_STATES,
   taskBranch,
 } from "./index.ts";
@@ -63,5 +65,23 @@ describe("ids and branches", () => {
       "sling/k3v9qa-fix-the-footer-year",
     );
     expect(taskBranch("tsk_01jcabcdefk3v9qa", "???")).toBe("sling/k3v9qa");
+  });
+});
+
+describe("remote keys", () => {
+  it("normalizes the common remote forms to one key", () => {
+    const want = "github.com/acme/site";
+    expect(remoteKey("git@github.com:Acme/site.git")).toBe(want);
+    expect(remoteKey("https://github.com/acme/site")).toBe(want);
+    expect(remoteKey("https://user:tok@github.com/acme/site.git/")).toBe(want);
+    expect(remoteKey("ssh://git@github.com/acme/site.git")).toBe(want);
+    expect(cloneUrlFor(want)).toBe("https://github.com/acme/site.git");
+  });
+
+  it("returns null for remotes it can't read", () => {
+    expect(remoteKey("")).toBeNull();
+    expect(remoteKey("/srv/git/site.git")).toBeNull();
+    expect(remoteKey("file:///srv/git/site.git")).toBeNull();
+    expect(remoteKey("https://github.com/")).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import type { Harness } from "./harness.ts";
 import type { ActionKind, PermissionMode } from "./modes.ts";
 import type { ActionState, ApprovalState, Delivery, TaskState } from "./states.ts";
 
@@ -19,6 +20,8 @@ export interface RepoView {
   defaultBranch: string;
   remoteUrl: string;
   network: boolean;
+  /** Normalized remote, `host/owner/name`, shared by the same repo on every machine. Null without a remote. */
+  remoteKey: string | null;
 }
 
 export interface RunnerView {
@@ -36,6 +39,11 @@ export interface RunnerView {
   pairedAt: string;
   revokedAt: string | null;
   repos: RepoView[];
+  /** Labels from the machine's config, plus automatic `os:` and `arch:` labels. */
+  labels: string[];
+  /** A sandbox's Runner. Hidden from the Machines page. */
+  ephemeral: boolean;
+  sandboxId: string | null;
 }
 
 export interface DiffStatsView {
@@ -44,11 +52,45 @@ export interface DiffStatsView {
   deletions: number;
 }
 
+export type SandboxState =
+  | "requested"
+  | "provisioning"
+  | "ready"
+  | "busy"
+  | "releasing"
+  | "destroyed"
+  | "failed";
+
+export interface TaskEnvironmentView {
+  kind: "machine" | "sandbox";
+  sandboxId: string | null;
+  sandboxState: SandboxState | null;
+  /** Name of the provider installation, for sandboxes. */
+  providerName: string | null;
+}
+
+export interface RoutingView {
+  /** Where the task went, or null when nothing was eligible. */
+  target:
+    | { kind: "machine"; runnerId: string; runnerName: string }
+    | { kind: "sandbox"; providerInstallationId: string; providerName: string }
+    | null;
+  /** One sentence on why. */
+  reason: string;
+  /** Every machine the router looked at, and why it was or wasn't picked. */
+  considered: { runnerId: string; runnerName: string; eligible: boolean; reason: string }[];
+  decidedAt: string;
+}
+
 export interface TaskView {
   id: string;
   conversationId: string | null;
-  runnerId: string;
-  runnerName: string;
+  /** Null until the task is bound to a machine or a sandbox's Runner. */
+  runnerId: string | null;
+  runnerName: string | null;
+  harness: Harness;
+  environment: TaskEnvironmentView;
+  routing: RoutingView | null;
   repoName: string;
   title: string;
   objective: string;
@@ -104,8 +146,11 @@ export interface ActionView {
 
 export interface ApprovalView {
   id: string;
-  /** `task_action`: a push or PR step. `workflow`: a `human.approval` node. */
-  kind: "task_action" | "workflow";
+  /**
+   * `task_action`: a push or PR step. `workflow`: a `human.approval` node.
+   * `sandbox_fallback`: run a task in a sandbox because no machine could take it.
+   */
+  kind: "task_action" | "workflow" | "sandbox_fallback";
   title: string;
   state: ApprovalState;
   expiresAt: string;
@@ -126,9 +171,25 @@ export interface ApprovalView {
   } | null;
   prTitle: string | null;
   prBody: string | null;
-  /** Workflow approvals only: the run waiting on it, and what the node showed. */
+  /** Workflow approvals only: the run waiting on it. */
   runId: string | null;
+  /**
+   * What the approver is shown. For `sandbox_fallback`, a SandboxFallbackPayload.
+   */
   payload: Record<string, unknown> | null;
+}
+
+/** `ApprovalView.payload` of a `sandbox_fallback` approval. */
+export interface SandboxFallbackPayload {
+  taskId: string;
+  taskTitle: string;
+  remoteKey: string;
+  cloneUrl: string;
+  providerInstallationId: string;
+  providerName: string;
+  harness: Harness;
+  /** Why no machine could take it, one line per machine. */
+  reasons: string[];
 }
 
 export interface ConversationView {
@@ -236,6 +297,60 @@ export interface InstallationView {
   updatedAt: string;
 }
 
+export interface SandboxView {
+  id: string;
+  state: SandboxState;
+  providerInstallationId: string;
+  providerName: string;
+  connectorId: string;
+  taskId: string | null;
+  taskTitle: string | null;
+  image: string;
+  /** The provider's own ID, for example a container ID. */
+  externalId: string | null;
+  failure: string | null;
+  runnerId: string | null;
+  requestedAt: string;
+  readyAt: string | null;
+  destroyedAt: string | null;
+  /** Billable minutes so far, from ready to destroyed (or now). */
+  minutes: number;
+}
+
+/** GET /api/sandboxes */
+export interface SandboxListView {
+  sandboxes: SandboxView[];
+  usage: {
+    monthMinutes: number;
+    monthlyMinutesBudget: number;
+    running: number;
+    concurrentLimit: number;
+    /** From the per-provider cost per hour, when set. */
+    estimatedMonthCost: number | null;
+  };
+}
+
+export interface SandboxRepoView {
+  /** Normalized remote, `host/owner/name`. */
+  remoteKey: string;
+  /** HTTPS clone URL. */
+  cloneUrl: string;
+  defaultBranch: string;
+  network: boolean;
+  createdAt: string;
+}
+
+export interface SandboxSettingsView {
+  defaultHarness: Harness;
+  concurrentLimit: number;
+  lifetimeMinutes: number;
+  monthlyMinutesBudget: number;
+  /** Provider installation ID to estimated cost per hour, in the user's currency. */
+  costPerHour: Record<string, number>;
+  /** Which write-only secrets are stored. Values are never returned. */
+  secrets: { openaiApiKey: boolean; anthropicApiKey: boolean; gitToken: boolean };
+}
+
 export type AgentStatus = "idle" | "thinking" | "error";
 
 export type ServerEvent =
@@ -250,4 +365,5 @@ export type ServerEvent =
   | { type: "workflow.updated"; workflow: WorkflowSummaryView }
   | { type: "run.updated"; run: RunView }
   | { type: "node_run.updated"; nodeRun: NodeRunView }
-  | { type: "installation.updated"; installation: InstallationView };
+  | { type: "installation.updated"; installation: InstallationView }
+  | { type: "sandbox.updated"; sandbox: SandboxView };
