@@ -121,10 +121,6 @@ pub fn walk(roots: &[PathBuf], skip: &[PathBuf], limits: &Limits) -> Vec<PathBuf
 /// Scans the configured roots for repos that aren't configured yet, and
 /// looks up their default branch and remote.
 pub async fn scan(cfg: &Config, paths: &Paths) -> Vec<Found> {
-    scan_with(cfg, paths, Limits::default()).await
-}
-
-pub async fn scan_with(cfg: &Config, paths: &Paths, limits: Limits) -> Vec<Found> {
     let canonical = |p: &Path| std::fs::canonicalize(p).ok();
     let roots: Vec<PathBuf> = cfg
         .scan_roots()
@@ -137,7 +133,7 @@ pub async fn scan_with(cfg: &Config, paths: &Paths, limits: Limits) -> Vec<Found
         .filter_map(|p| canonical(p))
         .collect();
     let started = Instant::now();
-    let dirs = tokio::task::spawn_blocking(move || walk(&roots, &skip, &limits))
+    let dirs = tokio::task::spawn_blocking(move || walk(&roots, &skip, &Limits::default()))
         .await
         .unwrap_or_default();
     let dirs: Vec<PathBuf> = dirs
