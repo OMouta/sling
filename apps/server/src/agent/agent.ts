@@ -1,6 +1,6 @@
 import { type AgentStatus, MODE_POLICY, newId } from "@sling/core";
 import { schema, type TokenUsage } from "@sling/db";
-import { isStepCount, type ModelMessage, streamText } from "ai";
+import { isStepCount, type LanguageModel, type ModelMessage, streamText } from "ai";
 import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import type { SettleReason } from "../tasks/service.ts";
@@ -41,9 +41,11 @@ export class Agent {
   readonly #ctx: AppContext;
   readonly #queues = new Map<string, Promise<void>>();
   readonly #status = new Map<string, AgentStatus>();
+  readonly #model: LanguageModel | undefined;
 
-  constructor(ctx: AppContext) {
+  constructor(ctx: AppContext, model?: LanguageModel) {
     this.#ctx = ctx;
+    this.#model = model;
   }
 
   status(conversationId: string): AgentStatus {
@@ -196,7 +198,7 @@ export class Agent {
 
     this.#setStatus(conv.workspaceId, conv.id, "thinking");
     try {
-      const model = await resolveModel(ctx, conv.workspaceId);
+      const model = this.#model ?? (await resolveModel(ctx, conv.workspaceId));
       const result = streamText({
         model,
         instructions: instructions(conv.mode, new Date()),
