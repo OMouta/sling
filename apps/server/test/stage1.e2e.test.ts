@@ -480,6 +480,9 @@ describe("Stage 1", () => {
       nodeType: "agent.assistant",
       status: "running",
       idempotencyKey: `${runId}:assistant:0`,
+      // Stamped by this process's clock, as the engine does. The database's
+      // clock can run ahead of it and sort the retry first.
+      startedAt: new Date(),
     });
 
     const calls = model.doStreamCalls.length;
