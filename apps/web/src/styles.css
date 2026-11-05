@@ -140,11 +140,6 @@ body {
 .sling-canvas .react-flow__attribution a {
   color: var(--muted);
 }
-.sling-markers {
-  position: absolute;
-  width: 0;
-  height: 0;
-}
 .sling-edge-exec {
   stroke-width: 2.5;
 }

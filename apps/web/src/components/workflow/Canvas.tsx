@@ -15,7 +15,7 @@ import { type DragEvent, type ReactNode, useCallback, useEffect, useRef, useStat
 import * as g from "../../lib/workflow/graph.ts";
 import { type GraphStore, useGraph, useGraphStore } from "../../lib/workflow/store.ts";
 import { cx } from "../ui.tsx";
-import { DataEdge, EdgeMarkers, ExecEdge } from "./Edges.tsx";
+import { DataEdge, ExecEdge } from "./Edges.tsx";
 import { NodeView } from "./NodeView.tsx";
 
 const NODE_TYPES: NodeTypes = { sling: NodeView };
@@ -79,6 +79,16 @@ function ConnectionHint({ flash }: { flash: string | null }) {
   );
 }
 
+const ICON = {
+  viewBox: "0 0 20 20",
+  className: "size-4",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 1.8,
+  strokeLinecap: "round",
+  strokeLinejoin: "round",
+} as const;
+
 function ToolButton({
   label,
   onClick,
@@ -119,28 +129,40 @@ function Toolbar({ editable }: { editable: boolean }) {
               disabled={!canUndo}
               onClick={() => store.update(g.undo)}
             >
-              ↶
+              <svg {...ICON} aria-hidden="true">
+                <path d="M8 5 4 9l4 4" />
+                <path d="M4 9h8a4 4 0 0 1 0 8h-2" />
+              </svg>
             </ToolButton>
             <ToolButton
               label="Redo (Ctrl+Shift+Z)"
               disabled={!canRedo}
               onClick={() => store.update(g.redo)}
             >
-              ↷
+              <svg {...ICON} aria-hidden="true">
+                <path d="m12 5 4 4-4 4" />
+                <path d="M16 9H8a4 4 0 0 0 0 8h2" />
+              </svg>
             </ToolButton>
           </>
         )}
         <ToolButton label="Zoom in" onClick={() => void rf.zoomIn({ duration: 150 })}>
-          +
+          <svg {...ICON} aria-hidden="true">
+            <path d="M10 4v12M4 10h12" />
+          </svg>
         </ToolButton>
         <ToolButton label="Zoom out" onClick={() => void rf.zoomOut({ duration: 150 })}>
-          −
+          <svg {...ICON} aria-hidden="true">
+            <path d="M4 10h12" />
+          </svg>
         </ToolButton>
         <ToolButton
           label="Fit view"
           onClick={() => void rf.fitView({ padding: 0.2, duration: 200 })}
         >
-          ⤢
+          <svg {...ICON} aria-hidden="true">
+            <path d="M4 8V4h4M16 8V4h-4M4 12v4h4M16 12v4h-4" />
+          </svg>
         </ToolButton>
       </div>
     </Panel>
@@ -281,7 +303,6 @@ export function GraphCanvas({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
-      <EdgeMarkers />
       <ReactFlow<g.GraphNode, g.GraphEdge>
         nodes={nodes}
         edges={edges}

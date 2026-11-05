@@ -340,7 +340,7 @@ function FieldList({
     </div>
   );
   return (
-    <div className="space-y-2 rounded-lg bg-surface-2/60 p-2">
+    <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg bg-surface-2/60 p-2">
       {group("Inputs", fields.inputs, "Connect a data input to use its fields here.")}
       {group("Trigger", fields.trigger, "No trigger yet.")}
       {group(

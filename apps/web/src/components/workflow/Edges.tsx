@@ -13,32 +13,7 @@ const TONE_COLOR: Record<Tone, string> = {
   taken: "var(--ok)",
 };
 
-/** Arrowheads for exec edges, one per color. Render once per canvas. */
-export function EdgeMarkers() {
-  return (
-    <svg className="sling-markers" aria-hidden="true">
-      <defs>
-        {(Object.keys(TONE_COLOR) as Tone[]).map((tone) => (
-          <marker
-            key={tone}
-            id={`sling-arrow-${tone}`}
-            viewBox="0 0 10 10"
-            refX="9"
-            refY="5"
-            markerWidth="11"
-            markerHeight="11"
-            markerUnits="userSpaceOnUse"
-            orient="auto-start-reverse"
-          >
-            <path d="M0,0 L10,5 L0,10 z" style={{ fill: TONE_COLOR[tone] }} />
-          </marker>
-        ))}
-      </defs>
-    </svg>
-  );
-}
-
-/** Exec edges: thick, neutral, with an arrowhead. */
+/** Exec edges: thick and neutral. The arrow-shaped input handle shows the direction. */
 export const ExecEdge = memo(function ExecEdge(props: EdgeProps<GraphEdge>) {
   const [path] = getBezierPath(props);
   const issue = useGraph((s) => s.decor.edgeIssues.has(props.id));
@@ -48,7 +23,6 @@ export const ExecEdge = memo(function ExecEdge(props: EdgeProps<GraphEdge>) {
     <BaseEdge
       id={props.id}
       path={path}
-      markerEnd={`url(#sling-arrow-${tone})`}
       interactionWidth={18}
       className="sling-edge-exec"
       style={{ stroke: TONE_COLOR[tone] }}
