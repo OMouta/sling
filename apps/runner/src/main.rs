@@ -8,6 +8,7 @@ mod git;
 mod harness;
 mod identity;
 mod inventory;
+mod mcp;
 mod pair;
 mod redact;
 mod repos;
@@ -17,6 +18,8 @@ mod service;
 mod spool;
 mod sys;
 mod tasks;
+#[cfg(test)]
+mod test_http;
 
 use std::path::PathBuf;
 
@@ -75,6 +78,11 @@ enum Command {
     /// Git credential helper used inside a sandbox.
     #[command(hide = true)]
     GitCredential { action: String },
+    /// MCP server that gives a chat turn's agent Sling's tools, over stdio.
+    /// The agent's CLI starts it with SLING_TOOLS_URL and SLING_TOOLS_TOKEN
+    /// set; you don't run it yourself.
+    #[command(hide = true)]
+    Mcp,
 }
 
 #[derive(Subcommand)]
@@ -117,6 +125,10 @@ fn main() {
     // git reads the helper's stdout, so nothing else may print there.
     if let Command::GitCredential { action } = &cli.command {
         std::process::exit(sandbox::git_credential(action));
+    }
+    // The MCP client reads stdout, so this runs before logging is set up.
+    if let Command::Mcp = &cli.command {
+        std::process::exit(mcp::main());
     }
     init_logging();
     let prepared = match cli.command {
@@ -296,7 +308,9 @@ async fn real_main(cli: Cli) -> Result<()> {
             };
             println!("{msg}");
         }
-        Command::Sandbox | Command::GitCredential { .. } => unreachable!("handled in main"),
+        Command::Sandbox | Command::GitCredential { .. } | Command::Mcp => {
+            unreachable!("handled in main")
+        }
         Command::Gc => {
             let cfg = Config::load(&paths)?;
             let n = gc::collect(&cfg, &paths, gc::KEEP_FOR).await?;
