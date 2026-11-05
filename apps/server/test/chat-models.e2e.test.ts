@@ -411,7 +411,7 @@ describe("one-line install", () => {
     const sh = await raw("GET", "/install.sh");
     expect(sh.status).toBe(200);
     expect(sh.text).toContain(`: "\${SLING_URL:=${origin}}"`);
-    expect(sh.text).toContain(': "${SLING_REPO:=acme/sling}"');
+    expect(sh.text).toContain(`: "\${SLING_REPO:=acme/sling}"`);
     const ps = await raw("GET", "/install.ps1");
     expect(ps.text).toContain(`$env:SLING_URL = '${origin}'`);
   });
