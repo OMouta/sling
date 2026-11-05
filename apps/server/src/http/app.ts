@@ -49,7 +49,7 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
     }
   });
 
-  app.get("/healthz", async () => ({ ok: true }));
+  app.get("/healthz", { logLevel: "silent" }, async () => ({ ok: true }));
 
   await app.register(async (scope) => authRoutes(scope, ctx));
   await app.register(async (scope) => hubRoutes(scope, ctx));

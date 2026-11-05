@@ -6,3 +6,4 @@ target/
 .env.*
 !.env.example
 *.log
+deploy/.env
