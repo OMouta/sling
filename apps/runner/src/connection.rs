@@ -169,24 +169,12 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                             Some(Body::RepoChange(c)) => {
                                 let mgr = mgr.clone();
                                 let reply = reply_tx.clone();
-                                tokio::spawn(async move {
-                                    let (result, changed) = mgr.repo_change(c).await;
-                                    let _ = reply.send(Body::RepoChangeResult(result)).await;
-                                    if changed {
-                                        let inv = inventory::build(&mgr.config(), &mgr.found()).await;
-                                        let _ = reply.send(Body::Inventory(inv)).await;
-                                    }
-                                });
+                                tokio::spawn(async move { mgr.repo_change_and_report(c, &reply).await });
                             }
                             Some(Body::RepoScan(_)) => {
                                 let mgr = mgr.clone();
                                 let reply = reply_tx.clone();
-                                tokio::spawn(async move {
-                                    reload_config(&mgr);
-                                    mgr.rescan().await;
-                                    let inv = inventory::build(&mgr.config(), &mgr.found()).await;
-                                    let _ = reply.send(Body::Inventory(inv)).await;
-                                });
+                                tokio::spawn(async move { mgr.rescan_and_report(&reply).await });
                             }
                             Some(Body::Error(e)) => {
                                 let fatal = matches!(e.code(), Code::Revoked | Code::UnknownRunner);

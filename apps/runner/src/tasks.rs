@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use sling_runner_protocol::envelope::Body;
 use sling_runner_protocol::{
     ActionRequest, ActionResult, DiffStats, HeldTask, LogLine, RepoChange, RepoChangeResult,
     TaskAccepted, TaskAssign, TaskEvent, TaskFinished, TaskRejected, TaskStarted, action_request,
@@ -50,6 +51,9 @@ pub struct Manager {
     found: Mutex<(Vec<Found>, Option<Instant>)>,
     /// Keeps scans and repo changes from running at the same time.
     repo_lock: tokio::sync::Mutex<()>,
+    /// One repo change or rescan at a time, from applying it to sending the
+    /// inventory, so Sling's last inventory is always the newest.
+    inventory_turn: tokio::sync::Mutex<()>,
     /// Wakes the connection to flush new events.
     pub outbox: Notify,
 }
@@ -89,6 +93,7 @@ impl Manager {
             actions_in_flight: AtomicUsize::new(0),
             found: Mutex::new((Vec::new(), None)),
             repo_lock: tokio::sync::Mutex::new(()),
+            inventory_turn: tokio::sync::Mutex::new(()),
             outbox: Notify::new(),
         }))
     }
@@ -170,6 +175,31 @@ impl Manager {
             (Vec::new(), None)
         };
         *self.found.lock().unwrap() = result;
+    }
+
+    /// Applies a repo change and queues its result, then the inventory that
+    /// follows it. Changes take turns from applying to queueing, so the last
+    /// inventory Sling gets always has every change in it.
+    pub async fn repo_change_and_report(&self, req: RepoChange, out: &mpsc::Sender<Body>) {
+        let _turn = self.inventory_turn.lock().await;
+        let (result, changed) = self.repo_change(req).await;
+        let _ = out.send(Body::RepoChangeResult(result)).await;
+        if changed {
+            let inv = crate::inventory::build(&self.config(), &self.found()).await;
+            let _ = out.send(Body::Inventory(inv)).await;
+        }
+    }
+
+    /// Scans again and queues the inventory, taking the same turn as changes.
+    pub async fn rescan_and_report(&self, out: &mpsc::Sender<Body>) {
+        let _turn = self.inventory_turn.lock().await;
+        match Config::load(&self.paths) {
+            Ok(cfg) => self.set_config(cfg),
+            Err(e) => tracing::warn!("could not reload config: {e:#}"),
+        }
+        self.rescan().await;
+        let inv = crate::inventory::build(&self.config(), &self.found()).await;
+        let _ = out.send(Body::Inventory(inv)).await;
     }
 
     /// Handles a RepoChange from Sling. Returns the result to send, and

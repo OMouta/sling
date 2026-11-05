@@ -15,6 +15,8 @@ use sling_runner_protocol::{
 use crate::config::{Config, Mode, Paths, RepoEntry};
 use crate::spool::{SpoolState, TaskMeta, TaskSpool};
 use crate::tasks::Manager;
+use sling_runner_protocol::envelope::Body;
+use tokio::sync::mpsc;
 
 /// Reports the sensitive variables it can see as an agent message.
 const ENV_REPORT: &str = r#"seen=$(env | cut -d= -f1 | grep -E '^(SLING_|GH_TOKEN$|GITHUB_TOKEN$|OPENAI_API_KEY$|ANTHROPIC_API_KEY$)' | sort | tr '\n' ' ')"#;
@@ -789,6 +791,41 @@ async fn adds_a_repo_the_scan_found() {
     assert!(r.ok, "{}", r.message);
     let saved = Config::load(&env.mgr.paths).unwrap();
     assert_eq!(saved.repo("site-2").unwrap().path, other_site);
+}
+
+#[tokio::test]
+async fn back_to_back_changes_end_with_an_inventory_that_has_both() {
+    let env = setup(Mode::FullAccess);
+    let root = scan_here(&env, |_| {});
+    let api = make_repo(&root, "code/api");
+    let docs = make_repo(&root, "code/docs");
+    env.mgr.rescan().await;
+    let (tx, mut rx) = mpsc::channel(16);
+    let (a, b) = (env.mgr.clone(), env.mgr.clone());
+    let (ta, tb) = (tx.clone(), tx.clone());
+    let (ra, rd) = (
+        repo_change(repo_change::Op::Add, &api, ""),
+        repo_change(repo_change::Op::Add, &docs, ""),
+    );
+    tokio::join!(
+        async move { a.repo_change_and_report(ra, &ta).await },
+        async move { b.repo_change_and_report(rd, &tb).await },
+    );
+    drop(tx);
+    let mut last = None;
+    while let Some(body) = rx.recv().await {
+        if let Body::Inventory(inv) = body {
+            last = Some(inv);
+        }
+    }
+    let names: Vec<String> = last
+        .expect("an inventory")
+        .repos
+        .into_iter()
+        .map(|r| r.name)
+        .collect();
+    assert!(names.contains(&"api".to_string()), "{names:?}");
+    assert!(names.contains(&"docs".to_string()), "{names:?}");
 }
 
 #[tokio::test]
