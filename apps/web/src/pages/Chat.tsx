@@ -2,16 +2,17 @@ import type { AssistantChoice, ChatSettings, PermissionMode } from "@sling/core"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUp } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import Markdown from "react-markdown";
+import { ChatMarkdown } from "../components/ChatMarkdown.tsx";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { Logo } from "../components/Logo.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
+import { ReplyTrace } from "../components/ReplyTrace.tsx";
 import { TaskCard } from "../components/TaskCard.tsx";
-import { Badge, Button, cx, ErrorText, Skeleton, Spinner } from "../components/ui.tsx";
+import { Badge, Button, cx, ErrorText, Skeleton } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
-import { useStreamingText } from "../lib/realtime.ts";
+import { useLiveReply } from "../lib/realtime.ts";
 import type { ConversationDetail, MessageView, TaskView } from "../lib/types.ts";
 import { chatRoute } from "../router.tsx";
 
@@ -26,7 +27,9 @@ export function ChatPage() {
     queryKey: ["conversation", id],
     queryFn: () => api.get<ConversationDetail>(`/api/conversations/${id}`),
   });
-  const streamText = useStreamingText(id);
+  const live = useLiveReply(id);
+  // For a turn already running when the page opened, before its first event.
+  const [openedAt] = useState(Date.now);
   const [text, setText] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -82,7 +85,7 @@ export function ChatPage() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll when content grows.
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
-  }, [items.length, streamText]);
+  }, [items.length, live]);
 
   // Grow the composer with its text, up to a limit.
   // biome-ignore lint/correctness/useExhaustiveDependencies: measure when the text changes.
@@ -156,14 +159,12 @@ export function ChatPage() {
               ),
             )}
             {thinking && (
-              <AssistantRow>
-                {streamText ? (
-                  <Markdown>{streamText}</Markdown>
-                ) : (
-                  <span className="inline-flex items-center gap-2 text-[13px] text-muted">
-                    <Spinner className="size-3.5" /> Thinking
-                  </span>
-                )}
+              <AssistantRow
+                trace={
+                  <ReplyTrace steps={live?.steps ?? []} startedAt={live?.startedAt ?? openedAt} />
+                }
+              >
+                {live?.text ? <ChatMarkdown>{live.text}</ChatMarkdown> : null}
               </AssistantRow>
             )}
             <div ref={bottom} />
@@ -219,13 +220,23 @@ export function ChatPage() {
   );
 }
 
-function AssistantRow({ children }: { children: React.ReactNode }) {
+/** An assistant reply: how it got there, if shown, then the reply itself. */
+function AssistantRow({
+  trace,
+  children,
+}: {
+  trace?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
   return (
     <div className="flex gap-3">
       <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg bg-accent text-white shadow-primary">
         <Logo className="size-3.5" />
       </span>
-      <div className="prose-chat min-w-0 flex-1 text-sm leading-6">{children}</div>
+      <div className="min-w-0 flex-1">
+        {trace}
+        {children && <div className="prose-chat text-sm leading-6">{children}</div>}
+      </div>
     </div>
   );
 }
@@ -249,8 +260,10 @@ function Message({ message }: { message: MessageView }) {
     );
   }
   return (
-    <AssistantRow>
-      <Markdown>{message.text}</Markdown>
+    <AssistantRow
+      trace={message.trace && <ReplyTrace steps={message.trace.steps} ms={message.trace.ms} />}
+    >
+      <ChatMarkdown>{message.text}</ChatMarkdown>
     </AssistantRow>
   );
 }

@@ -136,6 +136,8 @@ pub fn chat_args(o: &ChatOptions) -> Vec<String> {
         set(&format!("features.{feature}"), "false".into());
     }
     set("web_search", toml_string("disabled"));
+    // Codex's models default to no summary, so the chat would show no thinking.
+    set("model_reasoning_summary", toml_string("auto"));
     if let Some(effort) = &o.effort {
         set("model_reasoning_effort", toml_string(effort));
     }
@@ -412,6 +414,7 @@ mod tests {
         assert!(has(&args, ["-c", "features.shell_tool=false"]));
         assert!(has(&args, ["-c", "features.unified_exec=false"]));
         assert!(has(&args, ["-c", "web_search=\"disabled\""]));
+        assert!(has(&args, ["-c", "model_reasoning_summary=\"auto\""]));
         assert!(has(
             &args,
             [

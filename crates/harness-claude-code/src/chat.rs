@@ -109,6 +109,8 @@ pub fn chat_args(o: &ChatOptions) -> Vec<String> {
     if let Some(effort) = &o.effort {
         args.extend(["--effort".into(), effort.clone()]);
     }
+    // Print mode otherwise sends thinking blocks with their text left out.
+    args.extend(["--thinking-display".into(), "summarized".into()]);
     if o.fast && crate::has_fast(o.model.as_deref()) {
         args.extend(["--settings".into(), json!({ "fastMode": true }).to_string()]);
     }
@@ -467,6 +469,10 @@ mod tests {
         );
         assert!(!args.iter().any(|a| a.contains("tok-secret-123")));
         assert!(!args.iter().any(|a| a.contains("Be brief")));
+        assert!(
+            args.windows(2)
+                .any(|w| w == ["--thinking-display", "summarized"])
+        );
         assert!(!args.iter().any(|a| a == "--settings"));
 
         o.model = Some("claude-haiku-5-5".into());
@@ -573,16 +579,20 @@ mod tests {
         assert!(!o.session_missing);
     }
 
+    fn settings_of(args: &[String]) -> Value {
+        let i = args
+            .iter()
+            .position(|a| a == "--settings")
+            .expect("--settings");
+        serde_json::from_str(&args[i + 1]).unwrap()
+    }
+
     #[test]
     fn turns_on_fast_mode_for_opus_only() {
         let mut o = opts();
         o.fast = true;
         o.model = Some("claude-opus-5-5".into());
-        assert!(
-            chat_args(&o)
-                .windows(2)
-                .any(|w| w == ["--settings", r#"{"fastMode":true}"#])
-        );
+        assert_eq!(settings_of(&chat_args(&o)), json!({ "fastMode": true }));
         o.model = Some("claude-haiku-5-5".into());
         assert!(!chat_args(&o).iter().any(|a| a == "--settings"));
     }

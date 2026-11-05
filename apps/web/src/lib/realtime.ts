@@ -8,6 +8,7 @@ import type {
   SandboxView,
   ServerEvent,
   TaskView,
+  TraceStep,
   WorkflowSummaryView,
 } from "@sling/core";
 import type { WorkflowDetailView } from "@sling/workflow";
@@ -42,23 +43,36 @@ class Store<T> {
 }
 
 const connection = new Store<"connecting" | "open" | "closed">("connecting");
-const streaming = new Store<Record<string, string>>({});
+/** A reply as it streams in: its text so far, and its thinking and tool calls. */
+export interface LiveReply {
+  text: string;
+  steps: TraceStep[];
+  startedAt: number;
+}
+
+const streaming = new Store<Record<string, LiveReply>>({});
 
 export function useConnection() {
   return useSyncExternalStore(connection.subscribe, connection.get);
 }
 
-/** Assistant text streamed so far for a conversation's current turn. */
-export function useStreamingText(conversationId: string): string {
+/** The reply streaming in for a conversation's current turn, if any. */
+export function useLiveReply(conversationId: string): LiveReply | null {
   const all = useSyncExternalStore(streaming.subscribe, streaming.get);
-  return all[conversationId] ?? "";
+  return all[conversationId] ?? null;
 }
 
-function setStream(conversationId: string, text: string | null) {
+function clearStream(conversationId: string) {
+  if (!(conversationId in streaming.get())) return;
   const next = { ...streaming.get() };
-  if (text === null) delete next[conversationId];
-  else next[conversationId] = text;
+  delete next[conversationId];
   streaming.set(next);
+}
+
+function patchStream(conversationId: string, fn: (r: LiveReply) => LiveReply) {
+  const all = streaming.get();
+  const current = all[conversationId] ?? { text: "", steps: [], startedAt: Date.now() };
+  streaming.set({ ...all, [conversationId]: fn(current) });
 }
 
 function upsert<T extends { id: string }>(list: T[] | undefined, item: T, prepend = false): T[] {
@@ -210,16 +224,39 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       );
       return;
     case "message.created":
-      if (ev.message.role === "assistant") setStream(ev.message.conversationId, null);
+      if (ev.message.role === "assistant") clearStream(ev.message.conversationId);
       qc.setQueryData<ConversationDetail>(["conversation", ev.message.conversationId], (d) =>
         d ? { ...d, messages: upsert(d.messages, ev.message) } : d,
       );
       return;
     case "agent.delta":
-      setStream(ev.conversationId, (streaming.get()[ev.conversationId] ?? "") + ev.text);
+      patchStream(ev.conversationId, (r) => ({ ...r, text: r.text + ev.text }));
+      return;
+    case "agent.thinking":
+      patchStream(ev.conversationId, (r) => {
+        const last = r.steps.at(-1);
+        if (last?.kind === "thinking") {
+          return { ...r, steps: [...r.steps.slice(0, -1), { ...last, text: last.text + ev.text }] };
+        }
+        return { ...r, steps: [...r.steps, { kind: "thinking", text: ev.text }] };
+      });
+      return;
+    case "agent.tool":
+      patchStream(ev.conversationId, (r) => {
+        const i = r.steps.findIndex((s) => s.kind === "tool" && s.id === ev.step.id);
+        if (i === -1) return { ...r, steps: [...r.steps, ev.step] };
+        const steps = r.steps.slice();
+        steps[i] = ev.step;
+        return { ...r, steps };
+      });
       return;
     case "agent.status":
-      if (ev.status !== "thinking") setStream(ev.conversationId, null);
+      if (ev.status === "thinking") {
+        clearStream(ev.conversationId);
+        patchStream(ev.conversationId, (r) => r);
+      } else {
+        clearStream(ev.conversationId);
+      }
       qc.setQueryData<ConversationDetail>(["conversation", ev.conversationId], (d) =>
         d ? { ...d, agentStatus: ev.status } : d,
       );

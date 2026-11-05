@@ -150,7 +150,7 @@ A running Runner picks up config changes within a minute.
 
 Sling's assistant runs on a machine's Codex or Claude Code, with the login that's already there. If that login is a ChatGPT or Claude subscription, chat runs on the subscription, and Sling needs no API key for it.
 
-Each message to the assistant is one turn. Sling sends the turn to a machine, and the Runner runs one turn of the agent's CLI in a new, empty directory under `~/.local/share/sling/chat/`, outside every repo. The reply streams back to Sling as it comes, and the Runner deletes the directory when the turn ends. Up to four turns run at once. They run alongside tasks and don't count toward `max-concurrent-tasks`. If the connection to Sling drops, the Runner stops its running turns, and Sling shows them as failed.
+Each message to the assistant is one turn. Sling sends the turn to a machine, and the Runner runs one turn of the agent's CLI in a new, empty directory under `~/.local/share/sling/chat/`, outside every repo. The reply and the agent's thinking stream back to Sling as they come, and the Runner deletes the directory when the turn ends. Sling saves the thinking, and each tool call it served with its arguments and result, with the reply, for the chat to show. They're never sent to a model again. Up to four turns run at once. They run alongside tasks and don't count toward `max-concurrent-tasks`. If the connection to Sling drops, the Runner stops its running turns, and Sling shows them as failed.
 
 The assistant's only tools are Sling's own: starting a task, listing machines, and getting or cancelling a task. The agent's CLI starts `sling-runner mcp`, a small MCP server that sends each tool call to Sling with a token Sling made for that one turn. The token never appears on a command line. Claude Code reads it from an MCP config file in the turn's directory that only you can read. Codex gets it in its environment and passes it to the MCP server through `env_vars`.
 
@@ -165,6 +165,7 @@ A turn's model and effort follow the same rules as a task's. The agent keeps its
 | Sling's tools | Allowed without asking. Everything else is denied, with `--permission-mode dontAsk`. | Approved up front |
 | Your settings | Still loaded, for example `~/.claude/CLAUDE.md` and hooks. Slash commands and skills are off. | `~/.codex/config.toml` is skipped, so a provider, profile, or MCP server set there doesn't apply to chat |
 | Sling's instructions | Appended to the system prompt | Developer instructions |
+| Thinking | Summarized, with `--thinking-display summarized` | Reasoning summaries, with `model_reasoning_summary="auto"` |
 
 Codex has a gap. Its read-only sandbox stops writes, not reads, so a Codex tool may still read any file you can read and run commands that don't write. Codex 0.166 has no such tool left once the Runner turns the shell and image viewer off. A later Codex could add a tool the Runner doesn't know to turn off, and through it the assistant could read files on this machine. Claude Code starts with no built-in tools at all, so it doesn't have this gap.
 
