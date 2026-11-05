@@ -184,7 +184,7 @@ describe("connection rules", () => {
       target: "n_send",
       targetHandle: "d:content",
     });
-    expect(r).toEqual({ ok: false, reason: "A email output can't connect to a string input." });
+    expect(r).toEqual({ ok: false, reason: "This input takes string, not email." });
     // string into a string input is fine
     s = g.removeElements(load(), [], ["e6"]);
     expect(

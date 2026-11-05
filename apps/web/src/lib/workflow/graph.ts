@@ -327,7 +327,7 @@ export function checkConnection(
   const input = dstPorts.inputs.find((p) => p.name === to.port);
   if (!input) return refuse(`${title(dstSpec, dst)} has no input "${to.port}".`);
   if (!isAssignable(out.type, input.type)) {
-    return refuse(`A ${out.type} output can't connect to a ${input.type} input.`);
+    return refuse(`This input takes ${input.type}, not ${out.type}.`);
   }
   if (duplicate) return refuse("These ports are already connected.");
   if (state.edges.some((e) => e.target === c.target && e.targetHandle === c.targetHandle)) {
