@@ -1,5 +1,5 @@
 /**
- * Permission modes (D14). Each mode sets the Codex sandbox and which actions
+ * Permission modes. Each mode sets the Codex sandbox and which actions
  * need an approval. This table is the one place that decides that.
  */
 export const PERMISSION_MODES = ["read-only", "supervised", "auto", "full-access"] as const;

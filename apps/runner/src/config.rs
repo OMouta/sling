@@ -1,7 +1,7 @@
 //! Runner configuration (`runner.toml`) and where files live on disk.
 //!
 //! Repos and `max_mode` are set only here, on the machine. The control plane
-//! learns about them but has no way to change them (D14, D17).
+//! learns about them but has no way to change them.
 
 use std::path::{Path, PathBuf};
 
@@ -58,7 +58,7 @@ impl Mode {
         }
     }
 
-    /// Codex sandbox for this mode (D14).
+    /// Codex sandbox for this mode.
     pub fn sandbox(self) -> &'static str {
         match self {
             Mode::ReadOnly => "read-only",
@@ -76,7 +76,7 @@ impl Mode {
 pub struct RepoEntry {
     pub name: String,
     pub path: PathBuf,
-    /// Allow network inside the harness sandbox for this repo (D22).
+    /// Allow network inside the harness sandbox for this repo.
     #[serde(default)]
     pub network: bool,
 }

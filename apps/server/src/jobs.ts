@@ -6,7 +6,7 @@ export const QUEUES = {
   pruneEvents: "prune-events",
 } as const;
 
-/** Durable background jobs (D7). Schedules run once across all server processes. */
+/** Durable background jobs. Schedules run once across all server processes. */
 export async function startJobs(ctx: AppContext, connectionString: string): Promise<PgBoss> {
   const boss = new PgBoss({ connectionString, schema: "pgboss" });
   boss.on("error", (err) => ctx.log.error({ err }, "pg-boss error"));

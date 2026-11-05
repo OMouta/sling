@@ -28,7 +28,7 @@ const updatedAt = () =>
     .$onUpdate(() => new Date())
     .notNull();
 
-/** Columns every owned record carries (D10). */
+/** Columns every owned record carries, so multi-user support needs no migration. */
 const owned = () => ({
   workspaceId: text("workspace_id")
     .notNull()

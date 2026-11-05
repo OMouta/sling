@@ -1,4 +1,4 @@
-//! The Runner's Ed25519 identity (D16). The private key never leaves the
+//! The Runner's Ed25519 identity. The private key never leaves the
 //! machine; the server only ever sees the public key and signatures.
 
 use anyhow::{Context, Result, bail};

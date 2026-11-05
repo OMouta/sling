@@ -1,5 +1,5 @@
 //! Scrubs secrets from task output before it's written to the spool and sent
-//! to the control plane (stage1.md M7). Two sources: values of this process's
+//! to the control plane. Two sources: values of this process's
 //! secret-looking environment variables, and well-known token shapes.
 
 use std::sync::OnceLock;

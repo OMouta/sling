@@ -1,5 +1,5 @@
-//! Git operations the Runner performs itself. Codex never commits or pushes
-//! (D18); everything that leaves the machine goes through here.
+//! Git operations the Runner performs itself. Codex never commits or pushes;
+//! everything that leaves the machine goes through here.
 
 use std::path::{Path, PathBuf};
 
@@ -232,7 +232,7 @@ pub fn parse_shortstat(s: &str) -> (u32, u32, u32) {
     out
 }
 
-/// Pushes the task branch. Never force-pushes (D14).
+/// Pushes the task branch. Never force-pushes.
 pub async fn push(repo: &Path, branch: &str) -> Result<()> {
     if remote_url(repo).await.is_none() {
         bail!("this repo has no `origin` remote to push to");

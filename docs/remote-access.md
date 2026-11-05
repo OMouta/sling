@@ -1,6 +1,6 @@
 # Reach Sling from outside your network
 
-Runners always connect out to the control plane, so they never need open ports. The question is how your phone and your Runners reach a control plane that lives at home. Sling doesn't ship a relay (D9). Use one of these.
+Runners always connect out to the control plane, so they never need open ports. The question is how your phone and your Runners reach a control plane that lives at home. Sling doesn't ship a relay. Use one of these.
 
 Whatever you pick, set `SLING_PUBLIC_URL` in `deploy/.env` to the exact URL you'll open in the browser, then `docker compose up -d` again.
 

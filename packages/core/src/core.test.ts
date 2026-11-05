@@ -11,7 +11,7 @@ import {
 } from "./index.ts";
 
 describe("permission modes", () => {
-  it("matches the D14 table", () => {
+  it("gates the right actions in each mode", () => {
     expect(needsApproval("supervised", "push")).toBe(true);
     expect(needsApproval("supervised", "open_pr")).toBe(true);
     expect(needsApproval("auto", "push")).toBe(false);

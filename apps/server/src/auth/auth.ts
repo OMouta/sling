@@ -33,7 +33,7 @@ export function createAuth(db: Db, config: Config) {
     databaseHooks: {
       user: {
         create: {
-          // Stage 1 is single user (D10): only the first-run setup may sign up.
+          // Single user for now: only the first-run setup may sign up.
           before: async () => {
             const [row] = await db.select({ n: count() }).from(schema.users);
             if ((row?.n ?? 0) > 0) {

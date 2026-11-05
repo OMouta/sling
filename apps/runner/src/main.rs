@@ -1,4 +1,4 @@
-//! Sling Runner. See plan/stage1.md, M2 to M4.
+//! Sling Runner: pairs with a control plane and runs delegated tasks on this machine.
 
 mod config;
 mod connection;

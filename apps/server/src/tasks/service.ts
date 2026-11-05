@@ -26,11 +26,11 @@ import { ACTION_KIND_TO_PROTO, DROPPABLE, FINISHED_STATE, toStoredEvent } from "
 type TaskRow = typeof schema.tasks.$inferSelect;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-/** Per-task cap on stored event payload (stage1.md data model). */
+/** Per-task cap on stored event payload. */
 export const EVENT_BYTES_CAP = 20 * 1024 * 1024;
 /** How long a task waits for its Runner to come back before it's interrupted. */
 export const OFFLINE_GRACE_MS = 30 * 60 * 1000;
-/** Task events are kept this long (M7 retention). */
+/** Task events are kept this long. */
 export const EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 const ACTIVE: TaskState[] = ["dispatched", "running"];
@@ -873,7 +873,7 @@ export class TaskService implements GatewayHandlers {
     }
   }
 
-  /** Runs daily: drops old task events (M7 retention). */
+  /** Runs daily: drops task events past the retention window. */
   async pruneEvents(): Promise<number> {
     const rows = await this.#db
       .delete(schema.taskEvents)

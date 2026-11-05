@@ -1,7 +1,5 @@
-//! Codex adapter (D21). Spawns `codex exec --json`, reads its JSONL events from
+//! Codex adapter. Spawns `codex exec --json`, reads its JSONL events from
 //! stdout, and turns them into Sling `TaskEvent` kinds.
-//!
-//! Event format notes are in `plan/spikes/s1-codex-interface.md`.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -404,7 +402,8 @@ pub fn truncate_tail(s: &str, max: usize) -> String {
     format!("[...truncated]\n{}", &s[start..])
 }
 
-/// Prompt Sling sends Codex. Keep the rules in step with D18.
+/// Prompt Sling sends Codex. The Runner does all committing and pushing, so
+/// Codex is told to leave its changes uncommitted.
 pub fn build_prompt(title: &str, objective: &str, writes: bool) -> String {
     let rules = if writes {
         "- Work only inside the current directory.\n\

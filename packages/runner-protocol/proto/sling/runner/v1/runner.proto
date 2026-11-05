@@ -129,7 +129,8 @@ message Repo {
   string name = 1;
   string default_branch = 2;
   string remote_url = 3;
-  // Whether harness network access is allowed for this repo (D22).
+  // Whether the harness may use the network in this repo. Set only on the
+  // Runner.
   bool network = 4;
 }
 

@@ -1,4 +1,4 @@
-/** Task lifecycle. See plan/stage1.md, M3. */
+/** Task lifecycle. Terminal states have no outgoing transitions. */
 export const TASK_STATES = [
   "queued",
   "dispatched",

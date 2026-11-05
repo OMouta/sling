@@ -40,8 +40,8 @@ What Sling protects, what it trusts, and where the known gaps are.
 
 - **Reads aren't sandboxed.** On macOS, Codex's `workspace-write` blocks writes outside the worktree and blocks network, but it can read anything the user can, `~/.ssh` included. With network off it can't send that anywhere. With `--network` on a repo, or in Full access, it could.
 - **Linux and Windows sandboxes are untested.** Spike S2 covered macOS only. Linux uses Landlock and seccomp, and Windows support in Codex has been weaker.
-- **The Runner runs as you.** There's no separate OS user (D11). Docker-per-task isolation is planned for Stage 3.
+- **The Runner runs as you.** There's no separate OS user. Docker-per-task isolation is planned for Stage 3.
 - **Approvals only show in the web app.** There are no push notifications yet, so a Supervised task waits until you look.
 - **Redaction is pattern-based.** A secret that doesn't look like one gets through.
-- **One account.** No roles yet, though every record carries a workspace and owner (D10).
+- **One account.** No roles yet, though every record carries a workspace and owner.
 - **Unsigned binaries.** macOS notarization and Windows code signing aren't set up yet.

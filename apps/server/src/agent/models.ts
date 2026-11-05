@@ -8,7 +8,7 @@ import type { AppContext } from "../context.ts";
 import { decryptSecret } from "../crypto.ts";
 
 /**
- * Sling's own provider interface (D5). The AI SDK does the heavy lifting, but
+ * Sling's own provider interface. The AI SDK does the heavy lifting, but
  * nothing outside this file imports a provider package directly.
  */
 export interface ModelProvider {

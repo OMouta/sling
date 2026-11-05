@@ -1,6 +1,6 @@
 //! Policy tests for the task manager against real git repos and a scripted
 //! stand-in for Codex. These cover the Runner-side guards that hold even if
-//! the control plane misbehaves (stage1.md M6 exit criteria).
+//! the control plane misbehaves.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

@@ -1,6 +1,6 @@
 //! Runs tasks the control plane assigns, inside the limits set in the local
 //! config. Every check here holds even if the control plane is compromised:
-//! the repo allowlist (D17), the mode cap (D14), branch naming, and the push
+//! the repo allowlist, the mode cap, branch naming, and the push
 //! guard.
 
 use std::collections::{HashMap, HashSet};

@@ -437,7 +437,8 @@ export declare type Repo = Message<"sling.runner.v1.Repo"> & {
   remoteUrl: string;
 
   /**
-   * Whether harness network access is allowed for this repo (D22).
+   * Whether the harness may use the network in this repo. Set only on the
+   * Runner.
    *
    * @generated from field: bool network = 4;
    */

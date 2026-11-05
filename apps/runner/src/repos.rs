@@ -1,4 +1,4 @@
-//! `sling-runner repo add|list|remove`. The only way repos reach Sling (D17).
+//! `sling-runner repo add|list|remove`. The only way repos reach Sling.
 
 use std::path::Path;
 
