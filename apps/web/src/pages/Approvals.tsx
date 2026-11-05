@@ -68,21 +68,23 @@ export function ApprovalsPage() {
         </Toolbar>
       }
     >
-      <Content className="space-y-4 pt-2">
-        {approvals.isPending && <Skeleton className="h-40 w-full rounded-xl" />}
-        <ErrorText error={approvals.error} />
-        {approvals.data?.length === 0 && (
-          <Empty icon={ShieldCheck} title="Nothing waiting">
-            You're all caught up.
-          </Empty>
-        )}
-        {show("sandboxes") && fallback.map((a) => <SandboxFallbackCard key={a.id} approval={a} />)}
-        {show("tasks") &&
-          [...byTask.entries()].map(([taskId, list]) => (
-            <ApprovalGroup key={taskId} taskId={taskId} approvals={list} />
-          ))}
-        {show("workflows") && workflow.map((a) => <WorkflowApproval key={a.id} approval={a} />)}
-      </Content>
+      {approvals.data?.length === 0 ? (
+        <Empty fill icon={ShieldCheck} title="Nothing waiting">
+          You're all caught up.
+        </Empty>
+      ) : (
+        <Content className="space-y-4 pt-2">
+          {approvals.isPending && <Skeleton className="h-40 w-full rounded-xl" />}
+          <ErrorText error={approvals.error} />
+          {show("sandboxes") &&
+            fallback.map((a) => <SandboxFallbackCard key={a.id} approval={a} />)}
+          {show("tasks") &&
+            [...byTask.entries()].map(([taskId, list]) => (
+              <ApprovalGroup key={taskId} taskId={taskId} approvals={list} />
+            ))}
+          {show("workflows") && workflow.map((a) => <WorkflowApproval key={a.id} approval={a} />)}
+        </Content>
+      )}
     </Page>
   );
 }

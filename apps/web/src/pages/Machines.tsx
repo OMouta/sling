@@ -171,26 +171,28 @@ export function MachinesPage() {
     >
       {/* Wait for the list, so a machine already paired doesn't look new. */}
       {pairing && machines && <PairDialog onClose={() => setPairing(false)} known={machines} />}
-      <div className="space-y-4 px-5 pt-1 pb-6">
-        {runners.isPending && <Skeleton className="h-[320px] w-full rounded-xl" />}
-        <ErrorText error={runners.error ?? access.error} />
-        {machines?.length === 0 && (
-          <Empty
-            icon={Laptop}
-            title="No machines yet"
-            action={
-              <Button variant="primary" icon={Plus} onClick={() => setPairing(true)}>
-                Add machine
-              </Button>
-            }
-          >
-            Add one to let Sling run Codex or Claude Code on it.
-          </Empty>
-        )}
-        {machines?.map((r) => (
-          <MachineCard key={r.id} runner={r} access={access} />
-        ))}
-      </div>
+      {machines?.length === 0 ? (
+        <Empty
+          fill
+          icon={Laptop}
+          title="No machines yet"
+          action={
+            <Button variant="primary" icon={Plus} onClick={() => setPairing(true)}>
+              Add machine
+            </Button>
+          }
+        >
+          Add one to let Sling run Codex or Claude Code on it.
+        </Empty>
+      ) : (
+        <div className="space-y-4 px-5 pt-1 pb-6">
+          {runners.isPending && <Skeleton className="h-[320px] w-full rounded-xl" />}
+          <ErrorText error={runners.error ?? access.error} />
+          {machines?.map((r) => (
+            <MachineCard key={r.id} runner={r} access={access} />
+          ))}
+        </div>
+      )}
     </Page>
   );
 }

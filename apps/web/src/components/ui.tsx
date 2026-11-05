@@ -314,16 +314,25 @@ export function Empty({
   icon: Icon,
   action,
   children,
+  fill,
   className,
 }: {
   title: string;
   icon?: LucideIcon;
   action?: ReactNode;
   children?: ReactNode;
+  /** The whole page is empty: center it in the page body, both ways. */
+  fill?: boolean;
   className?: string;
 }) {
   return (
-    <div className={cx("flex flex-col items-center px-6 py-14 text-center", className)}>
+    <div
+      className={cx(
+        "flex flex-col items-center px-6 py-14 text-center",
+        fill && "min-h-full justify-center pb-[12vh]",
+        className,
+      )}
+    >
       {Icon && (
         <span className="mb-4 grid size-10 place-items-center rounded-xl bg-surface-2 text-icon shadow-raised">
           <Icon size={16} aria-hidden="true" />

@@ -156,6 +156,7 @@ export function WorkflowsPage() {
       <ErrorText error={workflows.error} />
       {workflows.data?.length === 0 && (
         <Empty
+          fill
           icon={Workflow}
           title="No workflows yet"
           action={

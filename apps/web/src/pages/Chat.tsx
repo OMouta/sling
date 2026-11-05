@@ -1,11 +1,6 @@
-import {
-  type AssistantChoice,
-  type ChatSettings,
-  MODE_POLICY,
-  type PermissionMode,
-} from "@sling/core";
+import type { AssistantChoice, ChatSettings, PermissionMode } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, ShieldAlert } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
@@ -151,21 +146,8 @@ export function ChatPage() {
       }
     >
       <div className="flex min-h-full flex-col">
-        {conversation.mode === "full-access" && (
-          <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-[var(--tag-red-border)] bg-[var(--tag-red-bg)] px-5 py-2 text-xs text-[var(--tag-red-text)]">
-            <ShieldAlert aria-hidden="true" className="shrink-0" />
-            Full access: the coding agent runs without its sandbox and nothing asks before pushing.
-          </div>
-        )}
-
         <div className="w-full flex-1 px-5 py-8">
           <div className={cx("mx-auto space-y-5", CHAT_WIDTH)}>
-            {items.length === 0 && (
-              <p className="py-10 text-center text-[13px] text-muted">
-                {MODE_POLICY[conversation.mode].label} mode.{" "}
-                {MODE_POLICY[conversation.mode].description}
-              </p>
-            )}
             {items.map((item) =>
               item.kind === "task" ? (
                 <TaskCard key={item.task.id} task={item.task} />

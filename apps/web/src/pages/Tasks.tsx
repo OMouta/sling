@@ -151,6 +151,7 @@ export function TasksPage() {
         </div>
       ) : rows.length === 0 ? (
         <Empty
+          fill
           icon={ListChecks}
           title={all.length === 0 ? "No tasks yet" : "No tasks match"}
           action={
