@@ -40,7 +40,7 @@ Under **Notify me about**, each person picks from three categories. All three st
 | Category | When |
 |---|---|
 | Approvals | A task's push, pull request, merge, or deploy waits for your answer, or a task waits to run in a sandbox, or a workflow's approval step, or a command or a message the assistant wants to send in a chat |
-| Finished tasks | A task succeeds, fails, or is delivered |
+| Finished tasks | A task succeeds, fails, or is delivered. A task you started from a chat in the app tells you through the assistant's reply instead, unless replies are off |
 | Replies | The assistant replies in a chat that no open window of yours is showing |
 
 A reply doesn't notify you when the chat is on screen in any of your windows. A chat in a background tab, a minimized window, or a phone with the app in the background still notifies.

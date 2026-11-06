@@ -579,10 +579,30 @@ export class PushService {
         repoName: schema.tasks.repoName,
         state: schema.tasks.state,
         diffStats: schema.tasks.diffStats,
+        conversationId: schema.tasks.conversationId,
+        externalKey: schema.conversations.externalKey,
+        notifications: schema.workspaceMembers.notifications,
       })
       .from(schema.tasks)
+      .leftJoin(schema.conversations, eq(schema.conversations.id, schema.tasks.conversationId))
+      .leftJoin(
+        schema.workspaceMembers,
+        and(
+          eq(schema.workspaceMembers.workspaceId, schema.tasks.workspaceId),
+          eq(schema.workspaceMembers.userId, schema.tasks.ownerId),
+        ),
+      )
       .where(eq(schema.tasks.id, taskId));
     if (!task) return;
+    // A task started from a web chat gets the assistant's reply about it right
+    // after, and that reply's push is the one worth having.
+    if (
+      task.conversationId &&
+      !task.externalKey &&
+      notificationSettings(task.notifications).replies
+    ) {
+      return;
+    }
     const actions =
       reason === "delivered"
         ? await this.#ctx.db
