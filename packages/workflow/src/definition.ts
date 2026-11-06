@@ -5,12 +5,18 @@ export const WORKFLOW_SCHEMA = "sling.workflow/v1";
 
 const id = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "IDs use letters, digits, '_' and '-'");
 
+/**
+ * Node types: dot-separated lowercase names, such as `core.if`. Extension IDs
+ * may contain hyphens, so their node types can too (`acme-crm.create_contact`).
+ */
+export const NODE_TYPE_PATTERN = /^[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+$/;
+
 export const PositionSchema = z.object({ x: z.number(), y: z.number() });
 
 export const NodeInstanceSchema = z.object({
   id,
   /** NodeSpec.type, for example "core.if" or "discord.send_message". */
-  type: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/),
+  type: z.string().regex(NODE_TYPE_PATTERN),
   /** NodeSpec.version the config was written for. */
   version: z.number().int().positive(),
   label: z.string().max(120).optional(),
