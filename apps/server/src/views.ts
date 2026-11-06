@@ -117,10 +117,8 @@ export function toActionView(
     approvalId,
     targetId: a.targetId,
     targetName: names.targetName ?? null,
-    ranOn:
-      onMachine && a.state !== "queued" && a.state !== "awaiting_approval"
-        ? (names.runnerName ?? (a.runnerId ? null : "Sling"))
-        : null,
+    // Only once it was sent somewhere: a step that waits, or never started, ran nowhere.
+    ranOn: onMachine && a.sentAt ? (names.runnerName ?? (a.runnerId ? null : "Sling")) : null,
     commitSha: a.commitSha,
     output: a.output,
     verify: a.detail ?? null,
