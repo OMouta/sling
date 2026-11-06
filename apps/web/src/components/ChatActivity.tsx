@@ -1,4 +1,10 @@
-import type { PermissionMode, TaskView, ToolStep, TraceStep } from "@sling/core";
+import type {
+  CommandApprovalView,
+  PermissionMode,
+  TaskView,
+  ToolStep,
+  TraceStep,
+} from "@sling/core";
 import { useMutation } from "@tanstack/react-query";
 import {
   Brain,
@@ -6,6 +12,7 @@ import {
   ChevronRight,
   Laptop,
   Lock,
+  Send,
   ShieldAlert,
   ShieldCheck,
   SquareTerminal,
@@ -27,6 +34,21 @@ const TOOLS: Record<string, [string, string, string]> = {
   get_task: ["Checking a task", "Checked a task", "Couldn't check a task"],
   cancel_task: ["Cancelling a task", "Cancelled a task", "Couldn't cancel a task"],
   run_command: ["Running a command", "Ran a command", "Couldn't run a command"],
+  check_deploy_target: ["Checking the site", "Checked the site", "Couldn't check the site"],
+  deploy_task: ["Starting a deploy", "Started a deploy", "Couldn't start the deploy"],
+  run_workflow: ["Running a workflow", "Ran a workflow", "Couldn't run the workflow"],
+  calendar_list_events: [
+    "Reading your calendar",
+    "Read your calendar",
+    "Couldn't read your calendar",
+  ],
+  calendar_create_event: ["Adding an event", "Added an event", "Couldn't add the event"],
+  email_send: ["Sending an email", "Sent an email", "Couldn't send the email"],
+  discord_send_message: [
+    "Sending a Discord message",
+    "Sent a Discord message",
+    "Couldn't send the Discord message",
+  ],
 };
 
 export function toolLabel(step: ToolStep): string {
@@ -100,6 +122,8 @@ export function ReplySteps({
           <li key={s.id}>
             {s.name === "run_command" ? (
               <CommandStep step={s} ctx={ctx} />
+            ) : s.approval?.kind === "send" ? (
+              <SendStep step={s} approval={s.approval} ctx={ctx} />
             ) : s.name === "delegate_coding_task" ? (
               <TaskStep step={s} ctx={ctx} />
             ) : (
@@ -273,7 +297,18 @@ function CommandStep({ step, ctx }: { step: ToolStep; ctx: ActivityContext }) {
         />
       </Disclosure>
       {waiting && approval && (
-        <CommandApproval approvalId={approval.id} machine={approval.machine} ctx={ctx} />
+        <ChatApproval
+          approvalId={approval.id}
+          ctx={ctx}
+          approve="Run it"
+          question={
+            <>
+              Run this on <span className="font-medium text-text">{approval.machine}</span> outside
+              the sandbox?
+            </>
+          }
+          detail="It can change files and use the network."
+        />
       )}
       {!waiting && approval?.state === "denied" && (
         <p className="border-t border-border px-2.5 py-1.5 text-xs text-muted">
@@ -338,14 +373,19 @@ function CommandMeta({
   );
 }
 
-function CommandApproval({
+/** Deny or allow something the assistant waits on: a command outside the sandbox, or a send. */
+function ChatApproval({
   approvalId,
-  machine,
   ctx,
+  question,
+  detail,
+  approve,
 }: {
   approvalId: string;
-  machine: string;
   ctx: ActivityContext;
+  question: ReactNode;
+  detail: string;
+  approve: string;
 }) {
   const decide = useMutation({
     mutationFn: (decision: "approve" | "deny") =>
@@ -354,8 +394,8 @@ function CommandApproval({
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-surface px-2.5 py-2">
       <p className="mr-auto min-w-0 text-[13px] text-soft">
-        Run this on <span className="font-medium text-text">{machine}</span> outside the sandbox?
-        <span className="block text-xs text-muted">It can change files and use the network.</span>
+        {question}
+        <span className="block text-xs text-muted">{detail}</span>
       </p>
       <div className="flex gap-2">
         <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("deny")}>
@@ -367,10 +407,102 @@ function CommandApproval({
           busy={decide.isPending}
           onClick={() => decide.mutate("approve")}
         >
-          Run it
+          {approve}
         </Button>
       </div>
       <ErrorText error={decide.error} />
+    </div>
+  );
+}
+
+/**
+ * Something the assistant sends outside Sling through one of your apps: an
+ * email, a message, an event, a workflow that does things. It shows what
+ * would go out, and waits for you outside Full access.
+ */
+function SendStep({
+  step,
+  approval,
+  ctx,
+}: {
+  step: ToolStep;
+  approval: CommandApprovalView;
+  ctx: ActivityContext;
+}) {
+  const [open, setOpen] = useState(false);
+  const waiting = approval.state === "pending";
+  const stopped = approval.state === "denied" || approval.state === "expired";
+  const running = step.status === "running" && !waiting && !stopped;
+  const failed = step.status === "error" && !stopped;
+  const result = step.output ? pretty(step.output) : null;
+  const summary = approval.summary || toolLabel(step);
+
+  return (
+    <div
+      className={cx(
+        "overflow-hidden rounded-lg bg-field shadow-field",
+        waiting && "shadow-[inset_0_0_0_1px_var(--tag-amber-border)]",
+      )}
+    >
+      <Disclosure
+        open={open}
+        onToggle={() => setOpen((o) => !o)}
+        disabled={!result || stopped}
+        className="px-2.5 py-1.5 hover:bg-hover"
+        label={summary}
+      >
+        {running ? (
+          <Spinner className="size-3.5" />
+        ) : waiting ? (
+          <ShieldAlert aria-hidden="true" size={14} className="shrink-0 text-warn" />
+        ) : failed ? (
+          <X aria-hidden="true" size={14} className="shrink-0 text-danger" />
+        ) : (
+          <Send aria-hidden="true" size={14} className="shrink-0 text-subtle" />
+        )}
+        <span
+          className={cx(
+            "min-w-0 flex-1 truncate text-[13px]",
+            stopped ? "text-muted" : "text-soft",
+            failed && "text-danger",
+          )}
+        >
+          {summary}
+        </span>
+        {approval.state === "approved" && (
+          <span
+            className="inline-flex shrink-0 items-center gap-1 text-[11.5px] text-subtle"
+            title="You allowed it"
+          >
+            <ShieldCheck aria-hidden="true" size={12} />
+            approved
+          </span>
+        )}
+      </Disclosure>
+      {waiting && (
+        <ChatApproval
+          approvalId={approval.id}
+          ctx={ctx}
+          approve="Send it"
+          question="Send this from Sling?"
+          detail="It goes out as soon as you allow it."
+        />
+      )}
+      {approval.state === "denied" && (
+        <p className="border-t border-border px-2.5 py-1.5 text-xs text-muted">
+          You didn't allow it, so nothing was sent.
+        </p>
+      )}
+      {approval.state === "expired" && (
+        <p className="border-t border-border px-2.5 py-1.5 text-xs text-muted">
+          Nobody answered, so nothing was sent.
+        </p>
+      )}
+      {open && result && (
+        <pre className="max-h-80 overflow-auto border-t border-border px-3 py-2 font-mono text-[11.5px] leading-[17px] whitespace-pre-wrap break-words text-soft">
+          {result}
+        </pre>
+      )}
     </div>
   );
 }
