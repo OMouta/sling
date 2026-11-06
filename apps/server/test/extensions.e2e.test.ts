@@ -11,7 +11,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ExtensionKind } from "@sling/connector-sdk";
+import { type ExtensionKind, SDK_VERSION } from "@sling/connector-sdk";
 import type {
   CatalogView,
   ConnectorView,
@@ -1050,7 +1050,7 @@ describe("refusals", () => {
       manifest: { sdk: "^2.0.0" },
     });
     const p = await preview(built);
-    expect(p.problems).toContain("It needs SDK ^2.0.0, and this server has 1.0.0.");
+    expect(p.problems).toContain(`It needs SDK ^2.0.0, and this server has ${SDK_VERSION}.`);
     if (runtime instanceof InProcessRuntime) {
       const before = runtime.calls.describe;
       await preview(built);
