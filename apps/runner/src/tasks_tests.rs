@@ -182,6 +182,7 @@ fn setup(max_mode: Mode) -> Env {
             name: "site".into(),
             path: std::fs::canonicalize(&repo).unwrap(),
             network: false,
+            ..RepoEntry::default()
         }],
         ..Config::default()
     };

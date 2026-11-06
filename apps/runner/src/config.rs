@@ -4,7 +4,8 @@
 //! plane learns about them but has no way to change them. Repos are set here
 //! too, and while `remote_repos` is on, Sling may also add repos the Runner
 //! found on this machine itself, or remove repos. `commands` decides whether
-//! the assistant may run shell commands here at all.
+//! the assistant may run shell commands here at all, and `deploys` whether
+//! Sling may merge and deploy here. Deploy commands are set only here.
 
 use std::path::{Path, PathBuf};
 
@@ -66,13 +67,61 @@ impl Mode {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct RepoEntry {
     pub name: String,
     pub path: PathBuf,
     /// Allow network inside the harness sandbox for this repo.
     #[serde(default)]
     pub network: bool,
+    /// What a deploy runs, through the user's login shell, in a checkout of
+    /// the merged commit. Sling can't set or change it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deploy_command: Option<String>,
+    /// How long a deploy may run before it's stopped, in seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deploy_timeout_secs: Option<u32>,
+}
+
+/// A deploy stops after this long unless the repo sets its own limit.
+pub const DEFAULT_DEPLOY_TIMEOUT_SECS: u32 = 15 * 60;
+pub const MAX_DEPLOY_TIMEOUT_SECS: u32 = 24 * 60 * 60;
+const MAX_DEPLOY_COMMAND_BYTES: usize = 4096;
+
+impl RepoEntry {
+    pub fn deploy_timeout_secs(&self) -> u32 {
+        self.deploy_timeout_secs
+            .unwrap_or(DEFAULT_DEPLOY_TIMEOUT_SECS)
+    }
+}
+
+/// Checks a deploy command: not blank, no NUL byte, and at most 4 KB.
+pub fn parse_deploy_command(value: &str) -> Result<String> {
+    let cmd = value.trim();
+    if cmd.is_empty() {
+        bail!("the deploy command is empty. Use `repo unset <name> deploy-command` to remove it.");
+    }
+    if cmd.contains('\0') {
+        bail!("the deploy command contains a NUL byte");
+    }
+    if cmd.len() > MAX_DEPLOY_COMMAND_BYTES {
+        bail!(
+            "the deploy command is longer than {MAX_DEPLOY_COMMAND_BYTES} bytes. Put it in a script and run that."
+        );
+    }
+    Ok(cmd.to_string())
+}
+
+/// Parses a deploy timeout in seconds, from 1 second to a day.
+pub fn parse_deploy_timeout(value: &str) -> Result<u32> {
+    let secs: u32 = value
+        .trim()
+        .parse()
+        .with_context(|| format!("expected a number of seconds, got {value:?}"))?;
+    if !(1..=MAX_DEPLOY_TIMEOUT_SECS).contains(&secs) {
+        bail!("deploy-timeout must be between 1 and {MAX_DEPLOY_TIMEOUT_SECS} seconds");
+    }
+    Ok(secs)
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -89,6 +138,9 @@ pub struct Config {
     pub codex_bin: Option<String>,
     /// Path to the Claude Code binary. Defaults to `claude` on PATH.
     pub claude_bin: Option<String>,
+    /// Path to the GitHub CLI. Defaults to `gh` on PATH.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gh_bin: Option<String>,
     /// Labels tasks can require, for example `ios` or `gpu`. The Runner adds
     /// `os:` and `arch:` labels itself.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -107,6 +159,9 @@ pub struct Config {
     /// sandbox unless `max_mode` is Full access.
     #[serde(default = "default_commands")]
     pub commands: bool,
+    /// Let Sling merge task branches and run repos' deploy commands here.
+    #[serde(default = "default_deploys")]
+    pub deploys: bool,
     /// Where to look for git repos to offer Sling. Defaults to the home
     /// directory.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -120,6 +175,10 @@ fn default_remote_repos() -> bool {
 }
 
 fn default_commands() -> bool {
+    true
+}
+
+fn default_deploys() -> bool {
     true
 }
 
@@ -142,10 +201,12 @@ impl Default for Config {
             worktree_root: None,
             codex_bin: None,
             claude_bin: None,
+            gh_bin: None,
             labels: Vec::new(),
             disposable: false,
             remote_repos: default_remote_repos(),
             commands: default_commands(),
+            deploys: default_deploys(),
             scan_roots: Vec::new(),
             repos: Vec::new(),
         }
@@ -189,6 +250,17 @@ impl Config {
 
     pub fn claude_bin(&self) -> String {
         self.claude_bin.clone().unwrap_or_else(|| "claude".into())
+    }
+
+    pub fn gh_bin(&self) -> String {
+        self.gh_bin.clone().unwrap_or_else(|| "gh".into())
+    }
+
+    pub fn repo_mut(&mut self, name: &str) -> Result<&mut RepoEntry> {
+        self.repos
+            .iter_mut()
+            .find(|r| r.name == name)
+            .with_context(|| format!("no repo named {name:?}"))
     }
 
     /// Directories the repo scan starts from: `scan_roots`, or the home
@@ -409,6 +481,8 @@ mod tests {
                 name: "site".into(),
                 path: "/code/site".into(),
                 network: true,
+                deploy_command: Some("fly deploy".into()),
+                deploy_timeout_secs: None,
             }],
             ..Config::default()
         };
@@ -422,7 +496,33 @@ mod tests {
         assert!(!back.disposable);
         assert!(!text.contains("disposable"), "left out unless set");
         assert!(text.contains("remote_repos = true"), "always shown");
+        assert!(text.contains("deploys = true"), "always shown");
         assert!(!text.contains("scan_roots"), "left out unless set");
+        assert!(!text.contains("gh_bin"), "left out unless set");
+        assert_eq!(back.repos[0].deploy_command.as_deref(), Some("fly deploy"));
+        assert!(!text.contains("deploy_timeout"), "left out unless set");
+        assert_eq!(back.repos[0].deploy_timeout_secs(), 900);
+    }
+
+    #[test]
+    fn deploys_are_on_unless_turned_off() {
+        let old: Config = toml::from_str("name = \"laptop\"\n").unwrap();
+        assert!(old.deploys, "configs from before the setting keep working");
+        assert_eq!(old.gh_bin(), "gh");
+        let off: Config = toml::from_str("name = \"laptop\"\ndeploys = false\n").unwrap();
+        assert!(!off.deploys);
+    }
+
+    #[test]
+    fn deploy_settings_are_validated() {
+        assert_eq!(parse_deploy_command("  fly deploy ").unwrap(), "fly deploy");
+        assert!(parse_deploy_command("   ").is_err());
+        assert!(parse_deploy_command("a\0b").is_err());
+        assert!(parse_deploy_command(&"x".repeat(4097)).is_err());
+        assert_eq!(parse_deploy_timeout("600").unwrap(), 600);
+        assert!(parse_deploy_timeout("0").is_err());
+        assert!(parse_deploy_timeout("86401").is_err());
+        assert!(parse_deploy_timeout("ten").is_err());
     }
 
     #[test]

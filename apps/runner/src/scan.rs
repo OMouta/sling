@@ -325,6 +325,7 @@ mod tests {
                 name: "site".into(),
                 path: "/code/site".into(),
                 network: false,
+                ..RepoEntry::default()
             }],
             ..Config::default()
         };
@@ -383,6 +384,7 @@ mod tests {
                 name: "site".into(),
                 path: root.join("code/site"),
                 network: false,
+                ..RepoEntry::default()
             }],
             ..Config::default()
         };

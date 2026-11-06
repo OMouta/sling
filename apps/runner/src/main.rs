@@ -102,6 +102,18 @@ enum RepoCommand {
     Remove {
         name: String,
     },
+    /// Keys: deploy-command (what a deploy of this repo runs here, through your
+    /// login shell), deploy-timeout (seconds, 900 by default).
+    Set {
+        name: String,
+        key: String,
+        value: String,
+    },
+    /// Keys: deploy-command, deploy-timeout.
+    Unset {
+        name: String,
+        key: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -114,9 +126,10 @@ enum ServiceCommand {
 #[derive(Subcommand)]
 enum ConfigCommand {
     Show,
-    /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, claude-bin, worktree-root,
-    /// remote-repos (on or off), commands (on or off), scan-roots (comma-separated directories;
-    /// "" means your home), server-url (Sling's new address, keeping the pairing).
+    /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, claude-bin, gh-bin,
+    /// worktree-root, remote-repos (on or off), commands (on or off), deploys (on or off),
+    /// scan-roots (comma-separated directories; "" means your home), server-url (Sling's new
+    /// address, keeping the pairing).
     Set {
         key: String,
         value: String,
@@ -235,11 +248,26 @@ async fn real_main(cli: Cli) -> Result<()> {
                 for r in cfg.repos {
                     let net = if r.network { "  network" } else { "" };
                     println!("{:<20} {}{net}", r.name, r.path.display());
+                    if let Some(cmd) = &r.deploy_command {
+                        println!(
+                            "{:<20} deploy: {cmd} (stops after {}s)",
+                            "",
+                            r.deploy_timeout_secs()
+                        );
+                    }
                 }
             }
             RepoCommand::Remove { name } => {
                 repos::remove(&paths, &name)?;
                 println!("Removed {name}");
+            }
+            RepoCommand::Set { name, key, value } => {
+                println!("{}", repos::set(&paths, &name, &key, &value)?);
+                println!("A running Runner picks this up within a minute.");
+            }
+            RepoCommand::Unset { name, key } => {
+                println!("{}", repos::unset(&paths, &name, &key)?);
+                println!("A running Runner picks this up within a minute.");
             }
         },
         Command::Config { command } => match command {
@@ -248,6 +276,7 @@ async fn real_main(cli: Cli) -> Result<()> {
                 println!("config file:  {}", paths.config_file().display());
                 println!("labels sent:  {}", cfg.all_labels().join(", "));
                 println!("remote repos: {}", remote_repos_summary(&cfg));
+                println!("deploys:      {}", deploys_summary(&cfg));
                 println!("{}", toml::to_string_pretty(&cfg)?);
             }
             ConfigCommand::Set { key, value } => {
@@ -265,9 +294,11 @@ async fn real_main(cli: Cli) -> Result<()> {
                     "labels" => cfg.labels = config::parse_labels(&value)?,
                     "codex-bin" => cfg.codex_bin = Some(value),
                     "claude-bin" => cfg.claude_bin = Some(value),
+                    "gh-bin" => cfg.gh_bin = Some(value),
                     "worktree-root" => cfg.worktree_root = Some(PathBuf::from(value)),
                     "remote-repos" => cfg.remote_repos = config::parse_on_off(&value)?,
                     "commands" => cfg.commands = config::parse_on_off(&value)?,
+                    "deploys" => cfg.deploys = config::parse_on_off(&value)?,
                     "scan-roots" => cfg.scan_roots = config::parse_scan_roots(&value)?,
                     // Only from this machine: the control plane can't move a Runner elsewhere.
                     "server-url" => {
@@ -388,7 +419,28 @@ async fn doctor(paths: &Paths) -> Result<()> {
         "remote repos",
         remote_repos_summary(&cfg)
     );
+    println!("     {:<18} {}", "deploys", deploys_summary(&cfg));
     Ok(())
+}
+
+fn deploys_summary(cfg: &Config) -> String {
+    if !cfg.deploys {
+        return "off: this machine refuses every merge and deploy".into();
+    }
+    if !cfg.max_mode.writes() {
+        return "off: max-mode is read-only".into();
+    }
+    let with: Vec<&str> = cfg
+        .repos
+        .iter()
+        .filter(|r| r.deploy_command.is_some())
+        .map(|r| r.name.as_str())
+        .collect();
+    if with.is_empty() {
+        "on: Sling may merge here. No repo has a deploy command.".into()
+    } else {
+        format!("on: Sling may merge here, and deploy {}", with.join(", "))
+    }
 }
 
 fn remote_repos_summary(cfg: &Config) -> String {

@@ -55,11 +55,12 @@ pub async fn build(cfg: &Config, found: &[Found], sandbox: &Sandbox) -> Inventor
         });
     }
 
-    let gh = run("gh", &["--version"], None)
+    let gh_bin = cfg.gh_bin();
+    let gh = run(&gh_bin, &["--version"], None)
         .await
         .ok()
         .filter(|o| o.ok());
-    let gh_ready = gh.is_some() && git::gh_ready().await;
+    let gh_ready = gh.is_some() && git::gh_ready(&gh_bin).await;
     capabilities.push(Capability {
         name: GITHUB_PR.into(),
         version: gh
@@ -92,7 +93,17 @@ pub async fn build(cfg: &Config, found: &[Found], sandbox: &Sandbox) -> Inventor
             default_branch: git::default_branch(&r.path).await,
             remote_url: git::remote_url(&r.path).await.unwrap_or_default(),
             network: r.network,
-            deploy_command: String::new(),
+            // Redacted, in case the command carries a token inline.
+            deploy_command: r
+                .deploy_command
+                .as_deref()
+                .map(crate::redact::redact)
+                .unwrap_or_default(),
+            deploy_timeout_seconds: if r.deploy_command.is_some() {
+                r.deploy_timeout_secs()
+            } else {
+                0
+            },
         });
     }
 
@@ -108,7 +119,8 @@ pub async fn build(cfg: &Config, found: &[Found], sandbox: &Sandbox) -> Inventor
             Vec::new()
         },
         remote_repos: cfg.remote_repos,
-        deploys: false,
+        // Read-only machines refuse merges and deploys too.
+        deploys: cfg.deploys && cfg.max_mode.writes(),
     }
 }
 

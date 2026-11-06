@@ -341,8 +341,9 @@ pub fn compare_url(remote: &str, base: &str, branch: &str) -> Option<String> {
     web_url(remote).map(|u| format!("{u}/compare/{base}...{branch}?expand=1"))
 }
 
-pub async fn gh_ready() -> bool {
-    run("gh", &["auth", "status"], None)
+/// Whether `gh` (the configured binary) is installed and logged in.
+pub async fn gh_ready(gh: &str) -> bool {
+    run(gh, &["auth", "status"], None)
         .await
         .map(|o| o.ok())
         .unwrap_or(false)
@@ -350,6 +351,7 @@ pub async fn gh_ready() -> bool {
 
 /// Opens a PR with `gh`, or returns the existing one for this branch.
 pub async fn open_pr(
+    gh: &str,
     repo: &Path,
     branch: &str,
     base: &str,
@@ -357,7 +359,7 @@ pub async fn open_pr(
     body: &str,
 ) -> Result<String> {
     let existing = run(
-        "gh",
+        gh,
         &[
             "pr", "list", "--head", branch, "--state", "open", "--json", "url", "--jq", ".[0].url",
         ],
@@ -369,7 +371,7 @@ pub async fn open_pr(
         return Ok(url.to_string());
     }
     let out = run(
-        "gh",
+        gh,
         &[
             "pr", "create", "--head", branch, "--base", base, "--title", title, "--body", body,
         ],

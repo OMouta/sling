@@ -473,6 +473,9 @@ async fn boot(
         disposable: true,
         // A sandbox works only in the repos it was given.
         remote_repos: false,
+        // Sling merges a sandbox's PR itself, after the sandbox is gone, and
+        // a sandbox has no deploy commands.
+        deploys: false,
         repos,
         ..Config::default()
     };
@@ -558,6 +561,7 @@ async fn clone_repo(r: &SandboxRepo, dest: PathBuf) -> Result<RepoEntry> {
         name: r.name.clone(),
         path: std::fs::canonicalize(&dest)?,
         network: r.network,
+        ..RepoEntry::default()
     })
 }
 

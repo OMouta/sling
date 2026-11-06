@@ -56,6 +56,7 @@ pub async fn add(
         name,
         path: root,
         network,
+        ..RepoEntry::default()
     };
     cfg.repos.push(entry.clone());
     cfg.save(paths)?;
@@ -70,6 +71,53 @@ pub fn remove(paths: &Paths, name: &str) -> Result<()> {
         bail!("no repo named {name:?}");
     }
     cfg.save(paths)
+}
+
+/// `sling-runner repo set <name> <key> <value>`. Returns what to print.
+pub fn set(paths: &Paths, name: &str, key: &str, value: &str) -> Result<String> {
+    let mut cfg = Config::load(paths)?;
+    let repo = cfg.repo_mut(name)?;
+    let message = match key {
+        "deploy-command" => {
+            let cmd = crate::config::parse_deploy_command(value)?;
+            let message = format!(
+                "Deploys of {name} run `{cmd}` here, with a {}s limit.",
+                repo.deploy_timeout_secs()
+            );
+            repo.deploy_command = Some(cmd);
+            message
+        }
+        "deploy-timeout" => {
+            let secs = crate::config::parse_deploy_timeout(value)?;
+            repo.deploy_timeout_secs = Some(secs);
+            format!("Deploys of {name} stop after {secs}s.")
+        }
+        _ => bail!("unknown key {key:?}, expected deploy-command or deploy-timeout"),
+    };
+    cfg.save(paths)?;
+    Ok(message)
+}
+
+/// `sling-runner repo unset <name> <key>`.
+pub fn unset(paths: &Paths, name: &str, key: &str) -> Result<String> {
+    let mut cfg = Config::load(paths)?;
+    let repo = cfg.repo_mut(name)?;
+    let message = match key {
+        "deploy-command" => {
+            repo.deploy_command = None;
+            format!("{name} has no deploy command here now, so this machine won't deploy it.")
+        }
+        "deploy-timeout" => {
+            repo.deploy_timeout_secs = None;
+            format!(
+                "Deploys of {name} stop after the default {}s.",
+                crate::config::DEFAULT_DEPLOY_TIMEOUT_SECS
+            )
+        }
+        _ => bail!("unknown key {key:?}, expected deploy-command or deploy-timeout"),
+    };
+    cfg.save(paths)?;
+    Ok(message)
 }
 
 /// The most repos one change may add.

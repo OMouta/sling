@@ -731,8 +731,10 @@ impl Manager {
                 Ok((url, format!("Pushed {}", meta.branch)))
             }
             action_request::Kind::OpenPr => {
-                if git::gh_ready().await {
+                let gh = cfg.gh_bin();
+                if git::gh_ready(&gh).await {
                     let url = git::open_pr(
+                        &gh,
                         &repo.path,
                         &meta.branch,
                         &meta.default_branch,

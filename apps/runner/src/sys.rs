@@ -69,12 +69,19 @@ pub fn set_tool_env(env: Vec<(String, String, String)>) {
     let _ = TOOL_ENV.set(env);
 }
 
+/// Matches on the program's file name, so a configured path such as
+/// `/opt/homebrew/bin/gh` gets the environment set for `gh`.
 fn tool_env(program: &str) -> impl Iterator<Item = (&'static str, &'static str)> {
+    let name = std::path::Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(program)
+        .to_string();
     TOOL_ENV
         .get()
         .into_iter()
         .flatten()
-        .filter(move |(p, _, _)| p == program)
+        .filter(move |(p, _, _)| *p == name)
         .map(|(_, k, v)| (k.as_str(), v.as_str()))
 }
 
