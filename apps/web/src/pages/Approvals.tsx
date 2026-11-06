@@ -1,8 +1,18 @@
-import type { ApprovalView } from "@sling/core";
+import type { ApprovalView, RunnerView } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { GitBranch, GitPullRequest, ShieldCheck, Upload, Workflow } from "lucide-react";
+import {
+  Activity,
+  ExternalLink,
+  GitMerge,
+  GitPullRequest,
+  Rocket,
+  ShieldCheck,
+  Upload,
+  Workflow,
+} from "lucide-react";
 import { useState } from "react";
+import { DeployPlanText } from "../components/DeployBits.tsx";
 import { Content, Page, Toolbar, ToolbarText } from "../components/Page.tsx";
 import { SandboxFallbackCard } from "../components/SandboxFallbackCard.tsx";
 import {
@@ -19,7 +29,15 @@ import {
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { groupApprovals } from "../lib/approvals.ts";
+import {
+  deployPlan,
+  targetForRemote,
+  targetForTask,
+  taskRepo,
+  useDeployTargets,
+} from "../lib/deploys.ts";
 import { ago, plural } from "../lib/format.ts";
+import type { TaskDetail } from "../lib/types.ts";
 import { useRun } from "../lib/workflowApi.ts";
 
 const LABEL = {
@@ -57,7 +75,7 @@ export function ApprovalsPage() {
           onChange={setTab}
           tabs={[
             { id: "all", label: "All", count: total },
-            { id: "tasks", label: "Pushes and PRs", count: byTask.size },
+            { id: "tasks", label: "Tasks", count: byTask.size },
             { id: "workflows", label: "Workflows", count: workflow.length },
             { id: "sandboxes", label: "Sandboxes", count: fallback.length },
           ]}
@@ -93,19 +111,143 @@ export function ApprovalsPage() {
 const ICON = {
   push: Upload,
   open_pr: GitPullRequest,
-  merge: GitBranch,
-  deploy: GitBranch,
-  verify: GitBranch,
+  merge: GitMerge,
+  deploy: Rocket,
+  verify: Activity,
 };
 
 function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: ApprovalView[] }) {
+  // Merge and deploy wait together, once the PR exists: that's one deployment to approve.
+  if (approvals.some((a) => a.actionKind === "merge" || a.actionKind === "deploy")) {
+    return <DeployApprovalGroup taskId={taskId} approvals={approvals} />;
+  }
+  return <PullRequestGroup taskId={taskId} approvals={approvals} />;
+}
+
+function useTaskDecision(taskId: string) {
   const qc = useQueryClient();
-  const first = approvals[0];
-  const decide = useMutation({
+  return useMutation({
     mutationFn: (decision: "approve" | "reject") =>
       api.post(`/api/tasks/${taskId}/approval`, { decision }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["approvals"] }),
   });
+}
+
+function DecisionFooter({ decide }: { decide: ReturnType<typeof useTaskDecision> }) {
+  return (
+    <CardFooter>
+      <ErrorText error={decide.error} />
+      <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
+        Reject
+      </Button>
+      <Button
+        size="sm"
+        variant="primary"
+        busy={decide.isPending}
+        onClick={() => decide.mutate("approve")}
+      >
+        Approve
+      </Button>
+    </CardFooter>
+  );
+}
+
+function StepList({ approvals, remoteUrl }: { approvals: ApprovalView[]; remoteUrl: string }) {
+  return (
+    <ul className="space-y-1.5 text-[13px]">
+      {approvals.map((a) => {
+        const Icon = a.actionKind ? ICON[a.actionKind] : Upload;
+        return (
+          <li key={a.id} className="flex flex-wrap items-center gap-x-2">
+            <Icon aria-hidden="true" className="text-subtle" />
+            <span className="font-medium">{a.actionKind ? LABEL[a.actionKind] : a.title}</span>
+            <span className="text-xs text-muted">
+              {a.actionKind === "push" ? `to ${remoteUrl || "origin"} · ` : ""}expires{" "}
+              {ago(a.expiresAt)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * "Approve deployment?" for a task whose PR is open: the target, and what
+ * merging and deploying will do, in order.
+ */
+function DeployApprovalGroup({ taskId, approvals }: { taskId: string; approvals: ApprovalView[] }) {
+  const decide = useTaskDecision(taskId);
+  const targets = useDeployTargets();
+  const runners = useQuery({
+    queryKey: ["runners"],
+    queryFn: () => api.get<RunnerView[]>("/api/runners"),
+  });
+  // The task has the PR's URL and the target its steps name.
+  const detail = useQuery({
+    queryKey: ["task", taskId],
+    queryFn: () => api.get<TaskDetail>(`/api/tasks/${taskId}`),
+  });
+  const t = approvals[0]?.task;
+  if (!t) return null;
+  const task = detail.data?.task;
+  const target = task
+    ? targetForTask(task, targets.data, runners.data)
+    : targetForRemote(t.remoteUrl, targets.data);
+  const targetName = target?.name ?? task?.actions.find((a) => a.targetName)?.targetName;
+  const prUrl = task?.actions.find((a) => a.kind === "open_pr")?.url ?? null;
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="space-y-3 p-4">
+        <Kicker icon={Rocket}>Approve deployment?</Kicker>
+        <div>
+          <p className="text-sm font-medium">{targetName ?? t.repoName}</p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
+            <Link
+              to="/tasks/$id"
+              params={{ id: taskId }}
+              className="text-soft decoration-faint underline-offset-2 hover:text-text hover:underline"
+            >
+              {t.title}
+            </Link>
+            <span>
+              · {t.repoName}
+              {t.runnerName ? ` on ${t.runnerName}` : ""}
+            </span>
+            {prUrl && (
+              <a
+                href={prUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-accent-text hover:underline"
+              >
+                View PR
+                <ExternalLink aria-hidden="true" size={12} />
+              </a>
+            )}
+          </p>
+        </div>
+        <p className="text-[13px] leading-5 text-soft">
+          <DeployPlanText
+            plan={deployPlan({
+              prUrl,
+              branch: t.branch,
+              defaultBranch: task ? (taskRepo(task, runners.data)?.defaultBranch ?? null) : null,
+              target,
+            })}
+          />
+        </p>
+        <StepList approvals={approvals} remoteUrl={t.remoteUrl} />
+      </div>
+      <DecisionFooter decide={decide} />
+    </Card>
+  );
+}
+
+function PullRequestGroup({ taskId, approvals }: { taskId: string; approvals: ApprovalView[] }) {
+  const first = approvals[0];
+  const decide = useTaskDecision(taskId);
   if (!first?.task) return null;
   const t = first.task;
   const pr = approvals.find((a) => a.actionKind === "open_pr");
@@ -127,21 +269,7 @@ function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: Appro
             {t.runnerName ? ` on ${t.runnerName}` : ""} · <Mono>{t.branch}</Mono>
           </p>
         </div>
-        <ul className="space-y-1.5 text-[13px]">
-          {approvals.map((a) => {
-            const Icon = a.actionKind ? ICON[a.actionKind] : Upload;
-            return (
-              <li key={a.id} className="flex flex-wrap items-center gap-x-2">
-                <Icon aria-hidden="true" className="text-subtle" />
-                <span className="font-medium">{a.actionKind ? LABEL[a.actionKind] : a.title}</span>
-                <span className="text-xs text-muted">
-                  {a.actionKind === "push" ? `to ${t.remoteUrl || "origin"} · ` : ""}expires{" "}
-                  {ago(a.expiresAt)}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+        <StepList approvals={approvals} remoteUrl={t.remoteUrl} />
         {t.diffStats && (
           <p className="tabular text-[13px]">
             {plural(t.diffStats.filesChanged, "file")},{" "}
@@ -156,20 +284,7 @@ function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: Appro
           </div>
         )}
       </div>
-      <CardFooter>
-        <ErrorText error={decide.error} />
-        <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
-          Reject
-        </Button>
-        <Button
-          size="sm"
-          variant="primary"
-          busy={decide.isPending}
-          onClick={() => decide.mutate("approve")}
-        >
-          Approve
-        </Button>
-      </CardFooter>
+      <DecisionFooter decide={decide} />
     </Card>
   );
 }
