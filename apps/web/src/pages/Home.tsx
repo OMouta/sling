@@ -7,7 +7,7 @@ import type {
   TaskView,
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { ArrowRight, ArrowUp, Check, ChevronDown, Cpu, Laptop } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
@@ -21,7 +21,7 @@ import { api } from "../lib/api.ts";
 import { ago } from "../lib/format.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
-import { NEW_CHAT_EVENT } from "../lib/newChat.ts";
+import { linkedPersonality, NEW_CHAT_EVENT, readNewChatLink } from "../lib/newChat.ts";
 import {
   colorVar,
   rememberedPersonality,
@@ -81,6 +81,28 @@ export function HomePage() {
     const p = list[index + 1];
     if (p) pick(p);
   };
+  // A link such as /?draft=…&personality=incident fills the composer and
+  // picks who answers, then leaves the address bar clean.
+  const search = useRouterState({ select: (st) => st.location.search as Record<string, unknown> });
+  const [wanted, setWanted] = useState<string | null>(null);
+  useEffect(() => {
+    const link = readNewChatLink(search);
+    if (!link) return;
+    if (link.draft) setText(link.draft);
+    if (link.personality) setWanted(link.personality);
+    void navigate({ to: "/", search: {}, replace: true });
+    input.current?.focus({ preventScroll: true });
+  }, [search, navigate]);
+  useEffect(() => {
+    if (wanted === null || list.length === 0) return;
+    const p = linkedPersonality(list, wanted);
+    if (p) {
+      setDirection(0);
+      setPickedId(p.id);
+    }
+    setWanted(null);
+  }, [wanted, list]);
+
   // Touch screens swipe; keyboards use the arrow keys.
   const swipe = useSwipe(prev, next, index > 0, index >= 0 && index < list.length - 1);
   useArrowKeys(prev, next);
