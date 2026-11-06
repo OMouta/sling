@@ -1,0 +1,290 @@
+{
+  "schema": "sling.workflow/v1",
+  "name": "Morning briefing",
+  "description": "Reads today's calendar, writes the day's briefing in its own chat, and sends a notification that opens it.",
+  "nodes": [
+    {
+      "id": "morning",
+      "type": "core.schedule",
+      "version": 1,
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "config": {
+        "cron": "30 7 * * *",
+        "timezone": ""
+      },
+      "label": "Every day at 07:30"
+    },
+    {
+      "id": "calendar",
+      "type": "calendar.list_events",
+      "version": 1,
+      "position": {
+        "x": 300,
+        "y": 0
+      },
+      "config": {
+        "installationId": "$calendar",
+        "from": "today",
+        "days": 1
+      },
+      "label": "Today's calendar"
+    },
+    {
+      "id": "keepDay",
+      "type": "core.set_var",
+      "version": 1,
+      "position": {
+        "x": 600,
+        "y": 0
+      },
+      "config": {
+        "name": "day"
+      },
+      "label": "Keep the date"
+    },
+    {
+      "id": "keepAgenda",
+      "type": "core.set_var",
+      "version": 1,
+      "position": {
+        "x": 900,
+        "y": 0
+      },
+      "config": {
+        "name": "agenda"
+      },
+      "label": "Keep the agenda"
+    },
+    {
+      "id": "chat",
+      "type": "state.conversation",
+      "version": 1,
+      "position": {
+        "x": 1200,
+        "y": 0
+      },
+      "config": {
+        "key": "={{ \"briefing-\" & vars.day }}",
+        "title": "={{ \"Briefing · \" & $fromMillis($toMillis(vars.day & \"T12:00:00Z\"), \"[FNn,*-3] [D] [MNn,*-3]\") }}"
+      },
+      "label": "Today's briefing chat"
+    },
+    {
+      "id": "keepChat",
+      "type": "core.set_var",
+      "version": 1,
+      "position": {
+        "x": 300,
+        "y": 240
+      },
+      "config": {
+        "name": "chat"
+      },
+      "label": "Keep the chat"
+    },
+    {
+      "id": "assistant",
+      "type": "agent.assistant",
+      "version": 1,
+      "position": {
+        "x": 600,
+        "y": 240
+      },
+      "config": {
+        "message": "={{ \"Write my morning briefing for today. Lead with what needs me first.\\n\\n\" & vars.agenda }}"
+      },
+      "label": "Write the briefing"
+    },
+    {
+      "id": "keepReply",
+      "type": "core.set_var",
+      "version": 1,
+      "position": {
+        "x": 900,
+        "y": 240
+      },
+      "config": {
+        "name": "reply"
+      },
+      "label": "Keep the briefing"
+    },
+    {
+      "id": "notify",
+      "type": "app.notify",
+      "version": 1,
+      "position": {
+        "x": 1200,
+        "y": 240
+      },
+      "config": {
+        "title": "Your morning briefing",
+        "body": "={{ $substring($trim($replace(($split(vars.reply, \"\\n\")[$trim($) != \"\"])[0], /[#*_`>]/, \"\")), 0, 200) }}",
+        "open": "={{ \"/c/\" & vars.chat.id }}",
+        "urgency": "normal",
+        "ttlMinutes": 180
+      },
+      "label": "Notify my devices"
+    }
+  ],
+  "edges": [
+    {
+      "id": "x_morning_calendar",
+      "kind": "exec",
+      "from": {
+        "node": "morning",
+        "port": "next"
+      },
+      "to": {
+        "node": "calendar",
+        "port": "in"
+      }
+    },
+    {
+      "id": "x_calendar_keepDay",
+      "kind": "exec",
+      "from": {
+        "node": "calendar",
+        "port": "next"
+      },
+      "to": {
+        "node": "keepDay",
+        "port": "in"
+      }
+    },
+    {
+      "id": "d_calendar_date_keepDay_value",
+      "kind": "data",
+      "from": {
+        "node": "calendar",
+        "port": "date"
+      },
+      "to": {
+        "node": "keepDay",
+        "port": "value"
+      }
+    },
+    {
+      "id": "x_keepDay_keepAgenda",
+      "kind": "exec",
+      "from": {
+        "node": "keepDay",
+        "port": "next"
+      },
+      "to": {
+        "node": "keepAgenda",
+        "port": "in"
+      }
+    },
+    {
+      "id": "d_calendar_agenda_keepAgenda_value",
+      "kind": "data",
+      "from": {
+        "node": "calendar",
+        "port": "agenda"
+      },
+      "to": {
+        "node": "keepAgenda",
+        "port": "value"
+      }
+    },
+    {
+      "id": "x_keepAgenda_chat",
+      "kind": "exec",
+      "from": {
+        "node": "keepAgenda",
+        "port": "next"
+      },
+      "to": {
+        "node": "chat",
+        "port": "in"
+      }
+    },
+    {
+      "id": "x_chat_keepChat",
+      "kind": "exec",
+      "from": {
+        "node": "chat",
+        "port": "next"
+      },
+      "to": {
+        "node": "keepChat",
+        "port": "in"
+      }
+    },
+    {
+      "id": "d_chat_conversation_keepChat_value",
+      "kind": "data",
+      "from": {
+        "node": "chat",
+        "port": "conversation"
+      },
+      "to": {
+        "node": "keepChat",
+        "port": "value"
+      }
+    },
+    {
+      "id": "x_keepChat_assistant",
+      "kind": "exec",
+      "from": {
+        "node": "keepChat",
+        "port": "next"
+      },
+      "to": {
+        "node": "assistant",
+        "port": "in"
+      }
+    },
+    {
+      "id": "d_chat_conversation_assistant_conversation",
+      "kind": "data",
+      "from": {
+        "node": "chat",
+        "port": "conversation"
+      },
+      "to": {
+        "node": "assistant",
+        "port": "conversation"
+      }
+    },
+    {
+      "id": "x_assistant_keepReply",
+      "kind": "exec",
+      "from": {
+        "node": "assistant",
+        "port": "next"
+      },
+      "to": {
+        "node": "keepReply",
+        "port": "in"
+      }
+    },
+    {
+      "id": "d_assistant_reply_keepReply_value",
+      "kind": "data",
+      "from": {
+        "node": "assistant",
+        "port": "reply"
+      },
+      "to": {
+        "node": "keepReply",
+        "port": "value"
+      }
+    },
+    {
+      "id": "x_keepReply_notify",
+      "kind": "exec",
+      "from": {
+        "node": "keepReply",
+        "port": "next"
+      },
+      "to": {
+        "node": "notify",
+        "port": "in"
+      }
+    }
+  ]
+}
