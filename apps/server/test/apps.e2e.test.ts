@@ -42,7 +42,7 @@ import { ImapFlow } from "imapflow";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { appTools } from "../src/agent/app-tools.ts";
+import { appTools, readableDate } from "../src/agent/app-tools.ts";
 import type { Config } from "../src/config.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
 import { fireSchedule, SCHEDULE_QUEUE } from "../src/workflows/triggers.ts";
@@ -672,7 +672,7 @@ describe("sending", () => {
       start: `${day}T15:00`,
       durationMinutes: 45,
     });
-    await answer(id, "approve", `Add Dentist to the calendar at ${day}T15:00`);
+    await answer(id, "approve", `Add "Dentist" to your calendar, ${readableDate(`${day}T15:00`)}`);
     const step = await pending;
     expect(result(step).output).toMatchObject({
       created: true,

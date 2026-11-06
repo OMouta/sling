@@ -88,9 +88,7 @@ describe("the assistant's prompt", () => {
     ]) {
       expect(ask).not.toContain(absent);
     }
-    expect(assistantInstructions(planner, "supervised", now)).toContain(
-      "call the tool right away",
-    );
+    expect(assistantInstructions(planner, "supervised", now)).toContain("call the tool right away");
     expect(assistantInstructions(planner, "full-access", now)).toContain(
       "sends run right away with no approval",
     );

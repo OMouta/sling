@@ -483,19 +483,19 @@ function SendStep({
         <ChatApproval
           approvalId={approval.id}
           ctx={ctx}
-          approve="Send it"
-          question="Send this from Sling?"
-          detail="It goes out as soon as you allow it."
+          approve="Allow"
+          question="Allow this?"
+          detail="Nothing leaves Sling until you allow it."
         />
       )}
       {approval.state === "denied" && (
         <p className="border-t border-border px-2.5 py-1.5 text-xs text-muted">
-          You didn't allow it, so nothing was sent.
+          You didn't allow it, so nothing went out.
         </p>
       )}
       {approval.state === "expired" && (
         <p className="border-t border-border px-2.5 py-1.5 text-xs text-muted">
-          Nobody answered, so nothing was sent.
+          Nobody answered, so nothing went out.
         </p>
       )}
       {open && result && (

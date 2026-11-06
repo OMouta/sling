@@ -177,7 +177,7 @@ export const createEvent: NodeSpec<CreateConfig> = {
   // The UID comes from the idempotency key and the PUT never overwrites, so a repeat is safe.
   idempotent: true,
   retry: { maxAttempts: 3, backoffMs: 2_000 },
-  assistant: { sends: true, summary: "Add {title} to the calendar at {start}" },
+  assistant: { sends: true, summary: 'Add "{title}" to your calendar, {start}' },
 
   async run(ctx, { config: raw }) {
     const parsed = createConfigSchema.safeParse(raw);

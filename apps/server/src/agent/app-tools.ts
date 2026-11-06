@@ -57,10 +57,28 @@ export function toolName(type: string): string {
 
 function valueText(v: unknown): string {
   if (v === null || v === undefined) return "";
-  if (typeof v === "string") return v;
+  if (typeof v === "string") return readableDate(v) ?? v;
   if (Array.isArray(v)) return v.map(valueText).filter(Boolean).join(", ");
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * "2026-11-07T18:00" as "Sat 7 Nov, 18:00", and "2026-11-07" as "Sat 7 Nov",
+ * for an approval a person reads. Times without a zone are local, so they're
+ * shown as written. Anything else returns null.
+ */
+export function readableDate(text: string): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?$/.exec(text.trim());
+  if (!m) return null;
+  const [, y, mo, d, h, mi] = m;
+  const day = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+  if (Number.isNaN(day.getTime()) || day.getUTCDate() !== Number(d)) return null;
+  const date = `${WEEKDAYS[day.getUTCDay()]} ${Number(d)} ${MONTHS[day.getUTCMonth()]}`;
+  return h ? `${date}, ${h}:${mi}` : date;
 }
 
 /**

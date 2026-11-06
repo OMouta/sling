@@ -286,10 +286,10 @@ describe("chat replies", () => {
       },
     });
     expect(screen.getByText("Email ana@example.com: Lunch moved")).toBeTruthy();
-    expect(screen.getByText("Send this from Sling?")).toBeTruthy();
+    expect(screen.getByText("Allow this?")).toBeTruthy();
     // Sends never talk about sandboxes or machines.
     expect(screen.queryByText(/outside the sandbox/)).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Send it" }));
+    fireEvent.click(screen.getByRole("button", { name: "Allow" }));
     await waitFor(() =>
       expect(posts).toContainEqual({
         path: "/api/conversations/cnv_1/commands/sap_1",
@@ -334,7 +334,7 @@ describe("chat replies", () => {
     emit({ type: "agent.status", conversationId: "cnv_1", status: "idle" });
   });
 
-  it("says nothing was sent when a send was denied or nobody answered", async () => {
+  it("says nothing went out when a send was denied or nobody answered", async () => {
     const send = (id: string, state: "denied" | "expired" | "approved") => ({
       kind: "tool" as const,
       id,
@@ -361,9 +361,9 @@ describe("chat replies", () => {
       },
     ];
     open();
-    expect(await screen.findByText("You didn't allow it, so nothing was sent.")).toBeTruthy();
-    expect(screen.getByText("Nobody answered, so nothing was sent.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Send it" })).toBeNull();
+    expect(await screen.findByText("You didn't allow it, so nothing went out.")).toBeTruthy();
+    expect(screen.getByText("Nobody answered, so nothing went out.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Allow" })).toBeNull();
     const approved = screen.getByRole("button", { name: "Event c: Dentist, Fri 09:00" });
     expect(within(approved).getByText("approved")).toBeTruthy();
     fireEvent.click(approved);

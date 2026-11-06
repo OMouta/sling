@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { NodeRegistry } from "../workflows/registry.ts";
 import type { AnyServerNodeSpec } from "../workflows/types.ts";
-import { argumentPlan, fillSummary, toolName, versionSends } from "./app-tools.ts";
+import { argumentPlan, fillSummary, readableDate, toolName, versionSends } from "./app-tools.ts";
 
 const spec = (type: string): AnyServerNodeSpec => {
   const all = [
@@ -75,6 +75,19 @@ describe("tools from flagged nodes", () => {
     expect(fillSummary("Add {title} to the calendar at {start}", { title: "Dentist" }, "x")).toBe(
       "Add Dentist to the calendar at",
     );
+    expect(
+      fillSummary(
+        'Add "{title}" to your calendar, {start}',
+        {
+          title: "Dentist",
+          start: "2026-11-07T18:00",
+        },
+        "x",
+      ),
+    ).toBe('Add "Dentist" to your calendar, Sat 7 Nov, 18:00');
+    expect(readableDate("2026-11-07")).toBe("Sat 7 Nov");
+    expect(readableDate("2026-02-30")).toBeNull();
+    expect(readableDate("tomorrow")).toBeNull();
     expect(fillSummary("To {to}", { to: ["a@x", "b@x"] }, "x")).toBe("To a@x, b@x");
     const long = fillSummary("Post {content}", { content: `line one\n${"word ".repeat(40)}` }, "x");
     expect(long).toHaveLength(85);
