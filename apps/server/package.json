@@ -35,6 +35,8 @@
   },
   "devDependencies": {
     "@ai-sdk/provider": "4.0.35",
+    "@sling/extension-cli": "workspace:*",
+    "@sling/extension-fly-machines": "workspace:*",
     "@testcontainers/postgresql": "^12.2.1",
     "@types/node": "^26.6.6",
     "@types/nodemailer": "^8.0.2",

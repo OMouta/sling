@@ -269,6 +269,12 @@ importers:
       '@ai-sdk/provider':
         specifier: 4.0.35
         version: 4.0.35
+      '@sling/extension-cli':
+        specifier: workspace:*
+        version: link:../../packages/extension-cli
+      '@sling/extension-fly-machines':
+        specifier: workspace:*
+        version: link:../../extensions/fly-machines
       '@testcontainers/postgresql':
         specifier: ^12.2.1
         version: 12.2.1(bare-buffer@3.7.1)
