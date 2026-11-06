@@ -217,6 +217,9 @@ importers:
       '@sling/extension-package':
         specifier: workspace:*
         version: link:../../packages/extension-package
+      '@sling/extension-runtime':
+        specifier: workspace:*
+        version: link:../../packages/extension-runtime
       '@sling/integration-discord':
         specifier: workspace:*
         version: link:../../integrations/discord
@@ -256,6 +259,9 @@ importers:
       pino:
         specifier: ^10.4.0
         version: 10.4.0
+      undici:
+        specifier: ^8.12.3
+        version: 8.12.3
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -287,6 +293,9 @@ importers:
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
+      ws:
+        specifier: ^8.22.1
+        version: 8.22.1
 
   apps/web:
     dependencies:
@@ -463,6 +472,8 @@ importers:
       '@sling/connector-sdk':
         specifier: workspace:*
         version: link:../connector-sdk
+
+  packages/extension-runtime: {}
 
   packages/runner-protocol:
     dependencies:

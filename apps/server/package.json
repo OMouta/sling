@@ -16,6 +16,7 @@
     "@sling/core": "workspace:*",
     "@sling/db": "workspace:*",
     "@sling/extension-package": "workspace:*",
+    "@sling/extension-runtime": "workspace:*",
     "@sling/integration-discord": "workspace:*",
     "@sling/integration-docker": "workspace:*",
     "@sling/integration-email": "workspace:*",
@@ -29,6 +30,7 @@
     "fastify-type-provider-zod": "^7.0.0",
     "pg-boss": "^12.38.0",
     "pino": "^10.4.0",
+    "undici": "^8.12.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -40,7 +42,8 @@
     "esbuild": "^0.28.2",
     "nodemailer": "^10.3.1",
     "testcontainers": "^12.2.1",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "ws": "^8.22.1"
   },
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env --watch src/main.ts",
