@@ -17,6 +17,7 @@
     "@sling/db": "workspace:*",
     "@sling/extension-package": "workspace:*",
     "@sling/extension-runtime": "workspace:*",
+    "@sling/integration-calendar": "workspace:*",
     "@sling/integration-discord": "workspace:*",
     "@sling/integration-docker": "workspace:*",
     "@sling/integration-email": "workspace:*",

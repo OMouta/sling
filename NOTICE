@@ -2,3 +2,18 @@ Sling
 Copyright 2026 The Sling Authors
 
 This product includes software developed by The Sling Authors.
+
+Third-party software
+
+The calendar connector (integrations/calendar) depends on these packages,
+used unmodified and installed from npm:
+
+- ical.js, under the Mozilla Public License 2.0.
+  Source: https://github.com/kewisch/ical.js
+- fast-xml-parser, under the MIT License. Copyright (c) 2017 Amit Kumar Gupta.
+  Source: https://github.com/NaturalIntelligence/fast-xml-parser
+  The packages it depends on (strnum, fast-xml-builder, @nodable/entities,
+  is-unsafe, path-expression-matcher, anynum) are under the MIT License too.
+
+The MPL 2.0 applies file by file to ical.js's own files. Sling's code that
+uses it stays under Apache-2.0.

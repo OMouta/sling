@@ -1,0 +1,23 @@
+{
+  "name": "@sling/integration-calendar",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run src",
+    "test:integration": "vitest run test/"
+  },
+  "dependencies": {
+    "@sling/connector-sdk": "workspace:*",
+    "fast-xml-parser": "5.11.2",
+    "ical.js": "2.2.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "testcontainers": "^12.2.1"
+  }
+}

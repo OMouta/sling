@@ -40,6 +40,7 @@ import { and, eq, inArray, isNotNull, lt, or, type SQL, sql } from "drizzle-orm"
 import type { PgBoss } from "pg-boss";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
+import { workspaceTimeZone } from "../timezone.ts";
 import { approvalView } from "../views.ts";
 import { loadInstallation } from "./connectors/installations.ts";
 import { redactPayload } from "./redact.ts";
@@ -610,11 +611,17 @@ export class Engine {
       vars,
     };
     const log = this.#ctx.log.child({ runId: run.id, nodeId: node.id });
+    let zone: Promise<string> | null = null;
     const services: EngineServices = {
       app: this.#ctx,
       engine: this,
       run: info,
       evaluate: (source) => evaluateExpression(source, { ...scope, vars }),
+      // Read only by nodes that ask, such as the calendar's "today".
+      timeZone: () => {
+        zone ??= workspaceTimeZone(this.#ctx, run.workspaceId);
+        return zone;
+      },
     };
     return {
       runId: run.id,

@@ -24,6 +24,8 @@ export interface EngineServices {
   run: RunInfo;
   /** Evaluates JSONata against this node's scope: `{ inputs, trigger, vars, execution }`. */
   evaluate(source: string): Promise<unknown>;
+  /** The workspace's time zone, such as Europe/Lisbon. UTC until one is set. */
+  timeZone(): Promise<string>;
 }
 
 export type ServerNodeContext = NodeContext<EngineServices>;

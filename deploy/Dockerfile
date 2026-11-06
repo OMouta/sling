@@ -18,6 +18,7 @@ COPY packages/extension-runtime/package.json packages/extension-runtime/
 COPY packages/extension-cli/package.json packages/extension-cli/
 COPY integrations/discord/package.json integrations/discord/
 COPY integrations/email/package.json integrations/email/
+COPY integrations/calendar/package.json integrations/calendar/
 COPY integrations/docker/package.json integrations/docker/
 COPY integrations/railway/package.json integrations/railway/
 COPY extensions/ntfy/package.json extensions/ntfy/
