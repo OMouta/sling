@@ -1,4 +1,4 @@
-import type { TriggerEvent } from "@sling/workflow";
+import type { TriggerEvent } from "@sling/connector-sdk";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { connector } from "./index.ts";

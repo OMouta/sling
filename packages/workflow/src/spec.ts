@@ -62,8 +62,11 @@ export interface TriggerMatch {
 export interface TriggerSpec<Config> {
   /** Event type this trigger subscribes to, for example "email.received". */
   event: string;
-  /** Returns the trigger's outputs if the event matches its config, else null. */
-  match(event: TriggerEvent, config: Config): TriggerMatch | null;
+  /**
+   * Returns the trigger's outputs if the event matches its config, else null.
+   * May return a promise; extension triggers always do.
+   */
+  match(event: TriggerEvent, config: Config): TriggerMatch | null | Promise<TriggerMatch | null>;
 }
 
 export type WaitSpec =

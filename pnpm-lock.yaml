@@ -214,6 +214,9 @@ importers:
       '@sling/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@sling/extension-package':
+        specifier: workspace:*
+        version: link:../../packages/extension-package
       '@sling/integration-discord':
         specifier: workspace:*
         version: link:../../integrations/discord
@@ -272,6 +275,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.2
         version: 8.18.2
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       nodemailer:
         specifier: ^10.3.1
         version: 10.3.1
@@ -366,9 +372,6 @@ importers:
       '@sling/connector-sdk':
         specifier: workspace:*
         version: link:../../packages/connector-sdk
-      '@sling/workflow':
-        specifier: workspace:*
-        version: link:../../packages/workflow
       discord.js:
         specifier: ^14.28.1
         version: 14.28.1
@@ -381,9 +384,6 @@ importers:
       '@sling/connector-sdk':
         specifier: workspace:*
         version: link:../../packages/connector-sdk
-      '@sling/workflow':
-        specifier: workspace:*
-        version: link:../../packages/workflow
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -393,9 +393,6 @@ importers:
       '@sling/connector-sdk':
         specifier: workspace:*
         version: link:../../packages/connector-sdk
-      '@sling/workflow':
-        specifier: workspace:*
-        version: link:../../packages/workflow
       imapflow:
         specifier: ^2.10.2
         version: 2.10.2
@@ -421,9 +418,6 @@ importers:
       '@sling/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@sling/workflow':
-        specifier: workspace:*
-        version: link:../../packages/workflow
       railway:
         specifier: 3.16.0
         version: 3.16.0
@@ -463,6 +457,12 @@ importers:
       drizzle-kit:
         specifier: ^0.31.11
         version: 0.31.11
+
+  packages/extension-package:
+    dependencies:
+      '@sling/connector-sdk':
+        specifier: workspace:*
+        version: link:../connector-sdk
 
   packages/runner-protocol:
     dependencies:

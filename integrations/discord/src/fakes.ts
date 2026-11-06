@@ -1,6 +1,12 @@
 /** Fakes for the gateway, REST, and the contexts the server provides. Tests only. */
-import type { ApprovalDecision, SourceContext, SourceStatus } from "@sling/connector-sdk";
-import type { Installation, NodeContext, NodeLogger } from "@sling/workflow";
+import type {
+  ApprovalDecision,
+  Installation,
+  NodeContext,
+  NodeLogger,
+  SourceContext,
+  SourceStatus,
+} from "@sling/connector-sdk";
 import type { ActionRow } from "./approval.ts";
 import type {
   ButtonClick,

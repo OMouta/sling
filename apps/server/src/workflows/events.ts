@@ -64,7 +64,7 @@ export class EventBus {
           ctx.log.warn({ triggerId: trigger.id }, "trigger config no longer parses; skipping");
           continue;
         }
-        const match = spec.trigger.match(
+        const match = await spec.trigger.match(
           {
             type: event.type,
             workspaceId: event.workspaceId,

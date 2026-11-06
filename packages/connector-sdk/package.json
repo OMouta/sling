@@ -1,10 +1,11 @@
 {
   "name": "@sling/connector-sdk",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./host": "./src/host.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",
@@ -13,5 +14,7 @@
   "dependencies": {
     "@sling/workflow": "workspace:*",
     "zod": "^4.6.7"
-  }
+  },
+  "description": "Write Sling connectors, sandbox providers, and extensions.",
+  "license": "Apache-2.0"
 }

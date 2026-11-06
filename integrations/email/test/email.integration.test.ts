@@ -2,8 +2,15 @@
  * Runs the connector against GreenMail, a real IMAP and SMTP server, in Docker.
  * `pnpm --filter @sling/integration-email test:integration`
  */
-import type { SourceContext, SourceStatus } from "@sling/connector-sdk";
-import type { Installation, NodeContext, NodeLogger, TriggerEvent } from "@sling/workflow";
+import type {
+  Installation,
+  NodeContext,
+  NodeLogger,
+  SourceContext,
+  SourceStatus,
+  TriggerEvent,
+  TriggerMatch,
+} from "@sling/connector-sdk";
 import { ImapFlow } from "imapflow";
 import nodemailer from "nodemailer";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
@@ -367,7 +374,11 @@ describe("email source", () => {
             payload: e.payload,
             at: new Date(),
           };
-          return trigger.match(event, { installationId: "inst_mail", ...config } as ReceivedConfig);
+          // The email trigger matches synchronously.
+          return trigger.match(event, {
+            installationId: "inst_mail",
+            ...config,
+          } as ReceivedConfig) as TriggerMatch | null;
         })
         .filter((m) => m !== null)
         .map((m) => (m.outputs.email as Email).subject);

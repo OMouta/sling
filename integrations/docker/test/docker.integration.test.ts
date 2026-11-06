@@ -7,8 +7,7 @@
  */
 import { randomUUID } from "node:crypto";
 import http from "node:http";
-import type { ProviderContext, SandboxSpec } from "@sling/connector-sdk";
-import type { NodeLogger } from "@sling/workflow";
+import type { NodeLogger, ProviderContext, SandboxSpec } from "@sling/connector-sdk";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createEngineClient } from "../src/engine.ts";
 import { createDockerConnector, DEFAULT_HOST, EXPIRY_GRACE_MS } from "../src/index.ts";

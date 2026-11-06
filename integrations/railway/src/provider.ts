@@ -1,6 +1,10 @@
-import type { ExecutionProvider, ProviderContext, SandboxSpec } from "@sling/connector-sdk";
+import type {
+  ExecutionProvider,
+  NodeLogger,
+  ProviderContext,
+  SandboxSpec,
+} from "@sling/connector-sdk";
 import { SANDBOX_ENV } from "@sling/core";
-import type { NodeLogger } from "@sling/workflow";
 import { SandboxFailedError, SandboxFilesError, SandboxTimeoutError } from "railway";
 import type { RailwayApi, RailwayClientFactory, RailwaySandbox } from "./api.ts";
 import {

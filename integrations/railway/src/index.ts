@@ -1,5 +1,5 @@
+import type { NodeLogger } from "@sling/connector-sdk";
 import { type ConnectorDefinition, defineConnector, type TestResult } from "@sling/connector-sdk";
-import type { NodeLogger } from "@sling/workflow";
 import type { RailwayClientFactory, RailwaySandbox } from "./api.ts";
 import { describeRailwayError, describeScriptFailure } from "./errors.ts";
 import { checkScript } from "./launch.ts";

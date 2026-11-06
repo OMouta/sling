@@ -9,8 +9,7 @@
  * with nothing else in it.
  */
 import { randomUUID } from "node:crypto";
-import type { ProviderContext, SandboxSpec } from "@sling/connector-sdk";
-import type { NodeLogger } from "@sling/workflow";
+import type { NodeLogger, ProviderContext, SandboxSpec } from "@sling/connector-sdk";
 import { Sandbox } from "railway";
 import { afterAll, describe, expect, it } from "vitest";
 import { containerName, createRailwayConnector } from "../src/index.ts";

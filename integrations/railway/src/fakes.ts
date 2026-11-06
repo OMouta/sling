@@ -1,6 +1,5 @@
 /** An in-memory Railway environment and the contexts the server provides. Tests only. */
-import type { ProviderContext, SandboxSpec } from "@sling/connector-sdk";
-import type { NodeLogger } from "@sling/workflow";
+import type { NodeLogger, ProviderContext, SandboxSpec } from "@sling/connector-sdk";
 import type {
   CreateSandboxOptions,
   ExecOptions,

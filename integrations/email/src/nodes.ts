@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { NodeError, type NodeSpec } from "@sling/workflow";
+import { NodeError, type NodeSpec } from "@sling/connector-sdk";
 import { z } from "zod";
 import { errorMessage } from "./backoff.ts";
 import { smtpTransport } from "./clients.ts";

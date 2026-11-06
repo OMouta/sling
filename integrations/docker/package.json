@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@sling/connector-sdk": "workspace:*",
-    "@sling/workflow": "workspace:*",
     "zod": "^4.6.7"
   }
 }

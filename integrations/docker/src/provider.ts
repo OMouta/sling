@@ -1,10 +1,10 @@
+import type { NodeLogger } from "@sling/connector-sdk";
 import {
   type ExecutionProvider,
   type ProviderContext,
   SANDBOX_LABELS,
   type SandboxSpec,
 } from "@sling/connector-sdk";
-import type { NodeLogger } from "@sling/workflow";
 import {
   type ContainerSpec,
   type DockerApi,

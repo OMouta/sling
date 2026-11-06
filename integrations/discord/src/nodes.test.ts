@@ -1,4 +1,4 @@
-import { NodeError, type TriggerEvent } from "@sling/workflow";
+import { NodeError, type TriggerEvent } from "@sling/connector-sdk";
 import { describe, expect, it } from "vitest";
 import { approvalCustomId } from "./approval.ts";
 import { ALICE, CHANNEL, fakeNodeContext, fakeRest, GUILD } from "./fakes.ts";

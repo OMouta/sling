@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type NodeContext, NodeError, type NodeSpec } from "@sling/workflow";
+import { type NodeContext, NodeError, type NodeSpec } from "@sling/connector-sdk";
 import { z } from "zod";
 import {
   approvalButtons,

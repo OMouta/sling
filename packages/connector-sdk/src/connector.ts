@@ -1,9 +1,9 @@
 /**
  * What a connector provides: credential and config schemas, a connection test,
- * workflow nodes, and optionally a long-running event source. Connectors live
- * in `integrations/<id>` and are registered by the server.
+ * workflow nodes, and optionally a long-running event source or an execution
+ * provider.
  */
-import type { AnyNodeSpec, NodeLogger } from "@sling/workflow";
+import type { AnyNodeSpec, NodeLogger } from "@sling/workflow/spec";
 import type { z } from "zod";
 
 export type TestResult = { ok: true; detail?: string } | { ok: false; error: string };

@@ -1,6 +1,5 @@
 /** An in-memory Docker daemon and the contexts the server provides. Tests only. */
-import type { ProviderContext } from "@sling/connector-sdk";
-import type { NodeLogger } from "@sling/workflow";
+import type { NodeLogger, ProviderContext } from "@sling/connector-sdk";
 import {
   type ContainerInfo,
   type ContainerSpec,
