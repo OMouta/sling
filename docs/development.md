@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js 24 and pnpm 12 (`packageManager` in `package.json` pins the version)
+- Node.js 26 and pnpm 12 (`packageManager` in `package.json` pins the version)
 - Rust stable
 - Docker, for Postgres and the end-to-end tests
 - Optional: Codex or Claude Code, for real runs. `fake-codex` and `fake-claude` cover everything else.

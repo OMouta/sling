@@ -2,7 +2,7 @@
 # Sling control plane: API, master agent, and the built web app.
 # Build from the repo root: docker build -f deploy/Dockerfile .
 
-FROM node:24-slim AS base
+FROM node:26-slim AS base
 RUN npm install -g pnpm@12.5.1 && npm cache clean --force
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -30,7 +30,7 @@ RUN pnpm --filter @sling/web build
 FROM base AS deps
 RUN pnpm install --frozen-lockfile --prod --filter "@sling/server..."
 
-FROM node:24-slim
+FROM node:26-slim
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=8080 \
