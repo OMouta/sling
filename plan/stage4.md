@@ -2,6 +2,71 @@
 
 Open ecosystem. This is spec section 15, Stage 4, with the choices in `decisions.md` applied (D58 to D69 are new for this stage).
 
+## Status (2026-11-06)
+
+W0 to W5 are built and on `main`. The contracts went in first: Node 26, the SDK at 1.0, the package format, views, tables, and the runtime interface. Four parallel workstreams followed (isolation, control plane, web, and the CLI with the examples and docs). Each was cherry-picked onto `main`, then integrated and checked against the real isolated runtime.
+
+| "Done when" item | Verified by |
+|---|---|
+| 1. Isolation | `extensions/escape.test.ts`: real restricted processes try files, writes, processes, workers, the environment, sockets, UDP, DNS, `node:http`, `process.binding`, and eval. Every attempt is refused and logged, and the test process carries on |
+| 2. Network | `extensions/broker.test.ts` (60 tests) against local HTTP, WebSocket, and TLS servers with a stub resolver: every case in the item, a resolver that changes its answer, caps, and WSS on a server that also speaks HTTP/2. Also live: the included ntfy package reached ntfy.sh through the broker over HTTPS and WSS |
+| 3. Credentials | `extensions/process-runtime.test.ts`: another connector's installation, approvals without the permission, and a provider without `sandboxes` |
+| 4. Crashes and hangs | `extensions/process-runtime.test.ts`: exit, uncaught throw, infinite loop, and running out of a 64 MB heap. The next call restarts the process, a second extension carries on, and five crashes leave it in error until it's turned off and on |
+| 5. Write and ship your own | `extension-cli` `outside-repo.test.ts` runs every command in a folder outside the repo. In `stage4.e2e.test.ts`, the CLI makes, builds, signs, and catalogs an extension; Sling installs it after the trust step, and a workflow runs through its trigger and its action on real processes. Also in the browser, with a catalog made by the CLI |
+| 6. Integrity | `extensions.e2e.test.ts`, on both the in-process and the real process runtime: every refusal in the item, including a package changed in the database and refused after a restart |
+| 7. Updates | `extensions.e2e.test.ts`: the permission diff, no restart, and revocation. In the browser: 0.1.0 to 0.2.0, with the added host listed |
+| 8. Included examples | `stage4.e2e.test.ts` against a local fake ntfy. Run once live with `SLING_LIVE_NTFY=1`, with the package exactly as it ships: a finished task sent a notification to ntfy.sh, and a message published to the watched topic started a workflow through the ntfy trigger |
+| 9. A provider from an extension | `stage4.e2e.test.ts`: the Fly Machines example against a fake Machines API. Create got the sandbox environment, the sandbox's Runner paired and ran the task, the machine was destroyed, and the orphan sweep destroyed a stray machine through the extension |
+| 10. Workflow packages | `extensions.e2e.test.ts`. In the browser: **Export as package** downloaded a package with a `$ntfy` binding, a requirement on `ntfy ^1.0.0`, and no installation IDs, and uploading it back showed **Unsigned** |
+| 11. Disable and remove | `extensions.e2e.test.ts`. In the browser: the remove dialog lists the installation and workflow that use the extension |
+| 12. Stable SDK | `connector-sdk` `api-report.test.ts`; the four built-in connectors import only the SDK; seven pages in `docs/extensions/` |
+| 13. Extensions page | Playwright against a preview server on its own database: **Installed**, **Discover**, **Sources**, install, trust, update, details, remove, upload, Connectors, templates, and Export as package, at desktop and phone width in dark and light |
+
+Test counts on `main`:
+- **Unit:** 759 in TypeScript across 16 packages, and 156 in Rust.
+- **End-to-end:** 124 across eight suites, including 29 extension tests and 8 integration tests on real processes. The 29 extension tests also pass on the real process runtime. Two Stage 2 email tests failed once while all eight suites ran in parallel, and passed alone.
+- **Live:** the ntfy flow through Sling against ntfy.sh, once. The ntfy example's own live test, once. No real Codex or Claude Code turns.
+
+| Budget | Measured |
+|---|---|
+| Extension process, spawn to first answer | 38 to 44 ms median |
+| Node run through an extension, overhead over in-process, p95 | 0.09 to 0.10 ms |
+| Brokered `fetch` overhead against a local server, p95 | 0.11 to 0.30 ms |
+| Install from the included catalog (preview plus confirm) | preview of the included ntfy 61 ms; preview and install of the Fly provider 55 ms, on real processes |
+| Server start with 10 extensions installed, extra time | 24.6 ms |
+| Idle extension process memory | 58.3 MB in `node:26-slim` on Linux. **69.4 MB on macOS, over budget**: bare Node idles at 47 MB there, and zod and the SDK in the bundle add the rest |
+
+Found and fixed during integration:
+- **Start timer:** it was never cleared once an extension loaded, so every extension process was killed 10 seconds after it started, as "didn't load".
+- **WSS through the broker:** the connector offered HTTP/2, so undici tried WebSocket over extended CONNECT, which ntfy.sh refuses. Sockets now get their own HTTP/1.1 agent.
+- **Tests that relied on the in-process stand-in:** the control plane suite's chat extension called a loopback server without `localNetwork`, which the real broker rightly refused.
+- **Layout:** the Installed, Discover, and Sources lists stopped short of the page's buttons; a README's first heading repeated the extension's name.
+- **Image:** the extension runtime's manifest wasn't copied into the install step, and nested server tests stayed in the image.
+- **Template views:** they now carry the extension's version and icon, so the template dialog makes no extra request.
+- **Found by the workstreams themselves:**
+  - node types with hyphens failed workflow validation, so no extension with a hyphenated ID could be used
+  - the heartbeat killed healthy processes after the machine slept
+  - zod's translated error messages doubled every bundle, 382 KB to 196 KB once dropped
+  - a WebSocket message that arrived with the handshake was lost
+  - Node 26 ignores a comma-separated `--allow-fs-read`, and the IPC channel can't refuse an oversized message before reading it; the plan's Isolation section now says what was built
+
+Not done or not verified yet:
+- **Fly Machines against a live account.** Need: `FLY_API_TOKEN`, an app, and the sandbox image on a registry Fly can pull from.
+- **Idle memory on macOS** is over budget (see above). Linux meets it.
+- **Linux and Windows end to end.** Isolation was exercised on macOS. On Linux, only the image (Node 26, `--allow-net` available, the catalog in place) and idle memory were checked. CI hasn't run, because the repo has no remote.
+- **Your dev server** still runs on Node 24, so extensions show "needs Node 26" there until it restarts on Node 26.
+- **An official signing key.** The included catalog is trusted because it ships with the server. Publishing a signed online catalog needs a project key and a release step.
+- **Publishing the SDK and CLI to npm.**
+- **Smaller gaps:**
+  - Discover shows a kind icon for extensions not yet installed, because catalogs carry no icon.
+  - There's no switch to turn a catalog off, though the API stores `enabled`.
+  - Memory outside the V8 heap, and how many requests an extension makes at once, aren't limited.
+  - Fetch bodies are buffered rather than streamed.
+  - A server message over 1 MB closes the socket with a generic 1006.
+  - During a version swap, old and new sockets together can briefly pass 16.
+  - Revocations and crashes found in the background are audited in every workspace.
+  - A crash loop's error status resets when the server restarts.
+
 ## Goal
 
 Someone outside the project can write a connector, a sandbox provider, or a set of workflow templates, sign it, publish it as a static file, and have a Sling owner install it from the web app without editing Sling's code. The owner sees exactly what the extension may do before installing it, and the extension can't do more: it runs in its own process with no files, no environment, and no network except the hosts it declared.
