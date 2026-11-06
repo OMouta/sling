@@ -292,8 +292,7 @@ export class ExtensionProcess {
         const exit = this.#classify(code, signal, fatal);
         this.#exit = exit;
         this.#peer.close(this.#killing?.error ?? this.#errorFor(exit));
-        if (!this.#ready)
-          onReady(fatal ?? new Error(`The extension failed to start: ${exit.detail}`));
+        if (!this.#ready) onReady(new Error(`The extension failed to start: ${exit.detail}`));
         this.#hooks.onExit(this, exit);
         resolve(exit);
       });
@@ -468,6 +467,8 @@ interface SourceEntry {
   proc: ExtensionProcess | null;
   /** Its start call finished, so a failure is the source's to report. */
   started: boolean;
+  /** The server asked it to stop. */
+  stopping: boolean;
 }
 
 export interface RunningSource {
@@ -723,8 +724,7 @@ export class ExtensionHost {
         },
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new NodeError(`The extension failed to start: ${message}`, {
+      throw new NodeError(err instanceof Error ? err.message : String(err), {
         code: "extension_start_failed",
       });
     }
@@ -746,7 +746,7 @@ export class ExtensionHost {
       if (entry.proc !== proc) continue;
       this.#sources.delete(sid);
       entry.version.sources--;
-      if (entry.started && !v.disabled && exit.kind !== "stopped") {
+      if (entry.started && !entry.stopping && !v.disabled && exit.kind !== "stopped") {
         entry.scope.setStatus("error", "The extension stopped responding");
       }
     }
@@ -834,7 +834,13 @@ export class ExtensionHost {
     const target = this.#target(v);
     target.inflight++;
     const sid = this.#nextScope++;
-    const entry: SourceEntry = { scope, version: target, proc: null, started: false };
+    const entry: SourceEntry = {
+      scope,
+      version: target,
+      proc: null,
+      started: false,
+      stopping: false,
+    };
     this.#sources.set(sid, entry);
     target.sources++;
     try {
@@ -857,8 +863,8 @@ export class ExtensionHost {
     }
     return {
       stop: async () => {
-        if (!this.#sources.delete(sid)) return;
-        target.sources--;
+        if (entry.stopping || !this.#sources.has(sid)) return;
+        entry.stopping = true;
         const proc = entry.proc;
         try {
           if (proc?.alive) {
@@ -870,6 +876,7 @@ export class ExtensionHost {
             `The event source didn't stop cleanly: ${err instanceof Error ? err.message : err}`,
           );
         } finally {
+          if (this.#sources.delete(sid)) target.sources--;
           this.#maybeIdle(target);
         }
       },

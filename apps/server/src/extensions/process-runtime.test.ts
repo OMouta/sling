@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { AnyConnector } from "@sling/connector-sdk";
 import { type AnyNodeSpec, type Installation, NodeError } from "@sling/workflow";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { WebSocketServer } from "ws";
 import {
   alive,
@@ -77,6 +77,13 @@ const nodes = [
     type: "acme.plainfail",
     async run() {
       throw new TypeError("bad thing");
+    },
+  }),
+  node({
+    type: "acme.spam",
+    async run() {
+      for (let i = 0; i < 250; i++) console.log("line " + i);
+      return { exec: "next" };
     },
   }),
   node({
@@ -328,6 +335,29 @@ describe("the runtime on this Node", () => {
     expect(canDenyNetwork()).toBe(true);
     expect(new ProcessRuntime().unsupportedReason).toBeNull();
   });
+
+  it("runs no extension code on a Node that can't deny network", async () => {
+    const real = testRuntime();
+    const ext = await fixtureExtension(real.runtime, { id: "acme", source: ACME });
+    await real.runtime.stopAll();
+    // As on Node 24, which has the permission model but no --allow-net.
+    const spy = vi
+      .spyOn(process, "allowedNodeEnvironmentFlags", "get")
+      .mockReturnValue(new Set(["--permission"]));
+    try {
+      const t = testRuntime();
+      const reason = `Extensions need Node 26 or later. This server runs Node ${process.versions.node}.`;
+      expect(t.runtime.unsupportedReason).toBe(reason);
+      await expect(t.runtime.describe(ext)).rejects.toThrow(reason);
+      const connectors = t.runtime.activate(ext);
+      expect(t.statuses).toEqual([{ id: "acme", status: "unsupported", detail: reason }]);
+      const err = await failure(run(connectors, "acme.echo"));
+      expect(err).toMatchObject({ code: "extension_unsupported", message: reason });
+      expect(t.runtime.host("acme")?.process).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  }, 30_000);
 });
 
 describe("an extension's connectors", () => {
@@ -416,6 +446,14 @@ describe("an extension's connectors", () => {
     expect(plain).not.toBeInstanceOf(NodeError);
     expect(plain).toBeInstanceOf(TypeError);
     expect(plain.message).toBe("bad thing");
+  });
+
+  it("keeps the last 200 lines of the extension's log", async () => {
+    await run(connectors, "acme.spam");
+    const lines = t.runtime.log("acme");
+    expect(lines).toHaveLength(200);
+    expect(lines.at(-1)?.message).toBe("line 249");
+    expect(lines.at(-1)?.at).toBeInstanceOf(Date);
   });
 
   it("refuses results that aren't node results", async () => {
@@ -636,6 +674,8 @@ describe("an extension's connectors", () => {
     expect(report.decided).toMatch(/doesn't have the approvals permission/);
     expect(fake.decided).toEqual([]);
     await source?.stop();
+    // The extension's own stop ran, and logged to the source's log.
+    expect(fake.lines).toContainEqual({ level: "info", message: "source stopped" });
   });
 
   it("gives providers only to extensions granted sandboxes", async () => {
@@ -643,6 +683,24 @@ describe("an extension's connectors", () => {
     expect(sandbox.id).toBe("acme.sandbox");
     expect(sandbox.executionProvider).toBeUndefined();
   });
+});
+
+describe("bundles that don't load", () => {
+  it("says why describe failed", async () => {
+    const t = testRuntime();
+    await expect(
+      fixtureExtension(t.runtime, {
+        id: "broken",
+        source: `${SDK}\nthrow new Error("boom at load");\n`,
+      }),
+    ).rejects.toThrow("The extension failed to start: its code failed to load: boom at load");
+    await expect(
+      fixtureExtension(t.runtime, { id: "broken", source: "export default { hello: 1 };" }),
+    ).rejects.toThrow("The bundle's default export isn't defineExtension(...)");
+    await expect(
+      fixtureExtension(t.runtime, { id: "broken", source: "process.exit(9);" }),
+    ).rejects.toThrow("The extension failed to start: it exited with code 9");
+  }, 30_000);
 });
 
 describe("permissions granted", () => {
