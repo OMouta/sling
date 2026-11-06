@@ -228,7 +228,8 @@ export class ExtensionProcess {
   /** Why the server is killing it, when it is. */
   #killing: { kind: ExitKind; detail: string; error: unknown } | null = null;
   #ready = false;
-  #lastPong = Date.now();
+  /** When the oldest unanswered ping went out, or null when every ping has its pong. */
+  #pingSentAt: number | null = null;
   #heartbeat: NodeJS.Timeout | null = null;
   #stderrLine = "";
   /** V8 said it ran out of heap. */
@@ -266,12 +267,11 @@ export class ExtensionProcess {
       for (const raw of frames) {
         const frame = raw as { t?: unknown; e?: WireError } | null;
         if (frame?.t === "pong") {
-          this.#lastPong = Date.now();
+          this.#pingSentAt = null;
           continue;
         }
         if (!this.#ready && frame?.t === "ready") {
           this.#ready = true;
-          this.#lastPong = Date.now();
           this.#startHeartbeat();
           onReady(null);
           continue;
@@ -390,13 +390,29 @@ export class ExtensionProcess {
 
   #startHeartbeat() {
     const t = this.#timings;
+    const overdue = () =>
+      this.#pingSentAt !== null && Date.now() - this.#pingSentAt > t.heartbeatTimeoutMs;
+    let lastTick = Date.now();
     this.#heartbeat = setInterval(() => {
-      if (Date.now() - this.#lastPong > t.heartbeatTimeoutMs) {
-        this.kill("unresponsive", `it didn't answer for ${duration(t.heartbeatTimeoutMs)}`);
+      const now = Date.now();
+      // A tick this late means the server, or the whole machine, was paused:
+      // the child had no chance to answer, so its time starts again.
+      if (now - lastTick > t.heartbeatMs * 2 && this.#pingSentAt !== null) this.#pingSentAt = now;
+      lastTick = now;
+      if (overdue()) {
+        // Timers run before pending I/O is read. If the server itself was busy,
+        // the pong may be waiting in the pipe: check again once it's been read.
+        setImmediate(() => {
+          if (overdue()) {
+            this.kill("unresponsive", `it didn't answer for ${duration(t.heartbeatTimeoutMs)}`);
+          }
+        });
         return;
       }
+      if (this.#pingSentAt !== null) return;
       try {
         this.#child.stdin.write(encodeFrame({ t: "ping" }));
+        this.#pingSentAt = Date.now();
       } catch {
         // Exiting.
       }

@@ -999,6 +999,16 @@ describe("crashes and hangs", () => {
     return out.outputs.pid;
   }
 
+  it("doesn't kill a healthy process when the server itself was busy", async () => {
+    const pid = await okPid();
+    // Block the server's event loop for longer than the heartbeat timeout.
+    const until = Date.now() + 1_000;
+    while (Date.now() < until) {}
+    await new Promise((r) => setTimeout(r, 200));
+    expect(await okPid()).toBe(pid);
+    expect(t.crashes).toEqual([]);
+  });
+
   it("fails the node when the process exits, and restarts on the next call", async () => {
     const before = await okPid();
     const fake = fakeSourceContext();
