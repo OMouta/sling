@@ -577,7 +577,7 @@ export function PersonalityEditorPage() {
           <section className="space-y-3">
             <SectionHead
               title="What it can use"
-              description="Sling's tools on your machines. The permission mode still limits what they do."
+              description="Sling's tools, on your machines and in your apps. The permission mode still limits what they do."
             />
             <Card className="divide-y divide-border">
               {PERSONALITY_TOOLS.map((t) => {
