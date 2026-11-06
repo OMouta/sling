@@ -243,6 +243,18 @@ What each package adds is stored at install, so the server registers extension n
 ### D69. Extensions stay on the control plane
 No Runner extensions, coding-agent adapters, model providers, or web UI code. The Runner never runs code that came from the control plane, and that doesn't change. Extension forms come from their schemas, as connector forms do today.
 
+## Assistant
+
+### D70. Personalities: a prompt, a set of tools, and a look, fixed for each chat
+A personality is a named assistant in the workspace. It has its own instructions, the Sling tools it may use (commands, coding tasks, both, or none), a color, and an animated glyph. It's the "named assistants or profiles" of spec section 4.1 and the "Agent Profile" in section 14's data model.
+- A chat picks its personality when it starts and keeps it. Codex and Claude Code both keep the system prompt a session started with, and a task reports back into the chat that started it, so a switch mid-chat would leave either the prompt or the tools wrong. This rules out switching personality inside a chat.
+- The server enforces the tool list, for turns on an API key and for the CLI's MCP calls alike. A personality can only take tools away. The conversation's mode still sets the sandbox and the approvals.
+- Sling keeps a fixed part of every prompt: that the chat renders Markdown, that it can't browse, the rules for each tool it has, the mode, and the date. The personality's instructions replace everything else.
+- Claude Code chat turns use `--system-prompt-file`, which replaces Claude Code's own coding-agent prompt instead of adding to it. Codex keeps its base prompt and gets Sling's as developer instructions. Its `model_instructions_file` could replace the base prompt, but that's unverified.
+- Personalities have their own page, not a section of Settings. The new chat screen switches between them with buttons on the side, a swipe on phones, and a menu at the top. A workspace starts with Sling (every tool, the default) and Finance (no tools). Conversations from before personalities, and conversations a workflow creates, get the default.
+- An edit bumps the personality's revision, and each reply records the personality and revision that wrote it. Deleting a personality archives it, so its chats keep working.
+- Not built yet: pinning a personality in an `agent.assistant` node, which would make **Export as package** turn its ID into a binding like an installation's, and connector actions as assistant tools. Those need an approval before outgoing messages, idempotency keys for side effects, and a manifest flag for nodes the assistant may call, shown in the install dialog. This rules out a separate workflow per personality, since every enabled workflow with a chat trigger answers every chat message. Asked 2026-11-06.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.
