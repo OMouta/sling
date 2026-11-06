@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { type AnyConnector, defineConnector, type SandboxSpec } from "@sling/connector-sdk";
 import { SANDBOX_ENV } from "@sling/core";
 import { z } from "zod";
-import { FakeRunner } from "./fake-runner.ts";
+import { FakeRunner, type FakeRunnerOptions } from "./fake-runner.ts";
 
 const baseConfig = {
   image: z.string().optional(),
@@ -44,7 +44,10 @@ export interface FakeProviderState {
  * timeouts), `fail-create` makes `create` throw an error that quotes the
  * installation's token (for scrubbing).
  */
-export function createFakeProvider(): { connector: AnyConnector; state: FakeProviderState } {
+export function createFakeProvider(opts: { runner?: Partial<FakeRunnerOptions> } = {}): {
+  connector: AnyConnector;
+  state: FakeProviderState;
+} {
   const state: FakeProviderState = {
     specs: [],
     live: new Map(),
@@ -77,7 +80,7 @@ export function createFakeProvider(): { connector: AnyConnector; state: FakeProv
           bootError: null,
         };
         state.live.set(externalId, sandbox);
-        if (ctx.config.behavior === "boot") void boot(sandbox);
+        if (ctx.config.behavior === "boot") void boot(sandbox, opts.runner);
         return { externalId, detail: "fake" };
       },
       async destroy(_ctx, externalId) {
@@ -104,7 +107,7 @@ export function createFakeProvider(): { connector: AnyConnector; state: FakeProv
 }
 
 /** What `sling-runner sandbox` does at boot, minus the cloning: pair and connect. */
-async function boot(s: FakeSandbox) {
+async function boot(s: FakeSandbox, extra: Partial<FakeRunnerOptions> = {}) {
   const env = s.spec.env;
   const repos = JSON.parse(env[SANDBOX_ENV.repos] ?? "[]") as {
     name: string;
@@ -123,6 +126,7 @@ async function boot(s: FakeSandbox) {
     })),
     harnesses: (env[SANDBOX_ENV.harnesses] ?? "codex").split(","),
     labels: ["os:linux", "arch:x86_64"],
+    ...extra,
   });
   s.runner = runner;
   try {

@@ -3,10 +3,21 @@
  * handshake, reports an inventory, and plays tasks and actions back without a
  * coding agent. Machines with labels or Claude Code, and the fake execution
  * provider's sandboxes, use it.
+ *
+ * A repo with a `path` gets real git: a task appends `- <title>` to
+ * SLING_FAKE.md on its branch, push and merge go to the clone's origin, and a
+ * deploy runs the repo's deploy command in a detached worktree, with the same
+ * refusals as the real Runner.
  */
+import { execFile, spawn } from "node:child_process";
 import { generateKeyPairSync, type KeyObject, sign } from "node:crypto";
+import { appendFile, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import {
+  ActionRequest_Kind,
   ActionResult_Outcome,
   authPayload,
   type ChatEventSchema,
@@ -17,12 +28,28 @@ import {
   EnvelopeSchema,
   encodeEnvelope,
   PermissionMode,
+  type RepoAction,
+  RepoAction_Kind,
+  type RepoActionResult,
+  RepoActionResult_Outcome,
+  RepoActionResultSchema,
   RepoChange_Op,
   RUNNER_WS_PATH,
   type TaskAssign,
   TaskEventSchema,
   TaskFinished_Outcome,
 } from "@sling/runner-protocol";
+
+const exec = promisify(execFile);
+
+async function git(cwd: string, ...args: string[]): Promise<string> {
+  const { stdout } = await exec(
+    "git",
+    ["-c", "user.email=fake@sling.test", "-c", "user.name=Fake Runner", ...args],
+    { cwd, encoding: "utf8", env: { ...process.env, GIT_TERMINAL_PROMPT: "0" } },
+  );
+  return stdout.trim();
+}
 
 type EventKind = MessageInitShape<typeof TaskEventSchema>["kind"];
 
@@ -31,6 +58,10 @@ export interface FakeRepo {
   remoteUrl: string;
   defaultBranch?: string;
   network?: boolean;
+  /** A clone whose origin is a real remote. Tasks, pushes, merges, and deploys then use git. */
+  path?: string;
+  /** What a deploy runs, through `sh -c` in a worktree at the commit. */
+  deployCommand?: string;
 }
 
 export interface FakeRunnerOptions {
@@ -54,6 +85,12 @@ export interface FakeRunnerOptions {
   foundRepos?: { path: string; name: string; remoteUrl?: string }[];
   /** Whether it accepts repo changes from Sling. Defaults to true. */
   remoteRepos?: boolean;
+  /** Whether it takes merges and deploys. Defaults to true. */
+  deploys?: boolean;
+  /** The URL an open_pr action answers with. */
+  prUrl?: (taskId: string) => string;
+  /** False leaves every RepoAction unanswered, as a machine that went quiet. */
+  answerRepoActions?: boolean;
 }
 
 /** What a task does: finish with a commit, fail, or wait to be cancelled. */
@@ -80,6 +117,16 @@ export class FakeRunner {
   scans = 0;
   /** Chat turns the server sent, in order. */
   readonly chatTurns: ChatTurn[] = [];
+  /** Merges and deploys the server sent, with performance.now() when each arrived. */
+  readonly repoActions: { action: RepoAction; at: number }[] = [];
+  /** Request IDs the server acknowledged. */
+  readonly acks: string[] = [];
+  /** Results not acknowledged yet. They're sent again after each reconnect. */
+  readonly unacked = new Map<string, RepoActionResult>();
+  /** Keeps the next result to itself, as if the connection dropped before it went out. */
+  holdNextResult = false;
+  /** Task worktrees, for pushes after the task. */
+  readonly #work = new Map<string, { repo: FakeRepo; wt: string; branch: string }>();
   #ws: WebSocket | null = null;
   #seq = new Map<string, number>();
   #heartbeat: NodeJS.Timeout | null = null;
@@ -141,8 +188,10 @@ export class FakeRunner {
         void this.#handle(env).catch((err) => console.error("fake runner", err));
       });
       ws.addEventListener("close", () => {
-        if (this.#heartbeat) clearInterval(this.#heartbeat);
         if (!welcomed) fail(new Error(`closed before welcome, errors ${this.errors.join(",")}`));
+        // An earlier connection that closes late must leave the current one's heartbeat alone.
+        if (this.#ws !== ws) return;
+        if (this.#heartbeat) clearInterval(this.#heartbeat);
         if (!this.#closed) {
           this.#closed = true;
           this.#exit();
@@ -191,6 +240,7 @@ export class FakeRunner {
         defaultBranch: r.defaultBranch ?? "main",
         remoteUrl: r.remoteUrl,
         network: r.network ?? false,
+        deployCommand: r.deployCommand ?? "",
       })),
       maxMode: o.maxMode ?? PermissionMode.FULL_ACCESS,
       maxConcurrentTasks: o.maxConcurrentTasks ?? 2,
@@ -202,6 +252,7 @@ export class FakeRunner {
         remoteUrl: f.remoteUrl ?? "",
       })),
       remoteRepos: o.remoteRepos ?? true,
+      deploys: o.deploys ?? true,
     };
   }
 
@@ -250,6 +301,11 @@ export class FakeRunner {
     this.#send(create(EnvelopeSchema, { body: { case: "inventory", value: this.#inventory() } }));
   }
 
+  /** Reports the inventory again, after a test changed the options. */
+  sendInventory() {
+    this.#sendInventory();
+  }
+
   async #handle(env: Envelope) {
     const body = env.body;
     switch (body.case) {
@@ -280,6 +336,19 @@ export class FakeRunner {
         this.#heartbeat = setInterval(() => {
           this.#send(create(EnvelopeSchema, { body: { case: "heartbeat", value: {} } }));
         }, 5_000);
+        for (const r of this.unacked.values()) {
+          this.#send(create(EnvelopeSchema, { body: { case: "repoActionResult", value: r } }));
+        }
+        return;
+      case "repoAction": {
+        this.repoActions.push({ action: body.value, at: performance.now() });
+        if (this.options.answerRepoActions === false) return;
+        void this.#repoAction(body.value).catch((err) => console.error("fake runner", err));
+        return;
+      }
+      case "repoActionAck":
+        this.acks.push(body.value.requestId);
+        this.unacked.delete(body.value.requestId);
         return;
       case "error":
         this.errors.push(body.value.code);
@@ -346,14 +415,27 @@ export class FakeRunner {
       case "actionRequest": {
         const a = body.value;
         this.actions.push({ actionId: a.actionId, taskId: a.taskId, kind: a.kind });
+        const work = this.#work.get(a.taskId);
+        let failure = "";
+        if (work && a.kind === ActionRequest_Kind.PUSH) {
+          try {
+            await git(work.wt, "push", "-q", "origin", `HEAD:refs/heads/${work.branch}`);
+          } catch (err) {
+            failure = err instanceof Error ? err.message : String(err);
+          }
+        }
+        const url =
+          a.kind === ActionRequest_Kind.OPEN_PR && this.options.prUrl
+            ? this.options.prUrl(a.taskId)
+            : `https://git.example.test/compare/${a.taskId}`;
         this.#event(a.taskId, {
           case: "actionResult",
           value: {
             actionId: a.actionId,
             kind: a.kind,
-            outcome: ActionResult_Outcome.SUCCEEDED,
-            message: "",
-            url: `https://git.example.test/compare/${a.taskId}`,
+            outcome: failure ? ActionResult_Outcome.FAILED : ActionResult_Outcome.SUCCEEDED,
+            message: failure,
+            url: failure ? "" : url,
           },
         });
         return;
@@ -390,6 +472,9 @@ export class FakeRunner {
     const what = scenario(t.objective);
     if (what === "hang") return;
     await new Promise((r) => setTimeout(r, 20));
+    let commitSha = "1111111111111111111111111111111111111111";
+    const repo = this.options.repos.find((r) => r.name === t.repo);
+    if (what === "succeed" && repo?.path) commitSha = await this.#commit(t, repo, repo.path);
     this.#event(t.taskId, {
       case: "finished",
       value:
@@ -399,9 +484,203 @@ export class FakeRunner {
               outcome: TaskFinished_Outcome.SUCCEEDED,
               summary: `Did "${t.title}" with ${t.harness}.`,
               branch: t.branch,
-              commitSha: "1111111111111111111111111111111111111111",
+              commitSha,
               diffStats: { filesChanged: 1, insertions: 2, deletions: 0 },
             },
     });
+  }
+
+  /** What fake-codex's success scenario does: one line in SLING_FAKE.md, committed on the task's branch. */
+  async #commit(t: TaskAssign, repo: FakeRepo, path: string): Promise<string> {
+    const wt = join(dirname(path), `wt-${this.options.name}-${t.taskId}`);
+    await git(path, "fetch", "-q", "origin");
+    await git(
+      path,
+      "worktree",
+      "add",
+      "-q",
+      "-B",
+      t.branch,
+      wt,
+      `origin/${repo.defaultBranch ?? "main"}`,
+    );
+    await appendFile(join(wt, "SLING_FAKE.md"), `- ${t.title}\n`);
+    await git(wt, "add", "SLING_FAKE.md");
+    await git(wt, "commit", "-qm", t.title);
+    this.#work.set(t.taskId, { repo, wt, branch: t.branch });
+    return git(wt, "rev-parse", "HEAD");
+  }
+
+  #result(r: Omit<RepoActionResult, "$typeName" | "$unknown">) {
+    const value = create(RepoActionResultSchema, r);
+    this.unacked.set(r.requestId, value);
+    if (this.holdNextResult) {
+      this.holdNextResult = false;
+      return;
+    }
+    this.#send(create(EnvelopeSchema, { body: { case: "repoActionResult", value } }));
+  }
+
+  /** A merge or deploy, with the real Runner's refusals. */
+  async #repoAction(a: RepoAction) {
+    const base = { requestId: a.requestId, kind: a.kind, commitSha: "", url: "" };
+    const refuse = (message: string) =>
+      this.#result({ ...base, outcome: RepoActionResult_Outcome.REFUSED, message });
+    const repo = this.options.repos.find((r) => r.name === a.repo);
+    if (!repo) return refuse(`No repo named ${a.repo} on this machine.`);
+    if (this.options.deploys === false) {
+      return refuse("Merges and deploys are off on this machine (deploys off).");
+    }
+    if (this.options.maxMode === PermissionMode.READ_ONLY) {
+      return refuse("This machine's max mode is Read-only, so it doesn't merge or deploy.");
+    }
+    if (a.kind === RepoAction_Kind.MERGE) {
+      if (!/^sling\/[A-Za-z0-9._-]+$/.test(a.branch)) {
+        return refuse(`${a.branch} isn't a Sling task branch, so this machine won't merge it.`);
+      }
+      if (!repo.path) {
+        return this.#result({
+          ...base,
+          outcome: RepoActionResult_Outcome.SUCCEEDED,
+          message: "Merged.",
+          commitSha: "2222222222222222222222222222222222222222",
+          url: a.prUrl,
+        });
+      }
+      return this.#merge(a, repo.path, base);
+    }
+    if (!repo.deployCommand)
+      return refuse(`No deploy command is set for ${a.repo} on this machine.`);
+    if (!repo.path) {
+      return this.#result({
+        ...base,
+        outcome: RepoActionResult_Outcome.SUCCEEDED,
+        message: "Deployed.",
+        commitSha: a.commitSha,
+      });
+    }
+    return this.#deploy(a, repo.path, repo.deployCommand, base);
+  }
+
+  async #merge(
+    a: RepoAction,
+    path: string,
+    base: { requestId: string; kind: RepoAction_Kind; commitSha: string; url: string },
+  ) {
+    const trailer = `Sling-Task: ${a.taskId}`;
+    await git(path, "fetch", "-q", "origin");
+    const earlier = await git(
+      path,
+      "log",
+      `origin/${a.defaultBranch}`,
+      "--fixed-strings",
+      `--grep=${trailer}`,
+      "--format=%H",
+      "-n",
+      "1",
+    );
+    if (earlier) {
+      return this.#result({
+        ...base,
+        outcome: RepoActionResult_Outcome.SUCCEEDED,
+        message: "It was already merged.",
+        commitSha: earlier,
+        url: a.prUrl,
+      });
+    }
+    const wt = await mkdtemp(join(tmpdir(), "fake-merge-"));
+    try {
+      await git(path, "worktree", "add", "-q", "--detach", wt, `origin/${a.defaultBranch}`);
+      const squash = a.mergeMethod !== "merge";
+      try {
+        await git(
+          wt,
+          "merge",
+          ...(squash ? ["--squash"] : ["--no-ff", "--no-commit"]),
+          `origin/${a.branch}`,
+        );
+      } catch {
+        const files = await git(wt, "diff", "--name-only", "--diff-filter=U");
+        await git(wt, "merge", "--abort").catch(() => {});
+        return this.#result({
+          ...base,
+          outcome: RepoActionResult_Outcome.FAILED,
+          message: `The merge conflicts in ${files.split("\n").join(", ")}.`,
+        });
+      }
+      await git(wt, "commit", "-qm", `${a.title}\n\n${a.body}\n\n${trailer}`);
+      await git(wt, "push", "-q", "origin", `HEAD:refs/heads/${a.defaultBranch}`);
+      const sha = await git(wt, "rev-parse", "HEAD");
+      this.#result({
+        ...base,
+        outcome: RepoActionResult_Outcome.SUCCEEDED,
+        message:
+          a.mergeMethod === "rebase"
+            ? `Squash-merged into ${a.defaultBranch}: rebase needs gh, so it squashed instead.`
+            : `Merged into ${a.defaultBranch}.`,
+        commitSha: sha,
+        url: a.prUrl,
+      });
+    } finally {
+      await git(path, "worktree", "remove", "--force", wt).catch(() => {});
+      await rm(wt, { recursive: true, force: true });
+    }
+  }
+
+  async #deploy(
+    a: RepoAction,
+    path: string,
+    command: string,
+    base: { requestId: string; kind: RepoAction_Kind; commitSha: string; url: string },
+  ) {
+    await git(path, "fetch", "-q", "origin");
+    const onDefault = await git(
+      path,
+      "merge-base",
+      "--is-ancestor",
+      a.commitSha,
+      `origin/${a.defaultBranch}`,
+    )
+      .then(() => true)
+      .catch(() => false);
+    if (!onDefault) {
+      return this.#result({
+        ...base,
+        outcome: RepoActionResult_Outcome.REFUSED,
+        message: `${a.commitSha.slice(0, 7)} isn't on origin/${a.defaultBranch}, so this machine won't deploy it.`,
+      });
+    }
+    const wt = await mkdtemp(join(tmpdir(), "fake-deploy-"));
+    try {
+      await git(path, "worktree", "add", "-q", "--detach", wt, a.commitSha);
+      const code = await new Promise<number>((ok) => {
+        const child = spawn("sh", ["-c", command], {
+          cwd: wt,
+          env: { ...process.env, SLING_DEPLOY_COMMIT: a.commitSha, SLING_DEPLOY_REPO: a.repo },
+        });
+        const out = (chunk: Buffer) =>
+          this.#send(
+            create(EnvelopeSchema, {
+              body: {
+                case: "repoActionOutput",
+                value: { requestId: a.requestId, chunk: chunk.toString("utf8") },
+              },
+            }),
+          );
+        child.stdout.on("data", out);
+        child.stderr.on("data", out);
+        child.on("close", (c) => ok(c ?? 1));
+      });
+      this.#result({
+        ...base,
+        outcome: code === 0 ? RepoActionResult_Outcome.SUCCEEDED : RepoActionResult_Outcome.FAILED,
+        message: code === 0 ? "Deployed." : "The deploy command failed.",
+        commitSha: a.commitSha,
+        exitCode: code,
+      });
+    } finally {
+      await git(path, "worktree", "remove", "--force", wt).catch(() => {});
+      await rm(wt, { recursive: true, force: true });
+    }
   }
 }
