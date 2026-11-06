@@ -84,17 +84,34 @@ out.write = /** @type {typeof out.write} */ (
   }
 );
 
+/** Permission names by the flag that would grant them. */
+const FLAG_PERMISSIONS = /** @type {Record<string, string>} */ ({
+  "fs-read": "FileSystemRead",
+  "fs-write": "FileSystemWrite",
+  net: "Net",
+  "child-process": "ChildProcess",
+  worker: "WorkerThreads",
+  wasi: "WASI",
+  addons: "Addons",
+  inspector: "Inspector",
+});
+
 /**
- * Says what the permission model or the code-generation flag refused, so the
- * refusal shows in the extension's log even when the extension swallows it
- * further up.
+ * Says what the permission model or the code-generation flag refused, for
+ * the extension's log. Null for any other error.
  * @param {unknown} err
  */
 function describeRefusal(err) {
   const e = /** @type {any} */ (err);
   if (e?.code === "ERR_ACCESS_DENIED") {
-    const what = e.permission ? `${e.permission} access` : "access";
-    return `Sling refused ${what}${e.resource ? ` to ${e.resource}` : ""}: ${e.message}`;
+    // Socket and DNS errors from libuv don't say which permission: the message
+    // names its flag, or the syscall is a name lookup.
+    const flag = /--allow-([a-z-]+)/.exec(String(e.message))?.[1];
+    const lookup = /^(getaddrinfo|getnameinfo|query)/.test(String(e.syscall ?? ""));
+    const permission = e.permission ?? (flag ? FLAG_PERMISSIONS[flag] : lookup ? "Net" : undefined);
+    const resource = e.resource || e.hostname;
+    const what = permission ? `${permission} access` : "access";
+    return `Sling refused ${what}${resource ? ` to ${resource}` : ""}: ${e.message}`;
   }
   if (e?.name === "EvalError" && /code generation/i.test(String(e.message))) {
     return `Sling refused code generation from strings: ${e.message}`;
