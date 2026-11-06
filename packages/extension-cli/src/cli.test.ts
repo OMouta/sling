@@ -1,7 +1,7 @@
 import { chmod, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CatalogSchema } from "@sling/connector-sdk";
+import { CatalogSchema, SDK_VERSION } from "@sling/connector-sdk";
 import {
   computeDigest,
   generateSigningKey,
@@ -167,7 +167,7 @@ export default defineExtension({ connectors: [] });`),
   it("refuses an sdk range that leaves out this SDK", async () => {
     const report = await check(await project("connector", { manifest: { sdk: "^2.0.0" } }));
     expect(report.problems).toContain(
-      'sdk is "^2.0.0", which doesn\'t include SDK 1.0.0. Use "^1.0.0".',
+      `sdk is "^2.0.0", which doesn't include SDK ${SDK_VERSION}. Use "^${SDK_VERSION}".`,
     );
   });
 
