@@ -493,7 +493,16 @@ export function Tabs<T extends string>({
   className?: string;
 }) {
   return (
-    <div role="tablist" className={cx("flex gap-5 overflow-x-auto", className)}>
+    // Scrolls sideways when the tabs don't fit, and never up and down. The
+    // row sits 1px over its container's bottom border, so the active tab's
+    // line covers that border without hanging out of the row.
+    <div
+      role="tablist"
+      className={cx(
+        "-mb-px flex gap-5 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        className,
+      )}
+    >
       {tabs.map((t) => {
         const active = value === t.id;
         const Icon = t.icon;
@@ -512,7 +521,7 @@ export function Tabs<T extends string>({
             {Icon && <Icon aria-hidden="true" />}
             {t.label}
             {t.count !== undefined && t.count > 0 && <Count>{t.count}</Count>}
-            {active && <span className="absolute inset-x-0 -bottom-px h-px bg-text" />}
+            {active && <span className="absolute inset-x-0 bottom-0 h-px bg-text" />}
           </button>
         );
       })}
