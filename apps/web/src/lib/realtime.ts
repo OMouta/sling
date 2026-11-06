@@ -14,6 +14,7 @@ import type {
 import type { WorkflowDetailView } from "@sling/workflow";
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
+import { applyExtension, forgetExtension } from "./extensionApi.ts";
 import { modelsKey } from "./models.ts";
 import type { ConversationDetail, TaskDetail } from "./types.ts";
 import { qk } from "./workflowApi.ts";
@@ -294,6 +295,12 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       return;
     case "sandbox.updated":
       applySandbox(qc, ev.sandbox);
+      return;
+    case "extension.updated":
+      applyExtension(qc, ev.extension);
+      return;
+    case "extension.removed":
+      forgetExtension(qc, ev.id);
       return;
   }
 }

@@ -4,6 +4,7 @@ import {
   ListChecks,
   type LucideIcon,
   Plug,
+  Puzzle,
   Settings,
   ShieldCheck,
   Workflow,
@@ -15,6 +16,7 @@ export interface NavItem {
     | "/approvals"
     | "/workflows"
     | "/connectors"
+    | "/extensions"
     | "/machines"
     | "/sandboxes"
     | "/settings";
@@ -29,6 +31,7 @@ export const NAV: NavItem[] = [
   { to: "/approvals", label: "Approvals", icon: ShieldCheck, section: "main" },
   { to: "/workflows", label: "Workflows", icon: Workflow, section: "automation" },
   { to: "/connectors", label: "Connectors", icon: Plug, section: "automation" },
+  { to: "/extensions", label: "Extensions", icon: Puzzle, section: "automation" },
   { to: "/machines", label: "Machines", icon: Laptop, section: "infrastructure" },
   { to: "/sandboxes", label: "Sandboxes", icon: Box, section: "infrastructure" },
   { to: "/settings", label: "Settings", icon: Settings, section: "footer" },

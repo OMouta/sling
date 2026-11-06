@@ -15,7 +15,7 @@ import type {
   WorkflowVersionView,
 } from "@sling/workflow";
 import { useQuery } from "@tanstack/react-query";
-import { ApiError, api } from "./api.ts";
+import { ApiError, api, saveBlob } from "./api.ts";
 
 /**
  * React Query keys for workflows, connectors, and sandboxes. Pages read these
@@ -34,13 +34,20 @@ import { ApiError, api } from "./api.ts";
  *   ["sandboxes"]                       SandboxListView        GET /api/sandboxes
  *   ["sandbox-repos"]                   SandboxRepoView[]      GET /api/sandbox-repos
  *   ["sandbox-settings"]                SandboxSettingsView    GET /api/settings/sandboxes
+ *   ["extensions"]                      ExtensionView[]        GET /api/extensions
+ *   ["extension", id]                   ExtensionDetailView    GET /api/extensions/:id
+ *   ["extension-discover"]              DiscoverEntryView[]    GET /api/extensions/discover
+ *   ["extension-catalogs"]              CatalogView[]          GET /api/extension-catalogs
+ *   ["extension-publishers"]            PublisherView[]        GET /api/extension-publishers
  *
  * Runs and versions have their own roots so invalidating a workflow's detail
  * doesn't refetch its run list. Sandbox settings have their own root, apart
  * from ["settings"], so saving the model doesn't refetch them.
  *
  * `sandbox.updated` also patches its task's `environment` under ["task", id]
- * and in every cached ["conversation", id].
+ * and in every cached ["conversation", id]. An extension that's installed,
+ * updated, or removed changes connectors, nodes, templates, and Discover, so
+ * those refetch (see `extensionApi.ts`).
  */
 export const qk = {
   workflows: () => ["workflows"] as const,
@@ -56,6 +63,11 @@ export const qk = {
   sandboxes: () => ["sandboxes"] as const,
   sandboxRepos: () => ["sandbox-repos"] as const,
   sandboxSettings: () => ["sandbox-settings"] as const,
+  extensions: () => ["extensions"] as const,
+  extension: (id: string) => ["extension", id] as const,
+  discover: () => ["extension-discover"] as const,
+  catalogs: () => ["extension-catalogs"] as const,
+  publishers: () => ["extension-publishers"] as const,
 };
 
 export function useWorkflows() {
@@ -186,15 +198,10 @@ export function exportFileName(name: string): string {
 }
 
 export function downloadJson(fileName: string, data: unknown) {
-  const blob = new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = fileName;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  saveBlob(
+    fileName,
+    new Blob([`${JSON.stringify(data, null, 2)}\n`], { type: "application/json" }),
+  );
 }
 
 function isPublishResult(value: unknown): value is PublishResult {
