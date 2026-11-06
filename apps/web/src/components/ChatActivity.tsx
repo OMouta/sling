@@ -479,6 +479,7 @@ function SendStep({
           </span>
         )}
       </Disclosure>
+      {waiting && <SendValues input={step.input} />}
       {waiting && (
         <ChatApproval
           approvalId={approval.id}
@@ -502,6 +503,44 @@ function SendStep({
         <pre className="max-h-80 overflow-auto border-t border-border px-3 py-2 font-mono text-[11.5px] leading-[17px] whitespace-pre-wrap break-words text-soft">
           {result}
         </pre>
+      )}
+    </div>
+  );
+}
+
+/** One value of a send, as text a person reads before allowing it. */
+function sendValueText(v: unknown): string {
+  if (typeof v === "string") return v;
+  if (Array.isArray(v)) return v.map(sendValueText).join(", ");
+  if (v && typeof v === "object") return JSON.stringify(v, null, 2);
+  return String(v);
+}
+
+/**
+ * Every value a waiting send would go out with, such as an email's body,
+ * since the summary above names only the recipient and subject.
+ */
+function SendValues({ input }: { input: unknown }) {
+  const entries =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? Object.entries(input as Record<string, unknown>).filter(
+          ([, v]) => v !== null && v !== undefined && v !== "",
+        )
+      : [];
+  if (entries.length === 0 && typeof input !== "string") return null;
+  return (
+    <div className="max-h-64 overflow-auto border-t border-border px-2.5 py-2 text-xs leading-[18px]">
+      {entries.length > 0 ? (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+          {entries.map(([k, v]) => (
+            <div key={k} className="contents">
+              <dt className="text-muted">{k}</dt>
+              <dd className="whitespace-pre-wrap break-words text-soft">{sendValueText(v)}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <pre className="font-mono whitespace-pre-wrap break-words text-soft">{String(input)}</pre>
       )}
     </div>
   );

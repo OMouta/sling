@@ -11,15 +11,18 @@ What Sling protects, what it trusts, and where the known gaps are.
 - Your login to the web app, which can start all of the above
 - The Discord account of anyone on an installation's approver list, which can approve pushes and PRs
 - A signing key you trust for extensions, which can ship code that runs on the control plane
+- The power to merge into your default branches and deploy to production: a machine's deploy command, a deploy hook URL, or the GitHub token sandboxes use
+- Your calendar: a CalDAV app password, or a private iCal link, which reads the calendar like a password
+- Your devices' push subscriptions, which let whoever holds them put notifications on your lock screen
 
 ## Trust boundaries
 
 | Component | Trusted for | Not trusted for |
 |---|---|---|
 | Your browser session | Everything in your workspace | |
-| Control plane | Deciding what to run and when | Widening a Runner's limits |
+| Control plane | Deciding what to run and when, including asking a machine to merge a task's branch and run its deploy command | Widening a Runner's limits, choosing what a deploy command runs, merging a branch that isn't a Sling task branch, or deploying a commit that isn't merged |
 | Runner | Enforcing local limits | |
-| Master agent (LLM) | Choosing tools within the limits, and running read-only commands in a machine's sandbox | Picking the mode, reaching other workspaces, running commands outside the sandbox without your approval (outside Full access) |
+| Master agent (LLM) | Choosing tools within the limits, running read-only commands in a machine's sandbox, reading your calendar, and checking your deploy targets | Picking the mode, reaching other workspaces, running commands outside the sandbox, sending anything, or deploying, without your approval (outside Full access) |
 | Chat turns on a Runner | Running one assistant turn on the machine's own Codex or Claude Code login | Calling tools outside that turn's conversation, or reaching any server but the paired one |
 | Codex, Claude Code | Editing files in its worktree. On your machines, inside the agent's own sandbox. In a sandbox container, inside the container | Committing or pushing |
 | Sandbox | Running one task on a fresh clone of one allowed repo, with that task's secrets | Reaching your machines, other repos, or other tasks' secrets |
@@ -29,10 +32,12 @@ What Sling protects, what it trusts, and where the known gaps are.
 | Extension publishers (keys you trust) | Shipping code for the extensions pinned to their key | Replacing an extension pinned to another key |
 | Extension catalogs | Listing packages and versions, and revoking versions | Changing a package's files (Sling checks the digest) or its signer |
 | The catalog included with Sling | The same as the server's own code | |
+| Deploy targets' health checks and hooks | Answering whether the site works, and starting a deploy. You set their URLs | |
+| Push services (Apple, Google, Mozilla, Microsoft) | Carrying notifications to your devices | Reading them: each one is encrypted for its device |
 | Discord users on the allowed list | Chatting with the assistant, as you would | Approving anything, unless also on the approver list |
 | Discord users on the approver list | Approving and rejecting pending approvals | Anything else |
 | Webhook callers | Starting the one workflow whose URL they hold | |
-| Repo content, task output, emails, Discord messages, HTTP responses, logs | Nothing. Treated as data | Instructions of any kind |
+| Repo content, task output, emails, Discord messages, calendar events, HTTP responses, health check answers, logs | Nothing. Treated as data | Instructions of any kind |
 
 ## Controls
 
@@ -63,6 +68,14 @@ What Sling protects, what it trusts, and where the known gaps are.
 **Extensions.** Each extension with code runs in its own Node process under Node's permission model: it may read its own unpacked package and Sling's small child runtime, and nothing else. It can't write files, open sockets, resolve names, start processes or workers, load addons, or generate code from strings, and its environment is empty. Its only way out is its stdin and stdout, and the server refuses any message over 16 MB before reading it. The server checks every request: an installation's credentials only for that extension's own connectors in the run's workspace, events only of its own trigger types, approvals only with the `approvals` permission, and the provider role only with `sandboxes`. Network requests go through the server, which allows only the manifest's hosts and the hosts in installation fields the manifest names, over HTTPS and WSS, resolves names itself, refuses loopback, private, link-local, and CGNAT addresses unless the extension has `localNetwork`, connects only to the address it checked, and checks every redirect. Bodies are capped at 10 MB, socket messages at 1 MB, and an extension can hold 16 sockets. A process that stops answering heartbeats for 10 seconds is killed, and one that crashes 5 times in 10 minutes stays stopped. Extension servers need Node 26: on an older Node, no extension code runs.
 
 **Extension packages.** A package's digest covers every file, and the server checks it each time it unpacks the package, so a package changed in the database is refused. Packages are signed with Ed25519 over the ID, version, and digest. You trust a key once, after seeing its fingerprint, and an installed extension stays pinned to the key that signed it, so an update signed by another key is refused even if you trust that key too. Catalog entries pin each version's digest, and a download that doesn't match is refused. Unsigned packages install only when the server's environment sets `SLING_ALLOW_UNSIGNED_EXTENSIONS=1`; the web app can't turn that on. Packages refuse links, absolute paths, `..`, and anything over 20 MB packed or 50 MB unpacked. Every install sees the permissions first, and an update lists the permissions it adds. Nothing updates on its own. The extension's README is rendered without raw HTML, and its icon is served with a sandboxing Content-Security-Policy and shown only through `<img>`.
+
+**Deploys.** A merge or deploy happens only for a task delivered as a deploy, to a repo with a deploy target, after the conversation's mode allows it: Supervised and Auto ask once the PR exists, and Read-only can't deploy. The Runner checks on its own that the branch is a Sling task branch, that a PR's head and base match the task, and that a deploy's commit is already on the remote's default branch. It never force-pushes, and refuses everything after `sling-runner config set deploys off` or under a Read-only `max-mode`. A deploy command exists only in the machine's own config, so the control plane can't choose what runs. Deploy hooks are stored encrypted and never sent back to the browser. A sandbox's PR is merged with the GitHub token from **Settings → Sandboxes**. Every merge, deploy, and check result is audited.
+
+**Sends from chat.** Connector actions are open to the assistant only when their node says so, and only for a personality with Apps and workflows. Reading never asks. Sending, creating, or running a workflow with side effects is refused in Read-only, asks in the chat in Supervised and Auto, and runs at once only in Full access. The approval lives in the server's memory, belongs to one conversation, and expires after 5 minutes. Values from the model are passed as they are, never evaluated as expressions, and every call is audited as `assistant.action` with its summary and the decision.
+
+**Push.** Payloads hold a title, a line of text, and a page to open, never command output, message bodies, or diffs. Each is encrypted for its device (RFC 8291) and signed with a VAPID key derived from `SLING_SECRET_KEY`. Sling only sends to the known push services' hosts, so a session can't make the server post to an address of its choosing. A device's subscription is removed when its push service says it's gone.
+
+**The installed app.** The service worker caches the built files and the page shell, and never anything from `/api` or the socket, so a cached app shows nothing without your server.
 
 **Prompt injection.** Codex summaries, emails, and Discord messages reach models as data inside the user turn. AI nodes (`ai.prompt`, `ai.extract`, `ai.classify`) have no tools at all. A manipulated assistant can start or cancel tasks inside the conversation's mode, on machines and repos you allowed, and run commands. Outside Full access, a command can only read until you approve it, and the approval shows the exact command. A command can still read any file you can read and put it in the reply, which goes to the model's provider. Codex chat turns are also an exception, below.
 
@@ -102,3 +115,10 @@ What Sling protects, what it trusts, and where the known gaps are.
 - **Keys don't expire or get revoked by their publisher.** If a publisher's key leaks, nothing tells your server. Catalogs can revoke versions; removing a trusted key is up to you.
 - **The included catalog is trusted because it ships with the server.** Anyone who can write the server's install directory can change it, as they could change the server's code.
 - **Unsigned binaries.** macOS notarization and Windows code signing aren't set up yet.
+- **The control plane can deploy.** On a machine with `deploys` on, the default, whoever controls the control plane can approve their own deployment: merge a Sling task branch into the default branch and run the deploy command you set there. They can't change the command or deploy unmerged code. Turn `deploys off` on machines where that matters.
+- **Deploy commands run as you, outside any sandbox.** They get your environment and the network, because deploying needs both.
+- **The control plane holds a GitHub token that can merge.** Merging a sandbox's PR uses the token under **Settings → Sandboxes**. Scope it to the repos you allow in sandboxes.
+- **Health checks and hooks can reach your network.** You set their URLs, and they may point at private addresses, as your site may live there. Anyone with your session can point one at an internal service and learn whether it answers.
+- **A send is only as good as your reading of it.** The approval lists every value that would go out, such as an email's recipients, subject, and body, under a one-line summary. A prompt injection in an email or a calendar invite can make the assistant propose a send. Outside Full access, it can't send without your answer.
+- **Full access sends without asking.** In a Full access chat, the assistant's emails, messages, and events go out as soon as it calls the tool.
+- **Lock screens show titles.** A notification shows the task's or target's name, and the push service sees when a push went to which device.

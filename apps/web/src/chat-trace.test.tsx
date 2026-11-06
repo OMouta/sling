@@ -273,7 +273,7 @@ describe("chat replies", () => {
         kind: "tool",
         id: "t2",
         name: "email_send",
-        input: { to: "ana@example.com", subject: "Lunch moved" },
+        input: { to: "ana@example.com", subject: "Lunch moved", text: "See you at 13:30 instead." },
         status: "running",
         output: null,
         approval: {
@@ -287,6 +287,8 @@ describe("chat replies", () => {
     });
     expect(screen.getByText("Email ana@example.com: Lunch moved")).toBeTruthy();
     expect(screen.getByText("Allow this?")).toBeTruthy();
+    // Every value it would send shows before you allow it, the body included.
+    expect(screen.getByText("See you at 13:30 instead.")).toBeTruthy();
     // Sends never talk about sandboxes or machines.
     expect(screen.queryByText(/outside the sandbox/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Allow" }));
