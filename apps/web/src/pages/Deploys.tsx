@@ -190,20 +190,20 @@ function TargetCard({
 
         <dl className="grid gap-x-6 gap-y-2 border-t border-border px-4 py-2.5 text-xs sm:grid-cols-2">
           <div className="flex min-w-0 items-baseline gap-2">
-            <dt className="shrink-0 text-subtle">Deploys</dt>
-            <dd className="min-w-0 truncate text-soft">
+            <dt className="shrink-0 text-subtle">Method</dt>
+            <dd className="min-w-0 text-soft">
               <MethodLine target={t} />
             </dd>
           </div>
           <div className="flex min-w-0 items-baseline gap-2">
             <dt className="shrink-0 text-subtle">Last deploy</dt>
-            <dd className="flex min-w-0 items-baseline gap-1.5 text-soft">
+            <dd className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-soft">
               {t.lastDeploy ? (
                 <>
                   <Link
                     to="/tasks/$id"
                     params={{ id: t.lastDeploy.taskId }}
-                    className="min-w-0 truncate decoration-faint underline-offset-2 hover:underline"
+                    className="max-w-full truncate decoration-faint underline-offset-2 hover:underline"
                   >
                     {t.lastDeploy.taskTitle}
                   </Link>
@@ -258,7 +258,7 @@ function Status({
   if (!last) return <span className="shrink-0 text-xs text-muted">Not checked yet</span>;
   const ms = slowest(last.results);
   return (
-    <span className="tabular shrink-0 text-xs text-muted">
+    <span className="tabular min-w-0 text-xs text-muted">
       <span className={cx("font-medium", last.up ? "text-ok" : "text-danger")}>
         {last.up ? "Up" : "Down"}
       </span>

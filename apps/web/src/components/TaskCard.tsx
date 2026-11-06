@@ -281,7 +281,11 @@ export function TaskCard({
         {task.actions.length > 0 && (
           <ol aria-label="Steps after the task" className="space-y-1 border-t border-border pt-3">
             {task.actions.map((a) => (
-              <StepRow key={a.id} action={a} />
+              <StepRow
+                key={a.id}
+                action={a}
+                prUrl={task.actions.find((x) => x.kind === "open_pr")?.url ?? null}
+              />
             ))}
           </ol>
         )}
@@ -568,7 +572,7 @@ function linkLabel(url: string): string {
  * behind. A merge shows its commit, a deploy its command's output, and the
  * site check what each check saw.
  */
-function StepRow({ action: a }: { action: ActionView }) {
+function StepRow({ action: a, prUrl }: { action: ActionView; prUrl: string | null }) {
   const Icon = ACTION_ICON[a.kind] ?? Upload;
   // A deploy's steps say useful things when they work too, such as a hook's answer.
   const showMessage = a.message && (a.state !== "succeeded" || isDeployStep(a));
@@ -589,7 +593,8 @@ function StepRow({ action: a }: { action: ActionView }) {
           commit <Mono>{shortSha(a.commitSha)}</Mono>
         </span>
       )}
-      {a.url && (
+      {/* A merge links to the PR the step above it already links to. */}
+      {a.url && (a.kind === "open_pr" || a.url !== prUrl) && (
         <a
           href={a.url}
           target="_blank"

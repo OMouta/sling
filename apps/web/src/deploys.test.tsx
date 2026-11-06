@@ -264,7 +264,7 @@ describe("deploys page", () => {
     renderAt("/deploys");
     const site = await targetCard("Website");
     expect(site.getByText("github.com/a/site")).toBeTruthy();
-    expect(fact(site, "Deploys")).toBe("Runs fly deploy on Studio Mac");
+    expect(fact(site, "Method")).toBe("Runs fly deploy on Studio Mac");
     expect(site.getByText("Up").parentElement?.textContent).toMatch(
       /^Up · 121 ms · checked .+ ago$/,
     );
@@ -277,13 +277,13 @@ describe("deploys page", () => {
     ]);
 
     const docs = await targetCard("Docs");
-    expect(fact(docs, "Deploys")).toBe("Host deploys on merge");
+    expect(fact(docs, "Method")).toBe("Host deploys on merge");
     expect(docs.getByText("Down").parentElement?.textContent).toMatch(/3 failures in a row/);
     expect(docs.getByText("Expected 200 to 399, got 502")).toBeTruthy();
     expect(fact(docs, "Last deploy")).toBe("Never");
 
     const api = await targetCard("API");
-    expect(fact(api, "Deploys")).toBe("Calls a hook on api.render.com");
+    expect(fact(api, "Method")).toBe("Calls a hook on api.render.com");
     expect(api.getAllByText("Not checked yet")).toHaveLength(2);
     // One target is down, and the header says so.
     expect(screen.getByText("1 down")).toBeTruthy();
@@ -566,9 +566,9 @@ describe("deploy steps on a task", () => {
     expect(merge.getByText("Done")).toBeTruthy();
     expect(merge.getByText("on Studio Mac")).toBeTruthy();
     expect(merge.getByText("abcdef12")).toBeTruthy();
-    expect(merge.getByRole("link", { name: /View PR/ }).getAttribute("href")).toBe(
-      "https://github.com/a/site/pull/12",
-    );
+    // The PR step above already links to it.
+    expect(merge.queryByRole("link", { name: /View PR/ })).toBeNull();
+    expect(row("Open pull request").getByRole("link", { name: /View PR/ })).toBeTruthy();
 
     const deploy = row("Deploy");
     expect(deploy.getByText("on Studio Mac")).toBeTruthy();

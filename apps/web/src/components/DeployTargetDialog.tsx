@@ -186,10 +186,17 @@ export function DeployTargetDialog({
             {/* Every method's fields share one cell, so the dialog keeps its height as you switch. */}
             <div className="grid">
               <MethodPanel active={draft.method === "merge"}>
-                <p className="text-xs leading-[18px] text-muted">
-                  Your host deploys the default branch when it changes, as Vercel, Netlify, and
-                  Render do. Sling merges, waits {span(settle)}, then runs the checks.
-                </p>
+                <div className="space-y-2 text-xs leading-[18px] text-muted">
+                  <p>
+                    Your host deploys the default branch when it changes, as Vercel, Netlify, and
+                    Render do. Sling merges, waits {span(settle)}, then runs the checks.
+                  </p>
+                  <p>
+                    The host decides when the new version goes live, so add a version URL below.
+                    Then Sling waits until the site shows the merged commit, instead of passing on
+                    the old version.
+                  </p>
+                </div>
               </MethodPanel>
               <MethodPanel active={draft.method === "command"}>
                 <CommandFields
@@ -325,16 +332,18 @@ function Segmented<T extends string>({
   value,
   onChange,
   disabled,
+  className,
 }: {
   label: string;
   options: { value: T; label: string }[];
   value: T;
   onChange: (value: T) => void;
   disabled?: boolean;
+  className?: string;
 }) {
   const id = useId();
   return (
-    <div className="space-y-1.5">
+    <div className={cx("space-y-1.5", className)}>
       <span id={id} className="block text-xs font-medium text-soft">
         {label}
       </span>
@@ -467,36 +476,44 @@ function CommandFields({
   }
   const picked = machines.find((m) => m.runner.id === value);
   return (
-    <Field
-      label="Machine"
-      hint={
-        error ? (
-          <Problem text={error} />
-        ) : picked ? (
-          <>
-            Runs <Mono>{picked.command}</Mono> in a fresh checkout of the merged commit.
-          </>
-        ) : (
-          "Only machines with a deploy command for this repo are listed."
-        )
-      }
-    >
-      <Select
-        value={value}
-        aria-invalid={Boolean(error)}
-        onChange={(e) => onChange(e.target.value)}
+    <div className="space-y-3">
+      <Field
+        label="Machine"
+        hint={
+          error ? (
+            <Problem text={error} />
+          ) : picked ? (
+            <>
+              Runs <Mono>{picked.command}</Mono> in a fresh checkout of the merged commit.
+            </>
+          ) : (
+            "Only machines with a deploy command for this repo are listed."
+          )
+        }
       >
-        <option value="" disabled>
-          Pick a machine
-        </option>
-        {machines.map((m) => (
-          <option key={m.runner.id} value={m.runner.id} disabled={m.blocked !== null}>
-            {m.runner.name}: {m.command}
-            {m.blocked ? ` (${m.blocked})` : m.runner.online ? "" : " (offline)"}
+        <Select
+          value={value}
+          aria-invalid={Boolean(error)}
+          onChange={(e) => onChange(e.target.value)}
+        >
+          <option value="" disabled>
+            Pick a machine
           </option>
-        ))}
-      </Select>
-    </Field>
+          {machines.map((m) => (
+            <option key={m.runner.id} value={m.runner.id} disabled={m.blocked !== null}>
+              {m.runner.name}: {m.command}
+              {m.blocked ? ` (${m.blocked})` : m.runner.online ? "" : " (offline)"}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <div className="space-y-1.5">
+        <p className="text-xs leading-4 text-subtle">
+          To deploy from another machine, set its command:
+        </p>
+        <CodeLine text={line} />
+      </div>
+    </div>
   );
 }
 
@@ -540,76 +557,79 @@ function HookFields({
   const locked = !editing;
   return (
     <div className="space-y-3">
-      {locked && stored ? (
-        // Not a label: the stored URL can't be edited, only replaced.
-        <div className="space-y-1.5">
-          <span className="block text-xs font-medium text-soft">Hook URL</span>
-          <span className="flex h-8 items-center gap-2 rounded-lg bg-field pr-1 pl-2.5 text-[13px] shadow-field">
-            <Lock aria-hidden="true" size={13} className="shrink-0 text-subtle" />
-            <span className="min-w-0 flex-1 truncate text-soft">Stored for {stored.host}</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label="Replace the hook"
-              onClick={() => {
-                set("replaceHook", true);
-                requestAnimationFrame(() => url.current?.focus());
-              }}
-            >
-              Replace
-            </Button>
-          </span>
-          <span className="block text-xs leading-4 text-subtle">
-            Stored encrypted. Sling never shows it again.
-          </span>
-        </div>
-      ) : (
-        <Field
-          label="Hook URL"
-          hint={
-            errors.hookUrl ? (
-              <Problem text={errors.hookUrl} />
-            ) : stored ? (
-              <>
-                Replaces the stored one when you save.{" "}
-                <button
-                  type="button"
-                  className="cursor-pointer text-accent-text hover:underline"
-                  onClick={() => set("replaceHook", false)}
-                >
-                  Keep the stored one
-                </button>
-              </>
-            ) : (
-              "Stored encrypted. Sling never shows it again."
-            )
-          }
-        >
-          <Input
-            ref={url}
-            type="url"
-            inputMode="url"
-            autoComplete="off"
-            spellCheck={false}
-            value={draft.hookUrl}
-            placeholder="https://api.example-host.com/deploy/…"
-            aria-invalid={Boolean(errors.hookUrl)}
-            onChange={(e) => set("hookUrl", e.target.value)}
-          />
-        </Field>
-      )}
-      <Segmented
-        label="Request"
-        options={[
-          { value: "POST" as const, label: "POST" },
-          { value: "GET" as const, label: "GET" },
-        ]}
-        value={draft.httpMethod}
-        disabled={locked}
-        onChange={(m) => set("httpMethod", m)}
-      />
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+        {locked && stored ? (
+          // Not a label: the stored URL can't be edited, only replaced.
+          <div className="space-y-1.5">
+            <span className="block text-xs font-medium text-soft">Hook URL</span>
+            <span className="flex h-8 items-center gap-2 rounded-lg bg-field pr-1 pl-2.5 text-[13px] shadow-field">
+              <Lock aria-hidden="true" size={13} className="shrink-0 text-subtle" />
+              <span className="min-w-0 flex-1 truncate text-soft">Stored for {stored.host}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label="Replace the hook"
+                onClick={() => {
+                  set("replaceHook", true);
+                  requestAnimationFrame(() => url.current?.focus());
+                }}
+              >
+                Replace
+              </Button>
+            </span>
+            <span className="block text-xs leading-4 text-subtle">
+              Stored encrypted. Sling never shows it again.
+            </span>
+          </div>
+        ) : (
+          <Field
+            label="Hook URL"
+            hint={
+              errors.hookUrl ? (
+                <Problem text={errors.hookUrl} />
+              ) : stored ? (
+                <>
+                  Replaces the stored one when you save.{" "}
+                  <button
+                    type="button"
+                    className="cursor-pointer text-accent-text hover:underline"
+                    onClick={() => set("replaceHook", false)}
+                  >
+                    Keep the stored one
+                  </button>
+                </>
+              ) : (
+                "Stored encrypted. Sling never shows it again."
+              )
+            }
+          >
+            <Input
+              ref={url}
+              type="url"
+              inputMode="url"
+              autoComplete="off"
+              spellCheck={false}
+              value={draft.hookUrl}
+              placeholder="https://api.example-host.com/deploy/…"
+              aria-invalid={Boolean(errors.hookUrl)}
+              onChange={(e) => set("hookUrl", e.target.value)}
+            />
+          </Field>
+        )}
+        <Segmented
+          label="Request"
+          className="sm:self-end sm:pb-[23px]"
+          options={[
+            { value: "POST" as const, label: "POST" },
+            { value: "GET" as const, label: "GET" },
+          ]}
+          value={draft.httpMethod}
+          disabled={locked}
+          onChange={(m) => set("httpMethod", m)}
+        />
+      </div>
       <div className="space-y-1.5">
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-2">
           <Field label="Header (optional)">
             <Input
               value={draft.headerName}
