@@ -6,6 +6,7 @@ import type { Agent } from "./agent/agent.ts";
 import type { CliChat } from "./agent/cli-chat.ts";
 import type { Auth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
+import type { ExtensionService } from "./extensions/service.ts";
 import type { Hub } from "./realtime/hub.ts";
 import type { RunnerGateway } from "./runners/gateway.ts";
 import type { SandboxService } from "./sandboxes/service.ts";
@@ -38,6 +39,8 @@ export interface AppContext {
   events: EventBus;
   workflows: WorkflowService;
   connectors: ConnectorRuntime;
+  /** Installed extensions, catalogs, and trusted publishers. */
+  extensions: ExtensionService;
   /** Durable jobs. Null until the server has started it. */
   boss: PgBoss | null;
   /** Replaces the workspace model everywhere. Tests use a scripted mock. */

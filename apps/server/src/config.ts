@@ -13,6 +13,15 @@ const Env = z.object({
   SLING_WEB_DIST: z.string().optional(),
   /** Image sandboxes run when their provider doesn't name one. */
   SLING_SANDBOX_IMAGE: z.string().min(1).optional(),
+  /** Install unsigned extension packages. For developing extensions; the web app can't turn it on. */
+  SLING_ALLOW_UNSIGNED_EXTENSIONS: z
+    .enum(["0", "1", "true", "false", ""])
+    .default("")
+    .transform((v) => v === "1" || v === "true"),
+  /** Directory with the catalog that ships with Sling: catalog.json and its packages. */
+  SLING_INCLUDED_EXTENSIONS: z.string().min(1).optional(),
+  /** Where installed extension packages are unpacked for their processes. */
+  SLING_EXTENSION_CACHE: z.string().min(1).optional(),
   /** GitHub repo, as owner/name, whose releases the Runner install script downloads. */
   SLING_RELEASE_REPO: z
     .string()
@@ -32,6 +41,12 @@ export interface Config {
   sandboxImage?: string | undefined;
   /** GitHub repo the Runner install script downloads releases from. */
   releaseRepo?: string | undefined;
+  /** Unsigned extension packages may be installed. Only the server's environment sets it. */
+  allowUnsignedExtensions?: boolean;
+  /** Catalog that ships with Sling. Defaults to the repo's `extensions/dist`. */
+  includedExtensionsDir?: string | undefined;
+  /** Where packages are unpacked. Defaults to `<tmpdir>/sling-extensions`. */
+  extensionCacheDir?: string | undefined;
   /** Only set by tests. */
   testing?: {
     /** Passed to sandboxes as SLING_CODEX_BIN, so they run a fake Codex. */
@@ -60,5 +75,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webDist: e.SLING_WEB_DIST,
     sandboxImage: e.SLING_SANDBOX_IMAGE,
     releaseRepo: e.SLING_RELEASE_REPO,
+    allowUnsignedExtensions: e.SLING_ALLOW_UNSIGNED_EXTENSIONS,
+    includedExtensionsDir: e.SLING_INCLUDED_EXTENSIONS,
+    extensionCacheDir: e.SLING_EXTENSION_CACHE,
   };
 }

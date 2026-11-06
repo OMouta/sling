@@ -341,6 +341,8 @@ export interface ConnectorView {
   nodeTypes: string[];
   /** Creates sandboxes (Docker, Railway). Listed with providers rather than with triggers and actions. */
   isExecutionProvider?: boolean;
+  /** The extension that adds this connector. Null for connectors built into Sling. */
+  extension?: ExtensionRef | null;
 }
 
 export type InstallationStatus = "idle" | "connecting" | "connected" | "error" | "disabled";
@@ -413,6 +415,164 @@ export interface SandboxSettingsView {
   secrets: { openaiApiKey: boolean; anthropicApiKey: boolean; gitToken: boolean };
 }
 
+// ------------------------------------------------------------- extensions
+
+/** The extension a connector, node, or template came from. */
+export interface ExtensionRef {
+  id: string;
+  name: string;
+  version: string;
+  hasIcon: boolean;
+}
+
+export type ExtensionSource = "included" | "catalog" | "upload";
+export type ExtensionKind = "connector" | "provider" | "workflows";
+/**
+ * `stopped`: installed and enabled, no process running (they start on demand).
+ * `unsupported`: this server's Node can't isolate extension code.
+ */
+export type ExtensionStatus =
+  | "stopped"
+  | "starting"
+  | "running"
+  | "error"
+  | "disabled"
+  | "unsupported";
+
+export interface PermissionLine {
+  /** Stable key, for diffs. */
+  key: string;
+  text: string;
+  /** `high` for permissions that reach past the extension's own installations. */
+  risk: "normal" | "high";
+}
+
+/** Who signed a package. Null for unsigned packages and the ones that ship with Sling. */
+export interface PublisherRef {
+  keyId: string;
+  name: string;
+  /** `3f2a 91c0 7d4e 22b1`. */
+  fingerprint: string;
+  trusted: boolean;
+}
+
+export interface ExtensionContents {
+  connectors: { id: string; name: string; isExecutionProvider: boolean }[];
+  nodes: { type: string; version: number; title: string; isTrigger: boolean }[];
+  templates: { key: string; name: string }[];
+}
+
+export interface ExtensionView {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  source: ExtensionSource;
+  /** Catalog it was installed from: an ID, `included`, or null for uploads. */
+  catalogId: string | null;
+  publisher: PublisherRef | null;
+  signed: boolean;
+  enabled: boolean;
+  status: ExtensionStatus;
+  statusDetail: string | null;
+  kinds: ExtensionKind[];
+  contents: ExtensionContents;
+  permissions: PermissionLine[];
+  /** A newer, compatible, unrevoked version in an enabled catalog. */
+  update: { version: string; catalogId: string } | null;
+  /** Set when a catalog revoked the installed version. */
+  revoked: { reason: string } | null;
+  usedBy: { installations: number; workflows: number };
+  hasIcon: boolean;
+  homepage: string | null;
+  installedAt: string;
+  updatedAt: string;
+}
+
+export interface ExtensionDetailView extends ExtensionView {
+  readme: string | null;
+  manifest: Record<string, unknown>;
+  digest: string;
+  /** Versions the catalog lists, newest first. Empty for uploads. */
+  versions: { version: string; publishedAt: string | null; revoked: { reason: string } | null }[];
+  /** The last lines its process logged. */
+  log: { at: string; level: "info" | "warn" | "error"; message: string }[];
+  installations: { id: string; name: string; connectorId: string }[];
+  workflows: { id: string; name: string; enabled: boolean }[];
+}
+
+export interface DiscoverEntryView {
+  catalogId: string;
+  catalogName: string;
+  id: string;
+  name: string;
+  description: string;
+  publisher: PublisherRef | null;
+  kinds: ExtensionKind[];
+  homepage: string | null;
+  /** The newest version this server can install. Null when none is compatible. */
+  latest: {
+    version: string;
+    size: number;
+    permissions: PermissionLine[];
+    publishedAt: string | null;
+  } | null;
+  /** Why no version can be installed, when `latest` is null. */
+  unavailable: string | null;
+  installed: { version: string; updateAvailable: boolean } | null;
+}
+
+/** What an install or update would do. Confirm with the same staging ID. */
+export interface ExtensionPreview {
+  stagingId: string;
+  expiresAt: string;
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  digest: string;
+  size: number;
+  source: ExtensionSource;
+  catalogId: string | null;
+  publisher: PublisherRef | null;
+  signed: boolean;
+  kinds: ExtensionKind[];
+  contents: ExtensionContents;
+  permissions: PermissionLine[];
+  /** Raw permissions, echoed back on confirm so the server can check nothing changed. */
+  permissionsKey: string;
+  /** Set when this is an update. */
+  diff: { fromVersion: string; added: PermissionLine[]; removed: PermissionLine[] } | null;
+  missing: {
+    extensions: { id: string; range: string; catalogId: string | null }[];
+    connectors: string[];
+  };
+  /** Problems that stop the install. Empty when it can go ahead. */
+  problems: string[];
+  readme: string | null;
+}
+
+export interface PublisherView {
+  keyId: string;
+  name: string;
+  fingerprint: string;
+  trustedAt: string;
+  /** IDs of installed extensions pinned to this key. */
+  extensions: string[];
+}
+
+export interface CatalogView {
+  /** `included` for the catalog that ships with Sling. */
+  id: string;
+  url: string | null;
+  name: string;
+  enabled: boolean;
+  included: boolean;
+  fetchedAt: string | null;
+  error: string | null;
+  extensionCount: number;
+}
+
 export type AgentStatus = "idle" | "thinking" | "error";
 
 export type ServerEvent =
@@ -430,4 +590,6 @@ export type ServerEvent =
   | { type: "run.updated"; run: RunView }
   | { type: "node_run.updated"; nodeRun: NodeRunView }
   | { type: "installation.updated"; installation: InstallationView }
-  | { type: "sandbox.updated"; sandbox: SandboxView };
+  | { type: "sandbox.updated"; sandbox: SandboxView }
+  | { type: "extension.updated"; extension: ExtensionView }
+  | { type: "extension.removed"; id: string };

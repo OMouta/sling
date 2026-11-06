@@ -43,6 +43,13 @@
       "when": 1793918334322,
       "tag": "0005_reply_trace",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793923556038,
+      "tag": "0006_extensions",
+      "breakpoints": true
     }
   ]
 }

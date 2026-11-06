@@ -10,6 +10,9 @@ import { createAuth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
 import type { AppContext } from "./context.ts";
 import { deriveKey } from "./crypto.ts";
+import { ProcessRuntime } from "./extensions/process-runtime.ts";
+import type { ExtensionRuntime } from "./extensions/runtime.ts";
+import { ExtensionService } from "./extensions/service.ts";
 import { createServer, registerRoutes } from "./http/app.ts";
 import { startJobs } from "./jobs.ts";
 import { Hub } from "./realtime/hub.ts";
@@ -38,6 +41,8 @@ export interface StartOptions {
   templatesDir?: string;
   /** How many runs one process executes at once. */
   runConcurrency?: number;
+  /** Replaces the process runtime for extension code. Tests use an in-process one. */
+  extensionRuntime?: ExtensionRuntime;
 }
 
 export interface RunningServer {
@@ -89,6 +94,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     events: undefined as unknown as EventBus,
     workflows: undefined as unknown as WorkflowService,
     connectors: undefined as unknown as ConnectorRuntime,
+    extensions: undefined as unknown as ExtensionService,
   };
   ctx.runners = new RunnerGateway(ctx);
   ctx.tasks = new TaskService(ctx);
@@ -99,6 +105,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   ctx.events = new EventBus(ctx);
   ctx.workflows = new WorkflowService(ctx, opts.templatesDir);
   ctx.connectors = new ConnectorRuntime(ctx);
+  ctx.extensions = new ExtensionService(ctx, opts.extensionRuntime ?? new ProcessRuntime());
   ctx.runners.handlers = ctx.tasks;
   ctx.tasks.onSettled = async (taskId, reason) => {
     // First, so a failing hook below can't keep a sandbox alive.
@@ -114,6 +121,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     boss = await startJobs(ctx, config.databaseUrl, { schedules: opts.jobs !== false });
     ctx.boss = boss;
     await startScheduleWorker(ctx, boss);
+    // Before built-in workflows and the engine, so extension node types are registered.
+    await ctx.extensions.start();
     await ctx.workflows.ensureBuiltIns();
     await ctx.engine.start(boss, { concurrency: opts.runConcurrency ?? 10 });
 
@@ -121,6 +130,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     await app.listen({ host: config.host, port: config.port });
     await ctx.connectors.reconcile();
   } catch (err) {
+    await ctx.extensions.stop();
     ctx.runners.stop();
     await boss?.stop({ graceful: false });
     await app.close();
@@ -137,6 +147,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     async close() {
       await ctx.connectors.stopAll();
       await ctx.engine.stop();
+      await ctx.extensions.stop();
       await Promise.race([ctx.sandboxes.idle(), new Promise((ok) => setTimeout(ok, 10_000))]);
       ctx.runners.stop();
       await boss?.stop({ graceful: true, timeout: 10_000 });
