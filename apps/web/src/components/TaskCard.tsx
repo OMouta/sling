@@ -5,13 +5,16 @@ import {
   HARNESS_LABELS,
   type PermissionMode,
   type RoutingView,
+  type RunnerView,
   type TaskEventView,
   type TaskState,
   type TaskView,
+  type VerifyDetail,
 } from "@sling/core";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+  Activity,
   ArrowRight,
   Check,
   Clock,
@@ -19,6 +22,7 @@ import {
   FilePen,
   FolderGit2,
   GitBranch,
+  GitMerge,
   GitPullRequest,
   LoaderCircle,
   MessageSquare,
@@ -30,8 +34,19 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { api } from "../lib/api.ts";
+import {
+  awaitsDeployApproval,
+  canDeployLater,
+  deployApi,
+  deployPlan,
+  isDeployStep,
+  targetForTask,
+  taskRepo,
+  useDeployTargets,
+} from "../lib/deploys.ts";
 import { between, duration, plural, shortSha } from "../lib/format.ts";
 import { agentModels, useModelCatalog } from "../lib/models.ts";
+import { apply } from "../lib/realtime.ts";
 import { pendingFallbackFor } from "../lib/sandbox.ts";
 import {
   type EnvironmentSummary,
@@ -40,6 +55,7 @@ import {
 } from "../lib/taskEnvironment.ts";
 import type { TaskDetail } from "../lib/types.ts";
 import { useNow } from "../lib/useNow.ts";
+import { CheckList, DeployPlanText } from "./DeployBits.tsx";
 import { ModeBadge } from "./ModeBadge.tsx";
 import { SandboxFallbackCard } from "./SandboxFallbackCard.tsx";
 import { SandboxStateBadge } from "./StatusBadge.tsx";
@@ -52,6 +68,7 @@ import {
   Dot,
   ErrorText,
   Mono,
+  Skeleton,
   Spinner,
   type Tone,
 } from "./ui.tsx";
@@ -72,13 +89,15 @@ const ACTION_LABEL: Record<string, string> = {
   open_pr: "Open pull request",
   merge: "Merge",
   deploy: "Deploy",
+  verify: "Check the site",
 };
 
 const ACTION_ICON = {
   push: Upload,
   open_pr: GitPullRequest,
-  merge: GitBranch,
+  merge: GitMerge,
   deploy: Rocket,
+  verify: Activity,
 } as Record<string, typeof Upload>;
 
 const ACTION_STATE: Record<ActionView["state"], string> = {
@@ -133,11 +152,32 @@ export function TaskCard({
       ? between(task.startedAt, task.finishedAt, now)
       : null;
 
+  const qc = useQueryClient();
   const decide = useMutation({
     mutationFn: (decision: "approve" | "reject") =>
       api.post(`/api/tasks/${task.id}/approval`, { decision }),
   });
   const cancel = useMutation({ mutationFn: () => api.post(`/api/tasks/${task.id}/cancel`) });
+  const deploy = useMutation({
+    mutationFn: () => deployApi.deployTask(task.id),
+    onSuccess: (next) => {
+      if (next && typeof next === "object" && "actions" in next) {
+        apply(qc, { type: "task.updated", task: next });
+      }
+    },
+  });
+  // Only a deploy approval or a delivered PR needs to know the repo's target.
+  const deployApproval = awaitsDeployApproval(task);
+  const deployLater = canDeployLater(task) && !deploy.isSuccess;
+  const wantsTarget = deployApproval || deployLater;
+  const targets = useDeployTargets(wantsTarget);
+  const runners = useQuery({
+    queryKey: ["runners"],
+    queryFn: () => api.get<RunnerView[]>("/api/runners"),
+    enabled: wantsTarget,
+  });
+  const target = wantsTarget ? targetForTask(task, targets.data, runners.data) : undefined;
+  const targetName = target?.name ?? task.actions.find((a) => a.targetName)?.targetName;
   // Only a task with no machine yet can be waiting on a fallback approval.
   const approvals = useQuery({
     queryKey: ["approvals"],
@@ -239,41 +279,58 @@ export function TaskCard({
         {task.error && <p className="text-[13px] text-danger">{task.error}</p>}
 
         {task.actions.length > 0 && (
-          <ol className="space-y-1 border-t border-border pt-3">
-            {task.actions.map((a) => {
-              const Icon = ACTION_ICON[a.kind] ?? Upload;
-              return (
-                <li
-                  key={a.id}
-                  className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]"
-                >
-                  <span className="flex w-40 shrink-0 items-center gap-2">
-                    <Icon aria-hidden="true" className="text-subtle" />
-                    {ACTION_LABEL[a.kind] ?? a.kind}
-                  </span>
-                  <ActionStateText action={a} />
-                  {a.url && (
-                    <a
-                      href={a.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-accent-text hover:underline"
-                    >
-                      {a.kind === "open_pr" && a.url.includes("/pull/") ? "View PR" : "Open link"}
-                      <ExternalLink aria-hidden="true" size={12} />
-                    </a>
-                  )}
-                  {a.message && a.state !== "succeeded" && (
-                    <span className="w-full pl-6 text-xs text-muted">{a.message}</span>
-                  )}
-                </li>
-              );
-            })}
+          <ol aria-label="Steps after the task" className="space-y-1 border-t border-border pt-3">
+            {task.actions.map((a) => (
+              <StepRow key={a.id} action={a} />
+            ))}
           </ol>
         )}
       </div>
 
-      {(awaiting.length > 0 || active || compact) && (
+      {deployApproval && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border px-4 py-3">
+          <div className="min-w-0 flex-1 basis-64">
+            <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium">
+              <Rocket aria-hidden="true" size={13} className="shrink-0 text-subtle" />
+              Approve deployment?
+              {targetName && <span className="truncate font-normal text-muted">{targetName}</span>}
+            </p>
+            {targets.isPending ? (
+              <Skeleton className="mt-1.5 h-3 w-4/5" />
+            ) : (
+              <p className="mt-0.5 text-xs leading-[18px] text-muted">
+                <DeployPlanText
+                  plan={deployPlan({
+                    prUrl: task.actions.find((a) => a.kind === "open_pr")?.url ?? null,
+                    branch: task.branch,
+                    defaultBranch: taskRepo(task, runners.data)?.defaultBranch ?? null,
+                    target,
+                  })}
+                />
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
+              Reject
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              busy={decide.isPending}
+              onClick={() => decide.mutate("approve")}
+            >
+              Approve
+            </Button>
+          </div>
+          <ErrorText error={decide.error} />
+        </div>
+      )}
+
+      {((awaiting.length > 0 && !deployApproval) ||
+        active ||
+        compact ||
+        (deployLater && target)) && (
         <CardFooter>
           {compact && (
             <Link
@@ -285,7 +342,7 @@ export function TaskCard({
               <ArrowRight aria-hidden="true" size={12} />
             </Link>
           )}
-          {awaiting.length > 0 && (
+          {awaiting.length > 0 && !deployApproval && (
             <>
               <span className={cx("text-[13px]", !compact && "mr-auto")}>
                 Approve {awaiting.map((a) => ACTION_LABEL[a.kind]?.toLowerCase()).join(" and ")}?
@@ -303,6 +360,17 @@ export function TaskCard({
               </Button>
             </>
           )}
+          {deployLater && target && (
+            <Button
+              size="sm"
+              icon={Rocket}
+              title={`Merge the PR, deploy it to ${target.name}, and check the site`}
+              busy={deploy.isPending}
+              onClick={() => deploy.mutate()}
+            >
+              Deploy
+            </Button>
+          )}
           {active && awaiting.length === 0 && (
             <Button
               size="sm"
@@ -315,7 +383,9 @@ export function TaskCard({
               Cancel task
             </Button>
           )}
-          <ErrorText error={decide.error ?? cancel.error} />
+          <ErrorText
+            error={(deployApproval ? null : decide.error) ?? cancel.error ?? deploy.error}
+          />
         </CardFooter>
       )}
     </Card>
@@ -469,19 +539,116 @@ function WhyHere({ routing }: { routing: RoutingView }) {
   );
 }
 
-function ActionStateText({ action }: { action: ActionView }) {
+/** A step's state, colored by how it went. */
+export function ActionStateText({ state }: { state: ActionView["state"] }) {
   const tone =
-    action.state === "succeeded"
+    state === "succeeded"
       ? "text-ok"
-      : action.state === "awaiting_approval"
+      : state === "awaiting_approval"
         ? "text-warn"
-        : ["failed", "refused", "rejected", "expired"].includes(action.state)
+        : ["failed", "refused", "rejected", "expired"].includes(state)
           ? "text-danger"
           : "text-muted";
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs ${tone}`}>
-      {action.state === "sent" && <Spinner className="size-3" />}
-      {ACTION_STATE[action.state]}
+      {state === "sent" && <Spinner className="size-3" />}
+      {ACTION_STATE[state]}
     </span>
+  );
+}
+
+function linkLabel(url: string): string {
+  if (url.includes("/pull/") || url.includes("/merge_requests/")) return "View PR";
+  if (url.includes("/commit/")) return "View commit";
+  return "Open link";
+}
+
+/**
+ * One step after the task: its state and where it ran, then what it left
+ * behind. A merge shows its commit, a deploy its command's output, and the
+ * site check what each check saw.
+ */
+function StepRow({ action: a }: { action: ActionView }) {
+  const Icon = ACTION_ICON[a.kind] ?? Upload;
+  // A deploy's steps say useful things when they work too, such as a hook's answer.
+  const showMessage = a.message && (a.state !== "succeeded" || isDeployStep(a));
+  return (
+    <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[13px]">
+      <span className="flex w-40 shrink-0 items-center gap-2">
+        <Icon aria-hidden="true" className="text-subtle" />
+        {ACTION_LABEL[a.kind] ?? a.kind}
+      </span>
+      <ActionStateText state={a.state} />
+      {a.ranOn && (
+        <span className="text-xs text-muted">
+          {a.ranOn === "Sling" ? "by Sling" : `on ${a.ranOn}`}
+        </span>
+      )}
+      {a.kind === "merge" && a.commitSha && (
+        <span className="text-xs text-muted">
+          commit <Mono>{shortSha(a.commitSha)}</Mono>
+        </span>
+      )}
+      {a.url && (
+        <a
+          href={a.url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-accent-text hover:underline"
+        >
+          {linkLabel(a.url)}
+          <ExternalLink aria-hidden="true" size={12} />
+        </a>
+      )}
+      {showMessage && <span className="w-full pl-6 text-xs text-muted">{a.message}</span>}
+      {a.kind === "deploy" && a.output && (
+        <details className="w-full pl-6">
+          <summary className="w-fit cursor-pointer text-xs font-medium text-muted select-none marker:text-subtle hover:text-soft">
+            Output
+          </summary>
+          <pre className="mt-1.5 max-h-80 overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-[11.5px] leading-[17px] break-words whitespace-pre-wrap text-soft shadow-field">
+            {a.output}
+          </pre>
+        </details>
+      )}
+      {a.kind === "verify" && a.verify && (
+        <VerifyResult verify={a.verify} commitSha={a.commitSha} running={a.state === "sent"} />
+      )}
+    </li>
+  );
+}
+
+function VerifyResult({
+  verify: v,
+  commitSha,
+  running,
+}: {
+  verify: VerifyDetail;
+  commitSha: string | null;
+  running: boolean;
+}) {
+  const took = v.finishedAt ? between(v.startedAt, v.finishedAt) : null;
+  const commit = commitSha ? <Mono>{shortSha(commitSha)}</Mono> : "the merged commit";
+  return (
+    <div className="w-full space-y-1 pt-0.5 pl-6">
+      <CheckList checks={v.checks} results={v.checks} label="What the checks saw" />
+      {v.versionSeen !== null && (
+        <p className="flex items-center gap-2 text-xs">
+          <Dot tone={v.versionSeen ? "ok" : running ? "neutral" : "danger"} />
+          <span className="text-soft">
+            {v.versionSeen
+              ? "The version URL shows "
+              : running
+                ? "Waiting for the version URL to show "
+                : "The version URL never showed "}
+            {commit}
+          </span>
+        </p>
+      )}
+      <p className="tabular text-xs text-subtle">
+        {running ? `Attempt ${v.attempts}` : plural(v.attempts, "attempt")}
+        {took !== null ? ` over ${duration(took)}` : ""}
+      </p>
+    </div>
   );
 }

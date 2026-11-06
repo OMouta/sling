@@ -1,4 +1,4 @@
-import { type Delivery, HARNESS_LABELS } from "@sling/core";
+import { type Delivery, HARNESS_LABELS, type TaskView } from "@sling/core";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, ScrollText } from "lucide-react";
@@ -7,6 +7,7 @@ import { TaskCard, TaskStateBadge } from "../components/TaskCard.tsx";
 import { Timeline } from "../components/Timeline.tsx";
 import { Card, Empty, ErrorText, Mono, Skeleton, Stat } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
+import { isDeployStep } from "../lib/deploys.ts";
 import { between, duration, shortSha } from "../lib/format.ts";
 import type { TaskDetail } from "../lib/types.ts";
 import { taskRoute } from "../router.tsx";
@@ -17,6 +18,28 @@ const DELIVER: Record<Delivery, string> = {
   pr: "A pull request",
   deploy: "A deploy, checked",
 };
+
+/** What the task delivers, naming the deploy target once its steps know it. */
+function Delivers({ task }: { task: TaskView }) {
+  const name = task.actions.find((a) => a.targetName)?.targetName;
+  const target = name ? (
+    <Link to="/deploys" className="decoration-faint underline-offset-2 hover:underline">
+      {name}
+    </Link>
+  ) : null;
+  if (task.deliver === "deploy") {
+    return target ? <>A deploy to {target}, checked</> : DELIVER.deploy;
+  }
+  // Deployed later, from a delivered PR.
+  if (task.actions.some(isDeployStep)) {
+    return (
+      <>
+        {DELIVER[task.deliver]}, then a deploy{target ? <> to {target}</> : null}
+      </>
+    );
+  }
+  return DELIVER[task.deliver];
+}
 
 function when(iso: string | null): string {
   if (!iso) return "–";
@@ -108,7 +131,9 @@ export function TaskPage() {
                 {HARNESS_LABELS[task.harness]}
                 {task.harnessVersion ? ` ${task.harnessVersion}` : ""}
               </Stat>
-              <Stat label="Delivers">{DELIVER[task.deliver]}</Stat>
+              <Stat label="Delivers">
+                <Delivers task={task} />
+              </Stat>
               {task.commitSha && (
                 <Stat label="Commit">
                   <Mono>{shortSha(task.commitSha)}</Mono>
