@@ -266,6 +266,38 @@ Sling keeps a single `SLING_PUBLIC_URL`. Sign-in, cookies, passkeys, the origin 
 
 With a tunnel, Sling is published on loopback only, so the tunnel is the way in. The tunnel's secrets go in `deploy/tunnel.env`, which only the tunnel container reads, never the Sling container. This builds on D9: still no relay of Sling's own, but the two tunnels it documented now come as Compose profiles. The self-hosting Compose project is named `sling`, so it never collides with the development Postgres in project `deploy`. When the address changes, `sling-runner config set server-url` points a paired machine at the new one without pairing again. This rules out serving a LAN address and a tunnel address at once. Asked 2026-11-06.
 
+## Stage 5
+
+### D72. Deploys are delivery steps after the PR, gated by the mode
+`deliver` gains `deploy`: push, then PR, then merge, then deploy, then verify, each a row in `actions`. A target whose host deploys on merge skips the deploy step. The mode decides what asks, as for push and PR: Supervised asks before every step, Auto before merge and deploy, Full access never, and Read-only can't deliver a deploy. Merge and deploy wait as `queued` and get their approvals only once the steps reach merge, so "Approve deployment?" always comes after the PR exists and links to it. Only the merged commit on the default branch deploys. This rules out deploying a task branch, deploying without a merge, and one approval that covers both the PR and the deploy in Supervised.
+
+### D73. One deploy target per repo, with three methods, and the command stays on the machine
+A target lives in the control plane, keyed by the repo's normalized remote. The host deploys on merge, or a machine runs a command, or Sling calls a deploy hook. The command is set only in the Runner's config (`sling-runner repo set <name> deploy-command`), so the control plane picks the machine but never what runs. Hook URLs and headers are stored encrypted and are write-only. Health checks and the version URL are set by you, never by the model. That's why they may reach private addresses, and why the assistant names a target instead of a URL. This rules out deploy commands sent from the control plane, deploys as Sling workflows, and more than one target per repo. Asked 2026-11-06.
+
+### D74. A machine merges with `gh` or plain git, and refuses what isn't a Sling change
+With a GitHub PR and `gh` logged in, the Runner runs `gh pr merge` after checking the PR's head and base. Otherwise it merges in a temporary worktree and pushes the default branch, never forced, with a `Sling-Task` trailer so a repeat finds the earlier merge. A sandbox's PR is merged by the control plane through GitHub's API, with the workspace's GitHub token, since sandboxes are gone by then. The Runner refuses with `deploys off` or a Read-only `max-mode`. It also refuses to merge a branch that isn't a Sling task branch, and to deploy a commit that isn't on the remote's default branch. Merges and deploys go through a `RepoAction` message that isn't tied to the task's spool, so another machine with the repo can merge when the one that ran the task is offline. This builds on D14, which already let a merge approval push the default branch. It rules out force pushes, and merging or deploying anything else.
+
+### D75. Verify until the site passes, and go back with a revert task
+After the deploy, a pg-boss job checks every 10 seconds until every check passes and the version URL, if set, shows the merged commit, for up to 10 minutes by default. Without a version URL, the result says Sling can't tell which version answered. A failed verify fails the task's delivery and tells the conversation, and the assistant offers a revert task delivered with `deploy`, which asks like any other. A server that restarts during a hook call marks it "interrupted, outcome unknown" and doesn't call it again. This rules out automatic rollback, and a task that counts as fixed before the site says so.
+
+### D76. Watching a site is a workflow, and an alert opens a chat you send
+`deploys.check` checks targets and outputs the ones whose state changed: down after two failures in a row, up after one pass. The **Site down alert** template runs it every minute and sends a push notification. Tapping it opens a new chat with the Incident personality and a draft saying what failed. Sling never starts an investigation or a fix on its own. This rules out a monitor built into deploy targets apart from workflows.
+
+### D77. Calendar: CalDAV and iCal links, built in
+A built-in connector reads and writes CalDAV calendars (iCloud, Fastmail, Nextcloud, and others) with an app password. It reads Google and Outlook through their private iCal address, which is stored as a credential. It runs in the server process like email, because it's first party and in-process calls are faster. It uses ical.js for events and recurrences and fast-xml-parser for CalDAV, with no CalDAV client library. Creating an event takes its UID from the idempotency key, so a repeat doesn't duplicate it. This rules out Google's OAuth API and a Google Cloud project. Asked 2026-11-06.
+
+### D78. Flagged nodes become the assistant's tools, and sends ask in every mode but Full access
+A node opts in with `assistant: { sends, summary }` in its spec, which is SDK 1.1.0 and an addition. Each flagged node with an installation becomes a tool named after its type. The workflows with a manual trigger are reachable through `run_workflow`, which counts as sending when any node in the workflow isn't idempotent. Reads never ask. Sends are refused in Read-only, ask inline in Supervised and Auto, and run in Full access. The approval works like command approvals: in memory, for one conversation, 5 minutes, showing the summary. Values from the model are passed literally and never evaluated as expressions. Extension nodes carry the flag through what the extension adds, and the install dialog lists them. This finishes the connector actions D70 left for later. It rules out a generic "run any node" tool and automatic sends outside Full access. Asked 2026-11-06.
+
+### D79. The phone app is the installed web app, with Web Push
+Sling ships a manifest and a service worker. The service worker caches built assets and the shell, and never the API. Push uses Web Push, with a VAPID key derived from `SLING_SECRET_KEY` and payloads encrypted in-house per RFC 8291 and 8292 with `node:crypto`, so there's no `web-push` dependency. Subscriptions are accepted only for the known push services. Notifications open the right screen and have no buttons, so nothing gets approved from a lock screen. Replies aren't pushed while a visible window shows that chat. Push needs HTTPS, which the Tailscale and Cloudflare setups give, or localhost. This rules out a native app, a push relay of Sling's own, and approving from a notification. Asked 2026-11-06 ("mobile support via web app").
+
+### D80. The workspace has a time zone
+`workspaces.time_zone` is set from the browser the first time the web app finds it empty, and can be changed in Settings. "Today" in the calendar, schedules with no zone, and the assistant's date line use it. Until it's set, UTC applies.
+
+### D81. Two more personality tool groups: apps and deploys
+`apps` covers the flagged connector actions and `run_workflow`. `deploys` covers `check_deploy_target`, `deploy_task`, and `deliver: "deploy"`. The server enforces both, as it does the others. The default personality gains both when it has every older group. The Incident template gets `deploys`, and Planner gets `apps`. No other personality gains a group it didn't have, since a personality's tools only ever narrow.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.
@@ -277,6 +309,19 @@ With a tunnel, Sling is published on loopback only, so the tunnel is the way in.
 - The Runner reports Codex's login state through Codex's own CLI. It never reads Codex's credential files.
 - Pending approvals expire after 24 hours.
 - Deterministic workflows run with no LLM configured (open question 1).
+- Stage 5:
+  - The new page is **Deploys**, in the sidebar after Sandboxes. Each target goes by the name you give it, and the docs call it a deploy target.
+  - Targets merge with squash by default.
+  - Verify checks every 10 seconds, for up to 10 minutes, waiting 60 seconds first when the host deploys on merge.
+  - A hook call times out after 30 seconds, and a deploy command after 15 minutes.
+  - Up to 5 health checks per target, each a GET with a 10-second timeout, passing on 200 to 399 unless a status is set.
+  - Command deploys get `SLING_DEPLOY_COMMIT` and `SLING_DEPLOY_REPO`, and run through the user's login shell.
+  - Push categories are approvals, tasks, and replies, all on, per user. `app.notify` always delivers.
+  - Push TTLs: 24 hours for approvals, 1 hour for tasks, 10 minutes for replies.
+  - A push subscription is dropped after 10 failures in a row, or at once on 404 or 410.
+  - The assistant gets at most 30 connector-action tools per turn, and `run_workflow` waits up to 60 seconds.
+  - iCal feeds are cached for 5 minutes by ETag, and capped at 5 MB and 2,000 events per query.
+  - The Morning briefing runs at 07:30 in the workspace's time zone and starts a new chat each day.
 
 ## To verify before building Stage 1
 
@@ -292,3 +337,5 @@ These became spikes S1 to S3. Notes are in `plan/spikes/`. S1 and S3 are settled
 - Docker and Railway execution providers, cloud cost controls (open question 10), and delivering secrets to isolated tasks (open question 7): Stage 3.
 - Desktop app (Tauri): after Stage 2.
 - Extension signing: Stage 4 (D60). A hosted marketplace: not planned (D58).
+- Connector actions as assistant tools: Stage 5 (D78). Pinning a personality in an `agent.assistant` node: still later.
+- PR CI checks before a deploy approval, GitHub deployment statuses, and automatic rollback: after Stage 5.
