@@ -68,6 +68,8 @@ export class Commands {
   readonly #ctx: AppContext;
   readonly #pending = new Map<string, Pending>();
   readonly #approvals = new Map<string, Approval>();
+  /** How long an approval waits for the user before it expires. Tests shorten it. */
+  approvalWaitMs = APPROVAL_WAIT_MS;
 
   constructor(ctx: AppContext) {
     this.#ctx = ctx;
@@ -165,7 +167,7 @@ export class Commands {
         opts.signal?.removeEventListener("abort", onAbort);
         resolve(d);
       };
-      const timer = setTimeout(() => settle("expired"), APPROVAL_WAIT_MS);
+      const timer = setTimeout(() => settle("expired"), this.approvalWaitMs);
       const onAbort = () => settle("expired");
       opts.signal?.addEventListener("abort", onAbort, { once: true });
       this.#approvals.set(id, {

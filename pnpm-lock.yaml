@@ -293,6 +293,9 @@ importers:
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2
+      imapflow:
+        specifier: ^2.10.2
+        version: 2.10.2
       nodemailer:
         specifier: ^10.3.1
         version: 10.3.1

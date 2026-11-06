@@ -24,7 +24,7 @@ import { loadInstallation } from "../workflows/connectors/installations.ts";
 import { redactPayload } from "../workflows/redact.ts";
 import { toJsonSchema } from "../workflows/registry.ts";
 import type { AnyServerNodeSpec, EngineServices, RunInfo } from "../workflows/types.ts";
-import { APPROVAL_WAIT_MS, type Decision } from "./commands.ts";
+import type { Decision } from "./commands.ts";
 import { TOOLS_BY_GROUP, type ToolScope } from "./tools.ts";
 
 /** Most connector actions the assistant gets in one turn. */
@@ -237,7 +237,8 @@ const REFUSED =
   "This conversation is Read-only, so nothing can be sent or changed outside Sling from it. Tell the user it needs another mode, which they switch in the app. Don't try another way.";
 const DENIED =
   "The user declined, so nothing was sent or changed. Don't try another way around it; ask what they'd like instead.";
-const EXPIRED = `The user didn't answer within ${APPROVAL_WAIT_MS / 60_000} minutes, so nothing was sent or changed. Don't try another way; ask them again if it still matters.`;
+const EXPIRED =
+  "The user didn't answer in time, so nothing was sent or changed. Don't try another way; ask them again if it still matters.";
 
 /**
  * Decides whether a call may go ahead: reads always do, and sends follow the

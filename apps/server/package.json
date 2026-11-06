@@ -43,6 +43,7 @@
     "@types/nodemailer": "^8.0.2",
     "@types/ws": "^8.18.2",
     "esbuild": "^0.28.2",
+    "imapflow": "^2.10.2",
     "nodemailer": "^10.3.1",
     "testcontainers": "^12.2.1",
     "tsx": "^4.23.15",
