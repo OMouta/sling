@@ -12,7 +12,7 @@ import {
 } from "../../lib/extensionApi.ts";
 import { formatBytes, runsCode } from "../../lib/extensions.ts";
 import { qk } from "../../lib/workflowApi.ts";
-import { Button, Dialog, ErrorText, Mono, Skeleton } from "../ui.tsx";
+import { Button, Dialog, ErrorText, Mono, Skeleton, Spinner } from "../ui.tsx";
 import {
   Adds,
   ExtensionIcon,
@@ -91,7 +91,11 @@ export function PreviewDialog({ source, onClose }: { source: PreviewSource; onCl
   return (
     <Dialog
       title={`${update ? "Update" : "Install"} ${name}`}
-      description={update ? undefined : preview?.description}
+      description={
+        update
+          ? undefined
+          : (preview?.description ?? (top.kind === "catalog" ? top.description : undefined))
+      }
       onClose={onClose}
       footer={
         <>
@@ -99,6 +103,11 @@ export function PreviewDialog({ source, onClose }: { source: PreviewSource; onCl
             <Button icon={ArrowLeft} className="mr-auto" onClick={pop}>
               Back
             </Button>
+          )}
+          {!preview && !run.error && (
+            <p className="mr-auto flex items-center gap-2 text-xs text-muted">
+              <Spinner className="size-3.5" /> Checking the package
+            </p>
           )}
           {stale && <p className="mr-auto text-xs text-warn">This preview expired.</p>}
           {!stale && <ErrorText error={confirm.error} />}
@@ -257,20 +266,26 @@ function PreviewBody({
           <section>
             <SectionHeading>Adds</SectionHeading>
             <Adds contents={p.contents} />
-          </section>
-          <section>
-            <SectionHeading>Permissions</SectionHeading>
-            {p.permissions.length > 0 ? (
-              <PermissionList lines={p.permissions} />
-            ) : (
-              <p className="text-[13px] text-muted">None.</p>
+            {!runsCode(p.contents) && (
+              <p className="mt-3 text-xs leading-4 text-muted">
+                Templates only. It runs no code and needs no permissions.
+              </p>
             )}
-            <p className="mt-3 text-xs leading-4 text-muted">
-              {runsCode(p.contents)
-                ? "It runs in its own process, with no access to files, other credentials, or your machines."
-                : "It adds templates only and runs no code."}
-            </p>
           </section>
+          {runsCode(p.contents) && (
+            <section>
+              <SectionHeading>Permissions</SectionHeading>
+              {p.permissions.length > 0 ? (
+                <PermissionList lines={p.permissions} />
+              ) : (
+                <p className="text-[13px] text-muted">None.</p>
+              )}
+              <p className="mt-3 text-xs leading-4 text-muted">
+                It runs in its own process, with no access to files, other credentials, or your
+                machines.
+              </p>
+            </section>
+          )}
         </>
       )}
 

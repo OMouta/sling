@@ -59,11 +59,11 @@ export function nodeSummary(nodes: ExtensionContents["nodes"]): string {
   return parts.join(" and ");
 }
 
-/** One short line for a card: the first permission, and how many more. */
-export function permissionSummary(lines: PermissionLine[]): string {
-  const [first, ...rest] = lines;
-  if (!first) return "Needs no permissions";
-  return rest.length > 0 ? `${first.text}, and ${rest.length} more` : first.text;
+/** One short line for a card: the riskiest permission, and how many more. */
+export function permissionSummary(lines: PermissionLine[]): { text: string; more: number } {
+  const first = lines.find((l) => l.risk === "high") ?? lines[0];
+  if (!first) return { text: "Needs no permissions", more: 0 };
+  return { text: first.text, more: lines.length - 1 };
 }
 
 export function hasHighRisk(lines: PermissionLine[]): boolean {

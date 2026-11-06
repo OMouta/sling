@@ -49,8 +49,9 @@ export function RemoveDialog({ ext, onClose }: { ext: ExtensionView; onClose: ()
         {d && d.installations.length > 0 && (
           <section>
             <p>
-              {plural(d.installations.length, "installation")} go with it, with their stored
-              credentials:
+              {d.installations.length === 1
+                ? "Its installation goes too, with its stored credentials:"
+                : `Its ${plural(d.installations.length, "installation")} go too, with their stored credentials:`}
             </p>
             <ul aria-label="Installations removed" className="mt-2 space-y-1.5">
               {d.installations.map((i) => (
@@ -65,8 +66,9 @@ export function RemoveDialog({ ext, onClose }: { ext: ExtensionView; onClose: ()
         {d && d.workflows.length > 0 && (
           <section>
             <p>
-              {d.workflows.length === 1 ? "This workflow uses" : "These workflows use"} it. Their
-              steps from {ext.name} will fail until you change them:
+              {d.workflows.length === 1
+                ? `This workflow uses it. Its steps from ${ext.name} will fail until you change them:`
+                : `These workflows use it. Their steps from ${ext.name} will fail until you change them:`}
             </p>
             <ul aria-label="Workflows that use it" className="mt-2 space-y-1.5">
               {d.workflows.map((w) => (

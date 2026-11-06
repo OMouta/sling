@@ -40,7 +40,7 @@ export function DetailsDialog({ ext, onClose }: { ext: ExtensionView; onClose: (
               </div>
             ) : d?.readme ? (
               <div className="prose-chat text-[13px] leading-6 text-soft">
-                <ChatMarkdown>{d.readme}</ChatMarkdown>
+                <ChatMarkdown skipHtml>{d.readme}</ChatMarkdown>
               </div>
             ) : (
               d && <p className="text-[13px] text-muted">It has no README.</p>
@@ -54,7 +54,7 @@ export function DetailsDialog({ ext, onClose }: { ext: ExtensionView; onClose: (
           )}
         </div>
 
-        <aside className="space-y-5 md:self-start">
+        <aside className="space-y-5 max-md:order-first md:self-start">
           <div className="flex items-center gap-3 rounded-xl bg-surface-2 p-3 shadow-raised">
             <ExtensionIcon ext={ext} fallback={kindIcon(ext.kinds)} />
             <div className="min-w-0 flex-1">

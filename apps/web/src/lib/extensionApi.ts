@@ -59,7 +59,14 @@ export function usePublishers(enabled = true) {
 
 /** Where a preview comes from: a catalog entry, a file, or a newer version of one installed. */
 export type PreviewSource =
-  | { kind: "catalog"; catalogId: string; extensionId: string; version: string; name: string }
+  | {
+      kind: "catalog";
+      catalogId: string;
+      extensionId: string;
+      version: string;
+      name: string;
+      description?: string;
+    }
   | { kind: "upload"; file: File }
   | { kind: "update"; extensionId: string; version: string; name: string };
 

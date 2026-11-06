@@ -100,8 +100,10 @@ export function ExportPackageDialog({
         <p className="text-xs leading-4 text-muted">
           Connector installations become bindings that ask for an installation on install.
           Credentials are never included. The package is unsigned; sign it with{" "}
-          <code className="font-mono text-[11.5px] text-soft">sling-ext sign</code> before you share
-          it.
+          <code className="font-mono text-[11.5px] whitespace-nowrap text-soft">
+            sling-ext sign
+          </code>{" "}
+          before you share it.
         </p>
       </form>
     </Dialog>

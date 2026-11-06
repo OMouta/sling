@@ -47,7 +47,12 @@ describe("extension helpers", () => {
     expect(nodeSummary([{ type: "a.b", version: 1, title: "B", isTrigger: true }])).toBe(
       "1 trigger",
     );
-    expect(permissionSummary([])).toBe("Needs no permissions");
-    expect(permissionSummary(ntfyExtension.permissions)).toBe("Connect to ntfy.sh, and 1 more");
+    expect(permissionSummary([])).toEqual({ text: "Needs no permissions", more: 0 });
+    expect(permissionSummary(ntfyExtension.permissions)).toEqual({
+      text: "Connect to ntfy.sh",
+      more: 1,
+    });
+    const fly = discoverEntries.find((e) => e.id === "fly-machines")?.latest?.permissions ?? [];
+    expect(permissionSummary(fly).text).toMatch(/^Start sandboxes/);
   });
 });

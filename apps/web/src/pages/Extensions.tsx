@@ -125,8 +125,9 @@ export function ExtensionsPage() {
       }
       toolbar={
         tab === "discover" ? (
-          <Toolbar actions={upload}>
-            <span className="relative w-full sm:w-64">
+          // Not a Toolbar: on phones the chips take a row of their own, under search and Upload.
+          <div className="flex shrink-0 flex-wrap items-center gap-2 px-5 py-3">
+            <span className="relative min-w-0 flex-1 sm:w-64 sm:flex-none">
               <Search
                 aria-hidden="true"
                 size={14}
@@ -141,7 +142,8 @@ export function ExtensionsPage() {
                 className="h-[30px] pl-8"
               />
             </span>
-            <fieldset className="-mx-1 flex max-w-full gap-1 overflow-x-auto px-1">
+            {/* Padding keeps focus rings clear of the scroll clip. */}
+            <fieldset className="order-last -m-1 flex w-[calc(100%+0.5rem)] min-w-0 gap-1 overflow-x-auto p-1 sm:order-none sm:w-auto sm:flex-1">
               <legend className="sr-only">Kind</legend>
               {KINDS.map((k) => (
                 <Chip key={k} active={kind === k} onClick={() => setKind(k)}>
@@ -149,7 +151,8 @@ export function ExtensionsPage() {
                 </Chip>
               ))}
             </fieldset>
-          </Toolbar>
+            {upload}
+          </div>
         ) : tab === "sources" ? (
           <Toolbar
             actions={
@@ -165,8 +168,7 @@ export function ExtensionsPage() {
         ) : (
           <Toolbar actions={upload}>
             <ToolbarText>
-              Connectors, sandbox providers, and workflow packages from outside Sling. Each runs in
-              its own process, with only the permissions you approved.
+              Each extension runs in its own process, with only the permissions you approved.
             </ToolbarText>
           </Toolbar>
         )
@@ -280,8 +282,8 @@ function Installed({
     <div className="max-w-5xl space-y-3 px-5 pt-1 pb-6">
       {pending && (
         <>
-          <Skeleton className="h-[154px] w-full rounded-xl" />
-          <Skeleton className="h-[154px] w-full rounded-xl" />
+          <Skeleton className="h-[172px] w-full rounded-xl" />
+          <Skeleton className="h-[172px] w-full rounded-xl" />
         </>
       )}
       <ErrorText error={error} />
@@ -446,9 +448,9 @@ function Discover({
   return (
     <div className="px-5 pt-1 pb-6">
       <ErrorText error={discover.error} />
-      <div className="grid max-w-6xl gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid max-w-6xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {discover.isPending &&
-          [0, 1, 2].map((i) => <Skeleton key={i} className="h-[184px] w-full rounded-xl" />)}
+          [0, 1, 2].map((i) => <Skeleton key={i} className="h-[187px] w-full rounded-xl" />)}
         {shown.map((e) => (
           <DiscoverCard
             key={`${e.catalogId}/${e.id}`}
@@ -474,6 +476,7 @@ function DiscoverCard({
   const included = e.catalogId === "included";
   const latest = e.latest;
   const high = latest ? hasHighRisk(latest.permissions) : false;
+  const summary = permissionSummary(latest?.permissions ?? []);
   const PermIcon = high ? ShieldAlert : Shield;
 
   let action: ReactNode;
@@ -513,6 +516,7 @@ function DiscoverCard({
             extensionId: e.id,
             version: latest.version,
             name: e.name,
+            description: e.description,
           })
         }
       >
@@ -524,7 +528,7 @@ function DiscoverCard({
   return (
     <article aria-label={e.name}>
       <Card className="flex h-full flex-col p-4 transition-shadow duration-150 hover:shadow-card-hover">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center justify-between gap-3">
           <ExtensionIcon ext={installed} fallback={kindIcon(e.kinds)} />
           {action}
         </div>
@@ -557,7 +561,8 @@ function DiscoverCard({
           {latest ? (
             <>
               <PermIcon aria-hidden="true" size={12} className="shrink-0" />
-              <span className="truncate">{permissionSummary(latest.permissions)}</span>
+              <span className="truncate">{summary.text}</span>
+              {summary.more > 0 && <span className="shrink-0">+{summary.more} more</span>}
             </>
           ) : (
             <span className="truncate text-muted">{e.unavailable ?? "No version works here."}</span>

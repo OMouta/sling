@@ -451,8 +451,9 @@ describe("installed extensions", () => {
     const d = await dialog();
     expect(await d.findByText(/Sends push notifications through/)).toBeTruthy();
     expect(d.getByRole("link", { name: "ntfy" }).getAttribute("href")).toBe("https://ntfy.sh");
-    // Raw HTML in a README is never rendered.
+    // Raw HTML in a README is never rendered, or shown as tags.
     expect(screen.getByRole("dialog").querySelector("b")).toBeNull();
+    expect(d.queryByText(/<b>/)).toBeNull();
     expect(d.getByText("Connect to ntfy.sh")).toBeTruthy();
     expect(d.getByText(ntfyDetail.digest)).toBeTruthy();
     expect(within(d.getByRole("list", { name: "Versions" })).getByText("installed")).toBeTruthy();
@@ -496,7 +497,9 @@ describe("discover", () => {
     renderAt("/extensions?tab=discover");
     const fly = await card("Fly Machines");
     expect(fly.getByText("Included with Sling")).toBeTruthy();
-    expect(fly.getByText("Connect to api.machines.dev, and 1 more")).toBeTruthy();
+    // The riskiest permission leads the summary.
+    expect(fly.getByText(/^Start sandboxes, and receive each sandbox's secrets/)).toBeTruthy();
+    expect(fly.getByText("+1 more")).toBeTruthy();
     expect(fly.getByRole("button", { name: "Install Fly Machines" })).toBeTruthy();
 
     expect((await card("ntfy")).getByText("Installed")).toBeTruthy();
@@ -687,7 +690,8 @@ describe("installing", () => {
     expect(upload?.body).toBeInstanceOf(Blob);
     expect(d.getByText("Unsigned")).toBeTruthy();
     expect(d.getByText(/Nobody signed this package/)).toBeTruthy();
-    expect(d.getByText("It adds templates only and runs no code.")).toBeTruthy();
+    expect(d.getByText("Templates only. It runs no code and needs no permissions.")).toBeTruthy();
+    expect(d.queryByRole("list", { name: "Permissions" })).toBeNull();
 
     const missing = d.getByRole("list", { name: "Missing requirements" });
     expect(within(missing).getByText("The discord connector")).toBeTruthy();
@@ -758,7 +762,7 @@ describe("sources", () => {
     const list = within(await screen.findByRole("list", { name: "Catalogs" }));
     const rows = list.getAllByRole("listitem");
     expect(rows[0]?.textContent).toContain("Included with Sling");
-    expect(rows[0]?.textContent).toContain("Ships with Sling");
+    expect(rows[0]?.textContent).toContain("Ships with this server, so it can't be removed");
     expect(within(rows[0] as HTMLElement).queryByRole("button")).toBeNull();
     const acme = within(rows[1] as HTMLElement);
     expect(acme.getByText("https://extensions.acme.test/catalog.json")).toBeTruthy();

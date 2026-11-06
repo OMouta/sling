@@ -13,11 +13,12 @@ const components: Components = {
 
 /**
  * Chat text as GitHub-flavored Markdown: tables, task lists, strikethrough,
- * and autolinks. Raw HTML is never rendered.
+ * and autolinks. Raw HTML is never rendered: it shows as text, or with
+ * `skipHtml` (for documents like READMEs) it's left out.
  */
-export function ChatMarkdown({ children }: { children: string }) {
+export function ChatMarkdown({ children, skipHtml }: { children: string; skipHtml?: boolean }) {
   return (
-    <Markdown remarkPlugins={[remarkGfm]} components={components}>
+    <Markdown remarkPlugins={[remarkGfm]} components={components} skipHtml={skipHtml}>
       {children}
     </Markdown>
   );

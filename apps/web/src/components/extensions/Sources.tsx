@@ -93,7 +93,9 @@ function CatalogRow({ catalog: c }: { catalog: CatalogView }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium">{c.name}</p>
         {c.included ? (
-          <p className="truncate text-xs text-subtle">Ships with Sling</p>
+          <p className="truncate text-xs text-subtle">
+            Ships with this server, so it can't be removed
+          </p>
         ) : (
           <p className="truncate font-mono text-[11.5px] text-subtle" title={c.url ?? undefined}>
             {c.url}
