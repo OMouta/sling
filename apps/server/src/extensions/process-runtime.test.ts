@@ -848,6 +848,27 @@ describe("process lifecycle", () => {
     expect(t.crashes).toEqual([]);
   });
 
+  it("keeps a loaded process running past its start timeout", async () => {
+    const quick = testRuntime({ timings: { startTimeoutMs: 2000 } });
+    try {
+      const ext = await fixtureExtension(quick.runtime, { id: "swap", source: VERSIONED("1") });
+      const connectors = quick.runtime.activate(ext);
+      const fake = fakeSourceContext();
+      const source = await connectors[0]?.source?.start(fake.ctx);
+      const pid = quick.runtime.host("swap")?.process?.pid;
+      await new Promise((r) => setTimeout(r, 2500));
+      expect(alive(pid)).toBe(true);
+      expect((await run(connectors, "swap.which")).result).toMatchObject({
+        outputs: { version: "1" },
+      });
+      expect(quick.runtime.host("swap")?.process?.pid).toBe(pid);
+      expect(quick.crashes).toEqual([]);
+      await source?.stop();
+    } finally {
+      await quick.runtime.stopAll();
+    }
+  });
+
   it("stays up while an event source runs", async () => {
     const connectors = t.runtime.activate(v1);
     const fake = fakeSourceContext();

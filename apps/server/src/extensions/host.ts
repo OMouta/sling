@@ -272,6 +272,8 @@ export class ExtensionProcess {
         }
         if (!this.#ready && frame?.t === "ready") {
           this.#ready = true;
+          // Loaded: from here the heartbeat decides whether it's alive.
+          clearTimeout(startTimer);
           this.#startHeartbeat();
           onReady(null);
           continue;
