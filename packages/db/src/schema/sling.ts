@@ -565,6 +565,8 @@ export interface DeployLastCheck {
   up: boolean;
   failures: number;
   results: DeployCheckResult[];
+  /** When the checks started answering the way they do now, up or down. */
+  since?: string;
 }
 
 /** A repo Sling knows how to deploy and check, keyed by its normalized remote. */

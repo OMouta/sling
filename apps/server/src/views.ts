@@ -318,6 +318,14 @@ export function toConversationView(c: ConversationRow): ConversationView {
   };
 }
 
+/** How an approval names its step when it has no title of its own. */
+const STEP_TITLE: Record<string, string> = {
+  push: "Push",
+  open_pr: "Open a pull request",
+  merge: "Merge",
+  deploy: "Deploy",
+};
+
 export async function approvalView(
   ctx: AppContext,
   approvalId: string,
@@ -340,9 +348,7 @@ export async function approvalView(
   const fallback = approval.kind === "sandbox_fallback" ? approval.payload : null;
   const title =
     approval.title ??
-    (action && task
-      ? `${action.kind === "open_pr" ? "Open a pull request" : "Push"}: ${task.title}`
-      : "Approval");
+    (action && task ? `${STEP_TITLE[action.kind] ?? "Push"}: ${task.title}` : "Approval");
   return {
     id: approval.id,
     kind: approval.kind,

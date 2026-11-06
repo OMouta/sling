@@ -143,6 +143,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     await ensurePersonalities(ctx);
     await ctx.workflows.ensureBuiltIns();
     await ctx.engine.start(boss, { concurrency: opts.runConcurrency ?? 10 });
+    await ctx.deploys.start(boss);
 
     await registerRoutes(app, ctx);
     await app.listen({ host: config.host, port: config.port });
@@ -168,6 +169,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
       await ctx.extensions.stop();
       await Promise.race([ctx.sandboxes.idle(), new Promise((ok) => setTimeout(ok, 10_000))]);
       await Promise.race([ctx.push.idle(), new Promise((ok) => setTimeout(ok, 2_000))]);
+      await Promise.race([ctx.deploys.idle(), new Promise((ok) => setTimeout(ok, 35_000))]);
       ctx.runners.stop();
       await boss?.stop({ graceful: true, timeout: 10_000 });
       await app.close();

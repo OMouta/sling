@@ -8,10 +8,10 @@ import {
   isTerminalAction,
   isTerminalTask,
   MODE_POLICY,
-  needsApproval,
   newId,
   type PermissionMode,
   type RoutingView,
+  STEP_KINDS,
   type TaskState,
   taskBranch,
 } from "@sling/core";
@@ -21,6 +21,7 @@ import { and, asc, count, eq, inArray, isNotNull, isNull, lt, sql } from "drizzl
 import { effectiveChat } from "../agent/chat-settings.ts";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
+import { conversationPersonality } from "../personalities/service.ts";
 import { loadRouterInput } from "../routing/inputs.ts";
 import { type Environment, route } from "../routing/router.ts";
 import { modeToProto } from "../runners/convert.ts";
@@ -28,6 +29,7 @@ import type { GatewayHandlers, RunnerSession } from "../runners/gateway.ts";
 import { workspaceSettings } from "../sandboxes/settings.ts";
 import { approvalView, taskView, toEventView } from "../views.ts";
 import { ACTION_KIND_TO_PROTO, DROPPABLE, FINISHED_STATE, toStoredEvent } from "./events.ts";
+import { deliveryPlan, deploySteps, reachedState } from "./plan.ts";
 
 type TaskRow = typeof schema.tasks.$inferSelect;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -42,6 +44,31 @@ export const EVENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const ACTIVE: TaskState[] = ["dispatched", "running"];
 
 export class TaskInputError extends Error {}
+
+/** Why a task can't deploy later, with the status to answer. */
+export class DeployLaterError extends Error {
+  readonly status: 404 | 409;
+  constructor(message: string, status: 404 | 409 = 409) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** Steps a task's own machine runs from its spool. The rest can run anywhere. */
+const RUNNER_STEPS: ActionKind[] = ["push", "open_pr"];
+/** Steps that come after the PR, through the repo's deploy target. */
+const DEPLOY_STEPS: ActionKind[] = ["merge", "deploy", "verify"];
+
+/**
+ * The steps that count, in order. Deploying again after a deploy that didn't
+ * go through adds new merge, deploy, and verify steps; the earlier ones stay
+ * for the record, and only the newest of each kind counts.
+ */
+export function currentSteps<T extends { kind: string }>(ordered: T[]): T[] {
+  const last = new Map<string, T>();
+  for (const a of ordered) last.set(a.kind, a);
+  return ordered.filter((a) => last.get(a.kind) === a);
+}
 
 /** No machine or sandbox can take the task. Nothing was created. */
 export class TaskRoutingError extends TaskInputError {
@@ -153,6 +180,15 @@ export class TaskService implements GatewayHandlers {
     if (decision.kind === "refused") {
       throw new TaskRoutingError(decision.message, routing, decision.reasons);
     }
+    if (input.deliver === "deploy") {
+      const key =
+        decision.kind === "machine"
+          ? (routerInput.machines
+              .find((m) => m.id === decision.runnerId)
+              ?.repos.find((r) => r.id === decision.repoId)?.remoteKey ?? null)
+          : decision.repo.remoteKey;
+      await this.#checkDeploy(input, decision.repoName, key);
+    }
 
     const id = newId("tsk");
     const deliver: Delivery = MODE_POLICY[input.mode].writes ? input.deliver : "local";
@@ -215,6 +251,42 @@ export class TaskService implements GatewayHandlers {
     }
     const [fresh] = await db.select().from(schema.tasks).where(eq(schema.tasks.id, id));
     return { task: fresh ?? task, routing, approvalId };
+  }
+
+  /**
+   * A deploy delivery needs a mode that writes, a deploy target for the repo,
+   * and, from a chat, a personality that may deploy.
+   */
+  async #checkDeploy(input: CreateTaskInput, repoName: string, key: string | null) {
+    if (!MODE_POLICY[input.mode].writes) {
+      throw new TaskInputError(
+        `${MODE_POLICY[input.mode].label} can't deploy. The user can switch the mode in the app.`,
+      );
+    }
+    if (input.conversationId) {
+      const [conv] = await this.#db
+        .select({
+          workspaceId: schema.conversations.workspaceId,
+          personalityId: schema.conversations.personalityId,
+        })
+        .from(schema.conversations)
+        .where(eq(schema.conversations.id, input.conversationId));
+      const personality = conv ? await conversationPersonality(this.#db, conv) : null;
+      if (!personality?.tools.includes("deploys")) {
+        throw new TaskInputError(
+          `${personality?.name ?? "This chat's personality"} can't deploy. A personality with the Deploys tools can.`,
+        );
+      }
+    }
+    if (!key) {
+      throw new TaskInputError(`${repoName} has no remote, so it can't have a deploy target.`);
+    }
+    const target = await this.#ctx.deploys.forRemote(input.workspaceId, key);
+    if (!target) {
+      throw new TaskInputError(
+        `${repoName} (${key}) has no deploy target, so it can't deploy. Add one on the Deploys page.`,
+      );
+    }
   }
 
   /** Sends a queued task to its Runner if the Runner has room. */
@@ -346,10 +418,16 @@ export class TaskService implements GatewayHandlers {
       .where(inArray(schema.tasks.id, [...held.keys()]));
     const byId = new Map(rows.map((t) => [t.id, t]));
     const forget: string[] = [];
+    // Only push and PR need the task's spool; merges and deploys run from the remote.
     const openActions = await this.#db
       .select({ taskId: schema.actions.taskId, state: schema.actions.state })
       .from(schema.actions)
-      .where(inArray(schema.actions.taskId, [...held.keys()]));
+      .where(
+        and(
+          inArray(schema.actions.taskId, [...held.keys()]),
+          inArray(schema.actions.kind, RUNNER_STEPS),
+        ),
+      );
     for (const [id, h] of held) {
       const t = byId.get(id);
       if (!t || t.runnerId !== session.runnerId) {
@@ -405,7 +483,8 @@ export class TaskService implements GatewayHandlers {
     }
 
     // Actions that were in flight when the connection dropped get sent again.
-    // Push and open-PR are idempotent on the Runner side.
+    // Push and open-PR are idempotent on the Runner side. A merge or deploy
+    // isn't sent again: the machine sends its result again instead.
     const inflight = await this.#db
       .select({ id: schema.actions.id, taskId: schema.actions.taskId })
       .from(schema.actions)
@@ -414,6 +493,7 @@ export class TaskService implements GatewayHandlers {
         and(
           eq(schema.tasks.runnerId, session.runnerId),
           inArray(schema.actions.state, ["sent", "ready"]),
+          inArray(schema.actions.kind, RUNNER_STEPS),
         ),
       );
     for (const a of inflight) {
@@ -426,11 +506,13 @@ export class TaskService implements GatewayHandlers {
       await this.#advanceActions(taskId);
     }
     await this.dispatchQueued(session.runnerId);
+    await this.#ctx.deploys.machineConnected(session.runnerId);
   }
 
   async inventoryUpdated(session: RunnerSession): Promise<void> {
     await this.#ctx.sandboxes.runnerConnected(session.runnerId);
     await this.dispatchQueued(session.runnerId);
+    await this.#ctx.deploys.machineConnected(session.runnerId);
   }
 
   async disconnected(session: RunnerSession): Promise<void> {
@@ -463,14 +545,16 @@ export class TaskService implements GatewayHandlers {
       await this.#setState(t.id, t.state, to, { error: "The machine was revoked." });
       await this.settle(t.id, "finished");
     }
+    // Push and PR can't run without the machine. Merges and deploys can, elsewhere.
     const pending = await this.#db
-      .select({ id: schema.actions.id, taskId: schema.actions.taskId })
+      .selectDistinct({ taskId: schema.actions.taskId })
       .from(schema.actions)
       .innerJoin(schema.tasks, eq(schema.tasks.id, schema.actions.taskId))
       .where(
         and(
           eq(schema.tasks.runnerId, runnerId),
           inArray(schema.actions.state, ["awaiting_approval", "ready", "sent"]),
+          inArray(schema.actions.kind, RUNNER_STEPS),
         ),
       );
     for (const a of pending) {
@@ -707,8 +791,9 @@ export class TaskService implements GatewayHandlers {
           );
         }
         return async () => {
-          const reason = await this.#advanceActions(task.id);
-          if (reason) await this.settle(task.id, reason);
+          await this.advance(task.id);
+          // A sandbox goes once its push and PR are done, without waiting for a deploy.
+          if (task.sandboxId) await this.#ctx.sandboxes.onTaskSettled(task.id);
         };
       }
       default:
@@ -718,18 +803,41 @@ export class TaskService implements GatewayHandlers {
 
   // ------------------------------------------------------------- actions
 
-  /** Creates push and PR actions after a successful task. */
+  /** The repo's normalized remote: from the machine's repo, or the sandbox's. */
+  async #remoteKeyOf(db: Db | Tx, task: TaskRow): Promise<string | null> {
+    if (task.repoId) {
+      const [repo] = await db
+        .select({ remoteKey: schema.repos.remoteKey })
+        .from(schema.repos)
+        .where(eq(schema.repos.id, task.repoId));
+      if (repo?.remoteKey) return repo.remoteKey;
+    }
+    if (task.sandboxId) {
+      const [sbx] = await db
+        .select({ remoteKey: schema.sandboxes.remoteKey })
+        .from(schema.sandboxes)
+        .where(eq(schema.sandboxes.id, task.sandboxId));
+      if (sbx) return sbx.remoteKey;
+    }
+    return null;
+  }
+
+  /**
+   * The steps after a successful task: push, then the PR, then for a deploy
+   * the merge, the deploy unless the host deploys on merge, and verify.
+   * Merge, deploy, and verify start queued; their approvals come once the
+   * steps reach them.
+   */
   async #createActions(tx: Tx, task: TaskRow, summary: string): Promise<boolean> {
-    if (!MODE_POLICY[task.mode].writes || task.deliver === "local") return false;
-    const kinds: ActionKind[] = task.deliver === "pr" ? ["push", "open_pr"] : ["push"];
+    const first = deliveryPlan(task.deliver, task.mode, null);
+    if (first.length === 0) return false;
     const body = [
       summary.trim() || task.objective,
       "",
       "---",
       `Sling task \`${task.id}\`, ${task.mode} mode.`,
     ].join("\n");
-    for (const [position, kind] of kinds.entries()) {
-      const requiresApproval = needsApproval(task.mode, kind);
+    for (const [position, { kind, state, requiresApproval }] of first.entries()) {
       const actionId = newId("act");
       await tx.insert(schema.actions).values({
         id: actionId,
@@ -738,7 +846,7 @@ export class TaskService implements GatewayHandlers {
         taskId: task.id,
         kind,
         position,
-        state: requiresApproval ? "awaiting_approval" : "ready",
+        state,
         requiresApproval,
         prTitle: kind === "open_pr" ? task.title : null,
         prBody: kind === "open_pr" ? body : null,
@@ -754,74 +862,265 @@ export class TaskService implements GatewayHandlers {
         });
       }
     }
+    if (task.deliver === "deploy") await this.#addDeploySteps(tx, task, first.length);
     return true;
   }
 
+  /** Adds queued merge, deploy, and verify steps for the repo's deploy target. */
+  async #addDeploySteps(tx: Tx, task: TaskRow, position: number): Promise<number> {
+    const key = await this.#remoteKeyOf(tx, task);
+    const [target] = key
+      ? await tx
+          .select()
+          .from(schema.deployTargets)
+          .where(
+            and(
+              eq(schema.deployTargets.workspaceId, task.workspaceId),
+              eq(schema.deployTargets.remoteKey, key),
+            ),
+          )
+      : [];
+    const steps = deploySteps(task.mode, target?.method ?? "command");
+    for (const [i, step] of steps.entries()) {
+      await tx.insert(schema.actions).values({
+        id: newId("act"),
+        workspaceId: task.workspaceId,
+        ownerId: task.ownerId,
+        taskId: task.id,
+        kind: step.kind,
+        position: position + i,
+        ...(target
+          ? { state: step.state }
+          : {
+              state: "skipped" as const,
+              message: "The repo's deploy target was removed.",
+              finishedAt: new Date(),
+            }),
+        requiresApproval: step.requiresApproval,
+        targetId: target?.id ?? null,
+      });
+    }
+    return steps.length;
+  }
+
+  /** Runs the task's next steps, and tells the conversation when it should hear. */
+  async advance(taskId: string): Promise<void> {
+    const reason = await this.#advanceActions(taskId);
+    if (reason) await this.settle(taskId, reason);
+  }
+
   /**
-   * Sends the next ready action. Returns a settle reason when the delivery
-   * reaches a point the conversation should hear about.
+   * Starts the next step that can go. Returns a settle reason when the
+   * delivery reaches a point the conversation should hear about: a step
+   * waits for approval, or every step has ended.
    */
   async #advanceActions(taskId: string): Promise<SettleReason | null> {
-    const actions = await this.#db
-      .select()
-      .from(schema.actions)
-      .where(eq(schema.actions.taskId, taskId))
-      .orderBy(asc(schema.actions.position));
     let reason: SettleReason | null = null;
-    for (const a of actions) {
-      if (isTerminalAction(a.state)) {
-        if (a.state !== "succeeded") {
-          await this.#skipRemaining(taskId, "An earlier step didn't succeed.");
-          reason = "delivered";
-          break;
-        }
-        continue;
-      }
-      if (a.state === "awaiting_approval") {
-        reason = "approval_needed";
-        break;
-      }
-      if (a.state === "ready") {
-        const [task] = await this.#db
-          .select()
-          .from(schema.tasks)
-          .where(eq(schema.tasks.id, taskId));
-        if (!task?.runnerId) break;
-        const sent = this.#send(
-          task.runnerId,
-          create(EnvelopeSchema, {
-            body: {
-              case: "actionRequest",
-              value: {
-                actionId: a.id,
-                taskId,
-                kind: ACTION_KIND_TO_PROTO[a.kind as "push" | "open_pr"],
-                prTitle: a.prTitle ?? "",
-                prBody: a.prBody ?? "",
-              },
-            },
-          }),
-        );
-        if (sent) {
-          await this.#db
-            .update(schema.actions)
-            .set({ state: "sent", sentAt: new Date() })
-            .where(and(eq(schema.actions.id, a.id), eq(schema.actions.state, "ready")));
-        }
-        break;
-      }
-      // "sent": waiting on the Runner.
-      break;
-    }
-    if (!reason && actions.length > 0) {
-      const all = await this.#db
-        .select({ state: schema.actions.state })
+    let steps: (typeof schema.actions.$inferSelect)[] = [];
+    // Reaching queued steps changes them, so look again; a handful of passes covers every step.
+    for (let pass = 0; pass < STEP_KINDS.length + 1; pass++) {
+      const rows = await this.#db
+        .select()
         .from(schema.actions)
-        .where(eq(schema.actions.taskId, taskId));
-      if (all.every((x) => isTerminalAction(x.state))) reason = "delivered";
+        .where(eq(schema.actions.taskId, taskId))
+        .orderBy(asc(schema.actions.position));
+      steps = currentSteps(rows);
+      reason = null;
+      let allDone = steps.length > 0;
+      let reached = false;
+      for (const a of steps) {
+        if (isTerminalAction(a.state)) {
+          if (a.state !== "succeeded") {
+            await this.#skipRemaining(taskId, "An earlier step didn't succeed.");
+            reason = "delivered";
+            allDone = false;
+            break;
+          }
+          continue;
+        }
+        allDone = false;
+        if (a.state === "awaiting_approval") reason = "approval_needed";
+        else if (a.state === "queued") reached = await this.#reach(taskId, steps, a);
+        else if (a.state === "ready") await this.#startStep(taskId, a);
+        // "sent": waiting on whoever runs it.
+        break;
+      }
+      if (allDone) reason = "delivered";
+      if (!reached) break;
     }
     await this.publish(taskId);
     return reason;
+  }
+
+  /**
+   * The steps reached a queued one. Verify just becomes ready. Reaching merge
+   * gives merge and deploy their approvals now, the way the mode says, so
+   * "Approve deployment?" always comes after the PR exists.
+   */
+  async #reach(
+    taskId: string,
+    steps: (typeof schema.actions.$inferSelect)[],
+    step: typeof schema.actions.$inferSelect,
+  ): Promise<boolean> {
+    if (step.kind !== "merge" && step.kind !== "deploy") {
+      await this.#db
+        .update(schema.actions)
+        .set({ state: "ready" })
+        .where(and(eq(schema.actions.id, step.id), eq(schema.actions.state, "queued")));
+      return true;
+    }
+    const [task] = await this.#db.select().from(schema.tasks).where(eq(schema.tasks.id, taskId));
+    if (!task) return false;
+    const gated = steps.filter(
+      (s) => s.state === "queued" && (s.kind === "merge" || s.kind === "deploy"),
+    );
+    const targetIds = [...new Set(gated.flatMap((s) => (s.targetId ? [s.targetId] : [])))];
+    const targets = targetIds.length
+      ? await this.#db
+          .select({
+            id: schema.deployTargets.id,
+            name: schema.deployTargets.name,
+            method: schema.deployTargets.method,
+          })
+          .from(schema.deployTargets)
+          .where(inArray(schema.deployTargets.id, targetIds))
+      : [];
+    const pr = steps.find((s) => s.kind === "open_pr");
+    const created: string[] = [];
+    await this.#db.transaction(async (tx) => {
+      for (const s of gated) {
+        const state = reachedState(task.mode, s.kind);
+        const ask = state === "awaiting_approval";
+        const [moved] = await tx
+          .update(schema.actions)
+          .set({ state, requiresApproval: ask })
+          .where(and(eq(schema.actions.id, s.id), eq(schema.actions.state, "queued")))
+          .returning({ id: schema.actions.id });
+        if (!moved || !ask) continue;
+        const target = targets.find((t) => t.id === s.targetId);
+        const id = newId("apv");
+        await tx.insert(schema.approvals).values({
+          id,
+          workspaceId: task.workspaceId,
+          ownerId: task.ownerId,
+          actionId: s.id,
+          taskId: task.id,
+          title:
+            s.kind === "merge"
+              ? `Merge: ${task.title}`
+              : `Deploy${target ? ` to ${target.name}` : ""}: ${task.title}`,
+          payload: {
+            targetId: target?.id ?? null,
+            targetName: target?.name ?? null,
+            method: target?.method ?? null,
+            prUrl: pr?.url ?? null,
+          },
+          expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
+        });
+        created.push(id);
+      }
+    });
+    for (const id of created) await this.#publishApproval(task.workspaceId, id);
+    return true;
+  }
+
+  /** Starts a ready step: push and PR on the task's machine, the rest through the deploy target. */
+  async #startStep(taskId: string, a: typeof schema.actions.$inferSelect): Promise<void> {
+    const [task] = await this.#db.select().from(schema.tasks).where(eq(schema.tasks.id, taskId));
+    if (!task) return;
+    if (a.kind !== "push" && a.kind !== "open_pr") {
+      await this.#ctx.deploys.startStep(task, a);
+      return;
+    }
+    const runnerId = task.runnerId;
+    if (!runnerId) return;
+    // Marked sent first, so a fast answer finds it in flight.
+    const [claimed] = await this.#db
+      .update(schema.actions)
+      .set({ state: "sent", sentAt: new Date() })
+      .where(and(eq(schema.actions.id, a.id), eq(schema.actions.state, "ready")))
+      .returning({ id: schema.actions.id });
+    if (!claimed) return;
+    const sent = this.#send(
+      runnerId,
+      create(EnvelopeSchema, {
+        body: {
+          case: "actionRequest",
+          value: {
+            actionId: a.id,
+            taskId,
+            kind: ACTION_KIND_TO_PROTO[a.kind],
+            prTitle: a.prTitle ?? "",
+            prBody: a.prBody ?? "",
+          },
+        },
+      }),
+    );
+    if (!sent) {
+      await this.#db
+        .update(schema.actions)
+        .set({ state: "ready", sentAt: null })
+        .where(and(eq(schema.actions.id, a.id), eq(schema.actions.state, "sent")));
+    }
+  }
+
+  /**
+   * Adds merge, deploy, and verify to a task whose PR is open, as the Deploy
+   * button and the assistant's deploy_task do. They start from merge, with
+   * approvals as the task's mode says.
+   */
+  async deployLater(workspaceId: string, taskId: string, userId: string): Promise<void> {
+    const added = await this.#db.transaction(async (tx) => {
+      const [task] = await tx
+        .select()
+        .from(schema.tasks)
+        .where(and(eq(schema.tasks.id, taskId), eq(schema.tasks.workspaceId, workspaceId)))
+        .for("update");
+      if (!task) throw new DeployLaterError("No such task.", 404);
+      const rows = await tx
+        .select()
+        .from(schema.actions)
+        .where(eq(schema.actions.taskId, task.id))
+        .orderBy(asc(schema.actions.position));
+      const steps = currentSteps(rows);
+      const pr = steps.find((a) => a.kind === "open_pr");
+      if (pr?.state !== "succeeded") {
+        throw new DeployLaterError("Only a task whose pull request is open can deploy.");
+      }
+      if (steps.some((a) => DEPLOY_STEPS.includes(a.kind) && !isTerminalAction(a.state))) {
+        throw new DeployLaterError("This task is already deploying.");
+      }
+      const key = await this.#remoteKeyOf(tx, task);
+      const [target] = key
+        ? await tx
+            .select({ id: schema.deployTargets.id })
+            .from(schema.deployTargets)
+            .where(
+              and(
+                eq(schema.deployTargets.workspaceId, workspaceId),
+                eq(schema.deployTargets.remoteKey, key),
+              ),
+            )
+        : [];
+      if (!target) {
+        throw new DeployLaterError(
+          `${task.repoName} has no deploy target, so it can't deploy. Add one on the Deploys page.`,
+        );
+      }
+      const next = (rows.at(-1)?.position ?? -1) + 1;
+      await this.#addDeploySteps(tx, task, next);
+      await tx.update(schema.tasks).set({ deliver: "deploy" }).where(eq(schema.tasks.id, task.id));
+      return task;
+    });
+    await audit(this.#ctx, {
+      workspaceId,
+      actorType: "user",
+      actorId: userId,
+      verb: "task.deploy_requested",
+      subjectType: "task",
+      subjectId: added.id,
+    });
+    await this.advance(added.id);
   }
 
   async #skipRemaining(taskId: string, message: string) {
@@ -831,7 +1130,7 @@ export class TaskService implements GatewayHandlers {
       .where(
         and(
           eq(schema.actions.taskId, taskId),
-          inArray(schema.actions.state, ["awaiting_approval", "ready"]),
+          inArray(schema.actions.state, ["queued", "awaiting_approval", "ready"]),
         ),
       );
     await this.#db
@@ -1025,10 +1324,18 @@ export class TaskService implements GatewayHandlers {
       await this.settle(task.id, "finished");
       return;
     }
+    // Only push and PR need the task's machine or sandbox. A merge, deploy,
+    // or verify after them goes on without it.
     const open = await this.#db
       .update(schema.actions)
       .set({ state: "failed", message: error, finishedAt: new Date() })
-      .where(and(eq(schema.actions.taskId, task.id), eq(schema.actions.state, "sent")))
+      .where(
+        and(
+          eq(schema.actions.taskId, task.id),
+          eq(schema.actions.state, "sent"),
+          inArray(schema.actions.kind, RUNNER_STEPS),
+        ),
+      )
       .returning({ id: schema.actions.id });
     const pending = await this.#db
       .select({ id: schema.actions.id })
@@ -1036,7 +1343,8 @@ export class TaskService implements GatewayHandlers {
       .where(
         and(
           eq(schema.actions.taskId, task.id),
-          inArray(schema.actions.state, ["awaiting_approval", "ready"]),
+          inArray(schema.actions.state, ["queued", "awaiting_approval", "ready"]),
+          inArray(schema.actions.kind, RUNNER_STEPS),
         ),
       );
     if (open.length === 0 && pending.length === 0) return;

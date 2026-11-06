@@ -57,6 +57,8 @@ export interface Config {
     allowLocalCloneUrls?: boolean;
     /** Origins accepted as push endpoints besides the known push services, such as a local stand-in. */
     pushOrigins?: string[];
+    /** Where sandbox PRs are merged through GitHub's REST API, in place of api.github.com. */
+    githubApiUrl?: string;
   };
 }
 

@@ -582,8 +582,9 @@ export class SandboxService {
   // ------------------------------------------------------------- teardown
 
   /**
-   * Task service hook. Once the task is over and its delivery steps are done,
-   * the sandbox goes.
+   * Task service hook. Once the task is over and the steps its Runner runs,
+   * push and PR, are done, the sandbox goes. A merge, deploy, or verify after
+   * them never needs it.
    */
   async onTaskSettled(taskId: string): Promise<void> {
     const [task] = await this.#db.select().from(schema.tasks).where(eq(schema.tasks.id, taskId));
@@ -591,7 +592,9 @@ export class SandboxService {
     const open = await this.#db
       .select({ state: schema.actions.state })
       .from(schema.actions)
-      .where(eq(schema.actions.taskId, taskId));
+      .where(
+        and(eq(schema.actions.taskId, taskId), inArray(schema.actions.kind, ["push", "open_pr"])),
+      );
     if (!open.every((a) => isTerminalAction(a.state))) return;
     const sandboxId = task.sandboxId;
     this.#inBackground("sandbox teardown", () => this.teardown(sandboxId));
