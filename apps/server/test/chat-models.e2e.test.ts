@@ -606,7 +606,7 @@ describe("personalities", () => {
   it("starts a workspace with Sling only, and adds the rest from templates", async () => {
     const list = await api<P[]>("GET", "/api/personalities");
     expect(list.map((p) => [p.name, p.tools, p.isDefault])).toEqual([
-      ["Sling", ["commands", "coding"], true],
+      ["Sling", ["commands", "coding", "apps", "deploys"], true],
     ]);
     // Chats from before personalities get the default, so they keep who answers them.
     const convs = await server.ctx.db.select().from(schema.conversations);
