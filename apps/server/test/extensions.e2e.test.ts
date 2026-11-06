@@ -606,7 +606,10 @@ beforeAll(async () => {
     manifest: {
       name: "Acme chat",
       description: "Chat for tests.",
-      permissions: { network: { hosts: ["chat.acme.test"], configHosts: ["server"] } },
+      // The chat server is the test's own, on loopback over plain HTTP.
+      permissions: {
+        network: { hosts: ["chat.acme.test"], configHosts: ["server"], localNetwork: true },
+      },
     },
   });
   await writeCatalog(join(local.root, "acme"), "Acme extensions", [
@@ -661,6 +664,7 @@ describe("install from a catalog", () => {
     expect(entry?.latest?.permissions.map((p) => p.key)).toEqual([
       "host:chat.acme.test",
       "configHost:server",
+      "localNetwork",
     ]);
   });
 
