@@ -243,6 +243,19 @@ pub fn parse_labels(value: &str) -> Result<Vec<String>> {
     Ok(out)
 }
 
+/// Checks a control plane URL: http or https, with no trailing slash.
+pub fn parse_server_url(value: &str) -> Result<String> {
+    let url = value.trim().trim_end_matches('/');
+    let rest = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .context("the URL must start with http:// or https://")?;
+    if rest.is_empty() || rest.contains(char::is_whitespace) {
+        bail!("{value:?} isn't a URL");
+    }
+    Ok(url.to_string())
+}
+
 /// Parses `on` or `off` (also `true` and `false`).
 pub fn parse_on_off(value: &str) -> Result<bool> {
     match value.trim().to_ascii_lowercase().as_str() {
@@ -363,6 +376,21 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_urls_are_http_or_https_without_a_trailing_slash() {
+        assert_eq!(
+            parse_server_url(" https://sling.tail1234.ts.net/ ").unwrap(),
+            "https://sling.tail1234.ts.net"
+        );
+        assert_eq!(
+            parse_server_url("http://192.168.1.20:8080").unwrap(),
+            "http://192.168.1.20:8080"
+        );
+        assert!(parse_server_url("sling.example.com").is_err());
+        assert!(parse_server_url("https://").is_err());
+        assert!(parse_server_url("https://a b").is_err());
+    }
 
     #[test]
     fn modes_order_from_least_to_most_access() {

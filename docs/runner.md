@@ -95,7 +95,10 @@ sling-runner config set claude-bin ~/.local/bin/claude
 sling-runner config set remote-repos off         # on | off
 sling-runner config set commands off             # on | off
 sling-runner config set scan-roots ~/code,~/work # "" means your home directory
+sling-runner config set server-url https://sling.tail1234.ts.net
 ```
+
+`server-url` is for when Sling moves to a new address, for example onto a tunnel. The machine keeps its pairing and connects to the new address after you restart the Runner. Only you can change it, here on the machine. To pair with a different Sling, use `sling-runner pair` instead.
 
 `max-mode` is the highest permission mode this machine accepts. A task above it is refused here, whatever the control plane says. Below Full access, the assistant's commands also stay in the read-only sandbox. `commands` decides whether the assistant may run commands here at all. See [Commands](#commands).
 

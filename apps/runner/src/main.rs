@@ -116,7 +116,7 @@ enum ConfigCommand {
     Show,
     /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, claude-bin, worktree-root,
     /// remote-repos (on or off), commands (on or off), scan-roots (comma-separated directories;
-    /// "" means your home).
+    /// "" means your home), server-url (Sling's new address, keeping the pairing).
     Set {
         key: String,
         value: String,
@@ -269,6 +269,18 @@ async fn real_main(cli: Cli) -> Result<()> {
                     "remote-repos" => cfg.remote_repos = config::parse_on_off(&value)?,
                     "commands" => cfg.commands = config::parse_on_off(&value)?,
                     "scan-roots" => cfg.scan_roots = config::parse_scan_roots(&value)?,
+                    // Only from this machine: the control plane can't move a Runner elsewhere.
+                    "server-url" => {
+                        if cfg.runner_id.is_none() {
+                            bail!("not paired yet. Run `sling-runner pair <url> <code>` instead.");
+                        }
+                        cfg.server_url = Some(config::parse_server_url(&value)?);
+                        cfg.save(&paths)?;
+                        println!(
+                            "Saved. Restart the Runner to connect there. It keeps its pairing, so the server must be the same Sling, now at a new address."
+                        );
+                        return Ok(());
+                    }
                     _ => bail!("unknown key {key:?}"),
                 }
                 cfg.save(&paths)?;
