@@ -334,8 +334,9 @@ export function connectRealtime(qc: QueryClient): () => void {
     };
     ws.onclose = () => {
       window.clearInterval(ping);
-      connection.set("closed");
+      // A socket closed on purpose, as on unmount, mustn't mark its successor closed.
       if (stopped) return;
+      connection.set("closed");
       const delay = Math.min(30_000, 1000 * 2 ** attempt++);
       timer = window.setTimeout(open, delay);
     };
