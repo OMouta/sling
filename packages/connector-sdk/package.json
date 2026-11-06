@@ -9,11 +9,15 @@
   },
   "scripts": {
     "typecheck": "tsc -p .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "api-report": "node scripts/api-report.ts"
   },
   "dependencies": {
     "@sling/workflow": "workspace:*",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
   },
   "description": "Write Sling connectors, sandbox providers, and extensions.",
   "license": "Apache-2.0"
