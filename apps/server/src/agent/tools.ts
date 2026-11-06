@@ -1,17 +1,110 @@
-import { AGENT_MODEL_PATTERN, DELIVERY_KINDS, HARNESSES, type RoutingView } from "@sling/core";
+import {
+  AGENT_MODEL_PATTERN,
+  DELIVERY_KINDS,
+  HARNESSES,
+  MODE_POLICY,
+  type PermissionMode,
+  type RoutingView,
+  type RunnerView,
+} from "@sling/core";
 import { schema } from "@sling/db";
 import { tool } from "ai";
 import { and, eq, or } from "drizzle-orm";
 import { z } from "zod";
+import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { ENVIRONMENTS } from "../routing/router.ts";
 import { type CreatedTask, TaskInputError, TaskRoutingError } from "../tasks/service.ts";
 import { runnerViews, taskPlace, taskView } from "../views.ts";
+import { APPROVAL_WAIT_MS, type CommandResult } from "./commands.ts";
+import type { TraceRecorder } from "./trace.ts";
 
 export interface ToolScope {
   workspaceId: string;
   ownerId: string;
   conversationId: string;
+  /** The reply being written, where a command waiting on approval shows. */
+  trace?: TraceRecorder | undefined;
+}
+
+/** What a tool call gets besides its input. */
+interface CallOptions {
+  toolCallId: string;
+  abortSignal?: AbortSignal;
+}
+
+const cap = (r: RunnerView, name: string) => r.capabilities.find((c) => c.name === name);
+
+/** The online machine a command runs on, or why there isn't one. */
+export function pickCommandMachine(
+  runners: RunnerView[],
+  want: string | undefined,
+): { runner: RunnerView } | { error: string } {
+  const online = runners.filter((r) => r.online);
+  const name = want?.trim().toLowerCase();
+  if (name) {
+    const r = runners.find((x) => x.id === want?.trim() || x.name.toLowerCase() === name);
+    if (!r) {
+      return {
+        error: `No machine named ${want}. Machines: ${runners.map((x) => x.name).join(", ") || "none"}.`,
+      };
+    }
+    if (!r.online) return { error: `${r.name} is offline.` };
+    return { runner: r };
+  }
+  const [only] = online;
+  if (online.length === 1 && only) return { runner: only };
+  if (online.length === 0) {
+    return {
+      error:
+        runners.length === 0
+          ? "The user has no machines paired with Sling."
+          : `No machine is online. ${runners.map((r) => r.name).join(", ")} ${runners.length === 1 ? "is" : "are"} offline.`,
+    };
+  }
+  return {
+    error: `${online.length} machines are online: ${online.map((r) => r.name).join(", ")}. Pass machine with the one to use, or ask the user.`,
+  };
+}
+
+/**
+ * Where a command runs. In Full access, outside the sandbox. Otherwise in the
+ * read-only sandbox, unless the assistant asks to leave it, which the user
+ * approves first. Read-only never leaves it, and neither does a machine whose
+ * max mode is below Full access, which refuses to.
+ */
+export function commandPlan(
+  mode: PermissionMode,
+  runner: RunnerView,
+  outsideSandbox: boolean,
+): { sandboxed: boolean; ask: boolean } | { error: string } {
+  const shell = cap(runner, "shell");
+  if (!shell) {
+    return {
+      error: `The Runner on ${runner.name} is too old to run commands. Update sling-runner there.`,
+    };
+  }
+  if (!shell.ready) return { error: `Commands are off on ${runner.name}. ${shell.detail}`.trim() };
+  const sandbox = cap(runner, "shell.sandbox");
+  const canSandbox = sandbox?.ready ?? false;
+  const noSandbox = `${runner.name} can't sandbox commands: ${sandbox?.detail || "no sandbox found"}`;
+  const fullMachine = runner.maxMode === "full-access";
+  const capped = `${runner.name} runs commands only in its read-only sandbox, because its max mode is ${MODE_POLICY[runner.maxMode].label}.`;
+
+  if (mode === "read-only") {
+    if (outsideSandbox) {
+      return {
+        error:
+          "This conversation is Read-only, so commands can't write files or use the network. The user can switch the mode in the app.",
+      };
+    }
+    return canSandbox ? { sandboxed: true, ask: false } : { error: `${noSandbox}.` };
+  }
+  if (!(outsideSandbox || !canSandbox)) {
+    return { sandboxed: !(mode === "full-access" && fullMachine), ask: false };
+  }
+  if (!fullMachine) return { error: canSandbox ? capped : `${noSandbox}, and ${capped}` };
+  return { sandboxed: false, ask: mode !== "full-access" };
 }
 
 /** Finds a sandbox provider installation by ID or name. Null leaves the choice to the router. */
@@ -263,6 +356,122 @@ export function agentTools(ctx: AppContext, scope: ToolScope) {
             url: a.url,
             message: a.message,
           })),
+        };
+      },
+    }),
+
+    run_command: tool({
+      description:
+        "Run a shell command on one of the user's machines, as the user, and get its output. Use it to look around a machine: list or read files, search, check versions, disk space, processes, git status or log. It runs in the user's shell, in their home directory unless you pass cwd, and stops anything it leaves running when it ends. By default it runs in a read-only sandbox that can read any file but can't write files or use the network. Set outsideSandbox only when the command must change files or reach the network; outside Full access the user approves it in the chat first. In Full access commands always run outside the sandbox. Changing code in a repo still goes to delegate_coding_task.",
+      inputSchema: z.object({
+        command: z.string().min(1).max(16_000).describe("The command, as typed in a terminal."),
+        machine: z
+          .string()
+          .optional()
+          .describe("The machine's name or id. Leave it out when only one machine is online."),
+        cwd: z
+          .string()
+          .max(1024)
+          .optional()
+          .describe(
+            "Where to run it: an absolute path or one starting with ~/. Defaults to the home directory.",
+          ),
+        timeoutSeconds: z
+          .number()
+          .int()
+          .min(1)
+          .max(300)
+          .default(60)
+          .describe("Stop it after this many seconds."),
+        outsideSandbox: z
+          .boolean()
+          .default(false)
+          .describe("True only when the command must write files or use the network."),
+      }),
+      execute: async (input, options: CallOptions) => {
+        const [conv] = await ctx.db
+          .select({ mode: schema.conversations.mode })
+          .from(schema.conversations)
+          .where(eq(schema.conversations.id, scope.conversationId));
+        if (!conv) return { error: "conversation not found" };
+        const picked = pickCommandMachine(await runnerViews(ctx, scope.workspaceId), input.machine);
+        if ("error" in picked) return picked;
+        const { runner } = picked;
+        const plan = commandPlan(conv.mode, runner, input.outsideSandbox);
+        if ("error" in plan) return plan;
+
+        if (plan.ask) {
+          const trace = scope.trace;
+          if (!trace) return { error: "Can't ask the user to approve a command from here." };
+          const decision = await ctx.commands.approval({
+            workspaceId: scope.workspaceId,
+            conversationId: scope.conversationId,
+            machine: runner.name,
+            ...(options.abortSignal ? { signal: options.abortSignal } : {}),
+            onChange: (approval) => trace.toolUpdate(options.toolCallId, { approval }),
+          });
+          await audit(ctx, {
+            workspaceId: scope.workspaceId,
+            actorType: "user",
+            actorId: scope.ownerId,
+            verb: `command.${decision}`,
+            subjectType: "runner",
+            subjectId: runner.id,
+            details: { conversationId: scope.conversationId, command: input.command.slice(0, 500) },
+          });
+          if (decision === "denied") {
+            return {
+              error:
+                "The user declined to run this outside the sandbox. Don't try another way around it; ask what they'd like instead.",
+            };
+          }
+          if (decision === "expired") {
+            return {
+              error: `The user didn't answer within ${APPROVAL_WAIT_MS / 60_000} minutes, so it didn't run.`,
+            };
+          }
+        }
+
+        let result: CommandResult;
+        try {
+          result = await ctx.commands.run(
+            runner.id,
+            {
+              command: input.command,
+              cwd: input.cwd ?? "",
+              timeoutSeconds: input.timeoutSeconds,
+              mode: conv.mode,
+              sandboxed: plan.sandboxed,
+            },
+            options.abortSignal,
+          );
+        } catch (err) {
+          return { machine: runner.name, error: err instanceof Error ? err.message : String(err) };
+        }
+        await audit(ctx, {
+          workspaceId: scope.workspaceId,
+          actorType: "agent",
+          verb: "command.run",
+          subjectType: "runner",
+          subjectId: runner.id,
+          details: {
+            conversationId: scope.conversationId,
+            command: input.command.slice(0, 500),
+            sandboxed: result.sandboxed,
+            exitCode: result.exitCode,
+            error: result.error || undefined,
+          },
+        });
+        if (result.error) return { machine: runner.name, error: result.error };
+        return {
+          machine: runner.name,
+          cwd: result.cwd,
+          sandboxed: result.sandboxed,
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+          truncated: result.truncated,
+          durationMs: result.durationMs,
+          output: result.output,
         };
       },
     }),

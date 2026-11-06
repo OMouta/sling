@@ -1,11 +1,37 @@
-import type { ReplyTrace, ServerEvent, ToolStep, TraceStep } from "@sling/core";
+import type { LiveReplyView, ReplyTrace, ServerEvent, ToolStep, TraceStep } from "@sling/core";
 
 /** Longest tool input kept as-is, and longest output kept, in characters. */
 const INPUT_LIMIT = 4_000;
 const OUTPUT_LIMIT = 2_000;
+/** A JSON result keeps its shape: each long string in it is cut to this. */
+const FIELD_LIMIT = 12_000;
+const JSON_LIMIT = 24_000;
 
 function shorten(text: string, limit: number): string {
   return text.length > limit ? `${text.slice(0, limit)}…` : text;
+}
+
+function shortenStrings(value: unknown): unknown {
+  if (typeof value === "string") return shorten(value, FIELD_LIMIT);
+  if (Array.isArray(value)) return value.map(shortenStrings);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, shortenStrings(v)]));
+  }
+  return value;
+}
+
+/**
+ * A tool's result as stored. JSON stays JSON, so the chat can still read a
+ * command's output from it, with long strings cut; other text is cut whole.
+ */
+export function keptOutput(text: string): string {
+  try {
+    const json = JSON.stringify(shortenStrings(JSON.parse(text)));
+    if (json.length <= JSON_LIMIT) return json;
+  } catch {
+    // Not JSON.
+  }
+  return shorten(text, OUTPUT_LIMIT);
 }
 
 /** Tool arguments as stored: as they are, or as shortened JSON when large. */
@@ -32,6 +58,8 @@ export class TraceRecorder {
   readonly #conversationId: string;
   /** Text since the last step: the answer, unless more work follows it. */
   #text = "";
+  /** Changes to tool calls that haven't been recorded yet. */
+  readonly #early = new Map<string, Partial<ToolStep>>();
 
   constructor(conversationId: string, publish: (ev: ServerEvent) => void) {
     this.#conversationId = conversationId;
@@ -55,6 +83,7 @@ export class TraceRecorder {
 
   toolStarted(id: string, name: string, input: unknown) {
     this.#settleText();
+    if (this.#tool(id)) return;
     const step: ToolStep = {
       kind: "tool",
       id,
@@ -62,18 +91,44 @@ export class TraceRecorder {
       input: keptInput(input),
       status: "running",
       output: null,
+      ...this.#early.get(id),
     };
+    this.#early.delete(id);
     this.#steps.push(step);
     this.#emit(step);
   }
 
+  /**
+   * Changes a tool call while it runs, as when a command waits for approval.
+   * A tool can start before its call is recorded, so a change that comes
+   * first waits for it.
+   */
+  toolUpdate(id: string, patch: Pick<Partial<ToolStep>, "approval">) {
+    const step = this.#tool(id);
+    if (!step) {
+      this.#early.set(id, { ...this.#early.get(id), ...patch });
+      return;
+    }
+    Object.assign(step, patch);
+    this.#emit(step);
+  }
+
   toolFinished(id: string, ok: boolean, output: unknown) {
-    const step = this.#steps.find((s): s is ToolStep => s.kind === "tool" && s.id === id);
+    const step = this.#tool(id);
     if (!step) return;
     step.status = ok ? "done" : "error";
     const text = typeof output === "string" ? output : JSON.stringify(output ?? null);
-    step.output = shorten(text, OUTPUT_LIMIT);
+    step.output = keptOutput(text);
     this.#emit(step);
+  }
+
+  /** The reply so far, for a chat opened while it's being written. */
+  snapshot(): LiveReplyView {
+    return { text: this.#text, steps: structuredClone(this.#steps), startedAt: this.#started };
+  }
+
+  #tool(id: string): ToolStep | undefined {
+    return this.#steps.find((s): s is ToolStep => s.kind === "tool" && s.id === id);
   }
 
   /**

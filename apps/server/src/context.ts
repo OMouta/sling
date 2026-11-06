@@ -4,6 +4,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { PgBoss } from "pg-boss";
 import type { Agent } from "./agent/agent.ts";
 import type { CliChat } from "./agent/cli-chat.ts";
+import type { Commands } from "./agent/commands.ts";
 import type { Auth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
 import type { ExtensionService } from "./extensions/service.ts";
@@ -32,6 +33,8 @@ export interface AppContext {
   agent: Agent;
   /** Assistant turns run on a coding agent's CLI on one of the user's machines. */
   cliChat: CliChat;
+  /** The assistant's shell commands, and the ones waiting for approval. */
+  commands: Commands;
   /** Node types the workflow engine can run, and the connectors that brought some. */
   registry: NodeRegistry;
   engine: Engine;

@@ -243,6 +243,14 @@ export interface MessageView {
   trace: ReplyTrace | null;
 }
 
+/** A command waiting on the user, or what they decided. */
+export interface CommandApprovalView {
+  id: string;
+  state: "pending" | "approved" | "denied" | "expired";
+  /** The machine it would run on. */
+  machine: string;
+}
+
 /** A tool call the assistant made while replying. */
 export interface ToolStep {
   kind: "tool";
@@ -253,6 +261,8 @@ export interface ToolStep {
   status: "running" | "done" | "error";
   /** The result as text, shortened. */
   output: string | null;
+  /** For a command that needs the user's approval to leave the sandbox. */
+  approval?: CommandApprovalView;
 }
 
 /**
@@ -268,6 +278,14 @@ export type TraceStep =
 export interface ReplyTrace {
   steps: TraceStep[];
   ms: number;
+}
+
+/** A reply still being written: its work so far, and the answer's text so far. */
+export interface LiveReplyView {
+  text: string;
+  steps: TraceStep[];
+  /** Milliseconds since the epoch. */
+  startedAt: number;
 }
 
 export type RunStatus = "queued" | "running" | "waiting" | "succeeded" | "failed" | "cancelled";

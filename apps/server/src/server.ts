@@ -6,6 +6,7 @@ import type { FastifyInstance } from "fastify";
 import type { PgBoss } from "pg-boss";
 import { Agent } from "./agent/agent.ts";
 import { CliChat } from "./agent/cli-chat.ts";
+import { Commands } from "./agent/commands.ts";
 import { createAuth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
 import type { AppContext } from "./context.ts";
@@ -90,6 +91,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     sandboxes: undefined as unknown as SandboxService,
     agent: undefined as unknown as Agent,
     cliChat: undefined as unknown as CliChat,
+    commands: undefined as unknown as Commands,
     engine: undefined as unknown as Engine,
     events: undefined as unknown as EventBus,
     workflows: undefined as unknown as WorkflowService,
@@ -101,6 +103,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   ctx.sandboxes = new SandboxService(ctx);
   ctx.agent = new Agent(ctx, opts.model);
   ctx.cliChat = new CliChat(ctx);
+  ctx.commands = new Commands(ctx);
   ctx.engine = new Engine(ctx);
   ctx.events = new EventBus(ctx);
   ctx.workflows = new WorkflowService(ctx, opts.templatesDir);

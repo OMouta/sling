@@ -95,6 +95,7 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
       messages: rows.map(toMessageView).filter((m) => m !== null),
       tasks: await taskViews(ctx, tasks),
       agentStatus: ctx.agent.status(conv.id),
+      live: ctx.agent.live(conv.id),
       usage: { inputTokens: Number(usage?.input ?? 0), outputTokens: Number(usage?.output ?? 0) },
     };
   });
@@ -142,6 +143,32 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
       const view = toConversationView(updated);
       ctx.hub.publish(actor.workspaceId, { type: "conversation.updated", conversation: view });
       return view;
+    },
+  );
+
+  // The user's answer to a command that wants to leave the sandbox.
+  r.post(
+    "/api/conversations/:id/commands/:approvalId",
+    {
+      schema: {
+        params: z.object({ id: z.string(), approvalId: z.string() }),
+        body: z.object({ decision: z.enum(["approve", "deny"]) }),
+      },
+    },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const conv = await owned(actor.workspaceId, request.params.id);
+      if (!conv) return reply.code(404).send({ error: "not found" });
+      const ok = ctx.commands.decide(
+        actor.workspaceId,
+        conv.id,
+        request.params.approvalId,
+        request.body.decision,
+      );
+      if (!ok) {
+        return reply.code(409).send({ error: "That command isn't waiting for an answer anymore." });
+      }
+      return { ok: true };
     },
   );
 

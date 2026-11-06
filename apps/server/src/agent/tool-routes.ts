@@ -6,7 +6,10 @@ import { agentTools } from "./tools.ts";
 interface ToolLike {
   description?: string;
   inputSchema: z.ZodType;
-  execute?: (input: unknown, options: { toolCallId: string; messages: [] }) => unknown;
+  execute?: (
+    input: unknown,
+    options: { toolCallId: string; messages: []; abortSignal?: AbortSignal },
+  ) => unknown;
 }
 
 function bearer(header: string | undefined): string | null {
@@ -31,6 +34,7 @@ export async function agentToolRoutes(app: FastifyInstance, ctx: AppContext) {
           workspaceId: grant.workspaceId,
           ownerId: grant.ownerId,
           conversationId: grant.conversationId,
+          trace: ctx.cliChat.traceFor(grant.turnId),
         }
       : null;
   };
@@ -57,8 +61,7 @@ export async function agentToolRoutes(app: FastifyInstance, ctx: AppContext) {
       const t = Object.hasOwn(tools, request.params.name) ? tools[request.params.name] : undefined;
       if (!t?.execute)
         return reply.code(404).send({ error: `no tool named ${request.params.name}` });
-      const grant = grantOf(request.headers.authorization);
-      const trace = grant ? ctx.cliChat.traceFor(grant.turnId) : undefined;
+      const trace = scope.trace;
       const name = request.params.name;
       const args = request.body?.arguments ?? {};
       trace?.toolStarted(request.id, name, args);
@@ -68,8 +71,17 @@ export async function agentToolRoutes(app: FastifyInstance, ctx: AppContext) {
         trace?.toolFinished(request.id, false, content);
         return { content, isError: true };
       }
+      // The agent gave up on the call, as when its turn was stopped.
+      const gone = new AbortController();
+      reply.raw.on("close", () => {
+        if (!reply.raw.writableFinished) gone.abort();
+      });
       try {
-        const result = await t.execute(parsed.data, { toolCallId: request.id, messages: [] });
+        const result = await t.execute(parsed.data, {
+          toolCallId: request.id,
+          messages: [],
+          abortSignal: gone.signal,
+        });
         const content = JSON.stringify(result ?? null);
         trace?.toolFinished(request.id, true, content);
         return { content, isError: false };

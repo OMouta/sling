@@ -67,3 +67,49 @@ describe("reply traces", () => {
     expect(trace.finish(" Done. ").answer).toBe("Done.");
   });
 });
+
+describe("tool calls that change while they run", () => {
+  it("applies a change that came before the call was recorded", () => {
+    const { trace, events } = recorder();
+    const approval = { id: "cap_1", state: "pending" as const, machine: "devbox" };
+    trace.toolUpdate("t1", { approval });
+    expect(events).toEqual([]);
+    trace.toolStarted("t1", "run_command", { command: "touch x" });
+    trace.toolUpdate("t1", { approval: { ...approval, state: "approved" } });
+    trace.toolFinished("t1", true, { exitCode: 0, output: "" });
+    const steps = trace.finish("Done.").trace?.steps;
+    expect(steps?.[0]).toMatchObject({
+      name: "run_command",
+      status: "done",
+      approval: { id: "cap_1", state: "approved" },
+    });
+    expect(events.map((e) => (e.type === "agent.tool" ? e.step.approval?.state : null))).toEqual([
+      "pending",
+      "approved",
+      "approved",
+    ]);
+  });
+
+  it("keeps a long command result as JSON, with its output cut", () => {
+    const { trace } = recorder();
+    trace.toolStarted("t1", "run_command", { command: "yes | head -n 100000" });
+    trace.toolFinished("t1", true, { exitCode: 0, output: "y\n".repeat(50_000) });
+    const step = trace.finish("").trace?.steps[0];
+    const output = step?.kind === "tool" ? (step.output ?? "") : "";
+    const parsed = JSON.parse(output) as { exitCode: number; output: string };
+    expect(parsed.exitCode).toBe(0);
+    expect(parsed.output.length).toBeLessThan(13_000);
+    expect(parsed.output.endsWith("…")).toBe(true);
+  });
+
+  it("shows the reply so far to a chat opened mid-turn", () => {
+    const { trace } = recorder();
+    trace.thinking("Looking.");
+    trace.toolStarted("t1", "run_command", { command: "ls" });
+    trace.text("Your Desk");
+    const live = trace.snapshot();
+    expect(live.text).toBe("Your Desk");
+    expect(live.steps.map((s) => s.kind)).toEqual(["thinking", "tool"]);
+    expect(live.startedAt).toBeLessThanOrEqual(Date.now());
+  });
+});

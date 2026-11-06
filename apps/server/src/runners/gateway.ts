@@ -219,6 +219,7 @@ export class RunnerGateway {
           .set({ online: false, lastSeenAt: new Date() })
           .where(eq(schema.runners.id, s.runnerId));
         this.#ctx.cliChat?.runnerDisconnected(s.runnerId);
+        this.#ctx.commands?.runnerDisconnected(s.runnerId);
         await this.handlers?.disconnected(s);
         await this.#publishRunner(s);
         log.info({ runnerId: s.runnerId }, "runner disconnected");
@@ -320,6 +321,9 @@ export class RunnerGateway {
         return;
       case "chatEvent":
         this.#ctx.cliChat?.handleEvent(session, envelope.body.value);
+        return;
+      case "execResult":
+        this.#ctx.commands?.handleResult(session, envelope.body.value);
         return;
       case "repoChangeResult": {
         const r = envelope.body.value;
