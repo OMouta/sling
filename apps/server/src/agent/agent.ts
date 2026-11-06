@@ -20,14 +20,16 @@ import { conversationPersonality } from "../personalities/service.ts";
 import { personalityTemplate } from "../personalities/templates.ts";
 import { workspaceSettings } from "../sandboxes/settings.ts";
 import type { SettleReason } from "../tasks/service.ts";
+import { workspaceTimeZone } from "../timezone.ts";
 import { taskView, taskWhere, toConversationView } from "../views.ts";
 import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
+import { appTools } from "./app-tools.ts";
 import { effectiveChat } from "./chat-settings.ts";
 import { NoChatMachine } from "./cli-chat.ts";
 import { textOf, toMessageView, toModelMessages, UPDATE_PREFIX } from "./history.ts";
 import { NoModelConfigured, resolveAssistant } from "./models.ts";
 import { assistantInstructions } from "./prompt.ts";
-import { agentTools, allowedTools } from "./tools.ts";
+import { agentTools, allowedTools, type ToolScope } from "./tools.ts";
 import { TraceRecorder } from "./trace.ts";
 
 const MAX_STEPS = 8;
@@ -257,11 +259,23 @@ export class Agent {
       const row = await conversationPersonality(ctx.db, conv);
       const personality = row ?? FALLBACK_PERSONALITY;
       if (row) trace.personality = { id: row.id, revision: row.revision };
+      const scope: ToolScope = {
+        workspaceId: conv.workspaceId,
+        ownerId: conv.ownerId,
+        conversationId: conv.id,
+        trace,
+      };
+      const [chat, agents, apps, timeZone] = await Promise.all([
+        effectiveChat(ctx, conv.workspaceId, conv.id),
+        personality.tools.includes("coding")
+          ? codingAgentsNote(ctx, conv.workspaceId)
+          : Promise.resolve(""),
+        personality.tools.includes("apps") ? appTools(ctx, scope) : Promise.resolve({}),
+        workspaceTimeZone(ctx, conv.workspaceId),
+      ]);
+      const appNames = Object.keys(apps);
       const allowed = allowedTools(personality.tools);
-      const chat = await effectiveChat(ctx, conv.workspaceId, conv.id);
-      const agents = personality.tools.includes("coding")
-        ? await codingAgentsNote(ctx, conv.workspaceId)
-        : "";
+      for (const name of appNames) allowed.add(name);
       // A scripted test model stands in for the workspace default, but not for a
       // CLI the conversation picked itself.
       const cli = chat.assistant && isCliProvider(chat.assistant.provider);
@@ -270,8 +284,11 @@ export class Agent {
           instructions: assistantInstructions(personality, conv.mode, new Date(), {
             cli: true,
             agents,
+            timeZone,
+            apps: appNames,
           }),
           tools: [...allowed],
+          appTools: apps,
           trace,
           ...(opts.signal ? { signal: opts.signal } : {}),
         });
@@ -284,18 +301,13 @@ export class Agent {
       const result = streamText({
         model,
         providerOptions,
-        instructions: assistantInstructions(personality, conv.mode, new Date(), { agents }),
+        instructions: assistantInstructions(personality, conv.mode, new Date(), {
+          agents,
+          timeZone,
+          apps: appNames,
+        }),
         messages: toModelMessages(rows),
-        tools: agentTools(
-          ctx,
-          {
-            workspaceId: conv.workspaceId,
-            ownerId: conv.ownerId,
-            conversationId: conv.id,
-            trace,
-          },
-          allowed,
-        ),
+        tools: { ...agentTools(ctx, scope, allowed), ...apps },
         stopWhen: isStepCount(MAX_STEPS),
         maxRetries: 2,
         ...(opts.signal ? { abortSignal: opts.signal } : {}),
@@ -375,7 +387,14 @@ export class Agent {
     conv: typeof schema.conversations.$inferSelect,
     choice: AssistantChoice,
     rows: (typeof schema.messages.$inferSelect)[],
-    turn: { instructions: string; tools: string[]; trace: TraceRecorder; signal?: AbortSignal },
+    turn: {
+      instructions: string;
+      tools: string[];
+      /** The turn's tools for the user's apps, built for this conversation. */
+      appTools: Record<string, unknown>;
+      trace: TraceRecorder;
+      signal?: AbortSignal;
+    },
   ): Promise<string> {
     const { trace, signal } = turn;
     const ctx = this.#ctx;
@@ -389,6 +408,7 @@ export class Agent {
       label: HARNESS_LABELS[harness],
       instructions: turn.instructions,
       tools: turn.tools,
+      appTools: turn.appTools,
       prompt,
       history,
       session: conv.agentSession ?? null,

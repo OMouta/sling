@@ -209,6 +209,8 @@ export class Engine {
   #stopping = false;
   readonly #active = new Map<string, AbortController>();
   readonly #versions = new Map<string, CachedVersion>();
+  /** Callers waiting for a run to end, by run. */
+  readonly #endWaiters = new Map<string, Set<() => void>>();
   #workers: string[] = [];
   /** Engine time per node, excluding the node's own work, in ms. Most recent last. */
   readonly overheadMs: number[] = [];
@@ -1424,9 +1426,55 @@ export class Engine {
       )
       .returning();
     if (!updated) return;
+    this.#ended(updated.id);
     await this.#publishRun(updated);
     await this.#publishWorkflow(updated.workflowId);
     await this.#notifyParent(updated);
+  }
+
+  #ended(runId: string) {
+    for (const wake of this.#endWaiters.get(runId) ?? []) wake();
+  }
+
+  /**
+   * The run once it has succeeded, failed, or been cancelled, or as it
+   * stands when `ms` runs out. Null when there's no such run.
+   */
+  async waitForRun(runId: string, ms: number, signal?: AbortSignal): Promise<RunRow | null> {
+    const load = async () => {
+      const [row] = await this.#db
+        .select()
+        .from(schema.workflowRuns)
+        .where(eq(schema.workflowRuns.id, runId));
+      return row ?? null;
+    };
+    const over = (r: RunRow | null) =>
+      !r || r.status === "succeeded" || r.status === "failed" || r.status === "cancelled";
+    let wake = () => {};
+    const ended = new Promise<void>((resolve) => {
+      wake = resolve;
+    });
+    let set = this.#endWaiters.get(runId);
+    if (!set) {
+      set = new Set();
+      this.#endWaiters.set(runId, set);
+    }
+    set.add(wake);
+    const stop = new AbortController();
+    try {
+      // Registered first, so an end between this read and the wait isn't missed.
+      const now = await load();
+      if (over(now)) return now;
+      await Promise.race([
+        ended,
+        sleep(ms, signal ? AbortSignal.any([signal, stop.signal]) : stop.signal),
+      ]);
+      return await load();
+    } finally {
+      stop.abort();
+      set.delete(wake);
+      if (set.size === 0) this.#endWaiters.delete(runId);
+    }
   }
 
   async #notifyParent(run: RunRow) {
@@ -1462,6 +1510,7 @@ export class Engine {
         );
       return row ?? null;
     }
+    this.#ended(runId);
     this.#active.get(runId)?.abort();
     const waits = await this.#db
       .delete(schema.runWaits)

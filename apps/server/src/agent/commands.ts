@@ -5,7 +5,7 @@ import type { AppContext } from "../context.ts";
 import { modeToProto } from "../runners/convert.ts";
 import type { RunnerSession } from "../runners/gateway.ts";
 
-/** How long a command waits for the user to approve it. */
+/** How long a command or a send waits for the user to approve it. */
 export const APPROVAL_WAIT_MS = 5 * 60_000;
 /** Extra time past a command's own timeout before Sling stops waiting for the machine. */
 const ANSWER_GRACE_MS = 15_000;
@@ -60,8 +60,9 @@ function toResult(r: ExecResult): CommandResult {
 
 /**
  * The assistant's shell commands: sends each to its machine and waits for
- * the answer, and holds the ones waiting for the user's approval. Nothing
- * here is stored: a command lives as long as the turn that asked for it.
+ * the answer. It also holds what waits in a chat for the user's approval: a
+ * command that wants to leave the sandbox, or a send such as an email.
+ * Nothing here is stored: an approval lives as long as the turn that asked.
  */
 export class Commands {
   readonly #ctx: AppContext;
@@ -138,24 +139,25 @@ export class Commands {
   }
 
   /**
-   * Waits for the user to approve a command. `onChange` hears the approval's
-   * state as it changes, first "pending", for the chat to show.
+   * Waits for the user to approve a command or a send. `onChange` hears the
+   * approval's state as it changes, first "pending", for the chat to show.
    */
-  async approval(opts: {
-    workspaceId: string;
-    conversationId: string;
-    machine: string;
-    signal?: AbortSignal;
-    onChange: (view: CommandApprovalView) => void;
-  }): Promise<Decision> {
+  async approval(
+    opts: {
+      workspaceId: string;
+      conversationId: string;
+      signal?: AbortSignal;
+      onChange: (view: CommandApprovalView) => void;
+    } & (
+      | { kind?: "command"; machine: string }
+      | { kind: "send" /** What would go out, as the user sees it. */; summary: string }
+    ),
+  ): Promise<Decision> {
     const id = `cap_${randomBytes(12).toString("hex")}`;
-    const view = (state: CommandApprovalView["state"]): CommandApprovalView => ({
-      id,
-      kind: "command",
-      state,
-      machine: opts.machine,
-      summary: "",
-    });
+    const view = (state: CommandApprovalView["state"]): CommandApprovalView =>
+      opts.kind === "send"
+        ? { id, kind: "send", state, machine: "", summary: opts.summary }
+        : { id, kind: "command", state, machine: opts.machine, summary: "" };
     const decision = await new Promise<Decision>((resolve) => {
       const settle = (d: Decision) => {
         clearTimeout(timer);
@@ -177,7 +179,7 @@ export class Commands {
     return decision;
   }
 
-  /** Conversations with a command waiting for the user's answer. */
+  /** Conversations with a command or a send waiting for the user's answer. */
   waitingConversations(workspaceId: string): Set<string> {
     return new Set(
       [...this.#approvals.values()]

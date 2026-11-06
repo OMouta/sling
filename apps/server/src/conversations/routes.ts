@@ -210,7 +210,7 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         request.body.decision,
       );
       if (!ok) {
-        return reply.code(409).send({ error: "That command isn't waiting for an answer anymore." });
+        return reply.code(409).send({ error: "That isn't waiting for an answer anymore." });
       }
       return { ok: true };
     },

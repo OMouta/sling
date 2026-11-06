@@ -25,6 +25,8 @@ export interface ToolGrant {
   conversationId: string;
   /** The only tools this turn may call: its personality's. */
   tools: ReadonlySet<string>;
+  /** Tools for the user's apps, built when the turn started. */
+  appTools: Readonly<Record<string, unknown>>;
   expiresAt: number;
 }
 
@@ -92,6 +94,8 @@ export class CliChat {
     instructions: string;
     /** Tool names the turn may call. */
     tools: readonly string[];
+    /** Tools for the user's apps, served alongside Sling's own. */
+    appTools?: Record<string, unknown>;
     prompt: string;
     history: string;
     session: { harness: Harness; runnerId: string; sessionId: string } | null;
@@ -115,6 +119,7 @@ export class CliChat {
       ownerId: opts.ownerId,
       conversationId: opts.conversationId,
       tools: new Set(opts.tools),
+      appTools: opts.appTools ?? {},
       expiresAt: Date.now() + TURN_TIMEOUT_MS,
     });
     const resume = sameAgent && sameAgent.runnerId === runnerId ? sameAgent.sessionId : "";
