@@ -2,8 +2,9 @@ import type { InstallationView, WorkflowSummaryView } from "@sling/core";
 import type { TemplateView, WorkflowDetailView } from "@sling/workflow";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, LayoutTemplate, Plus, Upload, Workflow, Zap } from "lucide-react";
+import { ChevronRight, LayoutTemplate, Plus, Puzzle, Upload, Workflow, Zap } from "lucide-react";
 import { type FormEvent, useRef, useState } from "react";
+import { ExtensionIcon } from "../components/extensions/ExtensionBits.tsx";
 import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
 import { RunStatusBadge } from "../components/StatusBadge.tsx";
 import {
@@ -25,6 +26,7 @@ import {
   Tr,
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
+import { useExtensions } from "../lib/extensionApi.ts";
 import { ago } from "../lib/format.ts";
 import {
   qk,
@@ -334,6 +336,9 @@ function NewBlankDialog({ onClose }: { onClose: () => void }) {
 function TemplateDialog({ onClose }: { onClose: () => void }) {
   const templates = useTemplates();
   const [picked, setPicked] = useState<TemplateView | null>(null);
+  // Templates from a package show its icon, which the template list doesn't carry.
+  const extensions = useExtensions(templates.data?.some((t) => t.extension) ?? false);
+  const extension = (id: string) => extensions.data?.find((x) => x.id === id);
   return (
     <Dialog
       title={picked ? picked.name : "New from template"}
@@ -361,9 +366,18 @@ function TemplateDialog({ onClose }: { onClose: () => void }) {
                   onClick={() => setPicked(t)}
                   className="pressable group flex w-full cursor-pointer items-start gap-3 rounded-xl bg-surface-2 p-3 text-left shadow-raised hover:shadow-raised-hover"
                 >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-3 text-icon">
-                    <LayoutTemplate aria-hidden="true" />
-                  </span>
+                  {t.extension ? (
+                    <ExtensionIcon
+                      ext={extension(t.extension.id)}
+                      fallback={LayoutTemplate}
+                      size="sm"
+                      flat
+                    />
+                  ) : (
+                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-3 text-icon">
+                      <LayoutTemplate aria-hidden="true" />
+                    </span>
+                  )}
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2 text-[13px] font-medium">
                       {t.name}
@@ -375,6 +389,12 @@ function TemplateDialog({ onClose }: { onClose: () => void }) {
                     {t.bindings.length > 0 && (
                       <span className="mt-1.5 block text-xs text-subtle">
                         Needs {t.bindings.map((b) => b.label).join(", ")}
+                      </span>
+                    )}
+                    {t.extension && (
+                      <span className="mt-1.5 flex items-center gap-1.5 text-xs text-subtle">
+                        <Puzzle aria-hidden="true" size={12} className="shrink-0" />
+                        From {t.extension.name}
                       </span>
                     )}
                   </span>

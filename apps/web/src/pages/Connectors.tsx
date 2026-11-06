@@ -11,11 +11,13 @@ import {
   Pencil,
   Plug,
   Plus,
+  Puzzle,
   TrainFront,
   Trash2,
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import Markdown from "react-markdown";
+import { ExtensionIcon } from "../components/extensions/ExtensionBits.tsx";
 import { Content, Page, Toolbar, ToolbarText } from "../components/Page.tsx";
 import { SchemaForm } from "../components/SchemaForm.tsx";
 import { InstallationStatusLabel } from "../components/StatusBadge.tsx";
@@ -58,10 +60,14 @@ function ConnectorIcon({
   connector,
   size = "md",
 }: {
-  connector?: { id: string; name: string };
+  connector?: Pick<ConnectorView, "id" | "name" | "extension">;
   size?: "md" | "lg";
 }) {
   const Icon = connector ? iconFor(connector) : Plug;
+  // An extension's connector shows the extension's own icon.
+  if (connector?.extension) {
+    return <ExtensionIcon ext={connector.extension} fallback={Icon} size={size} />;
+  }
   return (
     <span
       className={cx(
@@ -214,6 +220,14 @@ function ConnectorCard({ connector: c, onAdd }: { connector: ConnectorView; onAd
       </div>
       <h3 className="mt-3 text-sm font-medium">{c.name}</h3>
       <p className="mt-1 flex-1 text-xs leading-4 text-muted">{c.description}</p>
+      {c.extension && (
+        <p className="mt-3 flex min-w-0 items-center gap-1.5 text-xs text-subtle">
+          <Puzzle aria-hidden="true" size={12} className="shrink-0" />
+          <span className="truncate">
+            From {c.extension.name} {c.extension.version}
+          </span>
+        </p>
+      )}
     </Card>
   );
 }
