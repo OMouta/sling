@@ -18,6 +18,7 @@ import { useSyncExternalStore } from "react";
 import { byActivity, conversationsKey, previewText } from "./conversations.ts";
 import { applyExtension, forgetExtension } from "./extensionApi.ts";
 import { modelsKey } from "./models.ts";
+import { applyPersonalityEvent } from "./personalities.ts";
 import type { ConversationDetail, TaskDetail } from "./types.ts";
 import { qk } from "./workflowApi.ts";
 
@@ -249,6 +250,10 @@ function applySandbox(qc: QueryClient, sandbox: SandboxView) {
 
 export function apply(qc: QueryClient, ev: ServerEvent) {
   switch (ev.type) {
+    case "personality.updated":
+    case "personality.removed":
+      applyPersonalityEvent(qc, ev);
+      return;
     case "runner.updated":
       qc.setQueryData<RunnerView[]>(["runners"], (list) => {
         // A sandbox's Runner is never a machine, so the Machines list skips it.

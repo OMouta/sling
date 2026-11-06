@@ -16,6 +16,7 @@ import { ExtensionsPage } from "./pages/Extensions.tsx";
 import { HomePage } from "./pages/Home.tsx";
 import { LoginPage } from "./pages/Login.tsx";
 import { MachinesPage } from "./pages/Machines.tsx";
+import { PersonalitiesPage, PersonalityEditorPage } from "./pages/Personalities.tsx";
 import { SandboxesPage } from "./pages/Sandboxes.tsx";
 import { SettingsPage } from "./pages/Settings.tsx";
 import { SetupPage } from "./pages/Setup.tsx";
@@ -119,6 +120,17 @@ export const runRoute = createRoute({
   path: "/workflows/$id/runs/$runId",
   component: lazyRouteComponent(() => import("./pages/WorkflowRun.tsx"), "WorkflowRunPage"),
 });
+const personalitiesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/personalities",
+  component: PersonalitiesPage,
+});
+/** `new` makes one; anything else is the ID of one to edit. */
+export const personalityRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/personalities/$id",
+  component: PersonalityEditorPage,
+});
 const connectorsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/connectors",
@@ -152,6 +164,8 @@ const routeTree = rootRoute.addChildren([
     runRoute,
     connectorsRoute,
     extensionsRoute,
+    personalitiesRoute,
+    personalityRoute,
   ]),
 ]);
 

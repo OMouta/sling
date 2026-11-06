@@ -1,5 +1,6 @@
 import {
   Box,
+  Drama,
   Laptop,
   ListChecks,
   type LucideIcon,
@@ -12,6 +13,7 @@ import {
 
 export interface NavItem {
   to:
+    | "/personalities"
     | "/tasks"
     | "/approvals"
     | "/workflows"
@@ -27,6 +29,7 @@ export interface NavItem {
 
 /** Every top-level page, in sidebar order. */
 export const NAV: NavItem[] = [
+  { to: "/personalities", label: "Personalities", icon: Drama, section: "main" },
   { to: "/tasks", label: "Tasks", icon: ListChecks, section: "main" },
   { to: "/approvals", label: "Approvals", icon: ShieldCheck, section: "main" },
   { to: "/workflows", label: "Workflows", icon: Workflow, section: "automation" },

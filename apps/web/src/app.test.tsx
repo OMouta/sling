@@ -55,6 +55,7 @@ const conversation: ConversationView = {
   title: "Fix the footer",
   mode: "supervised",
   settings: { assistant: null, agent: null },
+  personalityId: null,
   createdAt: "2026-11-05T10:00:00.000Z",
   updatedAt: "2026-11-05T10:05:00.000Z",
 };

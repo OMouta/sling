@@ -83,6 +83,18 @@
   --sh-card: 0 0 0 1px rgb(255 255 255 / 0.06);
   --sh-card-hover: 0 0 0 1px rgb(255 255 255 / 0.1);
   --sh-popover: 0 0 0 1px rgb(255 255 255 / 0.08), 0 16px 40px -8px rgb(0 0 0 / 0.6);
+
+  /* Personality colors, for glyphs drawn on the page background. */
+  --p-violet: #9a8cff;
+  --p-blue: #6aa8ff;
+  --p-cyan: #3cd0ec;
+  --p-teal: #2fd2b4;
+  --p-green: #5fd98a;
+  --p-amber: #f7c04a;
+  --p-orange: #fb9a5b;
+  --p-rose: #fb7c8f;
+  --p-pink: #f283c6;
+  --p-silver: #c9ced8;
   color-scheme: dark;
 }
 
@@ -154,6 +166,17 @@
   --sh-card-hover:
     0 0 0 1px rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.08), 0 2px 4px 0 rgb(0 0 0 / 0.06);
   --sh-popover: 0 0 0 1px rgb(0 0 0 / 0.08), 0 16px 40px -8px rgb(0 0 0 / 0.18);
+
+  --p-violet: #5b43f0;
+  --p-blue: #2563eb;
+  --p-cyan: #0891b2;
+  --p-teal: #0f9483;
+  --p-green: #16a34a;
+  --p-amber: #c98a06;
+  --p-orange: #e2600f;
+  --p-rose: #e11d48;
+  --p-pink: #d0278b;
+  --p-silver: #6b7280;
   color-scheme: light;
 }
 
@@ -283,6 +306,39 @@
       animation-name: sling-pop;
       animation-duration: 180ms;
     }
+  }
+
+  /* A new personality slides in from the side it came from. */
+  @keyframes sling-swap-next {
+    from {
+      opacity: 0;
+      transform: translateX(28px);
+    }
+  }
+  @keyframes sling-swap-prev {
+    from {
+      opacity: 0;
+      transform: translateX(-28px);
+    }
+  }
+  .anim-swap-next,
+  .anim-swap-prev {
+    animation: sling-fade 200ms var(--ease-out) both;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .anim-swap-next {
+      animation: sling-swap-next 260ms var(--ease-out) both;
+    }
+    .anim-swap-prev {
+      animation: sling-swap-prev 260ms var(--ease-out) both;
+    }
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }
 

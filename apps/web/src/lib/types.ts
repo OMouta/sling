@@ -5,6 +5,7 @@ import type {
   LiveReplyView,
   MessageView,
   PermissionMode,
+  PersonalityView,
   RunnerView,
   TaskEventView,
   TaskView,
@@ -19,6 +20,8 @@ export interface Status {
 
 export interface ConversationDetail {
   conversation: ConversationView;
+  /** Who answers here. Still set when the personality was deleted later. */
+  personality: PersonalityView | null;
   messages: MessageView[];
   tasks: TaskView[];
   agentStatus: AgentStatus;

@@ -10,7 +10,12 @@ import { textOf, toMessageView } from "../agent/history.ts";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
-import { defaultPersonality, usablePersonality } from "../personalities/service.ts";
+import {
+  conversationPersonality,
+  defaultPersonality,
+  toPersonalityView,
+  usablePersonality,
+} from "../personalities/service.ts";
 import { taskViews, toConversationView } from "../views.ts";
 import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
 
@@ -126,8 +131,11 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
       })
       .from(schema.messages)
       .where(eq(schema.messages.conversationId, conv.id));
+    // Even when archived: the chat keeps the personality it started with.
+    const personality = await conversationPersonality(ctx.db, conv);
     return {
       conversation: toConversationView(conv),
+      personality: personality ? toPersonalityView(personality) : null,
       messages: rows.map(toMessageView).filter((m) => m !== null),
       tasks: await taskViews(ctx, tasks),
       agentStatus: ctx.agent.status(conv.id),

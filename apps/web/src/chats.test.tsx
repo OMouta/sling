@@ -23,6 +23,7 @@ function chat(over: Partial<ConversationSummaryView>): ConversationSummaryView {
     title: "Desktop items",
     mode: "auto",
     settings: { assistant: null, agent: null },
+    personalityId: null,
     createdAt: ago(60_000),
     updatedAt: ago(60_000),
     preview: "Your Desktop has two files.",
