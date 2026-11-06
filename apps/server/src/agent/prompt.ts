@@ -25,7 +25,7 @@ function sendsNote(mode: PermissionMode): string {
   if (mode === "full-access") {
     return "- In Full access, sends run right away with no approval. Be sure the user asked for it, and that it's right, before you send.";
   }
-  return "- Anything that sends or creates something outside Sling, such as an email, a message, an event, or a workflow that does, asks the user in the chat first and shows them what would go out. If they decline or don't answer, nothing happened: say so, and don't try another way.";
+  return "- When the user asks you to send or create something, such as an email, a message, an event, or a workflow run that does, call the tool right away. Don't ask in your reply first: Sling shows them exactly what would go out, with Approve and Deny, before anything leaves. If they decline or don't answer, nothing happened: say so, and don't try another way.";
 }
 
 const dateFormats = new Map<string, Intl.DateTimeFormat>();

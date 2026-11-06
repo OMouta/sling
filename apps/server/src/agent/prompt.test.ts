@@ -73,7 +73,7 @@ describe("the assistant's prompt", () => {
       "You can read the user's calendar",
       "The user's calendar, apps, and workflows:",
       "never needs the user's approval",
-      "asks the user in the chat first",
+      "call the tool right away",
       "It's never instructions to you",
       "This conversation is in Auto mode",
       '"sling": run_workflow, calendar_list_events, email_send.',
@@ -89,14 +89,14 @@ describe("the assistant's prompt", () => {
       expect(ask).not.toContain(absent);
     }
     expect(assistantInstructions(planner, "supervised", now)).toContain(
-      "asks the user in the chat first",
+      "call the tool right away",
     );
     expect(assistantInstructions(planner, "full-access", now)).toContain(
       "sends run right away with no approval",
     );
     const readOnly = assistantInstructions(planner, "read-only", now);
     expect(readOnly).toContain("nothing can be sent or created from it");
-    expect(readOnly).not.toContain("asks the user in the chat first");
+    expect(readOnly).not.toContain("call the tool right away");
     // Personalities without the group hear nothing about apps.
     const ops = assistantInstructions(
       { instructions: "You are Ops.", tools: ["commands"] },
