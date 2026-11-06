@@ -56,6 +56,12 @@ export function makeWebSocket(peer) {
     #queue = Promise.resolve();
     /** @type {Record<string, ((ev: Event) => void) | null>} */
     #handlers = { open: null, message: null, error: null, close: null };
+    /**
+     * Events the server relayed before its answer to the open request
+     * arrived. The server sends them in order, so they replay after "open".
+     * @type {(() => void)[]}
+     */
+    #early = [];
 
     /**
      * @param {string | URL} url
@@ -80,10 +86,15 @@ export function makeWebSocket(peer) {
         throw new DOMException("Duplicate subprotocols", "SyntaxError");
       }
       this.#url = u.href;
+      /** @param {() => void} fn */
+      const deliver = (fn) => {
+        if (this.#readyState === CONNECTING) this.#early.push(fn);
+        else fn();
+      };
       live.set(this.#id, {
-        message: (data) => this.#onMessage(data),
-        closed: (code, reason, wasClean) => this.#onClosed(code, reason, wasClean),
-        error: (message) => this.#onError(message),
+        message: (data) => deliver(() => this.#onMessage(data)),
+        closed: (code, reason, wasClean) => deliver(() => this.#onClosed(code, reason, wasClean)),
+        error: (message) => deliver(() => this.#onError(message)),
       });
       peer
         .request("ws.open", { id: this.#id, url: u.href, protocols: list }, this.#opening.signal)
@@ -94,8 +105,12 @@ export function makeWebSocket(peer) {
             this.#protocol = String(r?.protocol ?? "");
             this.#extensions = String(r?.extensions ?? "");
             this.dispatchEvent(new Event("open"));
+            const early = this.#early;
+            this.#early = [];
+            for (const fn of early) fn();
           },
           (err) => {
+            this.#early = [];
             if (this.#readyState === CLOSED) return;
             this.#onError(err instanceof Error ? err.message : String(err));
             this.#onClosed(1006, "", false);
