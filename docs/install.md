@@ -24,6 +24,7 @@ Fill in `.env`:
 | `SLING_PORT` | Host port to publish. Default `8080`. |
 | `LOG_LEVEL` | `info` by default. |
 | `SLING_RELEASE_REPO` | Optional. The GitHub repo, as `owner/name`, whose releases the Runner install command downloads. Without it, the command works only on machines that already have `sling-runner`. |
+| `SLING_ALLOW_UNSIGNED_EXTENSIONS` | Optional, for developing extensions. `1` lets you install unsigned packages and add catalogs on loopback addresses. Leave it off otherwise: the web app can't turn it on, which is the point. |
 
 Start it:
 
@@ -62,6 +63,12 @@ The key is encrypted at rest with AES-256-GCM. **Test** makes one small call.
 Discord and email are set up in the web app under **Connectors**. Their credentials are encrypted the same way as model keys. Setup guides: [Discord](connectors/discord.md), [Email](connectors/email.md).
 
 The server reaches Discord and your mail server from inside the container, so it needs outbound access to `discord.com` and your IMAP and SMTP hosts.
+
+## Extensions
+
+The image includes Sling's own catalog of extensions, under **Extensions → Discover**. Others come from catalogs you add by URL, which the server fetches over HTTPS. An installed extension reaches only the hosts it declared, through the server, so the container needs outbound access to those hosts as well. See [extensions](extensions/README.md).
+
+Extension code needs Node 26, which the image has. If you run the server outside Docker on an older Node, it starts, but no extension code runs.
 
 ## Upgrades
 

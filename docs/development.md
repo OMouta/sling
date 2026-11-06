@@ -13,6 +13,7 @@
 pnpm install
 docker compose -f deploy/docker-compose.dev.yml up -d   # Postgres on 127.0.0.1:5433
 cp .env.example .env                                     # set SLING_SECRET_KEY
+pnpm extensions:build                                    # the extension catalog that ships with Sling
 pnpm dev                                                 # server on :8080, web on :5173
 ```
 
@@ -44,7 +45,11 @@ The routing and sandbox end-to-end tests (`apps/server/test/stage3.e2e.test.ts`)
 | `packages/core` | Shared TS: permission modes, task states, API types |
 | `packages/db` | Drizzle schema and migrations |
 | `packages/workflow` | Workflow format, node spec contract, validation, traversal, and JSONata evaluation. No server code, so the web app uses it too |
-| `packages/connector-sdk` | What a connector provides: credentials, a connection test, nodes, and an event source |
+| `packages/connector-sdk` | The extension SDK: connectors, nodes, event sources, sandbox providers, `defineExtension`, and the manifest, catalog, and signature formats. `api-report.d.ts` records its public API |
+| `packages/extension-package` | The `.slx` format: deterministic tar, content digest, Ed25519 signatures |
+| `packages/extension-runtime` | The code that runs inside each extension's restricted process. Plain `.mjs`, `node:` imports only |
+| `packages/extension-cli` | `sling-ext`: init, build, check, keygen, pack, sign, verify, catalog |
+| `extensions` | The example extensions that make up the catalog included with Sling. `pnpm extensions:build` packs them into `extensions/dist` |
 | `integrations` | Connectors, one package each |
 | `workflows` | Bundled workflow templates, one directory each |
 | `packages/runner-protocol` | `.proto` source of truth and generated TS |
@@ -67,6 +72,14 @@ cargo clippy --all-targets -- -D warnings
 cargo test --all
 ```
 
+Extension end-to-end tests run extension code in the test process by default. To run them on real restricted processes, as production does:
+
+```sh
+SLING_TEST_EXTENSION_RUNTIME=process pnpm --filter @sling/server test:e2e
+```
+
+`apps/server/test/stage4.e2e.test.ts` always uses real processes. With `SLING_LIVE_NTFY=1` its ntfy part runs against ntfy.sh with the included package as it ships, instead of a local fake. It needs no account.
+
 Two more Rust checks need something outside the repo:
 
 ```sh
@@ -83,4 +96,6 @@ SLING_SANDBOX_IMAGE=sling-sandbox:dev cargo test -p sling-runner --test sandbox
 - **Runner protocol:** edit the `.proto`, then `pnpm gen`, and `pnpm --filter @sling/runner-protocol fixtures` if the fixture messages changed. The Rust side regenerates on build. CI runs `buf breaking` on pull requests.
 - **Workflow nodes:** core nodes live in `apps/server/src/workflows/nodes` and are registered in `nodes/index.ts`. Give every config field a `.describe()`; the editor shows it as help text. Connector nodes come with their connector and are registered with `registerConnector`.
 - **Workflow templates:** add a directory under `workflows/` with `template.json` and `workflow.json` (see `workflows/README.md`). A template whose node types aren't registered isn't offered. Templates marked `builtIn` are installed and enabled in every workspace on start.
+- **The extension SDK:** a change to anything `packages/connector-sdk/src/index.ts` exports changes the API report. Run `pnpm --filter @sling/connector-sdk api-report`, commit `api-report.d.ts` with the change, and bump the SDK version to match.
+- **Example extensions:** edit them under `extensions/`, then `pnpm extensions:build`. The server reads the included catalog when it starts, so restart it to see the change. It offers **Update** when the version went up.
 - **Better Auth plugins:** update `apps/server/src/auth/schema-gen.ts` to match, then `pnpm --filter @sling/server auth:schema`.

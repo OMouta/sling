@@ -90,11 +90,13 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | Approval notifications in Discord | Posts every new approval with Approve and Reject buttons |
 | Website health monitor | Checks a URL every five minutes and posts when it errors or can't be reached |
 
-Templates live in `workflows/` in the repo, as the same JSON the editor exports.
+Templates live in `workflows/` in the repo, as the same JSON the editor exports. Extensions can add more: a template from an extension shows which one it came from, and works the same way.
+
+**Export as package**, under **Export** on a workflow's **Versions** tab, turns a workflow into a package you can share. Every connector installation in it becomes a binding that asks for an installation when someone installs the template, and credentials are never included. The package is unsigned; sign it with `sling-ext sign` before you share it. See [workflow packages](extensions/workflow-packages.md).
 
 ## Connectors
 
-Discord and email are set up under **Connectors**. A connector only listens for events while an enabled workflow uses it, which is why an installation can show as idle.
+Discord and email are set up under **Connectors**, as are connectors from [extensions](extensions/README.md), which add their own nodes. A connector only listens for events while an enabled workflow uses it, which is why an installation can show as idle.
 
 - [Discord](connectors/discord.md)
 - [Email](connectors/email.md)

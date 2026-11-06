@@ -10,6 +10,7 @@ What Sling protects, what it trusts, and where the known gaps are.
 - Sandbox secrets (OpenAI and Anthropic keys, a GitHub token) and execution provider credentials (access to a Docker host, a Railway token)
 - Your login to the web app, which can start all of the above
 - The Discord account of anyone on an installation's approver list, which can approve pushes and PRs
+- A signing key you trust for extensions, which can ship code that runs on the control plane
 
 ## Trust boundaries
 
@@ -24,6 +25,10 @@ What Sling protects, what it trusts, and where the known gaps are.
 | Sandbox | Running one task on a fresh clone of one allowed repo, with that task's secrets | Reaching your machines, other repos, or other tasks' secrets |
 | Execution provider (Docker, Railway) | Starting and removing sandboxes | Seeing anything but the sandbox it was asked to start |
 | Workflows | Whatever their nodes do. You write them | |
+| Extensions | Running their own code in their own process, with the permissions you granted: their declared hosts, their own installations' credentials, and, if granted, approvals or sandboxes | Reading files, the environment, the database, or other credentials, reaching hosts they didn't declare, starting processes, or adding names outside their own ID |
+| Extension publishers (keys you trust) | Shipping code for the extensions pinned to their key | Replacing an extension pinned to another key |
+| Extension catalogs | Listing packages and versions, and revoking versions | Changing a package's files (Sling checks the digest) or its signer |
+| The catalog included with Sling | The same as the server's own code | |
 | Discord users on the allowed list | Chatting with the assistant, as you would | Approving anything, unless also on the approver list |
 | Discord users on the approver list | Approving and rejecting pending approvals | Anything else |
 | Webhook callers | Starting the one workflow whose URL they hold | |
@@ -53,9 +58,13 @@ What Sling protects, what it trusts, and where the known gaps are.
 
 **Chat on your machines.** When the assistant runs on a machine's Codex or Claude Code, the Runner runs the CLI in an empty directory outside every repo, with Sling's tools as its only MCP server. Each turn gets a random token that lets its tool calls act for that conversation only. The token expires when the turn ends, plus 30 seconds for calls already in flight, and lives only in the server's memory. The Runner sends tool calls only to the server it paired with, and refuses a turn whose tools URL points anywhere else. See [runner.md](runner.md#what-the-assistant-can-reach).
 
+**Extensions.** Each extension with code runs in its own Node process under Node's permission model: it may read its own unpacked package and Sling's small child runtime, and nothing else. It can't write files, open sockets, resolve names, start processes or workers, load addons, or generate code from strings, and its environment is empty. Its only way out is its stdin and stdout, and the server refuses any message over 16 MB before reading it. The server checks every request: an installation's credentials only for that extension's own connectors in the run's workspace, events only of its own trigger types, approvals only with the `approvals` permission, and the provider role only with `sandboxes`. Network requests go through the server, which allows only the manifest's hosts and the hosts in installation fields the manifest names, over HTTPS and WSS, resolves names itself, refuses loopback, private, link-local, and CGNAT addresses unless the extension has `localNetwork`, connects only to the address it checked, and checks every redirect. Bodies are capped at 10 MB, socket messages at 1 MB, and an extension can hold 16 sockets. A process that stops answering heartbeats for 10 seconds is killed, and one that crashes 5 times in 10 minutes stays stopped. Extension servers need Node 26: on an older Node, no extension code runs.
+
+**Extension packages.** A package's digest covers every file, and the server checks it each time it unpacks the package, so a package changed in the database is refused. Packages are signed with Ed25519 over the ID, version, and digest. You trust a key once, after seeing its fingerprint, and an installed extension stays pinned to the key that signed it, so an update signed by another key is refused even if you trust that key too. Catalog entries pin each version's digest, and a download that doesn't match is refused. Unsigned packages install only when the server's environment sets `SLING_ALLOW_UNSIGNED_EXTENSIONS=1`; the web app can't turn that on. Packages refuse links, absolute paths, `..`, and anything over 20 MB packed or 50 MB unpacked. Every install sees the permissions first, and an update lists the permissions it adds. Nothing updates on its own. The extension's README is rendered without raw HTML, and its icon is served with a sandboxing Content-Security-Policy and shown only through `<img>`.
+
 **Prompt injection.** Codex summaries, emails, and Discord messages reach models as data inside the user turn. AI nodes (`ai.prompt`, `ai.extract`, `ai.classify`) have no tools at all. The assistant has no shell, file, or web tools of its own, so the worst a manipulated assistant can do is start or cancel tasks inside the conversation's mode, on machines and repos you allowed. Codex chat turns are the exception below.
 
-**Audit.** Task creation (with mode and routing), mode changes, approvals (with where they were decided), refused approval clicks, push and PR results, pairing, revokes, installation changes, every sandbox state change, orphans removed, sandbox list changes, and which sandbox secrets were set or cleared go to an append-only audit table.
+**Audit.** Task creation (with mode and routing), mode changes, approvals (with where they were decided), refused approval clicks, push and PR results, pairing, revokes, installation changes, every sandbox state change, orphans removed, sandbox list changes, which sandbox secrets were set or cleared, extension installs, updates, enables, disables, removals, revocations, and crashes, and publishers trusted or removed and catalogs added or removed go to an append-only audit table.
 
 ## Known gaps
 
@@ -79,4 +88,11 @@ What Sling protects, what it trusts, and where the known gaps are.
 - **Lost Discord messages.** If the server can't take a Discord message when it arrives, it's logged and dropped. Discord doesn't replay it.
 - **Redaction is pattern-based.** A secret that doesn't look like one gets through.
 - **One account.** No roles yet, though every record carries a workspace and owner.
+- **Node's permission model is a seat belt, not a VM.** Node's own docs say it doesn't guarantee safety against malicious code, and its past bypasses were real bugs. A flaw in Node or V8 could let an extension's code out of its process. Treat isolation as a second line behind trusting the publisher, and trust keys accordingly.
+- **Extension processes can use CPU and memory.** The heap is capped, but memory outside it (such as large `ArrayBuffer`s) isn't, and neither is how many requests an extension makes at once. A busy loop is killed only once heartbeats stop.
+- **A sandbox provider sees each sandbox's secrets.** It starts the environment where they're used, so it can't be kept from them. Install a provider from an extension only from a publisher you'd trust with those keys and the GitHub token.
+- **`localNetwork` reaches this server too.** An extension with it can reach loopback and private addresses, including the control plane's own port and Postgres if it listens there. Grant it only to extensions that need a service on your network.
+- **A session can install extensions.** Whoever holds a signed-in session can trust a key and install an extension, which then runs with the permissions it declared. That's no more than the session can already do with tasks, but it's code on the control plane.
+- **Keys don't expire or get revoked by their publisher.** If a publisher's key leaks, nothing tells your server. Catalogs can revoke versions; removing a trusted key is up to you.
+- **The included catalog is trusted because it ships with the server.** Anyone who can write the server's install directory can change it, as they could change the server's code.
 - **Unsigned binaries.** macOS notarization and Windows code signing aren't set up yet.
