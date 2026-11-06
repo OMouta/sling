@@ -26,7 +26,6 @@ import {
   Tr,
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
-import { useExtensions } from "../lib/extensionApi.ts";
 import { ago } from "../lib/format.ts";
 import {
   qk,
@@ -336,9 +335,6 @@ function NewBlankDialog({ onClose }: { onClose: () => void }) {
 function TemplateDialog({ onClose }: { onClose: () => void }) {
   const templates = useTemplates();
   const [picked, setPicked] = useState<TemplateView | null>(null);
-  // Templates from a package show its icon, which the template list doesn't carry.
-  const extensions = useExtensions(templates.data?.some((t) => t.extension) ?? false);
-  const extension = (id: string) => extensions.data?.find((x) => x.id === id);
   return (
     <Dialog
       title={picked ? picked.name : "New from template"}
@@ -367,12 +363,7 @@ function TemplateDialog({ onClose }: { onClose: () => void }) {
                   className="pressable group flex w-full cursor-pointer items-start gap-3 rounded-xl bg-surface-2 p-3 text-left shadow-raised hover:shadow-raised-hover"
                 >
                   {t.extension ? (
-                    <ExtensionIcon
-                      ext={extension(t.extension.id)}
-                      fallback={LayoutTemplate}
-                      size="sm"
-                      flat
-                    />
+                    <ExtensionIcon ext={t.extension} fallback={LayoutTemplate} size="sm" flat />
                   ) : (
                     <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-3 text-icon">
                       <LayoutTemplate aria-hidden="true" />

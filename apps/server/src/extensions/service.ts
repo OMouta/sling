@@ -351,7 +351,12 @@ export class ExtensionService {
             ...t.view,
             key: `${manifest.id}/${key}`,
             builtIn: false,
-            extension: { id: manifest.id, name: manifest.name },
+            extension: {
+              id: manifest.id,
+              name: manifest.name,
+              version: manifest.version,
+              hasIcon: manifest.icon !== undefined,
+            },
           },
           definition: t.definition,
         });

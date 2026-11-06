@@ -89,5 +89,5 @@ export interface TemplateView {
   /** Whether it's installed by default on first start. */
   builtIn: boolean;
   /** The extension package it came from. Absent for templates bundled with Sling. */
-  extension?: { id: string; name: string } | null;
+  extension?: { id: string; name: string; version: string; hasIcon: boolean } | null;
 }

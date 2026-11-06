@@ -1454,5 +1454,5 @@ export const packageTemplate: TemplateView = {
   description: "Sends a push notification when a task is done.",
   bindings: [{ placeholder: "$ntfy", connectorId: "ntfy", label: "ntfy" }],
   builtIn: false,
-  extension: { id: "task-alerts", name: "Task alerts" },
+  extension: { id: "task-alerts", name: "Task alerts", version: "1.0.0", hasIcon: false },
 };
