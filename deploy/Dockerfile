@@ -14,6 +14,7 @@ COPY packages/runner-protocol/package.json packages/runner-protocol/
 COPY packages/workflow/package.json packages/workflow/
 COPY packages/connector-sdk/package.json packages/connector-sdk/
 COPY packages/extension-package/package.json packages/extension-package/
+COPY packages/extension-runtime/package.json packages/extension-runtime/
 COPY packages/extension-cli/package.json packages/extension-cli/
 COPY integrations/discord/package.json integrations/discord/
 COPY integrations/email/package.json integrations/email/
@@ -68,7 +69,8 @@ COPY --from=web /app/apps/web/dist /app/web
 # Included extensions: catalog.json and the .slx files it lists.
 COPY --from=extensions /app/extensions/dist /app/extensions
 # extensions/*/ holds only the package.json files the install step copied in.
-RUN rm -rf packages/*/src/*.test.ts packages/*/src/*.test-util.ts apps/server/src/*.test.ts \
+RUN rm -rf packages/*/src/*.test.ts packages/*/src/*.test-util.ts packages/*/test \
+    apps/server/src/*.test.ts apps/server/src/*/*.test.ts \
     integrations/*/src/*.test.ts integrations/*/test extensions/*/
 USER node
 EXPOSE 8080
