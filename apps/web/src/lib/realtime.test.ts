@@ -1,4 +1,6 @@
 import type {
+  ExtensionDetailView,
+  ExtensionView,
   InstallationView,
   RunDetailView,
   RunnerView,
@@ -10,10 +12,14 @@ import type { WorkflowDetailView } from "@sling/workflow";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import {
+  acmeExtension,
   busySandbox,
   devbox,
+  extensionList,
   installations,
   machineTask,
+  ntfyDetail,
+  ntfyExtension,
   run,
   runDetail,
   sandboxList,
@@ -191,5 +197,72 @@ describe("sandbox realtime events", () => {
     apply(qc, { type: "runner.updated", runner: sandboxRunner });
     apply(qc, { type: "runner.updated", runner: { ...sandboxRunner, id: "rnr_sbx2" } });
     expect(qc.getQueryData<RunnerView[]>(["runners"])?.map((r) => r.id)).toEqual(["rnr_1"]);
+  });
+});
+
+describe("extension realtime events", () => {
+  function seeded() {
+    const qc = client();
+    qc.setQueryData(qk.extensions(), extensionList);
+    qc.setQueryData(qk.extension("ntfy"), ntfyDetail);
+    for (const key of [qk.connectors(), qk.catalog(), qk.templates(), qk.discover()]) {
+      qc.setQueryData(key, []);
+    }
+    return qc;
+  }
+  const invalidated = (qc: QueryClient, key: readonly unknown[]) =>
+    qc.getQueryState(key)?.isInvalidated ?? false;
+
+  it("patches only the extension when just its process status changes", () => {
+    const qc = seeded();
+    apply(qc, { type: "extension.updated", extension: { ...ntfyExtension, status: "stopped" } });
+    const list = qc.getQueryData<ExtensionView[]>(qk.extensions());
+    expect(list?.find((x) => x.id === "ntfy")?.status).toBe("stopped");
+    expect(qc.getQueryData<ExtensionDetailView>(qk.extension("ntfy"))?.status).toBe("stopped");
+    expect(qc.getQueryData<ExtensionDetailView>(qk.extension("ntfy"))?.readme).toBe(
+      ntfyDetail.readme,
+    );
+    expect(invalidated(qc, qk.connectors())).toBe(false);
+    expect(invalidated(qc, qk.discover())).toBe(false);
+  });
+
+  it("refetches what an extension adds when its version or state changes", () => {
+    const qc = seeded();
+    apply(qc, { type: "extension.updated", extension: { ...ntfyExtension, version: "1.1.0" } });
+    for (const key of [qk.connectors(), qk.catalog(), qk.templates(), qk.discover()]) {
+      expect(invalidated(qc, key)).toBe(true);
+    }
+    // A new version has a new README, digest, and version list.
+    expect(invalidated(qc, qk.extension("ntfy"))).toBe(true);
+  });
+
+  it("refetches Discover when a catalog offers a new version", () => {
+    const qc = seeded();
+    apply(qc, {
+      type: "extension.updated",
+      extension: { ...ntfyExtension, update: { version: "1.2.0", catalogId: "included" } },
+    });
+    expect(invalidated(qc, qk.discover())).toBe(true);
+    expect(invalidated(qc, qk.connectors())).toBe(false);
+  });
+
+  it("adds a new extension and drops a removed one with its details", () => {
+    const qc = seeded();
+    qc.setQueryData(qk.installations(), installations);
+    apply(qc, { type: "extension.updated", extension: { ...acmeExtension, id: "pager" } });
+    expect(qc.getQueryData<ExtensionView[]>(qk.extensions())?.map((x) => x.id)).toContain("pager");
+    apply(qc, { type: "extension.removed", id: "ntfy" });
+    expect(qc.getQueryData<ExtensionView[]>(qk.extensions())?.map((x) => x.id)).not.toContain(
+      "ntfy",
+    );
+    expect(qc.getQueryData(qk.extension("ntfy"))).toBeUndefined();
+    expect(invalidated(qc, qk.installations())).toBe(true);
+    expect(invalidated(qc, qk.connectors())).toBe(true);
+  });
+
+  it("doesn't create a list that was never fetched", () => {
+    const qc = client();
+    apply(qc, { type: "extension.updated", extension: ntfyExtension });
+    expect(qc.getQueryData(qk.extensions())).toBeUndefined();
   });
 });

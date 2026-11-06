@@ -4,9 +4,16 @@
  */
 import type {
   ApprovalView,
+  CatalogView,
   ConnectorView,
+  DiscoverEntryView,
+  ExtensionDetailView,
+  ExtensionPreview,
+  ExtensionView,
   InstallationView,
   NodeRunView,
+  PermissionLine,
+  PublisherView,
   RunDetailView,
   RunnerView,
   RunView,
@@ -943,4 +950,509 @@ export const fallbackApproval: ApprovalView = {
     harness: "codex",
     reasons: ["devbox: Offline.", "buildbox: Doesn't have site."],
   },
+};
+
+// ------------------------------------------------------------- extensions
+// Permission lines are worded the way the SDK's `describePermissions` words them.
+
+const connectNtfy: PermissionLine = {
+  key: "host:ntfy.sh",
+  text: "Connect to ntfy.sh",
+  risk: "normal",
+};
+const connectServer: PermissionLine = {
+  key: "configHost:server",
+  text: `Connect to the host in each installation's "server" setting`,
+  risk: "normal",
+};
+const connectAcme: PermissionLine = {
+  key: "host:api.acme.test",
+  text: "Connect to api.acme.test",
+  risk: "normal",
+};
+const connectAcmeAll: PermissionLine = {
+  key: "host:*.acme.test",
+  text: "Connect to acme.test and its subdomains",
+  risk: "normal",
+};
+const localNetwork: PermissionLine = {
+  key: "localNetwork",
+  text: "Connect to addresses on your local network, including this server",
+  risk: "high",
+};
+const sandboxes: PermissionLine = {
+  key: "sandboxes",
+  text: "Start sandboxes, and receive each sandbox's secrets: API keys, the GitHub token, and its pairing code",
+  risk: "high",
+};
+
+export const acmePublisher = {
+  keyId: "3f2a91c07d4e22b1",
+  name: "Acme",
+  fingerprint: "3f2a 91c0 7d4e 22b1",
+  trusted: true,
+};
+
+export const ntfyExtension: ExtensionView = {
+  id: "ntfy",
+  name: "ntfy",
+  description: "Push notifications through ntfy.sh or your own ntfy server.",
+  version: "1.0.0",
+  source: "included",
+  catalogId: "included",
+  publisher: null,
+  signed: true,
+  enabled: true,
+  status: "running",
+  statusDetail: null,
+  kinds: ["connector"],
+  contents: {
+    connectors: [{ id: "ntfy", name: "ntfy", isExecutionProvider: false }],
+    nodes: [
+      { type: "ntfy.publish", version: 1, title: "Publish to ntfy", isTrigger: false },
+      { type: "ntfy.message", version: 1, title: "ntfy message", isTrigger: true },
+    ],
+    templates: [],
+  },
+  permissions: [connectNtfy, connectServer],
+  update: null,
+  revoked: null,
+  usedBy: { installations: 1, workflows: 1 },
+  hasIcon: true,
+  homepage: "https://ntfy.sh",
+  installedAt: t0,
+  updatedAt: t0,
+};
+
+export const acmeExtension: ExtensionView = {
+  id: "acme-crm",
+  name: "Acme CRM",
+  description: "Contacts and deals from Acme CRM.",
+  version: "1.0.0",
+  source: "catalog",
+  catalogId: "cat_acme",
+  publisher: acmePublisher,
+  signed: true,
+  enabled: true,
+  status: "stopped",
+  statusDetail: null,
+  kinds: ["connector"],
+  contents: {
+    connectors: [{ id: "acme-crm", name: "Acme CRM", isExecutionProvider: false }],
+    nodes: [{ type: "acme-crm.create_deal", version: 1, title: "Create deal", isTrigger: false }],
+    templates: [],
+  },
+  permissions: [connectAcme],
+  update: { version: "1.1.0", catalogId: "cat_acme" },
+  revoked: null,
+  usedBy: { installations: 0, workflows: 0 },
+  hasIcon: false,
+  homepage: null,
+  installedAt: t0,
+  updatedAt: t0,
+};
+
+export const taskAlertsExtension: ExtensionView = {
+  id: "task-alerts",
+  name: "Task alerts",
+  description: "Workflows that tell you when a task needs you or finishes.",
+  version: "1.0.0",
+  source: "included",
+  catalogId: "included",
+  publisher: null,
+  signed: true,
+  enabled: true,
+  status: "stopped",
+  statusDetail: null,
+  kinds: ["workflows"],
+  contents: {
+    connectors: [],
+    nodes: [],
+    templates: [{ key: "task-alerts/notify-on-finish", name: "Notify when a task finishes" }],
+  },
+  permissions: [],
+  update: null,
+  revoked: null,
+  usedBy: { installations: 0, workflows: 0 },
+  hasIcon: false,
+  homepage: null,
+  installedAt: t0,
+  updatedAt: t0,
+};
+
+/** Unsigned, uploaded in developer mode, on a server whose Node can't isolate it. */
+export const devExtension: ExtensionView = {
+  ...acmeExtension,
+  id: "weather",
+  name: "Weather",
+  description: "Forecasts for workflows.",
+  version: "0.3.0",
+  source: "upload",
+  catalogId: null,
+  publisher: null,
+  signed: false,
+  status: "unsupported",
+  statusDetail: "Needs Node 26 to run extension code.",
+  contents: {
+    connectors: [{ id: "weather", name: "Weather", isExecutionProvider: false }],
+    nodes: [{ type: "weather.forecast", version: 1, title: "Forecast", isTrigger: false }],
+    templates: [],
+  },
+  permissions: [
+    { key: "host:api.weather.test", text: "Connect to api.weather.test", risk: "normal" },
+  ],
+  update: null,
+};
+
+export const extensionList: ExtensionView[] = [ntfyExtension, acmeExtension, taskAlertsExtension];
+
+export const ntfyDetail: ExtensionDetailView = {
+  ...ntfyExtension,
+  readme:
+    "# ntfy\n\nSends push notifications through [ntfy](https://ntfy.sh).\n\n- Publish a message\n- Start a workflow on a message\n\n<b>raw html</b>",
+  manifest: { format: "sling.extension/v1", id: "ntfy", version: "1.0.0" },
+  digest: "sha256:5d1c0e7f2a9b4c3d8e6f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d",
+  versions: [{ version: "1.0.0", publishedAt: "2026-11-01T00:00:00.000Z", revoked: null }],
+  log: [
+    { at: "2026-11-05T10:00:00.000Z", level: "info", message: "Subscribed to alerts" },
+    {
+      at: "2026-11-05T10:01:00.000Z",
+      level: "warn",
+      message: "Reconnecting after a dropped socket",
+    },
+  ],
+  installations: [{ id: "ins_ntfy", name: "Phone alerts", connectorId: "ntfy" }],
+  workflows: [{ id: "wf_ntfy", name: "Deploy pings", enabled: true }],
+};
+
+export const acmeDetail: ExtensionDetailView = {
+  ...acmeExtension,
+  readme: null,
+  manifest: {},
+  digest: "sha256:aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233",
+  versions: [
+    { version: "1.1.0", publishedAt: "2026-11-04T00:00:00.000Z", revoked: null },
+    {
+      version: "1.0.0",
+      publishedAt: "2026-10-01T00:00:00.000Z",
+      revoked: null,
+    },
+  ],
+  log: [],
+  installations: [],
+  workflows: [],
+};
+
+export const discoverEntries: DiscoverEntryView[] = [
+  {
+    catalogId: "included",
+    catalogName: "Included with Sling",
+    id: "ntfy",
+    name: "ntfy",
+    description: ntfyExtension.description,
+    publisher: null,
+    kinds: ["connector"],
+    homepage: "https://ntfy.sh",
+    latest: {
+      version: "1.0.0",
+      size: 48213,
+      permissions: [connectNtfy, connectServer],
+      publishedAt: "2026-11-01T00:00:00.000Z",
+    },
+    unavailable: null,
+    installed: { version: "1.0.0", updateAvailable: false },
+  },
+  {
+    catalogId: "included",
+    catalogName: "Included with Sling",
+    id: "fly-machines",
+    name: "Fly Machines",
+    description: "Sandboxes on Fly.io Machines.",
+    publisher: null,
+    kinds: ["provider"],
+    homepage: "https://fly.io",
+    latest: {
+      version: "1.0.0",
+      size: 61004,
+      permissions: [
+        { key: "host:api.machines.dev", text: "Connect to api.machines.dev", risk: "normal" },
+        sandboxes,
+      ],
+      publishedAt: "2026-11-01T00:00:00.000Z",
+    },
+    unavailable: null,
+    installed: null,
+  },
+  {
+    catalogId: "included",
+    catalogName: "Included with Sling",
+    id: "task-alerts",
+    name: "Task alerts",
+    description: taskAlertsExtension.description,
+    publisher: null,
+    kinds: ["workflows"],
+    homepage: null,
+    latest: { version: "1.0.0", size: 2210, permissions: [], publishedAt: null },
+    unavailable: null,
+    installed: { version: "1.0.0", updateAvailable: false },
+  },
+  {
+    catalogId: "cat_acme",
+    catalogName: "Acme extensions",
+    id: "acme-crm",
+    name: "Acme CRM",
+    description: acmeExtension.description,
+    publisher: acmePublisher,
+    kinds: ["connector"],
+    homepage: null,
+    latest: {
+      version: "1.1.0",
+      size: 52000,
+      permissions: [connectAcmeAll, localNetwork],
+      publishedAt: "2026-11-04T00:00:00.000Z",
+    },
+    unavailable: null,
+    installed: { version: "1.0.0", updateAvailable: true },
+  },
+  {
+    catalogId: "cat_acme",
+    catalogName: "Acme extensions",
+    id: "acme-notes",
+    name: "Acme Notes",
+    description: "Notes from Acme, by their partner Beta Labs.",
+    publisher: {
+      keyId: "9b8c7d6e5f4a3b2c",
+      name: "Beta Labs",
+      fingerprint: "9b8c 7d6e 5f4a 3b2c",
+      trusted: false,
+    },
+    kinds: ["connector"],
+    homepage: null,
+    latest: {
+      version: "2.0.0",
+      size: 30100,
+      permissions: [
+        { key: "host:notes.beta.test", text: "Connect to notes.beta.test", risk: "normal" },
+      ],
+      publishedAt: "2026-11-02T00:00:00.000Z",
+    },
+    unavailable: null,
+    installed: null,
+  },
+  {
+    catalogId: "cat_acme",
+    catalogName: "Acme extensions",
+    id: "acme-legacy",
+    name: "Acme Legacy",
+    description: "The old Acme connector.",
+    publisher: acmePublisher,
+    kinds: ["connector"],
+    homepage: null,
+    latest: null,
+    unavailable: "Every version needs SDK ^2.0.0; this server has 1.0.0.",
+    installed: null,
+  },
+];
+
+const staged = { expiresAt: "2099-01-01T00:00:00.000Z", readme: null };
+
+export const flyPreview: ExtensionPreview = {
+  ...staged,
+  stagingId: "stg_fly",
+  id: "fly-machines",
+  name: "Fly Machines",
+  description: "Sandboxes on Fly.io Machines.",
+  version: "1.0.0",
+  digest: "sha256:fly",
+  size: 61004,
+  source: "included",
+  catalogId: "included",
+  publisher: null,
+  signed: true,
+  kinds: ["provider"],
+  contents: {
+    connectors: [{ id: "fly-machines", name: "Fly Machines", isExecutionProvider: true }],
+    nodes: [],
+    templates: [],
+  },
+  permissions: [
+    { key: "host:api.machines.dev", text: "Connect to api.machines.dev", risk: "normal" },
+    sandboxes,
+  ],
+  permissionsKey: '{"network":{"hosts":["api.machines.dev"]},"sandboxes":true}',
+  diff: null,
+  missing: { extensions: [], connectors: [] },
+  problems: [],
+};
+
+export const notesPreview: ExtensionPreview = {
+  ...staged,
+  stagingId: "stg_notes",
+  id: "acme-notes",
+  name: "Acme Notes",
+  description: "Notes from Acme, by their partner Beta Labs.",
+  version: "2.0.0",
+  digest: "sha256:notes",
+  size: 30100,
+  source: "catalog",
+  catalogId: "cat_acme",
+  publisher: {
+    keyId: "9b8c7d6e5f4a3b2c",
+    name: "Beta Labs",
+    fingerprint: "9b8c 7d6e 5f4a 3b2c",
+    trusted: false,
+  },
+  signed: true,
+  kinds: ["connector"],
+  contents: {
+    connectors: [{ id: "acme-notes", name: "Acme Notes", isExecutionProvider: false }],
+    nodes: [{ type: "acme-notes.add", version: 1, title: "Add note", isTrigger: false }],
+    templates: [],
+  },
+  permissions: [
+    { key: "host:notes.beta.test", text: "Connect to notes.beta.test", risk: "normal" },
+  ],
+  permissionsKey: '{"network":{"hosts":["notes.beta.test"]}}',
+  diff: null,
+  missing: { extensions: [], connectors: [] },
+  problems: [],
+};
+
+export const acmeUpdatePreview: ExtensionPreview = {
+  ...staged,
+  stagingId: "stg_acme",
+  id: "acme-crm",
+  name: "Acme CRM",
+  description: acmeExtension.description,
+  version: "1.1.0",
+  digest: "sha256:acme110",
+  size: 52000,
+  source: "catalog",
+  catalogId: "cat_acme",
+  publisher: acmePublisher,
+  signed: true,
+  kinds: ["connector"],
+  contents: acmeExtension.contents,
+  permissions: [connectAcmeAll, localNetwork],
+  permissionsKey: '{"network":{"hosts":["*.acme.test"],"localNetwork":true}}',
+  diff: { fromVersion: "1.0.0", added: [connectAcmeAll, localNetwork], removed: [connectAcme] },
+  missing: { extensions: [], connectors: [] },
+  problems: [],
+};
+
+/** A workflow package whose template needs ntfy, which isn't installed yet. */
+export const deployPackPreview: ExtensionPreview = {
+  ...staged,
+  stagingId: "stg_pack",
+  id: "deploy-pings",
+  name: "Deploy pings",
+  description: "Pings your phone when a deploy finishes.",
+  version: "1.0.0",
+  digest: "sha256:pack",
+  size: 1800,
+  source: "upload",
+  catalogId: null,
+  publisher: null,
+  signed: false,
+  kinds: ["workflows"],
+  contents: {
+    connectors: [],
+    nodes: [],
+    templates: [{ key: "deploy-pings/ping", name: "Ping on deploy" }],
+  },
+  permissions: [],
+  permissionsKey: "{}",
+  diff: null,
+  missing: {
+    extensions: [{ id: "ntfy", range: "^1.0.0", catalogId: "included" }],
+    connectors: ["discord"],
+  },
+  problems: [],
+};
+
+export const ntfyPreview: ExtensionPreview = {
+  ...staged,
+  stagingId: "stg_ntfy",
+  id: "ntfy",
+  name: "ntfy",
+  description: ntfyExtension.description,
+  version: "1.0.0",
+  digest: "sha256:ntfy",
+  size: 48213,
+  source: "included",
+  catalogId: "included",
+  publisher: null,
+  signed: true,
+  kinds: ["connector"],
+  contents: ntfyExtension.contents,
+  permissions: ntfyExtension.permissions,
+  permissionsKey: '{"network":{"hosts":["ntfy.sh"],"configHosts":["server"]}}',
+  diff: null,
+  missing: { extensions: [], connectors: [] },
+  problems: [],
+};
+
+export const catalogs: CatalogView[] = [
+  {
+    id: "cat_acme",
+    url: "https://extensions.acme.test/catalog.json",
+    name: "Acme extensions",
+    enabled: true,
+    included: false,
+    fetchedAt: "2026-11-05T08:00:00.000Z",
+    error: null,
+    extensionCount: 3,
+  },
+  {
+    id: "included",
+    url: null,
+    name: "Included with Sling",
+    enabled: true,
+    included: true,
+    fetchedAt: null,
+    error: null,
+    extensionCount: 3,
+  },
+];
+
+export const publishers: PublisherView[] = [
+  {
+    keyId: "3f2a91c07d4e22b1",
+    name: "Acme",
+    fingerprint: "3f2a 91c0 7d4e 22b1",
+    trustedAt: "2026-11-03T09:00:00.000Z",
+    extensions: ["acme-crm"],
+  },
+];
+
+export const ntfyConnector: ConnectorView = {
+  id: "ntfy",
+  name: "ntfy",
+  description: "Publish and receive ntfy messages.",
+  setupHelp: null,
+  credentialsSchema: {
+    $schema: SCHEMA,
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  },
+  secretFields: [],
+  configSchema: {
+    $schema: SCHEMA,
+    type: "object",
+    properties: { server: { default: "https://ntfy.sh", type: "string" } },
+    required: ["server"],
+    additionalProperties: false,
+  },
+  nodeTypes: ["ntfy.publish", "ntfy.message"],
+  extension: { id: "ntfy", name: "ntfy", version: "1.0.0", hasIcon: true },
+};
+
+export const packageTemplate: TemplateView = {
+  key: "task-alerts/notify-on-finish",
+  name: "Notify when a task finishes",
+  description: "Sends a push notification when a task is done.",
+  bindings: [{ placeholder: "$ntfy", connectorId: "ntfy", label: "ntfy" }],
+  builtIn: false,
+  extension: { id: "task-alerts", name: "Task alerts" },
 };

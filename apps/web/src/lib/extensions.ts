@@ -92,12 +92,17 @@ export const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
 /** A package ID from a workflow's name: "Notify on deploy!" becomes "notify-on-deploy". */
 export function suggestPackageId(name: string): string {
-  const slug = name
+  let slug = name
     .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^[^a-z]+/, "")
-    .slice(0, 40)
     .replace(/-+$/, "");
+  // Cut long names between words.
+  if (slug.length > 40) {
+    const cut = slug.slice(0, 41);
+    slug = cut.includes("-") ? cut.slice(0, cut.lastIndexOf("-")) : cut.slice(0, 40);
+  }
   return slug.length >= 3 ? slug : `${slug ? `${slug}-` : ""}workflow`;
 }
