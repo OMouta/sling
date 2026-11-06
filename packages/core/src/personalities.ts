@@ -69,8 +69,23 @@ export interface PersonalityView {
   position: number;
   /** Goes up whenever the name, instructions, or tools change. */
   revision: number;
+  /** The template it was added from, if any. */
+  templateKey: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A ready-made personality, added from the Personalities page. */
+export interface PersonalityTemplateView {
+  key: string;
+  /** A heading the gallery groups it under. */
+  group: string;
+  name: string;
+  description: string;
+  instructions: string;
+  tools: PersonalityTool[];
+  color: PersonalityColor;
+  shape: GlyphShape;
 }
 
 /** Which personality wrote a reply, as it was then. */

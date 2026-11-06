@@ -57,6 +57,13 @@
       "when": 1793984907993,
       "tag": "0007_personalities",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793986769174,
+      "tag": "0008_personality_templates",
+      "breakpoints": true
     }
   ]
 }

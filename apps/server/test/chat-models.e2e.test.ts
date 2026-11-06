@@ -603,16 +603,49 @@ describe("personalities", () => {
   const byName = async (name: string) =>
     (await api<P[]>("GET", "/api/personalities")).find((p) => p.name === name) as P;
 
-  it("starts a workspace with Sling as the default and Finance with no tools", async () => {
+  it("starts a workspace with Sling only, and adds the rest from templates", async () => {
     const list = await api<P[]>("GET", "/api/personalities");
     expect(list.map((p) => [p.name, p.tools, p.isDefault])).toEqual([
       ["Sling", ["commands", "coding"], true],
-      ["Finance", [], false],
     ]);
     // Chats from before personalities get the default, so they keep who answers them.
     const convs = await server.ctx.db.select().from(schema.conversations);
     expect(convs.length).toBeGreaterThan(0);
     expect(new Set(convs.map((c) => c.personalityId))).toEqual(new Set([list[0]?.id]));
+
+    const templates = await api<{ key: string; name: string; tools: string[] }[]>(
+      "GET",
+      "/api/personalities/templates",
+    );
+    expect(templates.map((t) => t.key)).toEqual([
+      "sling",
+      "ops",
+      "incident",
+      "research",
+      "planner",
+      "writer",
+      "tutor",
+      "finance",
+      "travel",
+      "chef",
+      "language-coach",
+    ]);
+    expect(templates.find((t) => t.key === "ops")?.tools).toEqual(["commands"]);
+    const finance = await api<P & { templateKey: string }>(
+      "POST",
+      "/api/personalities/templates/finance",
+    );
+    expect(finance).toMatchObject({
+      name: "Finance",
+      tools: [],
+      isDefault: false,
+      templateKey: "finance",
+    });
+    // Adding it again gives back the one that's there.
+    expect((await api<P>("POST", "/api/personalities/templates/finance")).id).toBe(finance.id);
+    expect((await raw("POST", "/api/personalities/templates/nope")).status).toBe(404);
+    // The installed one counts as added from its template.
+    expect((await api<P>("POST", "/api/personalities/templates/sling")).id).toBe(list[0]?.id);
   });
 
   it("gives a Finance chat on a CLI no tools, and refuses them if it asks anyway", async () => {

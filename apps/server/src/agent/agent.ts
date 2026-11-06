@@ -16,7 +16,8 @@ import { SLING_EVENTS } from "@sling/workflow";
 import { isStepCount, type LanguageModel, type ModelMessage, streamText } from "ai";
 import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
-import { BUILT_IN_PERSONALITIES, conversationPersonality } from "../personalities/service.ts";
+import { conversationPersonality } from "../personalities/service.ts";
+import { personalityTemplate } from "../personalities/templates.ts";
 import { workspaceSettings } from "../sandboxes/settings.ts";
 import type { SettleReason } from "../tasks/service.ts";
 import { taskView, taskWhere, toConversationView } from "../views.ts";
@@ -34,7 +35,7 @@ const MAX_STEPS = 8;
 /** Only for a workspace that somehow has no personality left: Sling with every tool. */
 const FALLBACK_PERSONALITY = {
   instructions:
-    BUILT_IN_PERSONALITIES[0]?.instructions ?? "You are Sling, the user's own assistant.",
+    personalityTemplate("sling")?.instructions ?? "You are Sling, the user's own assistant.",
   tools: ["commands", "coding"] as PersonalityTool[],
 };
 

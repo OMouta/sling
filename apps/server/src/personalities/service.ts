@@ -1,42 +1,25 @@
-import { newId, type PersonalityView } from "@sling/core";
+import { newId, type PersonalityTemplateView, type PersonalityView } from "@sling/core";
 import { schema } from "@sling/db";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import { workspaceOwner } from "../workflows/connectors/installations.ts";
+import { INSTALLED_TEMPLATES, personalityTemplate } from "./templates.ts";
 
 export type PersonalityRow = typeof schema.personalities.$inferSelect;
 type Db = AppContext["db"];
 
-/** What a new workspace starts with. The first one is the default. */
-export const BUILT_IN_PERSONALITIES: Pick<
-  PersonalityRow,
-  "name" | "description" | "instructions" | "tools" | "color" | "shape"
->[] = [
-  {
-    name: "Sling",
-    description: "Runs commands on your machines and hands coding work to your coding agent.",
-    instructions:
-      "You are Sling, the user's own assistant. Help with whatever they ask: answer questions, explain things, write and edit text, plan, compare options, and think problems through.\n\nKeep replies short and plain. No filler.",
-    tools: ["commands", "coding"],
-    color: "violet",
-    shape: "bloom",
-  },
-  {
-    name: "Finance",
-    description: "Budgets, spending, and money questions. Never touches your machines.",
-    instructions: [
-      "You are Finance, the user's money assistant. Help with budgets, spending, saving, debt, investing basics, taxes in general terms, and reading statements or numbers they paste in.",
-      "",
-      "- Show the math when you calculate something. Put more than a couple of numbers in a table.",
-      "- Ask for the numbers you need instead of assuming them.",
-      "- When an answer depends on their country or on rules that change every year, say so once and give the general picture.",
-      "- Keep replies short and plain. No filler.",
-    ].join("\n"),
-    tools: [],
-    color: "green",
-    shape: "facet",
-  },
-];
+/** The columns a personality made from a template starts with. */
+export function fromTemplate(t: PersonalityTemplateView) {
+  return {
+    name: t.name,
+    description: t.description,
+    instructions: t.instructions,
+    tools: t.tools,
+    color: t.color,
+    shape: t.shape,
+    templateKey: t.key,
+  };
+}
 
 export function toPersonalityView(row: PersonalityRow): PersonalityView {
   return {
@@ -50,6 +33,7 @@ export function toPersonalityView(row: PersonalityRow): PersonalityView {
     isDefault: row.isDefault,
     position: row.position,
     revision: row.revision,
+    templateKey: row.templateKey,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -130,7 +114,7 @@ export async function conversationPersonality(
 }
 
 /**
- * Gives each workspace the built-in personalities the first time, and gives
+ * Gives each workspace the installed personalities the first time, and gives
  * conversations that have none the default, so a later change of default
  * doesn't change who answers in them.
  */
@@ -150,17 +134,18 @@ export async function ensurePersonalities(
     if (!any) {
       const owner = await workspaceOwner(ctx, ws.id);
       if (!owner) continue;
+      const installed = INSTALLED_TEMPLATES.map(personalityTemplate).filter((t) => t !== undefined);
       await ctx.db.insert(schema.personalities).values(
-        BUILT_IN_PERSONALITIES.map((p, i) => ({
+        installed.map((t, i) => ({
+          ...fromTemplate(t),
           id: newId("prs"),
           workspaceId: ws.id,
           ownerId: owner,
-          ...p,
           isDefault: i === 0,
           position: i,
         })),
       );
-      ctx.log.info({ workspaceId: ws.id }, "added built-in personalities");
+      ctx.log.info({ workspaceId: ws.id }, "added the installed personalities");
     }
     const def = await defaultPersonality(ctx.db, ws.id);
     if (!def) continue;

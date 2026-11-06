@@ -16,11 +16,13 @@ import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import {
+  fromTemplate,
   listPersonalities,
   type PersonalityRow,
   toPersonalityView,
   usablePersonality,
 } from "./service.ts";
+import { PERSONALITY_TEMPLATES, personalityTemplate } from "./templates.ts";
 
 const Id = z.object({ id: z.string() });
 
@@ -51,8 +53,48 @@ export async function personalityRoutes(app: FastifyInstance, ctx: AppContext) {
     return (await listPersonalities(ctx.db, actor.workspaceId)).map(toPersonalityView);
   });
 
-  r.post("/api/personalities", { schema: { body: Fields } }, async (request) => {
-    const actor = actorOf(request);
+  r.get("/api/personalities/templates", async () => PERSONALITY_TEMPLATES);
+
+  // Adds a ready-made personality. One that's already there comes back as it is.
+  r.post(
+    "/api/personalities/templates/:key",
+    { schema: { params: z.object({ key: z.string() }) } },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const t = personalityTemplate(request.params.key);
+      if (!t) return reply.code(404).send({ error: "no such template" });
+      const [existing] = await ctx.db
+        .select()
+        .from(schema.personalities)
+        .where(
+          and(
+            eq(schema.personalities.workspaceId, actor.workspaceId),
+            eq(schema.personalities.templateKey, t.key),
+            isNull(schema.personalities.archivedAt),
+          ),
+        )
+        .limit(1);
+      if (existing) return toPersonalityView(existing);
+      const row = await insertPersonality(actor, fromTemplate(t));
+      await audit(ctx, {
+        workspaceId: actor.workspaceId,
+        actorType: "user",
+        actorId: actor.userId,
+        verb: "personality.created",
+        subjectType: "personality",
+        subjectId: row.id,
+        details: { name: row.name, tools: row.tools, template: t.key },
+      });
+      publish(row);
+      return toPersonalityView(row);
+    },
+  );
+
+  /** A new personality, last in the switcher. */
+  async function insertPersonality(
+    actor: { workspaceId: string; userId: string },
+    fields: z.infer<typeof Fields> & { templateKey?: string },
+  ): Promise<PersonalityRow> {
     const [last] = await ctx.db
       .select({ position: max(schema.personalities.position) })
       .from(schema.personalities)
@@ -63,11 +105,17 @@ export async function personalityRoutes(app: FastifyInstance, ctx: AppContext) {
         id: newId("prs"),
         workspaceId: actor.workspaceId,
         ownerId: actor.userId,
-        ...request.body,
+        ...fields,
         position: (last?.position ?? -1) + 1,
       })
       .returning();
     if (!row) throw new Error("insert failed");
+    return row;
+  }
+
+  r.post("/api/personalities", { schema: { body: Fields } }, async (request) => {
+    const actor = actorOf(request);
+    const row = await insertPersonality(actor, request.body);
     await audit(ctx, {
       workspaceId: actor.workspaceId,
       actorType: "user",

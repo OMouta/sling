@@ -223,6 +223,8 @@ export const personalities = pgTable(
     isDefault: boolean("is_default").notNull().default(false),
     position: integer("position").notNull().default(0),
     revision: integer("revision").notNull().default(1),
+    /** The ready-made personality it was added from. */
+    templateKey: text("template_key"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     /** Archived instead of deleted, so the chats it answered keep working. */

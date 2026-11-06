@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { BUILT_IN_PERSONALITIES } from "../personalities/service.ts";
+import { personalityTemplate } from "../personalities/templates.ts";
 import { assistantInstructions } from "./prompt.ts";
 import { allowedTools } from "./tools.ts";
 
 const now = new Date("2026-11-06T12:00:00Z");
-const [sling, finance] = BUILT_IN_PERSONALITIES;
-if (!sling || !finance) throw new Error("built-in personalities missing");
+const sling = personalityTemplate("sling");
+const finance = personalityTemplate("finance");
+if (!sling || !finance) throw new Error("personality templates missing");
 
 describe("the assistant's prompt", () => {
   it("gives a personality with every tool all of Sling's rules", () => {
