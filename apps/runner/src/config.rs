@@ -414,6 +414,11 @@ impl Paths {
     pub fn log_file(&self) -> PathBuf {
         self.data_dir.join("runner.log")
     }
+
+    /// Holds the temporary checkouts merges and deploys run in.
+    pub fn actions_dir(&self) -> PathBuf {
+        self.data_dir.join("actions")
+    }
 }
 
 fn env_dir(var: &str) -> Result<PathBuf> {

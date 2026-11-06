@@ -1,5 +1,6 @@
 //! The Runner's outbound WebSocket to the control plane: signed handshake,
-//! heartbeats, inventory updates, the event outbox, and chat turns.
+//! heartbeats, inventory updates, the outbox of task events and merge and
+//! deploy results, and chat turns.
 //! Reconnects forever with backoff, except when the server says this Runner
 //! is revoked or unknown. Chat turns and the assistant's commands belong to
 //! one connection and stop when it drops.
@@ -184,6 +185,8 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                             Some(Body::ChatTurn(t)) => mgr.chat_turn(t, &ready, chat_tx.clone()),
                             Some(Body::ChatCancel(c)) => mgr.chat_cancel(&c.turn_id),
                             Some(Body::ExecRequest(r)) => mgr.exec(r, chat_tx.clone()),
+                            Some(Body::RepoAction(a)) => mgr.repo_action(a),
+                            Some(Body::RepoActionAck(a)) => mgr.repo_action_ack(&a.request_id),
                             Some(Body::Error(e)) => {
                                 let fatal = matches!(e.code(), Code::Revoked | Code::UnknownRunner);
                                 if fatal {
@@ -255,6 +258,9 @@ type Stream = futures_util::stream::SplitStream<
 async fn flush(mgr: &Arc<Manager>, sink: &mut Sink) -> Result<()> {
     for event in mgr.unsent() {
         send(sink, Body::TaskEvent(event)).await?;
+    }
+    for body in mgr.repo_actions.unsent() {
+        send(sink, body).await?;
     }
     Ok(())
 }

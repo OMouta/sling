@@ -205,7 +205,7 @@ pub fn capabilities(cfg: &Config, sandbox: &Sandbox) -> [Capability; 2] {
 
 /// The user's shell when it's one that takes POSIX-style commands, else
 /// /bin/sh.
-fn shell() -> String {
+pub(crate) fn shell() -> String {
     std::env::var("SHELL")
         .ok()
         .filter(|s| {

@@ -4,6 +4,7 @@ mod agent_env;
 mod chat;
 mod config;
 mod connection;
+mod deploy;
 mod exec;
 mod gc;
 mod git;

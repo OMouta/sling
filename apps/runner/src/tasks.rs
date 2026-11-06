@@ -62,6 +62,8 @@ pub struct Manager {
     pub(crate) commands_running: AtomicUsize,
     /// The command sandbox, once it's been looked for.
     pub(crate) sandbox: tokio::sync::Mutex<Option<crate::exec::Sandbox>>,
+    /// Merges and deploys, and their results until Sling acknowledges them.
+    pub(crate) repo_actions: crate::deploy::RepoActions,
 }
 
 impl Manager {
@@ -70,6 +72,7 @@ impl Manager {
     pub fn new(paths: Paths, config: Config) -> Result<Arc<Manager>> {
         std::fs::create_dir_all(paths.spool_dir())?;
         crate::chat::clear_leftovers(&paths);
+        crate::deploy::clear_leftovers(&paths, &config);
         let mut spools = HashMap::new();
         for mut spool in open_all(&paths.spool_dir()) {
             if spool.meta.state == SpoolState::Running {
@@ -105,6 +108,7 @@ impl Manager {
             chats: crate::chat::Chats::default(),
             commands_running: AtomicUsize::new(0),
             sandbox: tokio::sync::Mutex::new(None),
+            repo_actions: crate::deploy::RepoActions::default(),
         }))
     }
 
@@ -249,10 +253,11 @@ impl Manager {
         )
     }
 
-    /// A task, an action, or a chat turn is running.
+    /// A task, an action, a merge or deploy, or a chat turn is running.
     pub fn busy(&self) -> bool {
         self.running_count() > 0
             || self.actions_in_flight.load(Ordering::SeqCst) > 0
+            || self.repo_actions.running_count() > 0
             || self.chats.running_count() > 0
     }
 
@@ -287,10 +292,12 @@ impl Manager {
         out
     }
 
+    /// Everything unacknowledged goes out again on the next connection.
     pub fn reset_sent(&self) {
         for s in self.spools.lock().unwrap().values() {
             s.lock().unwrap().reset_sent();
         }
+        self.repo_actions.reset_sent();
     }
 
     pub fn ack(&self, task_id: &str, seq: u64) {
