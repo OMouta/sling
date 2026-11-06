@@ -113,12 +113,13 @@ const task: TaskView = {
 };
 
 let signedIn = true;
+let publicUrl = "";
 let posts: { method: string; path: string; body: unknown }[] = [];
 let hasModel = false;
 
 function routes(path: string): unknown {
   if (path === "/api/status")
-    return { needsSetup: false, signedIn, email: "a@b.c", version: "0.1.0" };
+    return { needsSetup: false, signedIn, email: "a@b.c", version: "0.1.0", publicUrl };
   if (path === "/api/conversations") return [conversation];
   if (path === "/api/approvals") return [];
   if (path === "/api/runners") return [runner];
@@ -185,6 +186,7 @@ class FakeSocket {
 beforeEach(() => {
   posts = [];
   signedIn = true;
+  publicUrl = window.location.origin;
   hasModel = false;
   vi.stubGlobal("WebSocket", FakeSocket);
   vi.stubGlobal(
@@ -221,6 +223,16 @@ describe("web app", () => {
     signedIn = false;
     renderAt("/");
     expect(await screen.findByText("Sign in to Sling")).toBeTruthy();
+  });
+
+  it("sends a visitor at another address to the one Sling is set up for", async () => {
+    signedIn = false;
+    publicUrl = "https://sling.tail1234.ts.net";
+    renderAt("/login");
+    expect(await screen.findByText("Open Sling at its address")).toBeTruthy();
+    const go = screen.getByRole("link", { name: "Go to sling.tail1234.ts.net" });
+    expect(go.getAttribute("href")?.startsWith("https://sling.tail1234.ts.net/")).toBe(true);
+    expect(screen.queryByLabelText("Password")).toBeNull();
   });
 
   it("asks for a logged-in coding agent before the first conversation", async () => {

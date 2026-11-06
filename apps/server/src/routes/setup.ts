@@ -14,6 +14,8 @@ export async function setupRoutes(app: FastifyInstance, ctx: AppContext) {
       signedIn: actor !== null,
       email: actor?.email ?? null,
       version: "0.1.0",
+      // The one address sign-in works at, so a page opened elsewhere can say so.
+      publicUrl: ctx.config.publicUrl.origin,
     };
   });
 }

@@ -72,6 +72,11 @@ export function AuthFrame({
   subtitle?: string;
   children: React.ReactNode;
 }) {
+  const status = useStatus();
+  // Cookies, passkeys, and the server's origin check all belong to one address.
+  const home = status.data?.publicUrl;
+  const elsewhere = home !== undefined && home !== window.location.origin;
+  const target = elsewhere ? new URL(window.location.pathname, home) : null;
   return (
     <div className="relative grid min-h-full place-items-center overflow-hidden px-4 py-10">
       <div
@@ -83,12 +88,32 @@ export function AuthFrame({
           <span className="grid size-11 place-items-center rounded-xl bg-accent text-white shadow-primary">
             <Logo className="size-6" />
           </span>
-          <h1 className="mt-4 text-xl font-medium tracking-tight">{title}</h1>
-          {subtitle && (
-            <p className="mt-1.5 text-[13px] leading-5 text-pretty text-muted">{subtitle}</p>
-          )}
+          <h1 className="mt-4 text-xl font-medium tracking-tight">
+            {target ? "Open Sling at its address" : title}
+          </h1>
+          <p className="mt-1.5 text-[13px] leading-5 text-pretty text-muted">
+            {target
+              ? `This page is ${window.location.host}, but Sling is set up for ${target.host}. Signing in only works there.`
+              : subtitle}
+          </p>
         </div>
-        <Card className="p-5 [&_button]:h-9 [&_input]:h-9">{children}</Card>
+        <Card className="p-5 [&_button]:h-9 [&_input]:h-9">
+          {target ? (
+            <div className="space-y-3">
+              <a
+                href={target.toString()}
+                className="pressable flex h-9 w-full items-center justify-center rounded-full bg-accent text-xs font-medium text-accent-fg shadow-primary"
+              >
+                Go to {target.host}
+              </a>
+              <p className="text-xs leading-4 text-subtle">
+                To use this address instead, run deploy/setup.sh again on the server.
+              </p>
+            </div>
+          ) : (
+            children
+          )}
+        </Card>
         <p className="mt-6 text-center text-xs text-subtle">Self-hosted Sling</p>
       </div>
     </div>

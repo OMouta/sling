@@ -16,6 +16,8 @@ export interface Status {
   signedIn: boolean;
   email: string | null;
   version: string;
+  /** Where Sling is set up to be opened. Sign-in only works there. */
+  publicUrl: string;
 }
 
 export interface ConversationDetail {
