@@ -72,6 +72,22 @@ export type Deadlines = Record<CallMethod, number>;
 
 const LOG_LINES = 200;
 const MAX_LOG_MESSAGE = 8_000;
+/** Structured data on a log line, as JSON. Larger data is dropped. */
+const MAX_LOG_DATA = 4_000;
+/** Lines per second an extension may send to the server log. Its own log keeps them all. */
+const SERVER_LOG_RATE = 100;
+
+/** Log data small enough to keep, or a note that it was dropped. */
+function logData(data: unknown): Record<string, unknown> | undefined {
+  if (data === null || typeof data !== "object") return undefined;
+  try {
+    const json = JSON.stringify(data);
+    if (json !== undefined && json.length <= MAX_LOG_DATA) return data as Record<string, unknown>;
+  } catch {
+    // Cycles or BigInts.
+  }
+  return { dropped: `data over ${MAX_LOG_DATA} characters, or not JSON` };
+}
 
 export interface HostLogger {
   info(obj: Record<string, unknown>, msg: string): void;
@@ -581,6 +597,8 @@ export class ExtensionHost {
   #state: "active" | "error" | "disabled" = "disabled";
   #errorDetail = "";
   readonly #lines: ExtensionLogLine[] = [];
+  /** Server-log rate limit: lines in the current second, and lines dropped. */
+  #rate = { second: 0, sent: 0, dropped: 0 };
   #nextScope = 1;
   readonly #scopes = new Map<number, Scope>();
   readonly #sources = new Map<number, SourceEntry>();
@@ -621,9 +639,31 @@ export class ExtensionHost {
   /** Adds a line to the extension's log and the server log. */
   addLine(level: ExtensionLogLine["level"], message: string, data?: unknown) {
     const text = this.#pushLine(level, message);
+    if (!this.#allowServerLine()) return;
     const obj: Record<string, unknown> = { extensionId: this.id };
     if (data !== undefined) obj.data = data;
     this.#opts.log[level](obj, text);
+  }
+
+  /** Whether another line may reach the server log this second. */
+  #allowServerLine(): boolean {
+    const second = Math.floor(Date.now() / 1000);
+    const r = this.#rate;
+    if (second !== r.second) {
+      if (r.dropped > 0) {
+        this.#opts.log.warn(
+          { extensionId: this.id, dropped: r.dropped },
+          "dropped extension log lines over the rate limit",
+        );
+      }
+      this.#rate = { second, sent: 0, dropped: 0 };
+    }
+    if (this.#rate.sent >= SERVER_LOG_RATE) {
+      this.#rate.dropped++;
+      return false;
+    }
+    this.#rate.sent++;
+    return true;
   }
 
   // ----------------------------------------------------------- lifecycle
@@ -971,10 +1011,12 @@ export class ExtensionHost {
             : typeof scope === "string" && scope.startsWith("source:")
               ? this.#sources.get(Number(scope.slice(7)))?.scope
               : undefined;
-        const extra = data !== null && typeof data === "object" ? { data } : undefined;
+        const kept = logData(data);
         // A call's lines go to its own log, which reaches the server log with the run's context.
-        if (s) s.log[level](this.#pushLine(level, message), extra);
-        else this.addLine(level, message, extra?.data);
+        if (s) {
+          const text = this.#pushLine(level, message);
+          if (this.#allowServerLine()) s.log[level](text, kept ? { data: kept } : undefined);
+        } else this.addLine(level, message, kept);
         return;
       }
       case "source.status": {

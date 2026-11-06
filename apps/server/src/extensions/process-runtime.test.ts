@@ -448,12 +448,16 @@ describe("an extension's connectors", () => {
     expect(plain.message).toBe("bad thing");
   });
 
-  it("keeps the last 200 lines of the extension's log", async () => {
-    await run(connectors, "acme.spam");
+  it("keeps the last 200 lines of the extension's log, and limits the server log", async () => {
+    const before = t.serverLog.length;
+    const { lines: nodeLines } = await run(connectors, "acme.spam");
     const lines = t.runtime.log("acme");
     expect(lines).toHaveLength(200);
     expect(lines.at(-1)?.message).toBe("line 249");
     expect(lines.at(-1)?.at).toBeInstanceOf(Date);
+    // At most 100 lines a second go on to the server log.
+    expect(nodeLines.length + t.serverLog.length - before).toBeLessThanOrEqual(200);
+    expect(nodeLines.length).toBeLessThan(250);
   });
 
   it("refuses results that aren't node results", async () => {
