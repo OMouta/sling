@@ -1,11 +1,13 @@
 import type { WorkflowDefinition, WorkflowVersionView } from "@sling/workflow";
 import { useMutation } from "@tanstack/react-query";
+import { ChevronDown, Download, FileJson, Package } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../lib/api.ts";
 import { ago } from "../../lib/format.ts";
 import type { CatalogIndex } from "../../lib/workflow/catalog.ts";
 import { downloadJson, exportFileName, useVersion, useVersions } from "../../lib/workflowApi.ts";
-import { Badge, Button, cx, Dialog, Empty, ErrorText, Spinner } from "../ui.tsx";
+import { Badge, Button, cx, Dialog, Empty, ErrorText, Menu, MenuItem, Spinner } from "../ui.tsx";
+import { ExportPackageDialog } from "./ExportPackageDialog.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { ReadOnlyCanvas, useReadOnlyStore } from "./ReadOnlyCanvas.tsx";
 
@@ -28,6 +30,7 @@ export function VersionsTab({
 }) {
   const versions = useVersions(workflowId);
   const [confirm, setConfirm] = useState<number | null>(null);
+  const [packaging, setPackaging] = useState(false);
   const exportJson = useMutation({
     mutationFn: async () => {
       const def = await api.get<WorkflowDefinition>(`/api/workflows/${workflowId}/export`);
@@ -45,10 +48,38 @@ export function VersionsTab({
       >
         <div className="flex items-center justify-between gap-2">
           <h2 className="section-label">Versions</h2>
-          <Button size="sm" busy={exportJson.isPending} onClick={() => exportJson.mutate()}>
-            Export JSON
-          </Button>
+          <Menu
+            label="Export"
+            trigger={({ open, toggle }) => (
+              <Button
+                size="sm"
+                icon={Download}
+                busy={exportJson.isPending}
+                aria-haspopup="menu"
+                aria-expanded={open}
+                onClick={toggle}
+              >
+                Export
+                <ChevronDown aria-hidden="true" size={12} className="-mr-0.5 text-subtle" />
+              </Button>
+            )}
+          >
+            <MenuItem icon={FileJson} onSelect={() => exportJson.mutate()}>
+              Export JSON
+            </MenuItem>
+            <MenuItem icon={Package} onSelect={() => setPackaging(true)}>
+              Export as package
+            </MenuItem>
+          </Menu>
         </div>
+        {packaging && (
+          <ExportPackageDialog
+            workflowId={workflowId}
+            workflowName={workflowName}
+            activeVersion={activeVersion}
+            onClose={() => setPackaging(false)}
+          />
+        )}
         <ErrorText error={exportJson.error} />
         {versions.isPending && <Spinner />}
         <ErrorText error={versions.error} />
