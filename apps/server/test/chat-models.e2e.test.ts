@@ -587,3 +587,152 @@ describe("chat on a coding agent's CLI", () => {
     expect(catalog.assistant[0]).toMatchObject({ machines: ["devbox"], error: null });
   });
 });
+
+describe("personalities", () => {
+  type P = { id: string; name: string; tools: string[]; isDefault: boolean; revision: number };
+  async function reply(convId: string, after: number) {
+    return until("assistant reply", async () => {
+      const d = await api<{ messages: { role: string; text: string }[] }>(
+        "GET",
+        `/api/conversations/${convId}`,
+      );
+      const replies = d.messages.filter((m) => m.role === "assistant");
+      return replies.length > after ? replies.at(-1) : null;
+    });
+  }
+  const byName = async (name: string) =>
+    (await api<P[]>("GET", "/api/personalities")).find((p) => p.name === name) as P;
+
+  it("starts a workspace with Sling as the default and Finance with no tools", async () => {
+    const list = await api<P[]>("GET", "/api/personalities");
+    expect(list.map((p) => [p.name, p.tools, p.isDefault])).toEqual([
+      ["Sling", ["commands", "coding"], true],
+      ["Finance", [], false],
+    ]);
+    // Chats from before personalities get the default, so they keep who answers them.
+    const convs = await server.ctx.db.select().from(schema.conversations);
+    expect(convs.length).toBeGreaterThan(0);
+    expect(new Set(convs.map((c) => c.personalityId))).toEqual(new Set([list[0]?.id]));
+  });
+
+  it("gives a Finance chat on a CLI no tools, and refuses them if it asks anyway", async () => {
+    const finance = await byName("Finance");
+    const conv = await api<{ id: string; personalityId: string }>("POST", "/api/conversations", {
+      personalityId: finance.id,
+    });
+    expect(conv.personalityId).toBe(finance.id);
+    await api("PATCH", `/api/conversations/${conv.id}`, {
+      settings: { assistant: { provider: "codex", model: "", effort: null, fast: false } },
+    });
+    const before = runner?.chatTurns.length ?? 0;
+    await api("POST", `/api/conversations/${conv.id}/messages`, { text: "Rent or buy?" });
+    await reply(conv.id, 0);
+    const turn = runner?.chatTurns[before];
+    expect(turn?.instructions).toContain("You are Finance");
+    expect(turn?.instructions).toContain("You have no tools in this chat");
+    expect(turn?.instructions).not.toContain("delegate_coding_task");
+    expect(turn?.instructions).not.toContain("Coding agents you can delegate to");
+    expect(turn?.instructions).not.toContain("mode:");
+
+    // The turn's token still works for a moment after the turn, and serves nothing.
+    const auth = { authorization: `Bearer ${turn?.toolsToken}` };
+    const listed = await realFetch(`${origin}/api/agent/tools`, { headers: auth });
+    expect(await listed.json()).toEqual({ tools: [] });
+    const called = await realFetch(`${origin}/api/agent/tools/list_machines`, {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ arguments: {} }),
+    });
+    expect(called.status).toBe(404);
+  });
+
+  it("gives the scripted model only the personality's tools", async () => {
+    const created = await api<P>("POST", "/api/personalities", {
+      name: "Ops",
+      description: "Looks around the machines.",
+      instructions: "You are Ops. Be terse.",
+      tools: ["commands"],
+      color: "amber",
+      shape: "orbit",
+    });
+    const conv = await api<{ id: string }>("POST", "/api/conversations", {
+      personalityId: created.id,
+    });
+    const calls = model.doStreamCalls.length;
+    await api("POST", `/api/conversations/${conv.id}/messages`, { text: "Disk space?" });
+    await reply(conv.id, 0);
+    const call = model.doStreamCalls[calls];
+    expect((call?.tools ?? []).map((t) => t.name).sort()).toEqual(["list_machines", "run_command"]);
+    const system = call?.prompt.find((m) => m.role === "system");
+    expect(JSON.stringify(system)).toContain("You are Ops. Be terse.");
+    expect(JSON.stringify(system)).not.toContain("delegate_coding_task");
+  });
+
+  it("keeps a chat's personality, and records the revision that wrote each reply", async () => {
+    const ops = await byName("Ops");
+    const conv = await api<{ id: string }>("POST", "/api/conversations", { personalityId: ops.id });
+    // Not something a chat can change once it exists.
+    const patched = await api<{ personalityId: string }>("PATCH", `/api/conversations/${conv.id}`, {
+      personalityId: (await byName("Sling")).id,
+      title: "Ops chat",
+    });
+    expect(patched.personalityId).toBe(ops.id);
+
+    const edited = await api<P>("PATCH", `/api/personalities/${ops.id}`, {
+      instructions: "You are Ops. Be very terse.",
+    });
+    expect(edited.revision).toBe(ops.revision + 1);
+    // A new look isn't a new revision.
+    expect(
+      (await api<P>("PATCH", `/api/personalities/${ops.id}`, { color: "rose" })).revision,
+    ).toBe(edited.revision);
+    await api("POST", `/api/conversations/${conv.id}/messages`, { text: "Uptime?" });
+    await reply(conv.id, 0);
+    const rows = await server.ctx.db
+      .select()
+      .from(schema.messages)
+      .where(eq(schema.messages.conversationId, conv.id));
+    const answer = rows.filter((m) => m.role === "assistant" && m.trace).at(-1);
+    expect(answer?.trace?.personality).toEqual({ id: ops.id, revision: edited.revision });
+  });
+
+  it("archives a deleted personality, and its chats keep it", async () => {
+    const ops = await byName("Ops");
+    const sling = await byName("Sling");
+    const old = await api<{ id: string }>("POST", "/api/conversations", { personalityId: ops.id });
+    const refused = await raw("DELETE", `/api/personalities/${sling.id}`);
+    expect(refused.status).toBe(409);
+    expect(refused.text).toContain("Make another one the default first");
+
+    await api("DELETE", `/api/personalities/${ops.id}`);
+    expect((await api<P[]>("GET", "/api/personalities")).map((p) => p.name)).toEqual([
+      "Sling",
+      "Finance",
+    ]);
+    const fresh = await raw("POST", "/api/conversations", { personalityId: ops.id });
+    expect(fresh.status).toBe(400);
+
+    const calls = model.doStreamCalls.length;
+    await api("POST", `/api/conversations/${old.id}/messages`, { text: "Still there?" });
+    await reply(old.id, 0);
+    const system = model.doStreamCalls[calls]?.prompt.find((m) => m.role === "system");
+    expect(JSON.stringify(system)).toContain("You are Ops. Be very terse.");
+  });
+
+  it("moves the default, and new chats without a choice get it", async () => {
+    const finance = await byName("Finance");
+    await api("POST", `/api/personalities/${finance.id}/default`);
+    const list = await api<P[]>("GET", "/api/personalities");
+    expect(list.filter((p) => p.isDefault).map((p) => p.name)).toEqual(["Finance"]);
+    const conv = await api<{ personalityId: string }>("POST", "/api/conversations");
+    expect(conv.personalityId).toBe(finance.id);
+
+    const order = await api<P[]>("PUT", "/api/personalities/order", {
+      ids: [finance.id, (await byName("Sling")).id],
+    });
+    expect(order.map((p) => p.name)).toEqual(["Finance", "Sling"]);
+    const bad = await raw("PUT", "/api/personalities/order", { ids: [finance.id] });
+    expect(bad.status).toBe(400);
+    await api("POST", `/api/personalities/${(await byName("Sling")).id}/default`);
+  });
+});

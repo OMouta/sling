@@ -6,9 +6,12 @@ import type {
   ChatSettings,
   Delivery,
   FoundRepoView,
+  GlyphShape,
   Harness,
   ModelProviderId,
   PermissionMode,
+  PersonalityColor,
+  PersonalityTool,
   ReplyTrace,
   RoutingView,
   SandboxState,
@@ -205,6 +208,34 @@ export const repos = pgTable(
   ],
 );
 
+/** Named assistants: their instructions, the tools they may use, and their look. */
+export const personalities = pgTable(
+  "personalities",
+  {
+    id: text("id").primaryKey(),
+    ...owned(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    instructions: text("instructions").notNull(),
+    tools: jsonb("tools").$type<PersonalityTool[]>().notNull().default([]),
+    color: text("color").$type<PersonalityColor>().notNull(),
+    shape: text("shape").$type<GlyphShape>().notNull(),
+    isDefault: boolean("is_default").notNull().default(false),
+    position: integer("position").notNull().default(0),
+    revision: integer("revision").notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    /** Archived instead of deleted, so the chats it answered keep working. */
+    archivedAt: ts("archived_at"),
+  },
+  (t) => [
+    index("personalities_workspace_idx").on(t.workspaceId, t.position),
+    uniqueIndex("personalities_default_idx")
+      .on(t.workspaceId)
+      .where(sql`${t.isDefault} and ${t.archivedAt} is null`),
+  ],
+);
+
 export const conversations = pgTable(
   "conversations",
   {
@@ -214,6 +245,10 @@ export const conversations = pgTable(
     mode: text("mode").$type<PermissionMode>().notNull(),
     /** Model choices made in this conversation. */
     settings: jsonb("settings").$type<ChatSettings>(),
+    /** Fixed when the chat starts. */
+    personalityId: text("personality_id").references(() => personalities.id, {
+      onDelete: "set null",
+    }),
     /** The coding agent CLI session the assistant's turns resume, and the machine it lives on. */
     agentSession: jsonb("agent_session").$type<{
       harness: Harness;

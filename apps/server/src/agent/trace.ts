@@ -1,4 +1,11 @@
-import type { LiveReplyView, ReplyTrace, ServerEvent, ToolStep, TraceStep } from "@sling/core";
+import type {
+  LiveReplyView,
+  ReplyPersonality,
+  ReplyTrace,
+  ServerEvent,
+  ToolStep,
+  TraceStep,
+} from "@sling/core";
 
 /** Longest tool input kept as-is, and longest output kept, in characters. */
 const INPUT_LIMIT = 4_000;
@@ -65,6 +72,9 @@ export class TraceRecorder {
     this.#conversationId = conversationId;
     this.#publish = publish;
   }
+
+  /** Recorded with the reply, so it's known later which personality wrote it. */
+  personality: ReplyPersonality | undefined;
 
   text(delta: string) {
     if (!delta) return;
@@ -147,11 +157,14 @@ export class TraceRecorder {
     }
     if (!answer) answer = fallback.trim();
     const steps = this.#steps.filter((s) => s.kind === "tool" || s.text.trim());
-    return {
-      answer,
-      trace:
-        steps.length > 0 ? { steps: structuredClone(steps), ms: Date.now() - this.#started } : null,
-    };
+    const ms = Date.now() - this.#started;
+    if (this.personality) {
+      return {
+        answer,
+        trace: { steps: structuredClone(steps), ms, personality: { ...this.personality } },
+      };
+    }
+    return { answer, trace: steps.length > 0 ? { steps: structuredClone(steps), ms } : null };
   }
 
   #settleText() {

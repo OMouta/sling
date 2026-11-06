@@ -16,6 +16,7 @@ import type { ExtensionRuntime } from "./extensions/runtime.ts";
 import { ExtensionService } from "./extensions/service.ts";
 import { createServer, registerRoutes } from "./http/app.ts";
 import { startJobs } from "./jobs.ts";
+import { ensurePersonalities } from "./personalities/service.ts";
 import { Hub } from "./realtime/hub.ts";
 import { RunnerGateway } from "./runners/gateway.ts";
 import { SandboxService } from "./sandboxes/service.ts";
@@ -73,6 +74,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
       // The first sign-up creates the workspace; it gets the built-in workflows right away.
       onWorkspaceCreated: async (workspaceId) => {
         try {
+          await ensurePersonalities(ctx, workspaceId);
           await ctx.workflows.ensureBuiltIns(workspaceId);
         } catch (err) {
           app.log.error({ err, workspaceId }, "couldn't install built-in workflows");
@@ -130,6 +132,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     await startScheduleWorker(ctx, boss);
     // Before built-in workflows and the engine, so extension node types are registered.
     await ctx.extensions.start();
+    await ensurePersonalities(ctx);
     await ctx.workflows.ensureBuiltIns();
     await ctx.engine.start(boss, { concurrency: opts.runConcurrency ?? 10 });
 

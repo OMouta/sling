@@ -1,6 +1,7 @@
 import type { Harness } from "./harness.ts";
 import type { ChatSettings } from "./models.ts";
 import type { ActionKind, PermissionMode } from "./modes.ts";
+import type { PersonalityView, ReplyPersonality } from "./personalities.ts";
 import type { ActionState, ApprovalState, Delivery, TaskState } from "./states.ts";
 
 /**
@@ -227,6 +228,8 @@ export interface ConversationView {
   mode: PermissionMode;
   /** Model choices made in this conversation. Null parts use the workspace defaults. */
   settings: ChatSettings;
+  /** The personality that answers here, fixed when the chat started. */
+  personalityId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -294,6 +297,8 @@ export type TraceStep =
 export interface ReplyTrace {
   steps: TraceStep[];
   ms: number;
+  /** The personality that wrote the reply, and its revision then. */
+  personality?: ReplyPersonality;
 }
 
 /** A reply still being written: its work so far, and the answer's text so far. */
@@ -626,4 +631,6 @@ export type ServerEvent =
   | { type: "installation.updated"; installation: InstallationView }
   | { type: "sandbox.updated"; sandbox: SandboxView }
   | { type: "extension.updated"; extension: ExtensionView }
-  | { type: "extension.removed"; id: string };
+  | { type: "extension.removed"; id: string }
+  | { type: "personality.updated"; personality: PersonalityView }
+  | { type: "personality.removed"; id: string };

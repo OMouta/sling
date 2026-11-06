@@ -267,6 +267,7 @@ export function toConversationView(c: ConversationRow): ConversationView {
     title: c.title,
     mode: c.mode,
     settings: c.settings ?? { assistant: null, agent: null },
+    personalityId: c.personalityId,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
   };

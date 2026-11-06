@@ -3,6 +3,7 @@ import { schema } from "@sling/db";
 import { NodeError } from "@sling/workflow";
 import { and, eq, or } from "drizzle-orm";
 import { z } from "zod";
+import { defaultPersonality } from "../../personalities/service.ts";
 import { conversationObject } from "../sling-events.ts";
 import { defineNode } from "../types.ts";
 
@@ -122,6 +123,7 @@ export const conversationNode = defineNode({
         .select({ mode: schema.workspaces.defaultMode })
         .from(schema.workspaces)
         .where(eq(schema.workspaces.id, ctx.workspaceId));
+      const personality = await defaultPersonality(db, ctx.workspaceId);
       const [created] = await db
         .insert(schema.conversations)
         .values({
@@ -129,6 +131,7 @@ export const conversationNode = defineNode({
           workspaceId: ctx.workspaceId,
           ownerId: ctx.ownerId,
           mode: ws?.mode ?? "auto",
+          personalityId: personality?.id ?? null,
           workflowId: ctx.workflowId,
           externalKey: k,
           title: (config.title ?? "").trim().slice(0, 120) || k.slice(0, 120),

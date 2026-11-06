@@ -23,6 +23,8 @@ export interface ToolGrant {
   workspaceId: string;
   ownerId: string;
   conversationId: string;
+  /** The only tools this turn may call: its personality's. */
+  tools: ReadonlySet<string>;
   expiresAt: number;
 }
 
@@ -88,6 +90,8 @@ export class CliChat {
     choice: AssistantChoice;
     label: string;
     instructions: string;
+    /** Tool names the turn may call. */
+    tools: readonly string[];
     prompt: string;
     history: string;
     session: { harness: Harness; runnerId: string; sessionId: string } | null;
@@ -110,6 +114,7 @@ export class CliChat {
       workspaceId: opts.workspaceId,
       ownerId: opts.ownerId,
       conversationId: opts.conversationId,
+      tools: new Set(opts.tools),
       expiresAt: Date.now() + TURN_TIMEOUT_MS,
     });
     const resume = sameAgent && sameAgent.runnerId === runnerId ? sameAgent.sessionId : "";

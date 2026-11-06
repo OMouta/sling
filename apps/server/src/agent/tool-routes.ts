@@ -35,6 +35,7 @@ export async function agentToolRoutes(app: FastifyInstance, ctx: AppContext) {
           ownerId: grant.ownerId,
           conversationId: grant.conversationId,
           trace: ctx.cliChat.traceFor(grant.turnId),
+          allowed: grant.tools,
         }
       : null;
   };
@@ -42,7 +43,7 @@ export async function agentToolRoutes(app: FastifyInstance, ctx: AppContext) {
   app.get("/api/agent/tools", async (request, reply) => {
     const scope = scopeOf(request.headers.authorization);
     if (!scope) return reply.code(401).send({ error: "unknown or expired token" });
-    const tools = agentTools(ctx, scope) as unknown as Record<string, ToolLike>;
+    const tools = agentTools(ctx, scope, scope.allowed) as unknown as Record<string, ToolLike>;
     return {
       tools: Object.entries(tools).map(([name, t]) => ({
         name,
@@ -57,7 +58,7 @@ export async function agentToolRoutes(app: FastifyInstance, ctx: AppContext) {
     async (request, reply) => {
       const scope = scopeOf(request.headers.authorization);
       if (!scope) return reply.code(401).send({ error: "unknown or expired token" });
-      const tools = agentTools(ctx, scope) as unknown as Record<string, ToolLike>;
+      const tools = agentTools(ctx, scope, scope.allowed) as unknown as Record<string, ToolLike>;
       const t = Object.hasOwn(tools, request.params.name) ? tools[request.params.name] : undefined;
       if (!t?.execute)
         return reply.code(404).send({ error: `no tool named ${request.params.name}` });

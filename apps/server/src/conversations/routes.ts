@@ -10,6 +10,7 @@ import { textOf, toMessageView } from "../agent/history.ts";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
+import { defaultPersonality, usablePersonality } from "../personalities/service.ts";
 import { taskViews, toConversationView } from "../views.ts";
 import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
 
@@ -70,26 +71,39 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
     },
   );
 
-  r.post("/api/conversations", async (request) => {
-    const actor = actorOf(request);
-    const [ws] = await ctx.db
-      .select({ mode: schema.workspaces.defaultMode })
-      .from(schema.workspaces)
-      .where(eq(schema.workspaces.id, actor.workspaceId));
-    const [conv] = await ctx.db
-      .insert(schema.conversations)
-      .values({
-        id: newId("cnv"),
-        workspaceId: actor.workspaceId,
-        ownerId: actor.userId,
-        mode: ws?.mode ?? "auto",
-      })
-      .returning();
-    if (!conv) throw new Error("insert failed");
-    const view = toConversationView(conv);
-    ctx.hub.publish(actor.workspaceId, { type: "conversation.updated", conversation: view });
-    return view;
-  });
+  // The personality is picked here and never changes for this chat.
+  r.post(
+    "/api/conversations",
+    { schema: { body: z.object({ personalityId: z.string().optional() }).nullish() } },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const asked = request.body?.personalityId;
+      const personality = asked
+        ? await usablePersonality(ctx.db, actor.workspaceId, asked)
+        : await defaultPersonality(ctx.db, actor.workspaceId);
+      if (asked && !personality) {
+        return reply.code(400).send({ error: "That personality doesn't exist anymore." });
+      }
+      const [ws] = await ctx.db
+        .select({ mode: schema.workspaces.defaultMode })
+        .from(schema.workspaces)
+        .where(eq(schema.workspaces.id, actor.workspaceId));
+      const [conv] = await ctx.db
+        .insert(schema.conversations)
+        .values({
+          id: newId("cnv"),
+          workspaceId: actor.workspaceId,
+          ownerId: actor.userId,
+          mode: ws?.mode ?? "auto",
+          personalityId: personality?.id ?? null,
+        })
+        .returning();
+      if (!conv) throw new Error("insert failed");
+      const view = toConversationView(conv);
+      ctx.hub.publish(actor.workspaceId, { type: "conversation.updated", conversation: view });
+      return view;
+    },
+  );
 
   r.get("/api/conversations/:id", { schema: { params: Id } }, async (request, reply) => {
     const actor = actorOf(request);

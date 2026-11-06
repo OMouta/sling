@@ -4,6 +4,7 @@ import {
   HARNESSES,
   MODE_POLICY,
   type PermissionMode,
+  type PersonalityTool,
   type RoutingView,
   type RunnerView,
 } from "@sling/core";
@@ -161,7 +162,30 @@ function created(c: CreatedTask) {
   };
 }
 
-export function agentTools(ctx: AppContext, scope: ToolScope) {
+/** The tools each personality tool group gives the assistant. */
+export const TOOLS_BY_GROUP: Record<PersonalityTool, readonly string[]> = {
+  commands: ["list_machines", "run_command"],
+  coding: ["list_machines", "delegate_coding_task", "get_task", "cancel_task"],
+};
+
+/** Tool names a personality with these groups may call. */
+export function allowedTools(groups: readonly PersonalityTool[]): Set<string> {
+  return new Set(groups.flatMap((g) => TOOLS_BY_GROUP[g] ?? []));
+}
+
+/**
+ * The assistant's tools. With `allowed`, only those: a personality's limits
+ * are enforced here, never left to the prompt.
+ */
+export function agentTools(ctx: AppContext, scope: ToolScope, allowed?: ReadonlySet<string>) {
+  const all = allTools(ctx, scope);
+  if (!allowed) return all;
+  return Object.fromEntries(Object.entries(all).filter(([name]) => allowed.has(name))) as Partial<
+    typeof all
+  >;
+}
+
+function allTools(ctx: AppContext, scope: ToolScope) {
   return {
     list_machines: tool({
       description:
