@@ -9,7 +9,7 @@
  * Needs Docker, and the Runner built first: cargo build -p sling-runner -p sling-harness-codex
  */
 import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer, type Server } from "node:http";
 import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -373,9 +373,20 @@ beforeAll(async () => {
   }
   work = mkdtempSync(join(tmpdir(), "sling-apps-"));
 
-  // The ntfy extension as it ships, packed into a catalog of our own.
+  // The ntfy extension, packed into a catalog of our own. It's given
+  // localNetwork, since its server here is a plain-HTTP one on loopback, which
+  // the real network broker refuses otherwise.
   const included = join(work, "included");
-  const project = await loadProject(join(ROOT, "extensions", "ntfy"));
+  const variant = join(work, "ntfy");
+  cpSync(join(ROOT, "extensions", "ntfy"), variant, {
+    recursive: true,
+    filter: (src) => !src.includes("node_modules"),
+  });
+  const manifestPath = join(variant, "sling-extension.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  manifest.permissions.network.localNetwork = true;
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  const project = await loadProject(variant);
   await buildProject(project);
   await packProject(project, { outDir: included });
   await writeCatalog(included, { name: "Included with Sling" });
