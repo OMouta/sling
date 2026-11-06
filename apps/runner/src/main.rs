@@ -4,6 +4,7 @@ mod agent_env;
 mod chat;
 mod config;
 mod connection;
+mod exec;
 mod gc;
 mod git;
 mod harness;
@@ -114,7 +115,8 @@ enum ServiceCommand {
 enum ConfigCommand {
     Show,
     /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, claude-bin, worktree-root,
-    /// remote-repos (on or off), scan-roots (comma-separated directories; "" means your home).
+    /// remote-repos (on or off), commands (on or off), scan-roots (comma-separated directories;
+    /// "" means your home).
     Set {
         key: String,
         value: String,
@@ -265,6 +267,7 @@ async fn real_main(cli: Cli) -> Result<()> {
                     "claude-bin" => cfg.claude_bin = Some(value),
                     "worktree-root" => cfg.worktree_root = Some(PathBuf::from(value)),
                     "remote-repos" => cfg.remote_repos = config::parse_on_off(&value)?,
+                    "commands" => cfg.commands = config::parse_on_off(&value)?,
                     "scan-roots" => cfg.scan_roots = config::parse_scan_roots(&value)?,
                     _ => bail!("unknown key {key:?}"),
                 }
@@ -342,7 +345,7 @@ async fn doctor(paths: &Paths) -> Result<()> {
     } else {
         Vec::new()
     };
-    let inv = inventory::build(&cfg, &found).await;
+    let inv = inventory::build(&cfg, &found, &exec::detect_sandbox().await).await;
     for c in &inv.capabilities {
         println!(
             "{} {:<18} {} {}",

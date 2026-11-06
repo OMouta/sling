@@ -988,7 +988,7 @@ async fn refuses_repo_changes_when_remote_repos_is_off() {
     env.mgr.set_config(saved.clone());
     env.mgr.rescan().await;
     assert!(env.mgr.found().is_empty());
-    let inv = crate::inventory::build(&saved, &[]).await;
+    let inv = crate::inventory::build(&saved, &[], &crate::exec::Sandbox::Seatbelt).await;
     assert!(!inv.remote_repos && inv.found_repos.is_empty());
 }
 
@@ -1056,7 +1056,12 @@ async fn the_inventory_offers_found_repos_with_unique_names() {
     let remote = env.remote.display().to_string();
     git(&other_site, &["remote", "add", "origin", &remote]);
     env.mgr.rescan().await;
-    let inv = crate::inventory::build(&env.mgr.config(), &env.mgr.found()).await;
+    let inv = crate::inventory::build(
+        &env.mgr.config(),
+        &env.mgr.found(),
+        &crate::exec::Sandbox::Seatbelt,
+    )
+    .await;
     assert!(inv.remote_repos);
     assert_eq!(inv.found_repos.len(), 1);
     let f = &inv.found_repos[0];

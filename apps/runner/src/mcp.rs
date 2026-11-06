@@ -15,7 +15,10 @@ use crate::connection::VERSION;
 pub const PROTOCOL_VERSION: &str = "2025-06-18";
 pub const URL_ENV: &str = "SLING_TOOLS_URL";
 pub const TOKEN_ENV: &str = "SLING_TOOLS_TOKEN";
-const TIMEOUT: Duration = Duration::from_secs(60);
+/// A call can wait for the user to approve a command, then run it, so this
+/// is longer than both. The agents' own limits are longer still, so the
+/// bridge's error reaches them first.
+const TIMEOUT: Duration = Duration::from_secs(11 * 60);
 /// Longest server message passed on to the agent.
 const MAX_MESSAGE: usize = 4000;
 

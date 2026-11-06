@@ -34,6 +34,7 @@ message Envelope {
     TaskEvent task_event = 4;
     RepoChangeResult repo_change_result = 5;
     ChatEvent chat_event = 6;
+    ExecResult exec_result = 7;
 
     // Server to Runner.
     Challenge challenge = 20;
@@ -48,6 +49,7 @@ message Envelope {
     RepoScan repo_scan = 29;
     ChatTurn chat_turn = 30;
     ChatCancel chat_cancel = 31;
+    ExecRequest exec_request = 32;
   }
 }
 
@@ -139,8 +141,9 @@ message FoundRepo {
 }
 
 message Capability {
-  // "coding.codex" and "coding.claude-code" for coding agents, plus "git" and
-  // "git.pr.github".
+  // "coding.codex" and "coding.claude-code" for coding agents, "git" and
+  // "git.pr.github", "shell" when the machine runs the assistant's commands,
+  // and "shell.sandbox" when it can run them in its read-only sandbox.
   string name = 1;
   string version = 2;
   // True when the capability can be used right now, for example Codex is
@@ -469,4 +472,40 @@ message ChatDone {
   string error = 3;
   uint64 input_tokens = 4;
   uint64 output_tokens = 5;
+}
+
+// ---------------------------------------------------------------- commands
+
+// Server to Runner: run one shell command for the assistant, as the machine's
+// user, and answer with one ExecResult. The Runner refuses when commands are
+// off in its local config. It runs a command outside its sandbox only when
+// its max_mode is Full access and `mode` isn't Read-only.
+message ExecRequest {
+  string request_id = 1;
+  string command = 2;
+  // Absolute path, or one starting with "~/". Empty means the home directory.
+  string cwd = 3;
+  // The Runner kills the command and everything it started after this long.
+  uint32 timeout_seconds = 4;
+  // The conversation's mode.
+  PermissionMode mode = 5;
+  // Run in the read-only sandbox: the command can read files but can't write
+  // them or use the network.
+  bool sandboxed = 6;
+}
+
+message ExecResult {
+  string request_id = 1;
+  // Unset when the command never ran or was killed.
+  optional int32 exit_code = 2;
+  // stdout and stderr as they came, shortened in the middle when long.
+  string output = 3;
+  bool truncated = 4;
+  bool timed_out = 5;
+  // Why the command didn't run. Empty when it ran.
+  string error = 6;
+  uint64 duration_ms = 7;
+  bool sandboxed = 8;
+  // The directory it ran in.
+  string cwd = 9;
 }

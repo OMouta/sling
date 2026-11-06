@@ -3,7 +3,8 @@
 //! `max_mode` and labels are set only here, on the machine. The control
 //! plane learns about them but has no way to change them. Repos are set here
 //! too, and while `remote_repos` is on, Sling may also add repos the Runner
-//! found on this machine itself, or remove repos.
+//! found on this machine itself, or remove repos. `commands` decides whether
+//! the assistant may run shell commands here at all.
 
 use std::path::{Path, PathBuf};
 
@@ -102,6 +103,10 @@ pub struct Config {
     /// repos. Sling can never add a path the Runner didn't find itself.
     #[serde(default = "default_remote_repos")]
     pub remote_repos: bool,
+    /// Let the assistant run shell commands here. They run in a read-only
+    /// sandbox unless `max_mode` is Full access.
+    #[serde(default = "default_commands")]
+    pub commands: bool,
     /// Where to look for git repos to offer Sling. Defaults to the home
     /// directory.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -111,6 +116,10 @@ pub struct Config {
 }
 
 fn default_remote_repos() -> bool {
+    true
+}
+
+fn default_commands() -> bool {
     true
 }
 
@@ -136,6 +145,7 @@ impl Default for Config {
             labels: Vec::new(),
             disposable: false,
             remote_repos: default_remote_repos(),
+            commands: default_commands(),
             scan_roots: Vec::new(),
             repos: Vec::new(),
         }

@@ -72,6 +72,12 @@ export declare type Envelope = Message<"sling.runner.v1.Envelope"> & {
     case: "chatEvent";
   } | {
     /**
+     * @generated from field: sling.runner.v1.ExecResult exec_result = 7;
+     */
+    value: ExecResult;
+    case: "execResult";
+  } | {
+    /**
      * Server to Runner.
      *
      * @generated from field: sling.runner.v1.Challenge challenge = 20;
@@ -144,6 +150,12 @@ export declare type Envelope = Message<"sling.runner.v1.Envelope"> & {
      */
     value: ChatCancel;
     case: "chatCancel";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ExecRequest exec_request = 32;
+     */
+    value: ExecRequest;
+    case: "execRequest";
   } | { case: undefined; value?: undefined };
 };
 
@@ -479,8 +491,9 @@ export declare const FoundRepoSchema: GenMessage<FoundRepo>;
  */
 export declare type Capability = Message<"sling.runner.v1.Capability"> & {
   /**
-   * "coding.codex" and "coding.claude-code" for coding agents, plus "git" and
-   * "git.pr.github".
+   * "coding.codex" and "coding.claude-code" for coding agents, "git" and
+   * "git.pr.github", "shell" when the machine runs the assistant's commands,
+   * and "shell.sandbox" when it can run them in its read-only sandbox.
    *
    * @generated from field: string name = 1;
    */
@@ -1799,6 +1812,125 @@ export declare type ChatDone = Message<"sling.runner.v1.ChatDone"> & {
  * Use `create(ChatDoneSchema)` to create a new message.
  */
 export declare const ChatDoneSchema: GenMessage<ChatDone>;
+
+/**
+ * Server to Runner: run one shell command for the assistant, as the machine's
+ * user, and answer with one ExecResult. The Runner refuses when commands are
+ * off in its local config. It runs a command outside its sandbox only when
+ * its max_mode is Full access and `mode` isn't Read-only.
+ *
+ * @generated from message sling.runner.v1.ExecRequest
+ */
+export declare type ExecRequest = Message<"sling.runner.v1.ExecRequest"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string command = 2;
+   */
+  command: string;
+
+  /**
+   * Absolute path, or one starting with "~/". Empty means the home directory.
+   *
+   * @generated from field: string cwd = 3;
+   */
+  cwd: string;
+
+  /**
+   * The Runner kills the command and everything it started after this long.
+   *
+   * @generated from field: uint32 timeout_seconds = 4;
+   */
+  timeoutSeconds: number;
+
+  /**
+   * The conversation's mode.
+   *
+   * @generated from field: sling.runner.v1.PermissionMode mode = 5;
+   */
+  mode: PermissionMode;
+
+  /**
+   * Run in the read-only sandbox: the command can read files but can't write
+   * them or use the network.
+   *
+   * @generated from field: bool sandboxed = 6;
+   */
+  sandboxed: boolean;
+};
+
+/**
+ * Describes the message sling.runner.v1.ExecRequest.
+ * Use `create(ExecRequestSchema)` to create a new message.
+ */
+export declare const ExecRequestSchema: GenMessage<ExecRequest>;
+
+/**
+ * @generated from message sling.runner.v1.ExecResult
+ */
+export declare type ExecResult = Message<"sling.runner.v1.ExecResult"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * Unset when the command never ran or was killed.
+   *
+   * @generated from field: optional int32 exit_code = 2;
+   */
+  exitCode?: number | undefined;
+
+  /**
+   * stdout and stderr as they came, shortened in the middle when long.
+   *
+   * @generated from field: string output = 3;
+   */
+  output: string;
+
+  /**
+   * @generated from field: bool truncated = 4;
+   */
+  truncated: boolean;
+
+  /**
+   * @generated from field: bool timed_out = 5;
+   */
+  timedOut: boolean;
+
+  /**
+   * Why the command didn't run. Empty when it ran.
+   *
+   * @generated from field: string error = 6;
+   */
+  error: string;
+
+  /**
+   * @generated from field: uint64 duration_ms = 7;
+   */
+  durationMs: bigint;
+
+  /**
+   * @generated from field: bool sandboxed = 8;
+   */
+  sandboxed: boolean;
+
+  /**
+   * The directory it ran in.
+   *
+   * @generated from field: string cwd = 9;
+   */
+  cwd: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.ExecResult.
+ * Use `create(ExecResultSchema)` to create a new message.
+ */
+export declare const ExecResultSchema: GenMessage<ExecResult>;
 
 /**
  * @generated from enum sling.runner.v1.PermissionMode

@@ -468,7 +468,13 @@ impl Harness for ClaudeCode {
                     args: vec!["mcp".into()],
                     env: spec.mcp_env(),
                 },
-                env: Some(spec.env.clone()),
+                env: Some({
+                    // Longer than the bridge's own HTTP timeout, so its
+                    // error arrives first.
+                    let mut env = spec.env.clone();
+                    env.push(("MCP_TOOL_TIMEOUT".into(), "720000".into()));
+                    env
+                }),
                 model: spec.model.clone(),
                 effort: spec.effort.clone(),
                 fast: spec.fast,

@@ -158,7 +158,8 @@ pub fn chat_args(o: &ChatOptions) -> Vec<String> {
         toml_string("approve"),
     );
     // Longer than the bridge's own HTTP timeout, so its error arrives first.
-    set(&format!("{server}.tool_timeout_sec"), "90".into());
+    // A call can wait on the user's approval and then a command.
+    set(&format!("{server}.tool_timeout_sec"), "720".into());
     if !o.instructions.trim().is_empty() && instructions_fit(o) {
         set("developer_instructions", toml_string(&o.instructions));
     }

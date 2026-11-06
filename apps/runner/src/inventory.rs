@@ -4,6 +4,7 @@
 use sling_runner_protocol::{Capability, Inventory, Repo};
 
 use crate::config::Config;
+use crate::exec::{self, Sandbox};
 use crate::git;
 use crate::harness;
 use crate::scan::{self, Found};
@@ -15,8 +16,8 @@ pub const GITHUB_PR: &str = "git.pr.github";
 pub const CHAT: &str = "chat";
 
 /// `found` is the latest repo scan. It's only offered while `remote-repos`
-/// is on.
-pub async fn build(cfg: &Config, found: &[Found]) -> Inventory {
+/// is on. `sandbox` is what the assistant's commands can run in.
+pub async fn build(cfg: &Config, found: &[Found], sandbox: &Sandbox) -> Inventory {
     let mut capabilities = Vec::new();
 
     let git_version = run("git", &["--version"], None)
@@ -82,6 +83,7 @@ pub async fn build(cfg: &Config, found: &[Found]) -> Inventory {
         detail: String::new(),
         models: Vec::new(),
     });
+    capabilities.extend(exec::capabilities(cfg, sandbox));
 
     let mut repos = Vec::new();
     for r in &cfg.repos {

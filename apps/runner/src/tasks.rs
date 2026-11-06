@@ -58,6 +58,10 @@ pub struct Manager {
     pub outbox: Notify,
     /// Chat turns running now.
     pub(crate) chats: crate::chat::Chats,
+    /// The assistant's commands running now.
+    pub(crate) commands_running: AtomicUsize,
+    /// The command sandbox, once it's been looked for.
+    pub(crate) sandbox: tokio::sync::Mutex<Option<crate::exec::Sandbox>>,
 }
 
 impl Manager {
@@ -99,6 +103,8 @@ impl Manager {
             inventory_turn: tokio::sync::Mutex::new(()),
             outbox: Notify::new(),
             chats: crate::chat::Chats::default(),
+            commands_running: AtomicUsize::new(0),
+            sandbox: tokio::sync::Mutex::new(None),
         }))
     }
 
@@ -189,7 +195,12 @@ impl Manager {
         let (result, changed) = self.repo_change(req).await;
         let _ = out.send(Body::RepoChangeResult(result)).await;
         if changed {
-            let inv = crate::inventory::build(&self.config(), &self.found()).await;
+            let inv = crate::inventory::build(
+                &self.config(),
+                &self.found(),
+                &self.command_sandbox().await,
+            )
+            .await;
             let _ = out.send(Body::Inventory(inv)).await;
         }
     }
@@ -202,7 +213,9 @@ impl Manager {
             Err(e) => tracing::warn!("could not reload config: {e:#}"),
         }
         self.rescan().await;
-        let inv = crate::inventory::build(&self.config(), &self.found()).await;
+        let inv =
+            crate::inventory::build(&self.config(), &self.found(), &self.command_sandbox().await)
+                .await;
         let _ = out.send(Body::Inventory(inv)).await;
     }
 

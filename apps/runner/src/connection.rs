@@ -1,8 +1,8 @@
 //! The Runner's outbound WebSocket to the control plane: signed handshake,
 //! heartbeats, inventory updates, the event outbox, and chat turns.
 //! Reconnects forever with backoff, except when the server says this Runner
-//! is revoked or unknown. Chat turns belong to one connection and stop when
-//! it drops.
+//! is revoked or unknown. Chat turns and the assistant's commands belong to
+//! one connection and stop when it drops.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -102,7 +102,7 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
     };
 
     // 2. Hello
-    let mut inv = inventory::build(cfg, &mgr.found()).await;
+    let mut inv = inventory::build(cfg, &mgr.found(), &mgr.command_sandbox().await).await;
     let ts = now_ms();
     let hello = Hello {
         runner_id: runner_id.to_string(),
@@ -183,6 +183,7 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                             }
                             Some(Body::ChatTurn(t)) => mgr.chat_turn(t, &ready, chat_tx.clone()),
                             Some(Body::ChatCancel(c)) => mgr.chat_cancel(&c.turn_id),
+                            Some(Body::ExecRequest(r)) => mgr.exec(r, chat_tx.clone()),
                             Some(Body::Error(e)) => {
                                 let fatal = matches!(e.code(), Code::Revoked | Code::UnknownRunner);
                                 if fatal {
@@ -239,7 +240,7 @@ fn reload_config(mgr: &Manager) {
 async fn refresh_inventory(mgr: &Arc<Manager>, current: &Inventory) -> Option<Inventory> {
     reload_config(mgr);
     mgr.rescan_if_older(Duration::MAX).await;
-    let next = inventory::build(&mgr.config(), &mgr.found()).await;
+    let next = inventory::build(&mgr.config(), &mgr.found(), &mgr.command_sandbox().await).await;
     (next != *current).then_some(next)
 }
 
