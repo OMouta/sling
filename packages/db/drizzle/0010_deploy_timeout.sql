@@ -1,0 +1,1 @@
+ALTER TABLE "repos" ADD COLUMN "deploy_timeout_seconds" integer DEFAULT 900 NOT NULL;

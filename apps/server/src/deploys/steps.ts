@@ -832,9 +832,22 @@ export class DeploySteps {
   /** Machine steps whose machine never answered, past its limit and a minute. */
   async sweep(): Promise<void> {
     const sent = await this.#db
-      .select({ action: schema.actions, runnerName: schema.runners.name })
+      .select({
+        action: schema.actions,
+        runnerName: schema.runners.name,
+        deployTimeoutSeconds: schema.repos.deployTimeoutSeconds,
+      })
       .from(schema.actions)
       .leftJoin(schema.runners, eq(schema.runners.id, schema.actions.runnerId))
+      .leftJoin(schema.deployTargets, eq(schema.deployTargets.id, schema.actions.targetId))
+      .leftJoin(
+        schema.repos,
+        and(
+          eq(schema.repos.runnerId, schema.actions.runnerId),
+          eq(schema.repos.remoteKey, schema.deployTargets.remoteKey),
+          isNull(schema.repos.removedAt),
+        ),
+      )
       .where(
         and(
           eq(schema.actions.state, "sent"),
@@ -843,9 +856,10 @@ export class DeploySteps {
         ),
       );
     const now = Date.now();
-    for (const { action, runnerName } of sent) {
-      const limit =
-        (action.kind === "merge" ? MERGE_TIMEOUT_MS : DEPLOY_TIMEOUT_MS) + ANSWER_GRACE_MS;
+    for (const { action, runnerName, deployTimeoutSeconds } of sent) {
+      // A deploy command may run as long as its machine allows, which the machine reports.
+      const deployLimit = deployTimeoutSeconds ? deployTimeoutSeconds * 1000 : DEPLOY_TIMEOUT_MS;
+      const limit = (action.kind === "merge" ? MERGE_TIMEOUT_MS : deployLimit) + ANSWER_GRACE_MS;
       if (!action.sentAt || now - action.sentAt.getTime() < limit) continue;
       await this.#end(
         action,

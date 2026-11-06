@@ -214,6 +214,8 @@ export const repos = pgTable(
     network: boolean("network").notNull().default(false),
     /** The deploy command set for this repo in the machine's config. Empty when none. */
     deployCommand: text("deploy_command").notNull().default(""),
+    /** How long the machine lets that command run before it stops it. */
+    deployTimeoutSeconds: integer("deploy_timeout_seconds").notNull().default(900),
     /** Set when the Runner stops advertising this repo. */
     removedAt: ts("removed_at"),
     updatedAt: updatedAt(),

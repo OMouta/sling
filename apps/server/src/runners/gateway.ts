@@ -385,6 +385,7 @@ export class RunnerGateway {
           remoteKey: remoteKey(repo.remoteUrl),
           network: repo.network,
           deployCommand: repo.deployCommand.slice(0, 2000),
+          deployTimeoutSeconds: deployTimeout(repo.deployTimeoutSeconds),
         })
         .onConflictDoUpdate({
           target: [schema.repos.runnerId, schema.repos.name],
@@ -394,6 +395,7 @@ export class RunnerGateway {
             remoteKey: remoteKey(repo.remoteUrl),
             network: repo.network,
             deployCommand: repo.deployCommand.slice(0, 2000),
+            deployTimeoutSeconds: deployTimeout(repo.deployTimeoutSeconds),
             removedAt: null,
           },
         });
@@ -427,4 +429,9 @@ function agentModels(models: AgentModel[]): AgentModelView[] {
       fast: m.fast,
       isDefault: m.isDefault,
     }));
+}
+
+/** A Runner that doesn't say gets the Runner's default of 15 minutes; a day at most. */
+function deployTimeout(seconds: number): number {
+  return seconds > 0 ? Math.min(seconds, 24 * 60 * 60) : 900;
 }
