@@ -44,3 +44,21 @@ export function withoutLocalLinks(markdown: string): string {
     (_m, text: string) => `\`${text.replaceAll("`", "")}\``,
   );
 }
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * A local date or date and time, such as a calendar event's start, as people
+ * write it: "2026-11-07T10:00" is "Sat 7 Nov, 10:00". Anything else comes back
+ * as it was.
+ */
+export function readableLocalDate(text: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?$/.exec(text.trim());
+  if (!m) return text;
+  const [, y, mo, d, h, mi] = m;
+  const day = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d)));
+  if (Number.isNaN(day.getTime()) || day.getUTCDate() !== Number(d)) return text;
+  const date = `${WEEKDAYS[day.getUTCDay()]} ${Number(d)} ${MONTHS[day.getUTCMonth()]}`;
+  return h ? `${date}, ${h}:${mi}` : date;
+}

@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { api } from "../lib/api.ts";
-import { duration } from "../lib/format.ts";
+import { duration, readableLocalDate } from "../lib/format.ts";
 import { useNow } from "../lib/useNow.ts";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
 import { TaskCard } from "./TaskCard.tsx";
@@ -510,7 +510,7 @@ function SendStep({
 
 /** One value of a send, as text a person reads before allowing it. */
 function sendValueText(v: unknown): string {
-  if (typeof v === "string") return v;
+  if (typeof v === "string") return readableLocalDate(v);
   if (Array.isArray(v)) return v.map(sendValueText).join(", ");
   if (v && typeof v === "object") return JSON.stringify(v, null, 2);
   return String(v);
