@@ -153,7 +153,7 @@ function TopBar({
 }) {
   const shell = useContext(ShellContext);
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-5 max-md:px-3">
+    <header className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center gap-3 border-b border-border px-5 pt-[env(safe-area-inset-top)] max-md:px-3">
       <Button
         variant="ghost"
         iconOnly

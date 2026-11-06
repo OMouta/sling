@@ -282,7 +282,7 @@ export function HomePage() {
               </div>
             </div>
           </form>
-          <div className="flex items-center justify-between gap-3 px-1 pt-2 pb-5 text-xs text-subtle">
+          <div className="flex items-center justify-between gap-3 px-1 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-xs text-subtle">
             <span className="flex items-center gap-1 max-sm:hidden">
               <Kbd>↵</Kbd> to send, <Kbd>⇧</Kbd>
               <Kbd>↵</Kbd> for a new line{switches && ","}

@@ -122,10 +122,11 @@ function Shell() {
 
   return (
     <ShellContext.Provider value={shell}>
-      <div className="flex h-full">
+      {/* The installed app draws edge to edge; env() insets are zero everywhere else. */}
+      <div className="flex h-full pr-[env(safe-area-inset-right)]">
         <aside
           className={cx(
-            "fixed inset-y-0 left-0 z-30 flex w-[254px] flex-col border-r border-border bg-sidebar transition-transform duration-300 ease-[var(--ease-out)] md:static md:translate-x-0 md:transition-none",
+            "fixed inset-y-0 left-0 z-30 flex w-[calc(254px+env(safe-area-inset-left))] flex-col border-r border-border bg-sidebar pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] transition-transform duration-300 ease-[var(--ease-out)] md:static md:translate-x-0 md:transition-none",
             navOpen ? "translate-x-0" : "-translate-x-full",
             hidden && "md:hidden",
           )}
@@ -140,7 +141,12 @@ function Shell() {
             onClick={() => setNavOpen(false)}
           />
         )}
-        <main className="min-w-0 flex-1">
+        <main
+          className={cx(
+            "min-w-0 flex-1 max-md:pl-[env(safe-area-inset-left)]",
+            hidden && "md:pl-[env(safe-area-inset-left)]",
+          )}
+        >
           <Outlet />
         </main>
       </div>

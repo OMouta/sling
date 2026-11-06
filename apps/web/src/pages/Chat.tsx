@@ -268,7 +268,7 @@ export function ChatPage() {
 
         <form
           onSubmit={submit}
-          className="sticky bottom-0 bg-gradient-to-t from-bg from-60% to-transparent px-5 pt-4 pb-5"
+          className="sticky bottom-0 bg-gradient-to-t from-bg from-60% to-transparent px-5 pt-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
         >
           <div className={cx("mx-auto", CHAT_WIDTH)}>
             <div className="rounded-2xl bg-surface shadow-card transition-shadow duration-150 has-[textarea:focus]:shadow-focus">
