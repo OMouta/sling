@@ -107,14 +107,17 @@ export class FrameDecoder {
     } else {
       out = Buffer.allocUnsafe(n);
       let at = 0;
+      let used = 0;
       while (at < n) {
-        const c = /** @type {Buffer} */ (this.#chunks[0]);
+        const c = /** @type {Buffer} */ (this.#chunks[used]);
         const k = Math.min(c.length, n - at);
         c.copy(out, at, 0, k);
         at += k;
-        if (k === c.length) this.#chunks.shift();
-        else this.#chunks[0] = c.subarray(k);
+        if (k === c.length) used++;
+        else this.#chunks[used] = c.subarray(k);
       }
+      // One splice, not a shift per chunk: a message can span many small reads.
+      this.#chunks.splice(0, used);
     }
     this.#size -= n;
     return out;
