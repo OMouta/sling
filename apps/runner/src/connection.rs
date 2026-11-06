@@ -87,8 +87,10 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
         .context("not paired: run `sling-runner pair <url> <code>`")?;
     let runner_id = cfg.runner_id.as_deref().context("not paired")?;
     let url = ws_url(server)?;
-    // Scan before connecting, so the handshake never waits on the disk.
-    mgr.rescan_if_older(SCAN_REUSE).await;
+    // Connect first and scan after. Walking a big home folder and asking git
+    // about every repo in it can take many seconds, and nothing else the
+    // machine does should wait on that. The scan follows as its own inventory.
+    let rescan = !mgr.scan_is_fresh(SCAN_REUSE);
     tracing::info!("connecting to {url}");
     let (ws, _) = tokio::time::timeout(HANDSHAKE_TIMEOUT, tokio_tungstenite::connect_async(&url))
         .await
@@ -151,6 +153,11 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
     let (chat_tx, mut chat_rx) = mpsc::channel::<Body>(256);
 
     flush(mgr, &mut sink).await?;
+    if rescan {
+        let mgr = mgr.clone();
+        let reply = reply_tx.clone();
+        tokio::spawn(async move { mgr.rescan_and_report(&reply).await });
+    }
 
     loop {
         tokio::select! {
@@ -238,11 +245,11 @@ fn reload_config(mgr: &Manager) {
 
 /// Re-reads runner.toml and rebuilds the inventory. Returns it if it changed.
 /// Scans for repos only when there's no scan yet, as after `remote-repos` is
-/// turned on; otherwise the latest scan stands until the next connect or
-/// RepoScan.
+/// turned on, and never while another scan runs; otherwise the latest scan
+/// stands until the next connect or RepoScan.
 async fn refresh_inventory(mgr: &Arc<Manager>, current: &Inventory) -> Option<Inventory> {
     reload_config(mgr);
-    mgr.rescan_if_older(Duration::MAX).await;
+    mgr.rescan_if_unscanned_nowait().await;
     let next = inventory::build(&mgr.config(), &mgr.found(), &mgr.command_sandbox().await).await;
     (next != *current).then_some(next)
 }

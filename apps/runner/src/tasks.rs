@@ -165,18 +165,26 @@ impl Manager {
         self.rescan_locked().await;
     }
 
-    /// Scans unless the latest scan is younger than `max_age`. While
-    /// `remote-repos` is off this just drops the latest scan.
-    pub async fn rescan_if_older(&self, max_age: Duration) {
-        let _guard = self.repo_lock.lock().await;
-        let fresh = self.config().remote_repos
-            && self
+    /// True when there's a scan younger than `max_age`, or no scan is wanted
+    /// because `remote-repos` is off.
+    pub fn scan_is_fresh(&self, max_age: Duration) -> bool {
+        !self.config().remote_repos
+            || self
                 .found
                 .lock()
                 .unwrap()
                 .1
-                .is_some_and(|at| at.elapsed() < max_age);
-        if !fresh {
+                .is_some_and(|at| at.elapsed() < max_age)
+    }
+
+    /// Scans when there's never been a scan, unless a scan or a repo change
+    /// is already under way, in which case it returns at once.
+    pub async fn rescan_if_unscanned_nowait(&self) {
+        let Ok(_guard) = self.repo_lock.try_lock() else {
+            return;
+        };
+        let never = self.config().remote_repos && self.found.lock().unwrap().1.is_none();
+        if never {
             self.rescan_locked().await;
         }
     }
