@@ -545,7 +545,7 @@ describe("the examples that ship with Sling", () => {
       });
     }
     const started = performance.now();
-    const preview = await fromCatalog("included", "ntfy");
+    const preview = await fromCatalog("included", "ntfy", "1.1.0");
     // Reading, verifying, and describing a package with code, in a fresh restricted process.
     console.log(`preview of the included ntfy: ${Math.round(performance.now() - started)} ms`);
     expect(preview).toMatchObject({ source: "included", problems: [] });
@@ -557,7 +557,7 @@ describe("the examples that ship with Sling", () => {
 
   it("send a push notification when a task finishes, and start workflows from ntfy messages", async () => {
     if (LIVE_NTFY) {
-      await install(await fromCatalog("included", "ntfy"));
+      await install(await fromCatalog("included", "ntfy", "1.1.0"));
     } else {
       // The same code, allowed to reach the fake ntfy on loopback.
       const preview = await api<ExtensionPreview>(

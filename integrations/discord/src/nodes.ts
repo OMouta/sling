@@ -259,6 +259,7 @@ export function createSendMessage(rest: RestFactory): NodeSpec<SendMessageConfig
     execInput: true,
     execOutputs: [{ name: "next" }],
     idempotent: false,
+    assistant: { sends: true, summary: "Discord message: {content}" },
 
     async run(ctx, { inputs, config: rawConfig }) {
       const parsedConfig = sendMessageConfigSchema.safeParse(rawConfig);

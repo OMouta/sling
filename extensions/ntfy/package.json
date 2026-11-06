@@ -1,6 +1,6 @@
 {
   "name": "@sling/extension-ntfy",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "The ntfy extension that ships with Sling.",
   "license": "Apache-2.0",
   "private": true,

@@ -111,6 +111,7 @@ export const publish = defineNode({
   execOutputs: [{ name: "next" }],
   // Publishing twice sends two notifications.
   idempotent: false,
+  assistant: { sends: true, summary: "Push through ntfy: {message}" },
 
   async run(ctx, { inputs, config: raw }) {
     const parsed = publishConfigSchema.safeParse(raw);

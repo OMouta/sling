@@ -6,6 +6,7 @@ import {
 import { diffPermissions } from "@sling/connector-sdk/host";
 import { describe, expect, it } from "vitest";
 import {
+  assistantUse,
   checkRequirements,
   contentsOf,
   hostOf,
@@ -14,6 +15,7 @@ import {
   nodeTypeProblems,
   permissionsKey,
 } from "./checks.ts";
+import { parseDescription } from "./proxy.ts";
 
 const perms = (p: unknown) => ExtensionPermissionsSchema.parse(p);
 
@@ -203,6 +205,34 @@ describe("contentsOf", () => {
       ],
       templates: [{ key: "chat/hello", name: "Hello" }],
     });
+  });
+
+  it("marks the nodes the assistant may use, and which of them send", () => {
+    const send = { ...node("chat.send"), assistant: { sends: true, summary: "Post {text}" } };
+    const read = { ...node("chat.history"), assistant: { sends: false } };
+    // A trigger or a node that waits can't be a tool, whatever it says.
+    const listen = { ...node("chat.message", true), assistant: { sends: false } };
+    const waits = { ...node("chat.ask"), hasResume: true, assistant: { sends: true } };
+    const d = description([{ id: "chat", nodes: [send, read, listen, waits, node("chat.edit")] }]);
+    expect(contentsOf(d, []).nodes.map((n) => [n.type, n.assistant ?? null])).toEqual([
+      ["chat.send", { sends: true }],
+      ["chat.history", { sends: false }],
+      ["chat.message", null],
+      ["chat.ask", null],
+      ["chat.edit", null],
+    ]);
+    expect(assistantUse(send)).toEqual({ sends: true, summary: "Post {text}" });
+    expect(assistantUse(waits)).toBeNull();
+  });
+
+  it("keeps the flag when it reads a description, and accepts ones from SDK 1.0 without it", () => {
+    const send = { ...node("chat.send"), assistant: { sends: true, summary: "Post {text}" } };
+    const parsed = parseDescription(
+      description([{ id: "chat", nodes: [send, node("chat.edit")] }]),
+    );
+    const [flagged, plain] = parsed.connectors[0]?.nodes ?? [];
+    expect(flagged?.assistant).toEqual({ sends: true, summary: "Post {text}" });
+    expect(plain?.assistant).toBeUndefined();
   });
 });
 

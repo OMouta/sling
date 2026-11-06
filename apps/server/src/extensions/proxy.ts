@@ -24,6 +24,7 @@ import {
   type TriggerMatch,
 } from "@sling/workflow";
 import { z } from "zod";
+import { assistantUse } from "./checks.ts";
 import type { CallScope, ExtensionHost, HostVersion, SourceScope } from "./host.ts";
 
 /** A zod schema from a stored JSON Schema. The extension re-checks with its real schema. */
@@ -153,6 +154,11 @@ const NodeDescriptionSchema = z.object({
     .nullable(),
   trigger: z.object({ event: z.string().min(1).max(200) }).nullable(),
   hasResume: z.boolean(),
+  // Left out by extensions built on SDK 1.0.
+  assistant: z
+    .object({ sends: z.boolean(), summary: z.string().max(200).optional() })
+    .nullable()
+    .optional(),
 });
 
 const ConnectorDescriptionSchema = z.object({
@@ -253,6 +259,8 @@ export function buildConnectors(host: ExtensionHost, version: HostVersion): AnyC
     };
     if (n.dynamicExecOutputs) spec.dynamicExecOutputs = n.dynamicExecOutputs;
     if (n.retry) spec.retry = n.retry;
+    const use = assistantUse(n);
+    if (use) spec.assistant = use;
     const call = async (
       method: "run" | "resume",
       ctx: NodeContext,

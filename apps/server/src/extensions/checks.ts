@@ -5,9 +5,11 @@
  */
 import { createHash } from "node:crypto";
 import type {
+  AssistantUse,
   ExtensionDescription,
   ExtensionManifest,
   ExtensionPermissions,
+  NodeDescription,
 } from "@sling/connector-sdk";
 import { satisfiesRange } from "@sling/connector-sdk/host";
 import type { ExtensionContents } from "@sling/core";
@@ -30,6 +32,19 @@ export function permissionsKey(p: ExtensionPermissions): string {
   return createHash("sha256").update(JSON.stringify(normalized)).digest("hex");
 }
 
+/**
+ * How the assistant may use a described node, or null. Only a node that
+ * runs to its end in one call can be a tool: a chat can't wait on a trigger
+ * or a resume.
+ */
+export function assistantUse(n: NodeDescription): AssistantUse | null {
+  if (!n.assistant || !n.execInput || n.trigger || n.hasResume) return null;
+  return {
+    sends: n.assistant.sends,
+    ...(n.assistant.summary ? { summary: n.assistant.summary } : {}),
+  };
+}
+
 /** What a package adds, for cards and dialogs. Template keys are as installed: `<id>/<key>`. */
 export function contentsOf(
   description: ExtensionDescription | null,
@@ -43,12 +58,16 @@ export function contentsOf(
       isExecutionProvider: c.isExecutionProvider,
     })),
     nodes: connectors.flatMap((c) =>
-      c.nodes.map((n) => ({
-        type: n.type,
-        version: n.version,
-        title: n.title,
-        isTrigger: n.trigger !== null || !n.execInput,
-      })),
+      c.nodes.map((n) => {
+        const use = assistantUse(n);
+        return {
+          type: n.type,
+          version: n.version,
+          title: n.title,
+          isTrigger: n.trigger !== null || !n.execInput,
+          ...(use ? { assistant: { sends: use.sends } } : {}),
+        };
+      }),
     ),
     templates: templates.map((t) => ({ key: t.key, name: t.name })),
   };
