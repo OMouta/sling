@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowRight,
+  CalendarDays,
   Container,
   FlaskConical,
   type LucideIcon,
@@ -46,6 +47,7 @@ type TestResult = { ok: true; detail?: string } | { ok: false; error: string };
 type FormTarget = { connector: ConnectorView; installation?: InstallationView };
 
 const ICONS: [RegExp, LucideIcon][] = [
+  [/calendar/i, CalendarDays],
   [/discord/i, MessagesSquare],
   [/mail/i, Mail],
   [/docker/i, Container],
@@ -308,6 +310,8 @@ function InstallationCard({
 }) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState(false);
+  // A connector that never listens for events, such as the calendar, has no status to show.
+  const listens = connector?.hasSource !== false;
   const update = (next: InstallationView) =>
     qc.setQueryData<InstallationView[]>(qk.installations(), (list) =>
       list?.map((x) => (x.id === next.id ? next : x)),
@@ -343,7 +347,7 @@ function InstallationCard({
               {connector?.name ?? i.connectorId} · added {ago(i.createdAt)}
             </p>
           </div>
-          <InstallationStatusLabel status={i.status} />
+          {listens && <InstallationStatusLabel status={i.status} />}
           <Switch
             checked={i.enabled}
             label={`${i.enabled ? "Disable" : "Enable"} ${i.name}`}
@@ -352,7 +356,7 @@ function InstallationCard({
           />
         </div>
         {(i.statusDetail ||
-          (i.status === "idle" && !provider) ||
+          (i.status === "idle" && !provider && listens) ||
           test.data ||
           toggle.error ||
           test.error) && (
@@ -362,7 +366,7 @@ function InstallationCard({
                 {i.statusDetail}
               </p>
             )}
-            {i.status === "idle" && !i.statusDetail && !provider && (
+            {i.status === "idle" && !i.statusDetail && !provider && listens && (
               <p className="text-muted">Not listening: no enabled workflow uses it.</p>
             )}
             {test.data && (

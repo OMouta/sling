@@ -42,6 +42,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
             configSchema: toJsonSchema(c.configSchema),
             nodeTypes: c.nodes.map((n) => n.type),
             isExecutionProvider: c.executionProvider !== undefined,
+            hasSource: c.source !== undefined,
             extension: null,
           },
       ),

@@ -473,6 +473,8 @@ export interface ConnectorView {
   nodeTypes: string[];
   /** Creates sandboxes (Docker, Railway). Listed with providers rather than with triggers and actions. */
   isExecutionProvider?: boolean;
+  /** Listens for events, such as new mail. Connectors without one have no listening status. */
+  hasSource?: boolean;
   /** The extension that adds this connector. Null for connectors built into Sling. */
   extension?: ExtensionRef | null;
 }

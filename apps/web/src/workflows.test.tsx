@@ -450,6 +450,42 @@ describe("connectors", () => {
     });
   });
 
+  it("shows no listening status for a connector that has no event source", async () => {
+    connectors.push({
+      id: "calendar",
+      name: "Calendar",
+      description: "Your calendar.",
+      setupHelp: null,
+      credentialsSchema: {},
+      secretFields: [],
+      configSchema: {},
+      nodeTypes: ["calendar.list_events"],
+      hasSource: false,
+      extension: null,
+    });
+    installations.push({
+      id: "ins_cal",
+      connectorId: "calendar",
+      name: "My calendar",
+      enabled: true,
+      status: "idle",
+      statusDetail: null,
+      config: {},
+      hasCredentials: true,
+      createdAt: "2026-11-05T10:00:00.000Z",
+      updatedAt: "2026-11-05T10:00:00.000Z",
+    });
+    try {
+      renderAt("/connectors");
+      const card = (await screen.findByText("My calendar")).closest("article") as HTMLElement;
+      expect(within(card).queryByText(/Not listening/)).toBeNull();
+      expect(within(card).queryByText("idle")).toBeNull();
+    } finally {
+      connectors.pop();
+      installations.pop();
+    }
+  });
+
   it("tests an installation", async () => {
     renderAt("/connectors");
     const card = (await screen.findByText("Sling bot")).closest("article") as HTMLElement;
