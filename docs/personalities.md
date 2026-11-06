@@ -2,12 +2,23 @@
 
 A personality is who answers in a chat: its own instructions, the Sling tools it may use, a color, and a moving glyph. Make and edit them under **Personalities** in the sidebar.
 
-A new workspace has two:
+A new workspace has one, Sling: the default, with every tool. **From template** adds ready-made ones in a click, and each can be changed after:
 
-| Personality | Tools | For |
-|---|---|---|
-| Sling (the default) | Commands and coding tasks | Your machines, repos, and coding agents |
-| Finance | None | Money questions. It can't see your machines |
+| Group | Personality | Tools | For |
+|---|---|---|---|
+| Your machines | Sling | Commands, coding tasks | Your machines, repos, and coding agents |
+| | Ops | Commands | Disk, memory, processes, services, and logs, without touching code |
+| | Incident | Commands, coding tasks | Finding why something broke, then handing the fix to a coding agent |
+| Thinking | Research | None | Explaining a topic and comparing options |
+| | Planner | None | Turning a goal into steps and a schedule |
+| Words | Writer | None | Drafting and editing emails, posts, and docs |
+| | Tutor | None | Teaching a subject step by step |
+| Everyday | Finance | None | Budgets, spending, and money questions |
+| | Travel | None | Trips around your dates and budget |
+| | Chef | None | Recipes from what's in your kitchen |
+| | Language coach | None | Practice in a language you're learning |
+
+With only one personality there's nothing to pick, so the new chat screen shows no row until you add another.
 
 ## Picking one
 

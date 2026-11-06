@@ -8,6 +8,7 @@ import {
   PERSONALITY_TOOL_INFO,
   PERSONALITY_TOOLS,
   type PersonalityColor,
+  type PersonalityTemplateView,
   type PersonalityTool,
   type PersonalityView,
 } from "@sling/core";
@@ -16,9 +17,11 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
+  Check,
   Copy,
   Drama,
   Ellipsis,
+  LayoutTemplate,
   Plus,
   Star,
   Terminal,
@@ -33,6 +36,7 @@ import {
   Button,
   Card,
   cx,
+  Dialog,
   Empty,
   ErrorText,
   Field,
@@ -52,6 +56,7 @@ import {
   colorVar,
   personalitiesKey,
   usePersonalities,
+  usePersonalityTemplates,
 } from "../lib/personalities.ts";
 import { personalityRoute } from "../router.tsx";
 
@@ -78,19 +83,25 @@ export function PersonalitiesPage() {
   const personalities = usePersonalities();
   const navigate = useNavigate();
   const list = personalities.data ?? [];
+  const [gallery, setGallery] = useState(false);
   return (
     <Page
       title="Personalities"
       toolbar={
         <Toolbar
           actions={
-            <Button
-              variant="primary"
-              icon={Plus}
-              onClick={() => void navigate({ to: "/personalities/$id", params: { id: "new" } })}
-            >
-              New personality
-            </Button>
+            <>
+              <Button icon={LayoutTemplate} onClick={() => setGallery(true)}>
+                From template
+              </Button>
+              <Button
+                variant="primary"
+                icon={Plus}
+                onClick={() => void navigate({ to: "/personalities/$id", params: { id: "new" } })}
+              >
+                New personality
+              </Button>
+            </>
           }
         >
           <p className="min-w-0 text-xs leading-4 text-muted max-lg:hidden">
@@ -122,7 +133,112 @@ export function PersonalitiesPage() {
           ))}
         </div>
       )}
+      {gallery && <TemplateGallery list={list} onClose={() => setGallery(false)} />}
     </Page>
+  );
+}
+
+/** Ready-made personalities, grouped, to add with one click. */
+function TemplateGallery({ list, onClose }: { list: PersonalityView[]; onClose: () => void }) {
+  const qc = useQueryClient();
+  const templates = usePersonalityTemplates();
+  const added = new Set(list.map((p) => p.templateKey).filter(Boolean));
+  const add = useMutation({
+    mutationFn: (key: string) => api.post<PersonalityView>(`/api/personalities/templates/${key}`),
+    onSuccess: (p) =>
+      qc.setQueryData<PersonalityView[]>(personalitiesKey, (l) =>
+        l && !l.some((x) => x.id === p.id) ? [...l, p] : l,
+      ),
+  });
+  const groups = new Map<string, PersonalityTemplateView[]>();
+  for (const t of templates.data ?? []) groups.set(t.group, [...(groups.get(t.group) ?? []), t]);
+
+  return (
+    <Dialog
+      wide
+      title="Add from templates"
+      description="Each one starts with its own instructions, tools, and look. Change any of it after."
+      onClose={onClose}
+      footer={
+        <Button onClick={onClose} data-autofocus>
+          Done
+        </Button>
+      }
+    >
+      {templates.isPending && <Skeleton className="h-40 w-full rounded-xl" />}
+      <ErrorText error={templates.error ?? add.error} />
+      <div className="space-y-5">
+        {[...groups].map(([group, items]) => (
+          <section key={group} className="space-y-2">
+            <h3 className="section-label px-0.5">{group}</h3>
+            <ul className="grid gap-2 sm:grid-cols-2">
+              {items.map((t) => (
+                <TemplateItem
+                  key={t.key}
+                  template={t}
+                  added={added.has(t.key)}
+                  busy={add.isPending && add.variables === t.key}
+                  onAdd={() => add.mutate(t.key)}
+                />
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </Dialog>
+  );
+}
+
+function TemplateItem({
+  template: t,
+  added,
+  busy,
+  onAdd,
+}: {
+  template: PersonalityTemplateView;
+  added: boolean;
+  busy: boolean;
+  onAdd: () => void;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <li
+      onPointerEnter={() => setHover(true)}
+      onPointerLeave={() => setHover(false)}
+      className="flex items-start gap-3 rounded-xl bg-surface-2 p-3 shadow-raised"
+    >
+      <span className="grid size-8 shrink-0 place-items-center">
+        <Glyph
+          shape={t.shape}
+          color={t.color}
+          size={26}
+          seed={t.key}
+          lively={hover}
+          still={!hover}
+        />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-medium">{t.name}</span>
+        <span className="mt-0.5 block text-xs leading-4 text-muted">{t.description}</span>
+        <span className="mt-1.5 flex items-center gap-1.5 text-xs text-subtle">
+          {t.tools.map((tool) => {
+            const Icon = TOOL_ICONS[tool];
+            return <Icon key={tool} aria-hidden="true" size={12} className="shrink-0" />;
+          })}
+          {toolsLine(t.tools)}
+        </span>
+      </span>
+      {added ? (
+        <span className="flex h-[26px] shrink-0 items-center gap-1 px-1.5 text-xs text-muted">
+          <Check aria-hidden="true" size={13} className="text-ok" />
+          Added
+        </span>
+      ) : (
+        <Button size="sm" icon={Plus} busy={busy} onClick={onAdd} aria-label={`Add ${t.name}`}>
+          Add
+        </Button>
+      )}
+    </li>
   );
 }
 

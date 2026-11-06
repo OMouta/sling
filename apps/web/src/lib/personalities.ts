@@ -1,4 +1,4 @@
-import type { PersonalityColor, PersonalityView } from "@sling/core";
+import type { PersonalityColor, PersonalityTemplateView, PersonalityView } from "@sling/core";
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { api } from "./api.ts";
 
@@ -9,6 +9,15 @@ export function usePersonalities() {
     queryKey: personalitiesKey,
     queryFn: () => api.get<PersonalityView[]>("/api/personalities"),
     staleTime: 60_000,
+  });
+}
+
+/** Ready-made personalities to add. They only change with the server. */
+export function usePersonalityTemplates() {
+  return useQuery({
+    queryKey: ["personality-templates"],
+    queryFn: () => api.get<PersonalityTemplateView[]>("/api/personalities/templates"),
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }
 
