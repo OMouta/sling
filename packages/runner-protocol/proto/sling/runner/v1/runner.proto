@@ -188,6 +188,9 @@ message Repo {
   // The command a DEPLOY RepoAction runs for this repo, set only with
   // `sling-runner repo set <name> deploy-command`. Empty when none is set.
   string deploy_command = 5;
+  // How long that command may run before the Runner stops it, set with
+  // `sling-runner repo set <name> deploy-timeout`. 0 when no command is set.
+  uint32 deploy_timeout_seconds = 6;
 }
 
 // ---------------------------------------------------------------- tasks

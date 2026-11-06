@@ -655,6 +655,14 @@ export declare type Repo = Message<"sling.runner.v1.Repo"> & {
    * @generated from field: string deploy_command = 5;
    */
   deployCommand: string;
+
+  /**
+   * How long that command may run before the Runner stops it, set with
+   * `sling-runner repo set <name> deploy-timeout`. 0 when no command is set.
+   *
+   * @generated from field: uint32 deploy_timeout_seconds = 6;
+   */
+  deployTimeoutSeconds: number;
 };
 
 /**
