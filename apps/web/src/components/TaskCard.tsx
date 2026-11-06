@@ -44,7 +44,7 @@ import {
   taskRepo,
   useDeployTargets,
 } from "../lib/deploys.ts";
-import { between, duration, plural, shortSha } from "../lib/format.ts";
+import { between, duration, plural, shortSha, withoutLocalLinks } from "../lib/format.ts";
 import { agentModels, useModelCatalog } from "../lib/models.ts";
 import { apply } from "../lib/realtime.ts";
 import { pendingFallbackFor } from "../lib/sandbox.ts";
@@ -55,6 +55,7 @@ import {
 } from "../lib/taskEnvironment.ts";
 import type { TaskDetail } from "../lib/types.ts";
 import { useNow } from "../lib/useNow.ts";
+import { ChatMarkdown } from "./ChatMarkdown.tsx";
 import { CheckList, DeployPlanText } from "./DeployBits.tsx";
 import { ModeBadge } from "./ModeBadge.tsx";
 import { SandboxFallbackCard } from "./SandboxFallbackCard.tsx";
@@ -267,14 +268,11 @@ export function TaskCard({
           </p>
         )}
         {task.summary && (
-          <p
-            className={cx(
-              "text-[13px] leading-5 whitespace-pre-wrap text-soft",
-              compact && "line-clamp-6",
-            )}
+          <div
+            className={cx("prose-chat text-[13px] leading-5 text-soft", compact && "line-clamp-6")}
           >
-            {task.summary}
-          </p>
+            <ChatMarkdown>{withoutLocalLinks(task.summary)}</ChatMarkdown>
+          </div>
         )}
         {task.error && <p className="text-[13px] text-danger">{task.error}</p>}
 

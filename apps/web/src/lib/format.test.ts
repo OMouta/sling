@@ -1,0 +1,13 @@
+import { describe, expect, it } from "vitest";
+import { withoutLocalLinks } from "./format.ts";
+
+describe("withoutLocalLinks", () => {
+  it("turns links to paths on the agent's machine into code, and keeps web links", () => {
+    expect(
+      withoutLocalLinks(
+        "Changed the year in [index.html](/tmp/worktrees/tsk_1/index.html:6), see [PR](https://github.com/a/b/pull/1).",
+      ),
+    ).toBe("Changed the year in `index.html`, see [PR](https://github.com/a/b/pull/1).");
+    expect(withoutLocalLinks("[`a.ts`](file:///x/a.ts) and [b](~/b.md)")).toBe("`a.ts` and `b`");
+  });
+});

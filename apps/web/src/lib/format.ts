@@ -33,3 +33,14 @@ export function between(start: string | null, end: string | null, now = Date.now
   if (!start) return null;
   return (end ? new Date(end).getTime() : now) - new Date(start).getTime();
 }
+
+/**
+ * A coding agent's summary links files by their path on its own machine,
+ * which leads nowhere in a browser. Shows each such link's text as code.
+ */
+export function withoutLocalLinks(markdown: string): string {
+  return markdown.replace(
+    /\[([^\]\n]+)\]\(((?:\/|~\/|file:)[^)\s]*)\)/g,
+    (_m, text: string) => `\`${text.replaceAll("`", "")}\``,
+  );
+}
