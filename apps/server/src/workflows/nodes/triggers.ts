@@ -71,8 +71,10 @@ export const scheduleTrigger = defineNode({
       ),
     timezone: z
       .string()
-      .default("UTC")
-      .describe("Time zone the schedule follows, such as Europe/Lisbon."),
+      .default("")
+      .describe(
+        "Time zone the schedule follows, such as Europe/Lisbon. Leave empty to follow the workspace's time zone from Settings.",
+      ),
   }),
   checkConfig: (config) =>
     typeof config.cron === "string" && CRON.test(config.cron.trim())

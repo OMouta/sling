@@ -6,6 +6,7 @@ import { and, eq } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import type { AppContext } from "../context.ts";
 import { deriveKey, sha256Hex } from "../crypto.ts";
+import { workspaceTimeZone } from "../timezone.ts";
 
 export const SCHEDULE_QUEUE = "workflow-schedule";
 
@@ -82,19 +83,61 @@ export async function syncTriggers(ctx: AppContext, workflowId: string): Promise
     for (const o of old) {
       if (o.event === SLING_EVENTS.schedule) await boss.unschedule(SCHEDULE_QUEUE, o.id);
     }
+    let workspaceZone: string | null = null;
     for (const r of rows) {
       if (r.event !== SLING_EVENTS.schedule) continue;
-      const cron = String(r.config?.cron ?? "");
-      const tz =
-        typeof r.config?.timezone === "string" && r.config.timezone ? r.config.timezone : "UTC";
-      try {
-        await boss.schedule(SCHEDULE_QUEUE, cron, { triggerId: r.id }, { key: r.id, tz });
-      } catch (err) {
-        ctx.log.warn({ err, workflowId, nodeId: r.nodeId }, "couldn't schedule a trigger");
+      let tz = scheduleZone(r.config);
+      if (!tz) {
+        workspaceZone ??= await workspaceTimeZone(ctx, r.workspaceId);
+        tz = workspaceZone;
       }
+      await schedule(ctx, r, tz);
     }
   }
   if (wf) await ctx.connectors.reconcile(wf.workspaceId);
+}
+
+/** A schedule's own time zone. Null when it's empty, which follows the workspace's. */
+function scheduleZone(config: Record<string, unknown> | null | undefined): string | null {
+  const tz = config?.timezone;
+  return typeof tz === "string" && tz.trim() ? tz.trim() : null;
+}
+
+async function schedule(
+  ctx: AppContext,
+  r: { id: string; workflowId: string; nodeId: string; config?: Record<string, unknown> | null },
+  tz: string,
+) {
+  const cron = String(r.config?.cron ?? "");
+  try {
+    await ctx.boss?.schedule(SCHEDULE_QUEUE, cron, { triggerId: r.id }, { key: r.id, tz });
+  } catch (err) {
+    ctx.log.warn(
+      { err, workflowId: r.workflowId, nodeId: r.nodeId },
+      "couldn't schedule a trigger",
+    );
+  }
+}
+
+/**
+ * Moves the workspace's schedules that follow its time zone to the new one.
+ * Schedules with a zone of their own stay as they are.
+ */
+export async function followWorkspaceZone(ctx: AppContext, workspaceId: string): Promise<void> {
+  if (!ctx.boss) return;
+  const rows = await ctx.db
+    .select()
+    .from(schema.workflowTriggers)
+    .where(
+      and(
+        eq(schema.workflowTriggers.workspaceId, workspaceId),
+        eq(schema.workflowTriggers.event, SLING_EVENTS.schedule),
+      ),
+    );
+  const following = rows.filter((r) => !scheduleZone(r.config));
+  if (following.length === 0) return;
+  const tz = await workspaceTimeZone(ctx, workspaceId);
+  for (const r of following) await schedule(ctx, r, tz);
 }
 
 /** Starts the scheduler queue's worker. */

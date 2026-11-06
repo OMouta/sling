@@ -19,6 +19,7 @@ import { encryptSecret, SECRET_KEY_VERSION } from "../crypto.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import { notificationSettings } from "../push/payloads.ts";
 import { isTimeZone } from "../timezone.ts";
+import { followWorkspaceZone } from "../workflows/triggers.ts";
 
 const ModelInput = z.object({
   provider: z.enum(["openai", "anthropic", "openai-compatible"]),
@@ -126,6 +127,7 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
         subjectId: actor.workspaceId,
         details: { timeZone },
       });
+      await followWorkspaceZone(ctx, actor.workspaceId);
       return { ok: true };
     },
   );
