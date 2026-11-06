@@ -6,6 +6,7 @@ import {
   type LucideIcon,
   Plug,
   Puzzle,
+  Rocket,
   Settings,
   ShieldCheck,
   Workflow,
@@ -21,6 +22,7 @@ export interface NavItem {
     | "/extensions"
     | "/machines"
     | "/sandboxes"
+    | "/deploys"
     | "/settings";
   label: string;
   icon: LucideIcon;
@@ -37,5 +39,6 @@ export const NAV: NavItem[] = [
   { to: "/extensions", label: "Extensions", icon: Puzzle, section: "automation" },
   { to: "/machines", label: "Machines", icon: Laptop, section: "infrastructure" },
   { to: "/sandboxes", label: "Sandboxes", icon: Box, section: "infrastructure" },
+  { to: "/deploys", label: "Deploys", icon: Rocket, section: "infrastructure" },
   { to: "/settings", label: "Settings", icon: Settings, section: "footer" },
 ];

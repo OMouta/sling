@@ -68,6 +68,12 @@ const sandboxesRoute = createRoute({
   path: "/sandboxes",
   component: SandboxesPage,
 });
+// Visited now and then, so it loads on first visit (or on hover over its link).
+const deploysRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/deploys",
+  component: lazyRouteComponent(() => import("./pages/Deploys.tsx"), "DeploysPage"),
+});
 const approvalsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/approvals",
@@ -155,6 +161,7 @@ const routeTree = rootRoute.addChildren([
     chatsRoute,
     machinesRoute,
     sandboxesRoute,
+    deploysRoute,
     approvalsRoute,
     settingsRoute,
     tasksRoute,
