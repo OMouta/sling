@@ -1,0 +1,18 @@
+{
+  "format": "sling.extension/v1",
+  "id": "ntfy",
+  "name": "ntfy",
+  "version": "1.0.0",
+  "description": "Push notifications through ntfy.sh or your own ntfy server. Publish from a workflow, and start workflows from messages on the topics you watch.",
+  "publisher": "Sling",
+  "sdk": "^1.0.0",
+  "main": "extension.mjs",
+  "icon": "icon.svg",
+  "permissions": {
+    "network": { "hosts": ["ntfy.sh"], "configHosts": ["server"], "localNetwork": false },
+    "approvals": false,
+    "sandboxes": false
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://ntfy.sh"
+}

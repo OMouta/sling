@@ -1,0 +1,23 @@
+{
+  "name": "@sling/extension-ntfy",
+  "version": "1.0.0",
+  "description": "The ntfy extension that ships with Sling.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "sling-ext build",
+    "check": "sling-ext check",
+    "pack": "sling-ext pack",
+    "typecheck": "tsc -p .",
+    "test": "vitest run src",
+    "test:live": "vitest run test/"
+  },
+  "dependencies": {
+    "@sling/connector-sdk": "workspace:*",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@sling/extension-cli": "workspace:*"
+  }
+}
