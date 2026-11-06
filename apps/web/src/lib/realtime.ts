@@ -16,6 +16,7 @@ import type { WorkflowDetailView } from "@sling/workflow";
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { byActivity, conversationsKey, previewText } from "./conversations.ts";
+import { applyDeployTargetEvent } from "./deploys.ts";
 import { applyExtension, forgetExtension } from "./extensionApi.ts";
 import { modelsKey } from "./models.ts";
 import { applyPersonalityEvent } from "./personalities.ts";
@@ -362,6 +363,10 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       return;
     case "extension.removed":
       forgetExtension(qc, ev.id);
+      return;
+    case "deploy_target.updated":
+    case "deploy_target.removed":
+      applyDeployTargetEvent(qc, ev);
       return;
   }
 }
