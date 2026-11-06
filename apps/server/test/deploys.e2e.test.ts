@@ -891,6 +891,8 @@ function flows(m: Machine) {
       expect(reported.text).toContain("Delivery step verify: succeeded after 1 attempt");
       const t = await target("Website");
       expect(t.lastDeploy).toMatchObject({ taskId, taskTitle: title, state: "succeeded" });
+      // The site was down before the fix; the page shows what verify saw since.
+      expect(t.lastCheck).toMatchObject({ up: true, failures: 0 });
     });
   }
 

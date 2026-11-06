@@ -5,6 +5,7 @@ import {
   type DeployTargetView,
   MERGE_METHODS,
   newId,
+  type VerifyDetail,
 } from "@sling/core";
 import { type DeployHook, type DeployLastCheck, schema } from "@sling/db";
 import type { RepoActionOutput, RepoActionResult } from "@sling/runner-protocol";
@@ -137,6 +138,29 @@ function mergeHook(
 
 function lastCheckView(c: DeployLastCheck | null): DeployTargetView["lastCheck"] {
   return c ? { at: c.at, up: c.up, failures: c.failures, results: c.results } : null;
+}
+
+/**
+ * What the target looked like most recently: its own last check, or a verify
+ * that finished after it. Verify doesn't write `lastCheck`, which the site
+ * down alert compares against, but the page shouldn't show a result older
+ * than the one verify just saw.
+ */
+function newestCheck(
+  c: DeployLastCheck | null,
+  d: { kind: string; state: string; detail: VerifyDetail | null } | undefined,
+): DeployTargetView["lastCheck"] {
+  const v = d?.kind === "verify" ? d.detail : null;
+  if (!v?.finishedAt || v.checks.length === 0 || (c && c.at >= v.finishedAt)) {
+    return lastCheckView(c);
+  }
+  const up = d?.state === "succeeded";
+  return {
+    at: v.finishedAt,
+    up,
+    failures: up ? 0 : Math.max(1, c?.failures ?? 0),
+    results: v.checks,
+  };
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -297,6 +321,8 @@ export class DeployService {
           taskTitle: schema.tasks.title,
           commitSha: schema.actions.commitSha,
           state: schema.actions.state,
+          kind: schema.actions.kind,
+          detail: schema.actions.detail,
           finishedAt: schema.actions.finishedAt,
           sentAt: schema.actions.sentAt,
           createdAt: schema.actions.createdAt,
@@ -346,7 +372,7 @@ export class DeployService {
         versionUrl: t.versionUrl,
         settleSeconds: t.settleSeconds,
         timeoutSeconds: t.timeoutSeconds,
-        lastCheck: lastCheckView(t.lastCheck),
+        lastCheck: newestCheck(t.lastCheck, d),
         lastDeploy: d
           ? {
               taskId: d.taskId,
