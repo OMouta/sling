@@ -1,4 +1,4 @@
-import type { AssistantChoice, ChatSettings, PermissionMode } from "@sling/core";
+import type { AssistantChoice, ChatSettings, PermissionMode, PersonalityView } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowUp } from "lucide-react";
@@ -11,6 +11,7 @@ import {
 } from "../components/ChatActivity.tsx";
 import { ChatMarkdown } from "../components/ChatMarkdown.tsx";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
+import { Glyph } from "../components/Glyph.tsx";
 import { Logo } from "../components/Logo.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
@@ -18,6 +19,7 @@ import { TaskCard } from "../components/TaskCard.tsx";
 import { Badge, Button, cx, Dot, ErrorText, Skeleton, type Tone } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
+import { usePersonalities } from "../lib/personalities.ts";
 import { seedLiveReply, useLiveReply } from "../lib/realtime.ts";
 import type { ConversationDetail, MessageView, TaskView } from "../lib/types.ts";
 import { chatRoute } from "../router.tsx";
@@ -59,6 +61,7 @@ export function ChatPage() {
   });
   const modeChange = useModeChange((mode) => setMode.mutate(mode));
   const catalog = useModelCatalog();
+  const personalities = usePersonalities();
   // Choices apply right away in the UI; the server stores them for the next turn.
   const setSettings = useMutation({
     mutationFn: (settings: Partial<ChatSettings>) =>
@@ -162,6 +165,11 @@ export function ChatPage() {
   }
 
   const { conversation, agentStatus, usage } = detail.data;
+  // The list has the latest look; the chat's own copy covers a deleted personality.
+  const personality =
+    personalities.data?.find((p) => p.id === detail.data.personality?.id) ??
+    detail.data.personality;
+  const hasTools = (personality?.tools.length ?? 1) > 0;
   const thinking = agentStatus === "thinking";
   const tokens = usage.inputTokens + usage.outputTokens;
 
@@ -189,11 +197,28 @@ export function ChatPage() {
     <Page
       title={conversation.title}
       badge={
-        thinking ? (
-          <Badge tone="accent" dot>
-            Thinking
-          </Badge>
-        ) : undefined
+        <span className="flex items-center gap-2">
+          {personality && (
+            <span
+              className="flex h-[22px] items-center gap-1.5 rounded-full bg-surface-2 pr-2 pl-1.5 text-xs text-soft shadow-raised"
+              title={personality.description || personality.name}
+            >
+              <Glyph
+                shape={personality.shape}
+                color={personality.color}
+                size={13}
+                seed={personality.id}
+                active={thinking}
+              />
+              <span className="max-w-32 truncate">{personality.name}</span>
+            </span>
+          )}
+          {thinking && (
+            <Badge tone="accent" dot>
+              Thinking
+            </Badge>
+          )}
+        </span>
       }
       controls={
         tokens > 0 && (
@@ -220,11 +245,12 @@ export function ChatPage() {
                   message={item.message}
                   activity={activity}
                   tasks={tasks}
+                  personality={personality}
                 />
               ),
             )}
             {thinking && (
-              <AssistantRow>
+              <AssistantRow personality={personality} active>
                 <ReplySteps steps={liveSteps} live ctx={activity} />
                 {!live?.text && !busyStep && (
                   <WorkingLine startedAt={live?.startedAt ?? openedAt} />
@@ -255,7 +281,7 @@ export function ChatPage() {
                   if (e.key === "Enter" && !e.shiftKey) submit(e);
                 }}
                 aria-label="Message"
-                placeholder="Message Sling"
+                placeholder={`Message ${personality?.name ?? "Sling"}`}
                 className="block min-h-[44px] w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-5 outline-none placeholder:text-subtle focus-visible:outline-none"
               />
               <div className="flex items-center gap-2 px-2 pb-2">
@@ -264,8 +290,8 @@ export function ChatPage() {
                   catalog={catalog.data}
                   assistant={assistant}
                   onAssistant={(choice) => setSettings.mutate({ assistant: choice })}
-                  mode={conversation.mode}
-                  onMode={modeChange.change}
+                  // The mode only limits tools, so a personality without any has no use for it.
+                  {...(hasTools ? { mode: conversation.mode, onMode: modeChange.change } : {})}
                 />
                 <Button
                   type="submit"
@@ -289,13 +315,37 @@ export function ChatPage() {
   );
 }
 
-/** An assistant reply: its work in order, then the answer. */
-function AssistantRow({ children }: { children?: React.ReactNode }) {
+/**
+ * An assistant reply: its work in order, then the answer. The personality's
+ * glyph marks it, and moves faster while the reply is being written.
+ */
+function AssistantRow({
+  personality,
+  active = false,
+  children,
+}: {
+  personality: PersonalityView | null | undefined;
+  active?: boolean;
+  children?: React.ReactNode;
+}) {
   return (
     <div className="flex gap-3">
-      <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg bg-accent text-white shadow-primary">
-        <Logo className="size-3.5" />
-      </span>
+      {personality ? (
+        <span className="mt-0.5 grid size-6 shrink-0 place-items-center">
+          <Glyph
+            shape={personality.shape}
+            color={personality.color}
+            size={22}
+            seed={personality.id}
+            active={active}
+            still={!active}
+          />
+        </span>
+      ) : (
+        <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-lg bg-accent text-white shadow-primary">
+          <Logo className="size-3.5" />
+        </span>
+      )}
       <div className="min-w-0 flex-1 space-y-2.5">{children}</div>
     </div>
   );
@@ -348,10 +398,12 @@ function Message({
   message,
   activity,
   tasks,
+  personality,
 }: {
   message: MessageView;
   activity: ActivityContext;
   tasks: Map<string, TaskView>;
+  personality: PersonalityView | null | undefined;
 }) {
   if (message.role === "system") return <SystemNote message={message} tasks={tasks} />;
   if (message.role === "user") {
@@ -364,7 +416,7 @@ function Message({
     );
   }
   return (
-    <AssistantRow>
+    <AssistantRow personality={personality}>
       {message.trace && <ReplySteps steps={message.trace.steps} ctx={activity} />}
       <div className="prose-chat text-sm leading-6">
         <ChatMarkdown>{message.text}</ChatMarkdown>

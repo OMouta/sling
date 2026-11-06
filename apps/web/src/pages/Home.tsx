@@ -2,6 +2,7 @@ import type {
   AssistantChoice,
   ConversationView,
   PermissionMode,
+  PersonalityView,
   RunnerView,
   TaskView,
 } from "@sling/core";
@@ -10,16 +11,23 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, ArrowUp, Check, ChevronDown, Cpu, Laptop } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
-import { Logo } from "../components/Logo.tsx";
+import { Glyph } from "../components/Glyph.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
+import { PersonalityBar, useArrowKeys, useSwipe } from "../components/PersonalitySwitcher.tsx";
 import { TaskStateBadge } from "../components/TaskCard.tsx";
-import { Button, Card, cx, ErrorText, Kbd } from "../components/ui.tsx";
+import { Button, Card, cx, ErrorText, Kbd, Skeleton } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { ago } from "../lib/format.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
 import { NEW_CHAT_EVENT } from "../lib/newChat.ts";
+import {
+  colorVar,
+  rememberedPersonality,
+  rememberPersonality,
+  usePersonalities,
+} from "../lib/personalities.ts";
 import type { Settings } from "../lib/types.ts";
 
 export function HomePage() {
@@ -51,9 +59,40 @@ export function HomePage() {
   const [mode, setMode] = useState<PermissionMode | undefined>();
   const modeChange = useModeChange(setMode);
 
+  // The personality the chat starts with. It stays with the chat after that.
+  const personalities = usePersonalities();
+  const list = personalities.data ?? [];
+  const [pickedId, setPickedId] = useState(rememberedPersonality);
+  const picked = list.find((p) => p.id === pickedId) ?? list.find((p) => p.isDefault) ?? list[0];
+  const index = picked ? list.indexOf(picked) : -1;
+  // Which way the new one slides in: from the right going forward, the left going back.
+  const [direction, setDirection] = useState<1 | -1 | 0>(0);
+  const pick = (p: PersonalityView) => {
+    if (!picked || p.id === picked.id) return;
+    setDirection(list.indexOf(p) > index ? 1 : -1);
+    setPickedId(p.id);
+    rememberPersonality(p.id);
+  };
+  const prev = () => {
+    const p = list[index - 1];
+    if (p) pick(p);
+  };
+  const next = () => {
+    const p = list[index + 1];
+    if (p) pick(p);
+  };
+  // Touch screens swipe; keyboards use the arrow keys.
+  const swipe = useSwipe(prev, next, index > 0, index >= 0 && index < list.length - 1);
+  useArrowKeys(prev, next);
+  const switches = Boolean(picked) && list.length > 1;
+  const hasTools = (picked?.tools.length ?? 1) > 0;
+
   const start = useMutation({
     mutationFn: async (message: string) => {
-      const c = await api.post<ConversationView>("/api/conversations");
+      const c = await api.post<ConversationView>(
+        "/api/conversations",
+        picked ? { personalityId: picked.id } : {},
+      );
       if (mode || assistant) {
         await api.patch(`/api/conversations/${c.id}`, {
           ...(mode ? { mode } : {}),
@@ -87,44 +126,85 @@ export function HomePage() {
 
   return (
     <Page title="Chat">
-      {/* The first screen: a greeting, then the composer at the bottom. Recent tasks sit below it. */}
+      {/* The first screen: who you're talking to, then the composer at the bottom. Recent tasks sit below it. */}
       <div className="flex min-h-full flex-col">
         <div className={cx("mx-auto flex w-full flex-1 flex-col px-5", CHAT_WIDTH)}>
-          <div className="flex flex-1 flex-col items-center justify-center py-10 text-center">
-            <span className="mb-4 grid size-11 place-items-center rounded-xl bg-accent text-white shadow-primary">
-              <Logo className="size-6" />
-            </span>
-            <h2 className="text-2xl font-medium tracking-tight text-balance">
-              What should we work on?
-            </h2>
-            <p className="mt-1.5 max-w-md text-[13px] leading-5 text-pretty text-muted">
-              Sling runs commands on your machines and hands coding work to your coding agent, there
-              or in a fresh sandbox.
-            </p>
-            {!ready && settings.isSuccess && runners.isSuccess && (
-              <Card className="mt-6 w-full max-w-xl divide-y divide-border text-left">
-                <Step
-                  done={hasMachine}
-                  n={1}
-                  icon={Laptop}
-                  title="Pair a machine"
-                  to="/machines"
-                  search={{ pair: true }}
-                >
-                  The computer that has your repos and a coding agent logged in, Codex or Claude
-                  Code. Sling chats and codes through it, on your own subscription.
-                </Step>
-                <Step
-                  done={hasModel}
-                  n={2}
-                  icon={Cpu}
-                  title="Log in to a coding agent"
-                  to="/machines"
-                >
-                  Run codex login or claude auth login on that machine. No API key needed.
-                </Step>
-              </Card>
+          <div className="flex flex-1 flex-col">
+            {/* One place to pick who you're talking to. It scrolls sideways when there are many. */}
+            {switches && picked && (
+              <div className="flex justify-center pt-5">
+                <PersonalityBar list={list} value={picked} onChange={pick} />
+              </div>
             )}
+            <div
+              {...swipe.handlers}
+              style={swipe.style}
+              className="flex flex-1 flex-col items-center justify-center py-10 text-center select-none"
+            >
+              {picked ? (
+                <div
+                  key={picked.id}
+                  className={cx(
+                    "flex flex-col items-center",
+                    direction > 0 && "anim-swap-next",
+                    direction < 0 && "anim-swap-prev",
+                  )}
+                >
+                  <div className="relative mb-4 grid size-20 place-items-center">
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-2 rounded-full opacity-30 blur-2xl"
+                      style={{ background: colorVar(picked.color) }}
+                    />
+                    <Glyph
+                      shape={picked.shape}
+                      color={picked.color}
+                      size={60}
+                      seed={picked.id}
+                      lively
+                      className="relative"
+                    />
+                  </div>
+                  <h2 className="text-2xl font-medium tracking-tight text-balance">
+                    {picked.name}
+                  </h2>
+                  {/* Two lines kept, so switching never moves the glyph. */}
+                  <p className="mt-1.5 line-clamp-2 min-h-10 max-w-md text-[13px] leading-5 text-pretty text-muted">
+                    {picked.description}
+                  </p>
+                </div>
+              ) : (
+                <div aria-hidden="true" className="flex flex-col items-center">
+                  <Skeleton className="mb-4 size-20 rounded-full" />
+                  <Skeleton className="h-7 w-32" />
+                  <Skeleton className="mt-2 mb-6 h-4 w-64" />
+                </div>
+              )}
+              {!ready && settings.isSuccess && runners.isSuccess && (
+                <Card className="mt-6 w-full max-w-xl divide-y divide-border text-left select-text">
+                  <Step
+                    done={hasMachine}
+                    n={1}
+                    icon={Laptop}
+                    title="Pair a machine"
+                    to="/machines"
+                    search={{ pair: true }}
+                  >
+                    The computer that has your repos and a coding agent logged in, Codex or Claude
+                    Code. Sling chats and codes through it, on your own subscription.
+                  </Step>
+                  <Step
+                    done={hasModel}
+                    n={2}
+                    icon={Cpu}
+                    title="Log in to a coding agent"
+                    to="/machines"
+                  >
+                    Run codex login or claude auth login on that machine. No API key needed.
+                  </Step>
+                </Card>
+              )}
+            </div>
           </div>
 
           <form onSubmit={submit}>
@@ -143,7 +223,11 @@ export function HomePage() {
                   if (e.key === "Enter" && !e.shiftKey) submit(e);
                 }}
                 aria-label="Message"
-                placeholder="The footer year in site is hardcoded. Make it dynamic and add a test."
+                placeholder={
+                  !picked || picked.tools.includes("coding")
+                    ? "The footer year in site is hardcoded. Make it dynamic and add a test."
+                    : `Message ${picked.name}`
+                }
                 className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 outline-none placeholder:text-subtle focus-visible:outline-none disabled:cursor-not-allowed"
                 disabled={!ready}
               />
@@ -153,8 +237,13 @@ export function HomePage() {
                   catalog={catalog.data}
                   assistant={assistant ?? catalog.data?.defaults.assistant ?? null}
                   onAssistant={setAssistant}
-                  mode={mode ?? settings.data?.defaultMode ?? "auto"}
-                  onMode={modeChange.change}
+                  // The mode only limits tools, so a personality without any has no use for it.
+                  {...(hasTools
+                    ? {
+                        mode: mode ?? settings.data?.defaultMode ?? "auto",
+                        onMode: modeChange.change,
+                      }
+                    : {})}
                 />
                 <div className="flex shrink-0 items-center gap-2">
                   <ErrorText error={start.error} />
@@ -174,7 +263,13 @@ export function HomePage() {
           <div className="flex items-center justify-between gap-3 px-1 pt-2 pb-5 text-xs text-subtle">
             <span className="flex items-center gap-1 max-sm:hidden">
               <Kbd>↵</Kbd> to send, <Kbd>⇧</Kbd>
-              <Kbd>↵</Kbd> for a new line
+              <Kbd>↵</Kbd> for a new line{switches && ","}
+              {switches && (
+                <>
+                  <Kbd>←</Kbd>
+                  <Kbd>→</Kbd> to switch
+                </>
+              )}
             </span>
             {recent.length > 0 && (
               <button
