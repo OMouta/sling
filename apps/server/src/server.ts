@@ -125,6 +125,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   ctx.tasks.onSettled = async (taskId, reason) => {
     // First, so a failing hook below can't keep a sandbox alive.
     await ctx.sandboxes.onTaskSettled(taskId);
+    // Sends in the background, so a slow push service never holds up the rest.
+    ctx.push.taskSettled(taskId, reason);
     await ctx.agent.onTaskSettled(taskId, reason);
     await emitTaskSettled(ctx, taskId, reason);
   };
@@ -165,6 +167,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
       await ctx.engine.stop();
       await ctx.extensions.stop();
       await Promise.race([ctx.sandboxes.idle(), new Promise((ok) => setTimeout(ok, 10_000))]);
+      await Promise.race([ctx.push.idle(), new Promise((ok) => setTimeout(ok, 2_000))]);
       ctx.runners.stop();
       await boss?.stop({ graceful: true, timeout: 10_000 });
       await app.close();

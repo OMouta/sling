@@ -17,6 +17,7 @@ import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { encryptSecret, SECRET_KEY_VERSION } from "../crypto.ts";
 import { actorOf, requireActor } from "../http/session.ts";
+import { notificationSettings } from "../push/payloads.ts";
 import { isTimeZone } from "../timezone.ts";
 
 const ModelInput = z.object({
@@ -38,11 +39,22 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
       .from(schema.workspaces)
       .where(eq(schema.workspaces.id, actor.workspaceId));
     const cfg = await defaultModelConfig(ctx, actor.workspaceId);
+    const [member] = await ctx.db
+      .select({ notifications: schema.workspaceMembers.notifications })
+      .from(schema.workspaceMembers)
+      .where(
+        and(
+          eq(schema.workspaceMembers.workspaceId, actor.workspaceId),
+          eq(schema.workspaceMembers.userId, actor.userId),
+        ),
+      );
     return {
       defaultMode: ws?.defaultMode ?? "auto",
       modes: PERMISSION_MODES,
       /** Null until set; the web app sets it from the browser then. */
       timeZone: ws?.timeZone ?? null,
+      /** The signed-in user's push categories. */
+      notifications: notificationSettings(member?.notifications),
       providers: await Promise.all(
         Object.values(MODEL_PROVIDERS).map(async (p) => {
           const c = await providerConfig(ctx, actor.workspaceId, p.id);
@@ -115,6 +127,32 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
         details: { timeZone },
       });
       return { ok: true };
+    },
+  );
+
+  /** Which pushes the signed-in user gets. Categories left out keep their setting. */
+  r.put(
+    "/api/settings/notifications",
+    {
+      schema: {
+        body: z.object({
+          approvals: z.boolean().optional(),
+          tasks: z.boolean().optional(),
+          replies: z.boolean().optional(),
+        }),
+      },
+    },
+    async (request) => {
+      const actor = actorOf(request);
+      const m = schema.workspaceMembers;
+      const where = and(eq(m.workspaceId, actor.workspaceId), eq(m.userId, actor.userId));
+      const [member] = await ctx.db.select({ notifications: m.notifications }).from(m).where(where);
+      const next = notificationSettings({
+        ...notificationSettings(member?.notifications),
+        ...request.body,
+      });
+      await ctx.db.update(m).set({ notifications: next }).where(where);
+      return next;
     },
   );
 

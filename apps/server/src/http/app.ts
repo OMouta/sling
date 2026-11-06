@@ -14,6 +14,7 @@ import type { AppContext } from "../context.ts";
 import { conversationRoutes } from "../conversations/routes.ts";
 import { extensionRoutes } from "../extensions/routes.ts";
 import { personalityRoutes } from "../personalities/routes.ts";
+import { pushRoutes } from "../push/routes.ts";
 import { hubRoutes } from "../realtime/hub.ts";
 import { authRoutes } from "../routes/auth.ts";
 import { settingsRoutes } from "../routes/settings.ts";
@@ -72,6 +73,9 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   });
   await app.register(async (scope) => {
     await settingsRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await pushRoutes(scope, ctx);
   });
   await app.register(async (scope) => {
     await taskRoutes(scope, ctx);

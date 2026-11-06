@@ -55,6 +55,8 @@ export interface Config {
     sandboxClaudeBin?: string;
     /** Allows `file://` URLs and local paths as sandbox clone URLs. */
     allowLocalCloneUrls?: boolean;
+    /** Origins accepted as push endpoints besides the known push services, such as a local stand-in. */
+    pushOrigins?: string[];
   };
 }
 
