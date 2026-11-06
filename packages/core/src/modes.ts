@@ -26,28 +26,30 @@ export interface ModePolicy {
 export const MODE_POLICY: Record<PermissionMode, ModePolicy> = {
   "read-only": {
     label: "Read-only",
-    description: "Codex can look but not change anything.",
+    description: "The coding agent and commands can look but not change anything.",
     sandbox: "read-only",
     writes: false,
     approvalRequired: ACTION_KINDS,
   },
   supervised: {
     label: "Supervised",
-    description: "Codex edits its worktree. Push, PR, merge, and deploy ask first.",
+    description:
+      "The coding agent edits its worktree. Commands that write, push, PR, merge, and deploy ask first.",
     sandbox: "workspace-write",
     writes: true,
     approvalRequired: ["push", "open_pr", "merge", "deploy"],
   },
   auto: {
     label: "Auto",
-    description: "Pushes branches and opens PRs on its own. Merge and deploy ask first.",
+    description:
+      "Pushes branches and opens PRs on its own. Commands that write, merge, and deploy ask first.",
     sandbox: "workspace-write",
     writes: true,
     approvalRequired: ["merge", "deploy"],
   },
   "full-access": {
     label: "Full access",
-    description: "Nothing asks, and Codex runs without a sandbox.",
+    description: "Nothing asks. The coding agent and commands run without a sandbox.",
     sandbox: "danger-full-access",
     writes: true,
     approvalRequired: [],

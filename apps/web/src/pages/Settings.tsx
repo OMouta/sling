@@ -160,7 +160,7 @@ function ModelSection({ settings }: { settings: Settings }) {
     <Section
       id="model"
       title="Models"
-      description="Sling chats through Codex or Claude Code on your machines, on the login that's already there, so your ChatGPT or Claude subscription covers it. The assistant picks the coding agent and model for each task."
+      description="Sling chats through the coding agents on your machines, on the login that's already there, so your ChatGPT or Claude subscription covers it. The assistant picks the agent and model for each task."
     >
       <div className="space-y-6 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-6">
         <ChatDefaults />

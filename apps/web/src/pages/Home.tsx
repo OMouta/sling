@@ -86,8 +86,8 @@ export function HomePage() {
               What should we work on?
             </h2>
             <p className="mt-1.5 max-w-md text-[13px] leading-5 text-pretty text-muted">
-              Sling hands coding work to Codex or Claude Code, on your machines or in a fresh
-              sandbox.
+              Sling runs commands on your machines and hands coding work to your coding agent, there
+              or in a fresh sandbox.
             </p>
             {!ready && settings.isSuccess && runners.isSuccess && (
               <Card className="mt-6 w-full max-w-xl divide-y divide-border text-left">
@@ -99,8 +99,8 @@ export function HomePage() {
                   to="/machines"
                   search={{ pair: true }}
                 >
-                  The computer that has your repos, with Codex or Claude Code logged in. Sling chats
-                  and codes through them, on your own subscription.
+                  The computer that has your repos and a coding agent logged in, Codex or Claude
+                  Code. Sling chats and codes through it, on your own subscription.
                 </Step>
                 <Step
                   done={hasModel}

@@ -210,7 +210,7 @@ export function MachinesPage() {
             </Button>
           }
         >
-          Add one to let Sling run Codex or Claude Code on it.
+          Add one to let Sling run commands and coding agents on it.
         </Empty>
       ) : (
         <div className="space-y-4 px-5 pt-1 pb-6">
@@ -281,7 +281,7 @@ function PairDialog({ onClose, known }: { onClose: () => void; known: RunnerView
       description={
         paired
           ? "Pick the repos Sling may use on it. They're listed on its card."
-          : "Run one command on the computer that has your repos and Codex or Claude Code."
+          : "Run one command on the computer that has your repos and a coding agent."
       }
       onClose={onClose}
       footer={
@@ -350,7 +350,7 @@ function PairDialog({ onClose, known }: { onClose: () => void; known: RunnerView
             {tab === "installed"
               ? "Pairs this machine and starts nothing else. Run sling-runner service install afterwards to keep it running."
               : "It installs sling-runner, pairs it with this code, and starts it in the background. The code works once."}{" "}
-            The machine needs git, and Codex or Claude Code logged in.
+            The machine needs git, and a coding agent logged in: Codex or Claude Code.
           </p>
           <ErrorText error={create.error} />
         </div>
@@ -623,7 +623,7 @@ function RepoSection({ runner, access }: { runner: RunnerView; access: SandboxAc
     const n = allowable.length;
     const ok = await confirm({
       title: `Allow ${plural(n, "repo")} on ${runner.name}?`,
-      body: `Sling can then run Codex or Claude Code in ${n === 1 ? "it" : "any of them"}, within the conversation's permission mode. Network access stays off for each.`,
+      body: `Sling can then run a coding agent in ${n === 1 ? "it" : "any of them"}, within the conversation's permission mode. Network access stays off for each.`,
       action: `Allow ${plural(n, "repo")}`,
     });
     if (ok) allow.mutate(allowable);

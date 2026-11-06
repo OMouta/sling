@@ -513,8 +513,8 @@ function NoProvider() {
       </span>
       <p className="text-[13px] font-medium">No model to chat with yet</p>
       <p className="mt-1 max-w-xs text-xs leading-4 text-muted">
-        Sling chats through Codex or Claude Code on one of your machines, on your own login. Pair a
-        machine where one is logged in.
+        Sling chats through the coding agent on one of your machines, on your own login. Pair a
+        machine where Codex or Claude Code is logged in.
       </p>
       <Link
         to="/machines"
