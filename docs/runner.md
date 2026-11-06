@@ -165,7 +165,7 @@ A turn's model and effort follow the same rules as a task's. The agent keeps its
 | MCP servers | Only Sling's, with `--strict-mcp-config` | Only Sling's |
 | Sling's tools | Allowed without asking. Everything else is denied, with `--permission-mode dontAsk`. | Approved up front |
 | Your settings | Still loaded, for example `~/.claude/CLAUDE.md` and hooks. Slash commands and skills are off. | `~/.codex/config.toml` is skipped, so a provider, profile, or MCP server set there doesn't apply to chat |
-| Sling's instructions | Appended to the system prompt | Developer instructions |
+| Sling's instructions | The whole system prompt, in place of Claude Code's own | Developer instructions, after Codex's own prompt |
 | Thinking | Summarized, with `--thinking-display summarized` | Reasoning summaries, with `model_reasoning_summary="auto"` |
 
 Codex has a gap. Its read-only sandbox stops writes, not reads, so a Codex tool may still read any file you can read and run commands that don't write. Codex 0.166 has no such tool left once the Runner turns the shell and image viewer off. A later Codex could add a tool the Runner doesn't know to turn off, and through it the assistant could read files on this machine. Claude Code starts with no built-in tools at all, so it doesn't have this gap.

@@ -277,7 +277,7 @@ fn chat(args: &[String]) {
     let config: Value =
         serde_json::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
     let server = config["mcpServers"]["sling"].clone();
-    let instructions = flag(args, "--append-system-prompt-file")
+    let instructions = flag(args, "--system-prompt-file")
         .map(|f| std::fs::read_to_string(f).unwrap())
         .unwrap_or_default();
     let allowed = flag(args, "--permission-mode").as_deref() == Some("dontAsk")

@@ -42,7 +42,8 @@ pub struct ChatOptions {
     pub dir: PathBuf,
     /// Sent on stdin.
     pub prompt: String,
-    /// Appended to Claude Code's system prompt.
+    /// Claude Code's whole system prompt, in place of its own coding-agent
+    /// one, so an assistant that isn't about code isn't told it is.
     pub instructions: String,
     pub mcp: McpServer,
     /// Environment for Claude Code. `None` inherits the Runner's.
@@ -100,7 +101,7 @@ pub fn chat_args(o: &ChatOptions) -> Vec<String> {
         .map(String::from),
     );
     if !o.instructions.trim().is_empty() {
-        args.push("--append-system-prompt-file".into());
+        args.push("--system-prompt-file".into());
         args.push(file_arg(&o.dir, INSTRUCTIONS_FILE));
     }
     if let Some(model) = &o.model {
@@ -459,7 +460,7 @@ mod tests {
         assert!(args.contains(&"--disable-slash-commands".to_string()));
         assert!(args.windows(2).any(|w| w
             == [
-                "--append-system-prompt-file",
+                "--system-prompt-file",
                 "/data/chat/abc/sling-instructions.md"
             ]));
         assert!(
@@ -489,7 +490,8 @@ mod tests {
             args.windows(2)
                 .any(|w| w == ["--resume", "6f1b2c3d-1111-4222-8333-444455556666"])
         );
-        assert!(!args.contains(&"--append-system-prompt-file".to_string()));
+        assert!(!args.contains(&"--system-prompt-file".to_string()));
+        assert!(!args.iter().any(|a| a.starts_with("--append-system-prompt")));
     }
 
     #[test]
