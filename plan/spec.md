@@ -781,6 +781,17 @@ This is the highest-value proof of Sling's difference.
 - Sandboxing, permission manifests, and package integrity controls.
 - Documentation and runnable example integrations.
 
+### Stage 5 — Deploys and everyday help, from your phone
+
+**Outcome:** From your phone, tell Sling a site is broken and approve the fix it deploys and verifies; and let Sling brief you on your day and act in your apps, asking before anything goes out.
+
+- Merge and deploy as real delivery steps, gated by the permission mode, with each repo's deploy method and health check.
+- Verification after every deploy, reported back, with a revert task as the way back.
+- An incident template: a failing health check notifies you, and the chat it opens can investigate and delegate a fix.
+- A calendar connector and a daily briefing template.
+- The assistant runs workflows and connector actions from chat, and asks before anything goes out.
+- The web app installs on a phone's home screen and sends push notifications for approvals, alerts, and briefings.
+
 Stages describe dependency order, not predetermined release names or deadlines.
 
 ---
