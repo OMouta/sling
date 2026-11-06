@@ -3,6 +3,7 @@
  * when the package is installed.
  */
 import type {
+  AssistantUse,
   DynamicExecOutputs,
   ExecPortSpec,
   NodeCategory,
@@ -35,6 +36,8 @@ export interface NodeDescription {
   /** Present on trigger nodes. */
   trigger: { event: string } | null;
   hasResume: boolean;
+  /** Present when the assistant may call the node from chat. Absent in descriptions from SDK 1.0. */
+  assistant?: AssistantUse | null;
 }
 
 export interface ConnectorDescription {
@@ -112,6 +115,12 @@ export function defineExtension(def: { connectors: AnyConnector[] }): ExtensionD
           retry: n.retry ?? null,
           trigger: n.trigger ? { event: n.trigger.event } : null,
           hasResume: typeof n.resume === "function",
+          assistant: n.assistant
+            ? {
+                sends: n.assistant.sends,
+                ...(n.assistant.summary ? { summary: n.assistant.summary } : {}),
+              }
+            : null,
         })),
       })),
     }),

@@ -6,6 +6,7 @@ import type { NodeSpec } from "@sling/workflow/spec";
 
 export {
   type AnyNodeSpec,
+  type AssistantUse,
   type DynamicExecOutputs,
   type ExecPortSpec,
   type Installation,

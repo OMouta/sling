@@ -162,7 +162,8 @@ export function buildWorkflowPackage(input: ExportInput): ExportedPackage {
     version: input.version,
     description,
     publisher: input.publisher,
-    sdk: `^${SDK_VERSION}`,
+    // No code, so any server on this major version can install it.
+    sdk: `^${SDK_VERSION.split(".")[0]}.0.0`,
     templates: [templateKey],
     requires,
   };

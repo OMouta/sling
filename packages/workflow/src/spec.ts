@@ -142,6 +142,24 @@ export interface NodeContext<Services = unknown> {
   services: Services;
 }
 
+/**
+ * Lets the assistant call a node from chat, as a tool. Only nodes with an exec
+ * input that finish without waiting can opt in.
+ */
+export interface AssistantUse {
+  /**
+   * True when the node reaches outside Sling, such as sending a message or
+   * creating an event. The conversation's mode then decides whether it asks
+   * first, runs, or is refused.
+   */
+  sends: boolean;
+  /**
+   * What the call does, for the approval and the audit, with `{field}` filled
+   * from its arguments. For example `"Email {to}: {subject}"`.
+   */
+  summary?: string;
+}
+
 export interface NodeRunArgs<Config> {
   inputs: Record<string, unknown>;
   config: Config;
@@ -177,6 +195,8 @@ export interface NodeSpec<Config = Record<string, unknown>, Services = unknown> 
   retry?: RetryPolicy;
   /** Present on trigger nodes. */
   trigger?: TriggerSpec<Config>;
+  /** Present when the assistant may call this node from chat. */
+  assistant?: AssistantUse;
   /** Absent on trigger nodes. */
   run?(ctx: NodeContext<Services>, args: NodeRunArgs<Config>): Promise<NodeResult>;
   /** Called when a wait this node returned resolves. Defaults to following `next`. */
