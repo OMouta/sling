@@ -92,7 +92,7 @@ Everything else is a permission. The install dialog lists each one in plain word
 | `approvals` | "Approve or reject pending approvals, for people its installation allows" (high) | `approvals.decide` in event sources, as the Discord connector's buttons do |
 | `sandboxes` | "Start sandboxes, and receive each sandbox's secrets: API keys, the GitHub token, and its pairing code" (high) | Acting as a sandbox provider, see [providers.md](providers.md) |
 
-`network.hosts` takes up to 50 lowercase hostnames, or `*.` and a name for its subdomains, such as `*.acme.test`. List the bare name too if you call it. IP addresses work, but a name is clearer to the person installing.
+`network.hosts` takes up to 50 lowercase hostnames, or `*.` and a name, such as `*.acme.test`, which covers `acme.test` and every subdomain of it. IP addresses work, but a name is clearer to the person installing.
 
 `network.configHosts` takes up to 10 config field names. Each must be a field in one of the extension's connector config schemas, or `sling-ext check` and Sling refuse the package. Sling reads the field's value from each installation, so a user can point a self-hosted server at their own host without the extension asking for every host up front. When an installation's config changes, so do the hosts it allows.
 

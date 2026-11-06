@@ -33,7 +33,7 @@ Each extension with code runs in its own Node process, apart from the server. Sl
 - load native addons, FFI, or WASI, or open the inspector
 - read Sling's environment, database, or encrypted credentials
 
-Its only way out is its IPC channel to the server, and the server checks every request that comes through it:
+Its only way out is its stdin and stdout, which carry framed messages to and from the server. The server refuses any message over 16 MB from its length header, before reading it, and checks every request that comes through:
 
 | The extension asks for | Sling allows it when |
 |---|---|
@@ -65,7 +65,7 @@ Every call has a deadline:
 
 The process sends a heartbeat every 5 seconds. One that misses 10 seconds of them is killed, and calls in flight fail with "the extension stopped responding". The next call starts it again, and its event sources restart with backoff. After 5 crashes in 10 minutes the extension goes to **error** and stays stopped until you turn it off and on.
 
-Each message between the process and the server is capped at 16 MB. What the extension logs, and anything it writes to stderr, goes to the server log tagged with the extension's ID. The last 200 lines show in the extension's details.
+What the extension logs, and anything it writes to stderr, goes to the server log tagged with the extension's ID. The last 200 lines show in the extension's details.
 
 Extension processes need Node 26 or later, which can deny a process the network. On an older Node, Sling refuses to start any extension code and shows "needs Node 26".
 
@@ -89,7 +89,7 @@ Only the workspace owner can install, update, or remove extensions. Extensions a
 
 The new connector appears under **Connectors**, and its nodes appear in the workflow editor. Add an installation the way you would for Discord or email.
 
-To add someone else's catalog, paste its URL under **Extensions → Sources**. To install a `.slx` file you have, use **Upload** on the same page. An upload goes through the same checks, using the key in the package's signature.
+To add someone else's catalog, paste its URL under **Extensions → Sources**. To install a `.slx` file you have, use **Upload** on the **Installed** or **Discover** tab. An upload goes through the same checks, using the key in the package's signature.
 
 ### Updates
 
