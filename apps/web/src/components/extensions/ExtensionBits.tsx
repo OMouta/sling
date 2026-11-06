@@ -7,6 +7,7 @@ import type {
 } from "@sling/core";
 import {
   BadgeCheck,
+  BookOpen,
   Box,
   Globe,
   LayoutTemplate,
@@ -14,6 +15,7 @@ import {
   Network,
   Plug,
   Puzzle,
+  Send,
   Shield,
   ShieldAlert,
   ShieldCheck,
@@ -225,6 +227,38 @@ export function PermissionList({
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * The nodes the assistant may call from chat, marking the ones that send
+ * something outside Sling.
+ */
+export function AssistantNodes({ nodes }: { nodes: ExtensionContents["nodes"] }) {
+  const usable = nodes.filter((n) => n.assistant);
+  if (usable.length === 0) return null;
+  const sends = usable.some((n) => n.assistant?.sends);
+  return (
+    <section>
+      <SectionHeading>The assistant can use</SectionHeading>
+      <ul aria-label="The assistant can use" className="space-y-2">
+        {usable.map((n) => {
+          const Icon = n.assistant?.sends ? Send : BookOpen;
+          return (
+            <li key={n.type} className="flex items-start gap-2.5 text-[13px] leading-5">
+              <Icon aria-hidden="true" size={14} className="mt-[3px] shrink-0 text-subtle" />
+              <span className="min-w-0 flex-1 text-soft">{n.title}</span>
+              {n.assistant?.sends && <Badge className="mt-px h-5 px-1.5">Sends</Badge>}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-3 text-xs leading-4 text-muted">
+        {sends
+          ? "From chat, for personalities with Apps and workflows. What sends asks you first, except in Full access."
+          : "From chat, for personalities with Apps and workflows. None of these send anything."}
+      </p>
+    </section>
   );
 }
 

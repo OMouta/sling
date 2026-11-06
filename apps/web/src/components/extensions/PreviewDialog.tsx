@@ -15,6 +15,7 @@ import { qk } from "../../lib/workflowApi.ts";
 import { Button, Dialog, ErrorText, Mono, Skeleton, Spinner } from "../ui.tsx";
 import {
   Adds,
+  AssistantNodes,
   ExtensionIcon,
   kindIcon,
   PermissionList,
@@ -288,6 +289,8 @@ function PreviewBody({
           )}
         </>
       )}
+
+      <AssistantNodes nodes={p.contents.nodes} />
 
       {missingCount > 0 && <Missing preview={p} onInstall={onInstall} />}
 
