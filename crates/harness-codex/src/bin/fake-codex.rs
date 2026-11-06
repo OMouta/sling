@@ -30,6 +30,10 @@
 //!   arguments, and replies with the result. Like Codex under
 //!   `approval_policy="never"`, the call fails unless the server's
 //!   `default_tools_approval_mode` is `approve`.
+//! - `call`: like `tool`, but calls the tool the prompt names after the tag,
+//!   as JSON, for example
+//!   `[fake:call] {"name": "run_command", "arguments": {"command": "ls"}}`.
+//!   It thinks out loud first, and says a word before the call.
 //! - `hang`, `fail`: as above.
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -367,10 +371,26 @@ fn chat(cwd: &std::path::Path, overrides: &[(String, String)], resume: Option<St
             );
             std::process::exit(1);
         }
-        "tool" => {
+        "tool" | "call" => {
             let approved = setting(overrides, "mcp_servers.sling.default_tools_approval_mode")
                 == Some(json!("approve"));
-            let (name, result) = match mcp_call(overrides, approved) {
+            let target = (scenario == "call")
+                .then(|| {
+                    prompt
+                        .split_once("[fake:call]")
+                        .map(|(_, rest)| rest.trim())
+                })
+                .flatten()
+                .and_then(|rest| serde_json::from_str::<serde_json::Value>(rest).ok());
+            if let Some(t) = &target {
+                emit(
+                    json!({"type": "item.completed", "item": {"id": "item_r", "type": "reasoning", "text": format!("**Using {}**\n\nThe user asked for this, so I'll call it.", t["name"].as_str().unwrap_or("a tool"))}}),
+                );
+                emit(
+                    json!({"type": "item.completed", "item": {"id": "item_m", "type": "agent_message", "text": "On it."}}),
+                );
+            }
+            let (name, result) = match mcp_call(overrides, approved, target.as_ref()) {
                 Ok((name, text, is_error)) => (
                     name,
                     json!({"content": [{"type": "text", "text": text}], "is_error": is_error}),
@@ -412,6 +432,7 @@ fn chat(cwd: &std::path::Path, overrides: &[(String, String)], resume: Option<St
 fn mcp_call(
     overrides: &[(String, String)],
     approved: bool,
+    target: Option<&serde_json::Value>,
 ) -> Result<(String, String, bool), (String, String)> {
     let fail = |e: String| ("none".to_string(), e);
     let command = setting(overrides, "mcp_servers.sling.command")
@@ -481,18 +502,29 @@ fn mcp_call(
         ask(1, "initialize", json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake-codex", "version": "0.166.0"}}))
             .map_err(fail)?;
         let tools = ask(2, "tools/list", json!({})).map_err(fail)?;
-        let name = tools["tools"][0]["name"]
-            .as_str()
-            .ok_or_else(|| fail("no tools".into()))?
-            .to_string();
+        let name = match target.and_then(|t| t["name"].as_str()) {
+            Some(n) => n.to_string(),
+            None => tools["tools"][0]["name"]
+                .as_str()
+                .ok_or_else(|| fail("no tools".into()))?
+                .to_string(),
+        };
+        let arguments = target
+            .map(|t| t["arguments"].clone())
+            .filter(|a| a.is_object())
+            .unwrap_or_else(|| json!({}));
         if !approved {
             return Err((
                 name,
                 "MCP tool call requires approval, but approval policy is never".into(),
             ));
         }
-        let r = ask(3, "tools/call", json!({"name": name, "arguments": {}}))
-            .map_err(|e| (name.clone(), e))?;
+        let r = ask(
+            3,
+            "tools/call",
+            json!({"name": name, "arguments": arguments}),
+        )
+        .map_err(|e| (name.clone(), e))?;
         let text = r["content"][0]["text"]
             .as_str()
             .unwrap_or_default()
