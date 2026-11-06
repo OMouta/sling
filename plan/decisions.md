@@ -255,6 +255,17 @@ A personality is a named assistant in the workspace. It has its own instructions
 - An edit bumps the personality's revision, and each reply records the personality and revision that wrote it. Deleting a personality archives it, so its chats keep working.
 - Not built yet: pinning a personality in an `agent.assistant` node, which would make **Export as package** turn its ID into a binding like an installation's, and connector actions as assistant tools. Those need an approval before outgoing messages, idempotency keys for side effects, and a manifest flag for nodes the assistant may call, shown in the install dialog. This rules out a separate workflow per personality, since every enabled workflow with a chat trigger answers every chat message. Asked 2026-11-06.
 
+## Self-hosting
+
+### D71. One address, picked by `deploy/setup.sh`, with Tailscale and Cloudflare Tunnel built into Compose
+Sling keeps a single `SLING_PUBLIC_URL`. Sign-in, cookies, passkeys, the origin checks, and the tools URL a Runner accepts all depend on it, and a second address would mean a second set of each. The setup script asks how Sling should be reached and writes `deploy/.env` for it:
+- **This computer:** `http://localhost:8080`, published on loopback only.
+- **Local network:** `http://<LAN address>:8080`, published on every interface. Plain HTTP, so the password crosses the LAN unencrypted and passkeys don't work, since browsers allow them only over HTTPS.
+- **Tailscale:** a `tailscale` container serves `https://<name>.<tailnet>.ts.net` to the tailnet. Phones and Runners join the tailnet, and the address works at home and away.
+- **Cloudflare Tunnel:** a `cloudflared` container connects a public hostname you set up in Cloudflare. Nothing to install on the phone, and anyone can reach the sign-in page.
+
+With a tunnel, Sling is published on loopback only, so the tunnel is the way in. The tunnel's secrets go in `deploy/tunnel.env`, which only the tunnel container reads, never the Sling container. This builds on D9: still no relay of Sling's own, but the two tunnels it documented now come as Compose profiles. The self-hosting Compose project is named `sling`, so it never collides with the development Postgres in project `deploy`. When the address changes, `sling-runner config set server-url` points a paired machine at the new one without pairing again. This rules out serving a LAN address and a tunnel address at once. Asked 2026-11-06.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.

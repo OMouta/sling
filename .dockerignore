@@ -4,5 +4,6 @@ target
 .git
 .env
 deploy/.env
+deploy/tunnel.env
 plan
 **/*.log

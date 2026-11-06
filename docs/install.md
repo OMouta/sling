@@ -11,6 +11,24 @@ The control plane is one container plus Postgres, run with Docker Compose.
 
 ```sh
 cd deploy
+./setup.sh
+```
+
+The script asks how Sling should be reached, then writes `deploy/.env`, generates its secrets, and builds and starts the containers:
+
+| Choice | Address | Who can reach it |
+|---|---|---|
+| This computer | `http://localhost:8080` | This computer only |
+| Local network | `http://<this computer's LAN address>:8080` | Devices on the same network, over plain HTTP |
+| Tailscale | `https://<name>.<tailnet>.ts.net` | Your devices on your tailnet, at home and away |
+| Cloudflare Tunnel | `https://<your hostname>` | Anyone, from anywhere |
+
+Sling works at one address at a time, so pick the one your phone will use. Run `./setup.sh` again to change it. It keeps the secrets already in `.env`. [remote-access.md](remote-access.md) covers the tunnels in more detail.
+
+On a machine without bash, or to set it up by hand:
+
+```sh
+cd deploy
 cp .env.example .env
 ```
 
@@ -22,6 +40,8 @@ Fill in `.env`:
 | `SLING_SECRET_KEY` | Master secret, at least 32 characters. Generate it with `openssl rand -base64 48`. API keys are encrypted with a key derived from it, so losing it means re-entering them. |
 | `POSTGRES_PASSWORD` | Password for the bundled Postgres. |
 | `SLING_PORT` | Host port to publish. Default `8080`. |
+| `SLING_BIND` | Where to publish it: `127.0.0.1` (default) for this computer and a tunnel only, `0.0.0.0` for the local network too. |
+| `COMPOSE_PROFILES` | `tailscale` or `cloudflare` to run that tunnel next to Sling. Its secret goes in `deploy/tunnel.env`. |
 | `LOG_LEVEL` | `info` by default. |
 | `SLING_RELEASE_REPO` | Optional. The GitHub repo, as `owner/name`, whose releases the Runner install command downloads. Without it, the command works only on machines that already have `sling-runner`. |
 | `SLING_ALLOW_UNSIGNED_EXTENSIONS` | Optional, for developing extensions. `1` lets you install unsigned packages and add catalogs on loopback addresses. Leave it off otherwise: the web app can't turn it on, which is the point. |
@@ -33,7 +53,7 @@ docker compose up -d
 docker compose logs -f sling
 ```
 
-Open `SLING_PUBLIC_URL`. The first visit creates the only account. Add a passkey or an authenticator app under **Settings** afterwards, since this account can start work on your machines.
+Open `SLING_PUBLIC_URL`. The first visit creates the only account. Opened at any other address, Sling says where it lives instead of showing the sign-in form, since sign-in only works at that one address. Add a passkey or an authenticator app under **Settings** afterwards, since this account can start work on your machines.
 
 ## TLS
 

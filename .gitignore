@@ -7,4 +7,5 @@ target/
 !.env.example
 *.log
 deploy/.env
+deploy/tunnel.env
 extensions/dist/

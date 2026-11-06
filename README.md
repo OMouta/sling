@@ -33,11 +33,10 @@ You need Docker on the server, and Codex or Claude Code installed and logged in 
 
 ```sh
 git clone <this repo> sling && cd sling/deploy
-cp .env.example .env    # set SLING_PUBLIC_URL, SLING_SECRET_KEY, POSTGRES_PASSWORD
-docker compose up -d
+./setup.sh
 ```
 
-Open `SLING_PUBLIC_URL` and create the account. Under **Machines**, choose **Add machine** and run the command it shows on the computer with your repos. It installs `sling-runner`, pairs it, and starts it:
+The script asks how you'll reach Sling: this computer, your local network, or from anywhere through Tailscale or Cloudflare Tunnel. Then it writes `deploy/.env`, generates its secrets, and starts it. Open the address it prints and create the account. Under **Machines**, choose **Add machine** and run the command it shows on the computer with your repos. It installs `sling-runner`, pairs it, and starts it:
 
 ```sh
 curl -fsSL https://sling.example.com/install.sh | SLING_CODE=K7QM-2XVD-HP4R sh
@@ -70,7 +69,7 @@ Each conversation has a mode, and each machine can cap the mode it accepts. Deta
 
 - [Install the control plane](docs/install.md)
 - [Run Sling Runner on a machine](docs/runner.md)
-- [Reach Sling from outside your network](docs/remote-access.md)
+- [Reach Sling from your phone, at home or away](docs/remote-access.md)
 - [Permission modes and what enforces them](docs/modes.md)
 - [Personalities: who answers, and what it may use](docs/personalities.md)
 - [Workflows, nodes, and templates](docs/workflows.md)
