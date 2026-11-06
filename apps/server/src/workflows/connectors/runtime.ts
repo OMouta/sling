@@ -67,6 +67,21 @@ export class ConnectorRuntime {
     await this.reconcile(r?.workspaceId);
   }
 
+  /**
+   * Stops the sources of these connectors and starts whatever is still
+   * needed, so they run on the connectors' current definitions. Used when an
+   * extension is updated, disabled, or removed.
+   */
+  restartConnectors(connectorIds: ReadonlySet<string>): Promise<void> {
+    const run = this.#queue.then(async () => {
+      const stale = [...this.#running.values()].filter((r) => connectorIds.has(r.connector.id));
+      await Promise.all(stale.map((r) => this.#stop(r)));
+      await this.#reconcile();
+    });
+    this.#queue = run.catch((err) => this.#ctx.log.error({ err }, "connector restart failed"));
+    return run;
+  }
+
   async stopAll(): Promise<void> {
     await this.#queue;
     await Promise.all([...this.#running.values()].map((r) => this.#stop(r)));

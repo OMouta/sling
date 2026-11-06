@@ -68,7 +68,14 @@ export class WorkflowService {
 
   // ------------------------------------------------------------- templates
 
+  /** Bundled templates, then those of enabled extensions (keyed `<extension>/<key>`). */
   templates(): Template[] {
+    const bundled = this.#bundled();
+    const fromExtensions = this.#ctx.extensions?.templates() ?? [];
+    return fromExtensions.length > 0 ? [...bundled, ...fromExtensions] : bundled;
+  }
+
+  #bundled(): Template[] {
     if (!this.#templates) {
       this.#templates = loadTemplates(this.#dir, (key, err) =>
         this.#ctx.log.error({ err, key }, "skipping a broken workflow template"),

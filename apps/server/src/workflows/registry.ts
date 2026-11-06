@@ -35,13 +35,35 @@ export class NodeRegistry implements SpecLookup {
     this.#catalog = null;
   }
 
-  /** Adds a connector's nodes and keeps the definition for the connector runtime. */
+  /**
+   * Adds a connector's nodes and keeps the definition for the connector
+   * runtime. All or nothing: a clash leaves the registry as it was.
+   */
   registerConnector(def: AnyConnector): void {
     if (this.#connectors.has(def.id)) throw new Error(`Connector ${def.id} is registered twice`);
+    const keys = new Set<string>();
+    for (const spec of def.nodes) {
+      const key = specKey(spec.type, spec.version);
+      if (this.#specs.has(key) || keys.has(key)) throw new Error(`Node ${key} is registered twice`);
+      if (!spec.trigger && !spec.run) throw new Error(`Node ${key} needs run() or a trigger`);
+      keys.add(key);
+    }
     for (const spec of def.nodes) {
       this.register({ ...spec, connector: spec.connector ?? def.id });
     }
     this.#connectors.set(def.id, def);
+  }
+
+  /** Removes a connector and the nodes it added. Unknown IDs are ignored. */
+  unregisterConnector(id: string): void {
+    const def = this.#connectors.get(id);
+    if (!def) return;
+    for (const spec of def.nodes) {
+      const key = specKey(spec.type, spec.version);
+      if (this.#specs.get(key)?.connector === id) this.#specs.delete(key);
+    }
+    this.#connectors.delete(id);
+    this.#catalog = null;
   }
 
   get(type: string, version: number): AnyServerNodeSpec | undefined {

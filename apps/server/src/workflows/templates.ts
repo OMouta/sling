@@ -14,7 +14,11 @@ import { z } from "zod";
 export const TEMPLATES_DIR = fileURLToPath(new URL("../../../../workflows/", import.meta.url));
 
 const TemplateFile = z.object({
-  key: z.string().regex(/^[a-z0-9-]+$/),
+  /** Package templates take their key from the manifest instead. */
+  key: z
+    .string()
+    .regex(/^[a-z0-9-]+$/)
+    .optional(),
   name: z.string().min(1),
   description: z.string().default(""),
   builtIn: z.boolean().default(false),
@@ -34,6 +38,28 @@ export interface Template {
   definition: WorkflowDefinition;
 }
 
+/**
+ * One template from its two files. `key` overrides the key in
+ * `template.json`, which package templates leave out. Throws when either
+ * file is invalid.
+ */
+export function parseTemplate(templateJson: string, workflowJson: string, key?: string): Template {
+  const meta = TemplateFile.parse(JSON.parse(templateJson));
+  const definition = WorkflowDefinitionSchema.parse(JSON.parse(workflowJson));
+  const finalKey = key ?? meta.key;
+  if (!finalKey) throw new Error("template.json has no key");
+  return {
+    view: {
+      key: finalKey,
+      name: meta.name,
+      description: meta.description,
+      bindings: meta.bindings as TemplateBinding[],
+      builtIn: meta.builtIn,
+    },
+    definition,
+  };
+}
+
 /** Reads every `workflows/<key>/{template.json,workflow.json}`. Broken templates are skipped. */
 export function loadTemplates(
   dir: string,
@@ -45,22 +71,12 @@ export function loadTemplates(
     if (!entry.isDirectory()) continue;
     const base = join(dir, entry.name);
     try {
-      const meta = TemplateFile.parse(
-        JSON.parse(readFileSync(join(base, "template.json"), "utf8")),
+      out.push(
+        parseTemplate(
+          readFileSync(join(base, "template.json"), "utf8"),
+          readFileSync(join(base, "workflow.json"), "utf8"),
+        ),
       );
-      const definition = WorkflowDefinitionSchema.parse(
-        JSON.parse(readFileSync(join(base, "workflow.json"), "utf8")),
-      );
-      out.push({
-        view: {
-          key: meta.key,
-          name: meta.name,
-          description: meta.description,
-          bindings: meta.bindings as TemplateBinding[],
-          builtIn: meta.builtIn,
-        },
-        definition,
-      });
     } catch (err) {
       onError(entry.name, err);
     }

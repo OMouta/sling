@@ -27,6 +27,13 @@ export class Hub {
     }
   }
 
+  /** Workspaces with at least one open tab. */
+  workspaces(): string[] {
+    const out: string[] = [];
+    for (const [id, set] of this.#sockets) if (set.size > 0) out.push(id);
+    return out;
+  }
+
   get connections(): number {
     let n = 0;
     for (const set of this.#sockets.values()) n += set.size;
