@@ -544,7 +544,10 @@ describe("the examples that ship with Sling", () => {
         unavailable: null,
       });
     }
+    const started = performance.now();
     const preview = await fromCatalog("included", "ntfy");
+    // Reading, verifying, and describing a package with code, in a fresh restricted process.
+    console.log(`preview of the included ntfy: ${Math.round(performance.now() - started)} ms`);
     expect(preview).toMatchObject({ source: "included", problems: [] });
     expect(preview.permissions.map((p) => p.key)).toEqual(["host:ntfy.sh", "configHost:server"]);
     const alerts = await fromCatalog("included", "task-alerts");
@@ -675,16 +678,17 @@ describe("a sandbox provider from an extension", () => {
   });
 
   it("starts a sandbox whose Runner pairs and runs the task, then destroys it", async () => {
-    const preview = await api<ExtensionPreview>(
-      "POST",
-      "/api/extensions/preview",
-      await localVariant("fly-machines"),
-    );
+    const bytes = await localVariant("fly-machines");
+    const started = performance.now();
+    const preview = await api<ExtensionPreview>("POST", "/api/extensions/preview", bytes);
     expect(preview.permissions.find((p) => p.key === "sandboxes")).toMatchObject({ risk: "high" });
     expect(preview.contents.connectors).toEqual([
       { id: "fly-machines", name: "Fly Machines", isExecutionProvider: true },
     ]);
     await install(preview);
+    console.log(
+      `preview and install of Fly Machines: ${Math.round(performance.now() - started)} ms`,
+    );
 
     const inst = await api<InstallationView>("POST", "/api/installations", {
       connectorId: "fly-machines",
