@@ -107,7 +107,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   ctx.connectors = new ConnectorRuntime(ctx);
   ctx.extensions = new ExtensionService(
     ctx,
-    opts.extensionRuntime ?? new ProcessRuntime({ log: app.log.child({ component: "extensions" }) }),
+    opts.extensionRuntime ??
+      new ProcessRuntime({ log: app.log.child({ component: "extensions" }) }),
   );
   ctx.runners.handlers = ctx.tasks;
   ctx.tasks.onSettled = async (taskId, reason) => {
