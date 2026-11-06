@@ -26,8 +26,10 @@ const credentialsSchema = z.object({
 const configSchema = z.object({
   baseUrl: z.url().default("https://api.acme.test").describe("Your Acme API"),
 });
+type Credentials = z.infer<typeof credentialsSchema>;
+type Config = z.infer<typeof configSchema>;
 
-const connector = defineConnector({
+const connector = defineConnector<Credentials, Config>({
   id: "acme-crm",
   name: "Acme CRM",
   description: "Contacts and deals in Acme.",
@@ -102,7 +104,9 @@ export const createContact = defineNode({
   idempotent: false,
   async run(ctx, { config: raw }) {
     const config = createConfig.parse(raw);
-    const { credentials, config: settings } = await ctx.installation(config.installationId);
+    const { credentials, config: settings } = await ctx.installation<Credentials, Config>(
+      config.installationId,
+    );
     const res = await fetch(`${settings.baseUrl}/contacts`, {
       method: "POST",
       headers: { authorization: `Bearer ${credentials.apiKey}`, "content-type": "application/json" },
