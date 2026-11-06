@@ -16,7 +16,8 @@
     "gen": "pnpm --filter @sling/runner-protocol gen",
     "test:e2e": "cargo build -p sling-runner -p sling-harness-codex -p sling-harness-claude-code && pnpm --filter @sling/server test:e2e",
     "sandbox:image": "docker build -f deploy/sandbox/Dockerfile -t sling-sandbox:dev .",
-    "sling-ext": "node packages/extension-cli/src/main.ts"
+    "sling-ext": "node packages/extension-cli/src/main.ts",
+    "extensions:build": "node extensions/build.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.5",

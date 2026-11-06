@@ -1,0 +1,21 @@
+{
+  "name": "@sling/extension-task-alerts",
+  "version": "1.0.0",
+  "description": "The Task alerts workflow package that ships with Sling.",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "sling-ext check",
+    "pack": "sling-ext pack",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@sling/connector-sdk": "workspace:*",
+    "@sling/extension-cli": "workspace:*",
+    "@sling/extension-ntfy": "workspace:*",
+    "@sling/server": "workspace:*",
+    "@sling/workflow": "workspace:*"
+  }
+}

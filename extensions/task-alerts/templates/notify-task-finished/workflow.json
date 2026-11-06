@@ -1,0 +1,40 @@
+{
+  "schema": "sling.workflow/v1",
+  "name": "Notify when a task finishes",
+  "description": "Sends a push notification through ntfy when a coding task finishes.",
+  "nodes": [
+    {
+      "id": "settled",
+      "type": "sling.task_settled",
+      "version": 1,
+      "position": { "x": 0, "y": 0 },
+      "config": { "reasons": ["finished"] },
+      "label": "Task finished"
+    },
+    {
+      "id": "notify",
+      "type": "ntfy.publish",
+      "version": 1,
+      "position": { "x": 320, "y": 0 },
+      "config": {
+        "installationId": "$ntfy",
+        "topic": "",
+        "title": "={{ (trigger.task.state = \"succeeded\" ? \"Done: \" : (trigger.task.state = \"failed\" ? \"Failed: \" : \"Stopped: \")) & trigger.task.title }}",
+        "message": "={{ (trigger.task.error ? trigger.task.error : (trigger.task.summary ? trigger.task.summary : \"No summary.\")) & (trigger.task.repoName ? \"\\n\\n\" & trigger.task.repoName & \" on \" & trigger.task.runnerName : \"\") }}",
+        "priority": "={{ trigger.task.state = \"succeeded\" ? 3 : 4 }}",
+        "tags": "={{ trigger.task.state = \"succeeded\" ? \"white_check_mark\" : (trigger.task.state = \"failed\" ? \"x\" : \"warning\") }}",
+        "click": "={{ trigger.task.prUrl ? trigger.task.prUrl : \"\" }}",
+        "markdown": false
+      },
+      "label": "Send to ntfy"
+    }
+  ],
+  "edges": [
+    {
+      "id": "x_settled_notify",
+      "kind": "exec",
+      "from": { "node": "settled", "port": "next" },
+      "to": { "node": "notify", "port": "in" }
+    }
+  ]
+}

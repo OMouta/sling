@@ -402,6 +402,24 @@ importers:
         specifier: workspace:*
         version: link:../../packages/extension-cli
 
+  extensions/task-alerts:
+    devDependencies:
+      '@sling/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
+      '@sling/extension-cli':
+        specifier: workspace:*
+        version: link:../../packages/extension-cli
+      '@sling/extension-ntfy':
+        specifier: workspace:*
+        version: link:../ntfy
+      '@sling/server':
+        specifier: workspace:*
+        version: link:../../apps/server
+      '@sling/workflow':
+        specifier: workspace:*
+        version: link:../../packages/workflow
+
   integrations/discord:
     dependencies:
       '@sling/connector-sdk':
@@ -468,6 +486,10 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+    devDependencies:
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
   packages/core: {}
 

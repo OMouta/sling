@@ -1,0 +1,13 @@
+{
+  "key": "notify-task-finished",
+  "name": "Notify when a task finishes",
+  "description": "Sends a push notification through ntfy each time a coding task finishes, with its summary or error, and the pull request when there is one. It publishes to the ntfy installation's default topic: set one before you turn the workflow on.",
+  "builtIn": false,
+  "bindings": [
+    {
+      "placeholder": "$ntfy",
+      "connectorId": "ntfy",
+      "label": "ntfy server"
+    }
+  ]
+}
