@@ -3,9 +3,11 @@
  * DOM tests. Config schemas are what zod's `toJSONSchema` writes.
  */
 import type {
+  ActionView,
   ApprovalView,
   CatalogView,
   ConnectorView,
+  DeployTargetView,
   DiscoverEntryView,
   ExtensionDetailView,
   ExtensionPreview,
@@ -1461,4 +1463,310 @@ export const packageTemplate: TemplateView = {
   bindings: [{ placeholder: "$ntfy", connectorId: "ntfy", label: "ntfy" }],
   builtIn: false,
   extension: { id: "task-alerts", name: "Task alerts", version: "1.0.0", hasIcon: false },
+};
+
+// ---------------------------------------------------------------- deploys
+
+/** A machine that deploys the site with its own command. */
+export const studioMac: RunnerView = {
+  ...devbox,
+  id: "rnr_3",
+  name: "Studio Mac",
+  hostname: "studio.local",
+  repos: [
+    {
+      id: "rpo_4",
+      name: "site",
+      defaultBranch: "main",
+      remoteUrl: "git@github.com:a/site.git",
+      network: true,
+      remoteKey: "github.com/a/site",
+      deployCommand: "fly deploy",
+    },
+  ],
+};
+
+/** Has the command too, but said `deploys off`. */
+export const lockedMac: RunnerView = {
+  ...studioMac,
+  id: "rnr_4",
+  name: "locked-mac",
+  deploys: false,
+  repos: studioMac.repos.map((r) => ({ ...r, id: "rpo_5" })),
+};
+
+const checkedAt = "2026-11-06T18:57:00.000Z";
+
+export const websiteTarget: DeployTargetView = {
+  id: "dpt_site",
+  name: "Website",
+  remoteKey: "github.com/a/site",
+  method: "command",
+  mergeMethod: "squash",
+  runnerId: "rnr_3",
+  runnerName: "Studio Mac",
+  command: "fly deploy",
+  hook: null,
+  checks: [
+    { url: "https://example.com/", status: null, contains: null },
+    { url: "https://example.com/health", status: 200, contains: "ok" },
+  ],
+  versionUrl: "https://example.com/version",
+  settleSeconds: 0,
+  timeoutSeconds: 600,
+  lastCheck: {
+    at: checkedAt,
+    up: true,
+    failures: 0,
+    results: [
+      { url: "https://example.com/", ok: true, status: 200, ms: 84, error: null },
+      { url: "https://example.com/health", ok: true, status: 200, ms: 121, error: null },
+    ],
+  },
+  lastDeploy: {
+    taskId: "tsk_fix",
+    taskTitle: "Fix the 500 on checkout",
+    commitSha: "9f8e7d6c5b4a39281706",
+    at: "2026-11-06T16:00:00.000Z",
+    state: "succeeded",
+  },
+  createdAt: "2026-11-01T09:00:00.000Z",
+  updatedAt: checkedAt,
+};
+
+/** The host deploys on merge, and the site is down. */
+export const docsTarget: DeployTargetView = {
+  ...websiteTarget,
+  id: "dpt_docs",
+  name: "Docs",
+  remoteKey: "github.com/a/docs",
+  method: "merge",
+  runnerId: null,
+  runnerName: null,
+  command: null,
+  checks: [{ url: "https://docs.example.com/", status: null, contains: null }],
+  versionUrl: null,
+  settleSeconds: 60,
+  lastCheck: {
+    at: checkedAt,
+    up: false,
+    failures: 3,
+    results: [
+      {
+        url: "https://docs.example.com/",
+        ok: false,
+        status: 502,
+        ms: 340,
+        error: "Expected 200 to 399, got 502",
+      },
+    ],
+  },
+  lastDeploy: null,
+};
+
+/** Calls a deploy hook, whose URL the browser never sees. */
+export const apiTarget: DeployTargetView = {
+  ...websiteTarget,
+  id: "dpt_api",
+  name: "API",
+  remoteKey: "github.com/a/api",
+  method: "hook",
+  runnerId: null,
+  runnerName: null,
+  command: null,
+  hook: { httpMethod: "POST", host: "api.render.com", hasHeader: true },
+  checks: [{ url: "https://api.example.com/health", status: 204, contains: null }],
+  versionUrl: null,
+  lastCheck: null,
+  lastDeploy: null,
+};
+
+export function step(
+  kind: ActionView["kind"],
+  state: ActionView["state"],
+  extra: Partial<ActionView> = {},
+): ActionView {
+  return {
+    id: `act_${kind}`,
+    taskId: "tsk_fix",
+    kind,
+    state,
+    requiresApproval: kind !== "verify",
+    url: null,
+    message: null,
+    approvalId: null,
+    targetId: null,
+    targetName: null,
+    ranOn: null,
+    commitSha: null,
+    output: null,
+    verify: null,
+    ...extra,
+  };
+}
+
+const prUrl = "https://github.com/a/site/pull/12";
+
+/** Delivered as a deploy: the PR is open, and merge and deploy wait for you. */
+export const deployWaitingTask: TaskView = {
+  ...baseTask,
+  id: "tsk_fix",
+  runnerId: "rnr_3",
+  runnerName: "Studio Mac",
+  title: "Fix the 500 on checkout",
+  mode: "auto",
+  deliver: "deploy",
+  state: "succeeded",
+  commitSha: "0123456789abcdef",
+  diffStats: { filesChanged: 1, insertions: 3, deletions: 1 },
+  summary: "Checkout no longer divides by zero.",
+  finishedAt: "2026-11-06T18:00:00.000Z",
+  actions: [
+    step("push", "succeeded"),
+    step("open_pr", "succeeded", { url: prUrl }),
+    step("merge", "awaiting_approval", {
+      approvalId: "apv_merge",
+      targetId: "dpt_site",
+      targetName: "Website",
+    }),
+    step("deploy", "awaiting_approval", {
+      approvalId: "apv_deploy",
+      targetId: "dpt_site",
+      targetName: "Website",
+    }),
+    step("verify", "queued", { targetId: "dpt_site", targetName: "Website" }),
+  ],
+};
+
+/** Merged and deployed, but the site still answers 502. */
+export const deployFailedTask: TaskView = {
+  ...deployWaitingTask,
+  actions: [
+    step("push", "succeeded"),
+    step("open_pr", "succeeded", { url: prUrl }),
+    step("merge", "succeeded", {
+      targetId: "dpt_site",
+      targetName: "Website",
+      ranOn: "Studio Mac",
+      commitSha: "abcdef1234567890",
+      url: prUrl,
+    }),
+    step("deploy", "succeeded", {
+      targetId: "dpt_site",
+      targetName: "Website",
+      ranOn: "Studio Mac",
+      commitSha: "abcdef1234567890",
+      output: "==> Building image\n==> Release v42 created\n",
+    }),
+    step("verify", "failed", {
+      targetId: "dpt_site",
+      targetName: "Website",
+      commitSha: "abcdef1234567890",
+      message: "The site didn't pass its checks within 10 minutes.",
+      verify: {
+        attempts: 60,
+        checks: [
+          { url: "https://example.com/", ok: true, status: 200, ms: 90, error: null },
+          {
+            url: "https://example.com/health",
+            ok: false,
+            status: 502,
+            ms: 412,
+            error: "Expected 200, got 502",
+          },
+        ],
+        versionSeen: false,
+        startedAt: "2026-11-06T18:05:00.000Z",
+        finishedAt: "2026-11-06T18:15:00.000Z",
+      },
+    }),
+  ],
+};
+
+/** A PR delivered earlier, which can still be deployed. */
+export const deliveredPrTask: TaskView = {
+  ...deployWaitingTask,
+  id: "tsk_pr",
+  title: "Tidy the footer",
+  deliver: "pr",
+  actions: [step("push", "succeeded"), step("open_pr", "succeeded", { url: prUrl })],
+};
+
+const deployApprovalBase = {
+  kind: "task_action" as const,
+  title: "Merge",
+  state: "pending" as const,
+  expiresAt: "2026-11-07T18:00:00.000Z",
+  createdAt: "2026-11-06T18:00:00.000Z",
+  taskId: "tsk_fix",
+  task: {
+    title: "Fix the 500 on checkout",
+    repoName: "site",
+    runnerName: "Studio Mac",
+    branch: "sling/fix-500",
+    remoteUrl: "git@github.com:a/site.git",
+    diffStats: { filesChanged: 1, insertions: 3, deletions: 1 },
+    summary: "Checkout no longer divides by zero.",
+    conversationId: "cnv_1",
+  },
+  prTitle: null,
+  prBody: null,
+  runId: null,
+  payload: null,
+};
+
+export const deployApprovals: ApprovalView[] = [
+  { ...deployApprovalBase, id: "apv_merge", actionId: "act_merge", actionKind: "merge" },
+  {
+    ...deployApprovalBase,
+    id: "apv_deploy",
+    title: "Deploy",
+    actionId: "act_deploy",
+    actionKind: "deploy",
+  },
+];
+
+/** An extension whose nodes the assistant may call: one reads, one sends. */
+export const agendaPreview: ExtensionPreview = {
+  ...ntfyPreview,
+  stagingId: "stg_agenda",
+  id: "agenda",
+  name: "Agenda",
+  description: "Your team's shared agenda.",
+  kinds: ["connector"],
+  contents: {
+    connectors: [{ id: "agenda", name: "Agenda", isExecutionProvider: false }],
+    nodes: [
+      {
+        type: "agenda.list",
+        version: 1,
+        title: "List agenda items",
+        isTrigger: false,
+        assistant: { sends: false },
+      },
+      {
+        type: "agenda.add",
+        version: 1,
+        title: "Add an agenda item",
+        isTrigger: false,
+        assistant: { sends: true },
+      },
+      { type: "agenda.changed", version: 1, title: "Agenda changed", isTrigger: true },
+    ],
+    templates: [],
+  },
+};
+
+/** ntfy 1.1.0 lets the assistant publish. */
+export const ntfyAssistantUpdate: ExtensionPreview = {
+  ...ntfyPreview,
+  stagingId: "stg_ntfy11",
+  version: "1.1.0",
+  contents: {
+    ...ntfyPreview.contents,
+    nodes: ntfyPreview.contents.nodes.map((n) =>
+      n.type === "ntfy.publish" ? { ...n, assistant: { sends: true } } : n,
+    ),
+  },
+  diff: { fromVersion: "1.0.0", added: [], removed: [] },
 };

@@ -260,6 +260,116 @@ describe("chat replies", () => {
     );
   });
 
+  it("asks before the assistant sends something, showing what would go out", async () => {
+    agentStatus = "thinking";
+    open();
+    await screen.findAllByText("Thinking");
+    // A new turn starts with nothing streamed, whatever an earlier test left.
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "thinking" });
+    emit({
+      type: "agent.tool",
+      conversationId: "cnv_1",
+      step: {
+        kind: "tool",
+        id: "t2",
+        name: "email_send",
+        input: { to: "ana@example.com", subject: "Lunch moved" },
+        status: "running",
+        output: null,
+        approval: {
+          id: "sap_1",
+          kind: "send",
+          state: "pending",
+          machine: "",
+          summary: "Email ana@example.com: Lunch moved",
+        },
+      },
+    });
+    expect(screen.getByText("Email ana@example.com: Lunch moved")).toBeTruthy();
+    expect(screen.getByText("Send this from Sling?")).toBeTruthy();
+    // Sends never talk about sandboxes or machines.
+    expect(screen.queryByText(/outside the sandbox/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Send it" }));
+    await waitFor(() =>
+      expect(posts).toContainEqual({
+        path: "/api/conversations/cnv_1/commands/sap_1",
+        body: { decision: "approve" },
+      }),
+    );
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "idle" });
+  });
+
+  it("denies a send with the same control as a command", async () => {
+    agentStatus = "thinking";
+    open();
+    await screen.findAllByText("Thinking");
+    // A new turn starts with nothing streamed, whatever an earlier test left.
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "thinking" });
+    emit({
+      type: "agent.tool",
+      conversationId: "cnv_1",
+      step: {
+        kind: "tool",
+        id: "t3",
+        name: "discord_send_message",
+        input: { channel: "general" },
+        status: "running",
+        output: null,
+        approval: {
+          id: "sap_2",
+          kind: "send",
+          state: "pending",
+          machine: "",
+          summary: "Discord #general: Deploy is done",
+        },
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Deny" }));
+    await waitFor(() =>
+      expect(posts).toContainEqual({
+        path: "/api/conversations/cnv_1/commands/sap_2",
+        body: { decision: "deny" },
+      }),
+    );
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "idle" });
+  });
+
+  it("says nothing was sent when a send was denied or nobody answered", async () => {
+    const send = (id: string, state: "denied" | "expired" | "approved") => ({
+      kind: "tool" as const,
+      id,
+      name: "calendar_create_event",
+      input: {},
+      status: "done" as const,
+      output: state === "approved" ? '{"created":true}' : "Not sent.",
+      approval: {
+        id: `sap_${id}`,
+        kind: "send" as const,
+        state,
+        machine: "",
+        summary: `Event ${id}: Dentist, Fri 09:00`,
+      },
+    });
+    messages = [
+      {
+        ...reply,
+        text: "Done.",
+        trace: {
+          ms: 800,
+          steps: [send("a", "denied"), send("b", "expired"), send("c", "approved")],
+        },
+      },
+    ];
+    open();
+    expect(await screen.findByText("You didn't allow it, so nothing was sent.")).toBeTruthy();
+    expect(screen.getByText("Nobody answered, so nothing was sent.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Send it" })).toBeNull();
+    const approved = screen.getByRole("button", { name: "Event c: Dentist, Fri 09:00" });
+    expect(within(approved).getByText("approved")).toBeTruthy();
+    fireEvent.click(approved);
+    expect(screen.getByText(/"created": true/)).toBeTruthy();
+  });
+
   it("shows a task inside the reply that started it, once", async () => {
     tasks = [{ ...machineTask, conversationId: "cnv_1", title: "List Desktop items" }];
     messages = [
