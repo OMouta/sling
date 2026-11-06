@@ -10,7 +10,7 @@ Sling coordinates. The coding agent writes the code. The control plane never edi
 
 Around that sits a workflow engine with a visual editor. Workflows react to email, Discord messages, schedules, webhooks, and Sling's own events, and they can summarize with a model, ask for approval, or hand work to a coding agent. The chat assistant is itself a workflow, so the web app and Discord talk to the same one.
 
-This repo is at **Stage 4** of the plan in [`plan/`](plan/): extensions that other people write and you install, as signed packages that run in their own restricted processes. Stage 3 brought routing across machines, Docker and Railway sandboxes, and Claude Code next to Codex. Workflows, the editor, and the Discord and email connectors came in Stage 2.
+This repo is at **Stage 5** of the plan in [`plan/`](plan/): fixes that Sling merges, deploys, and checks once you approve, a calendar the assistant reads and adds to, and the web app on your phone's home screen with push notifications. Stage 4 brought extensions that other people write and you install, as signed packages that run in their own restricted processes. Stage 3 brought routing across machines, Docker and Railway sandboxes, and Claude Code next to Codex. Workflows, the editor, and the Discord and email connectors came in Stage 2.
 
 ## How it fits together
 
@@ -48,6 +48,18 @@ The assistant chats through that machine's Codex or Claude Code, on your own log
 
 To use Discord or email, add them under **Connectors**, then install a template under **Workflows**, for example **Important email to Discord** or **Discord assistant**.
 
+## Deploys
+
+Add your site under **Deploys**: its repo, how it deploys (your host deploys on merge, a command on one of your machines, or a deploy hook), and a URL that says it works. Then "the site is down, fix it" goes all the way: the assistant checks the site, a coding agent fixes it, and once the PR is open Sling asks "Approve deployment?" in the chat and on your phone. After you approve, it merges, deploys, and checks the site until it passes, and tells you what it saw. The machine's own config decides what a deploy command runs, and it only deploys merged commits. [docs/deploys.md](docs/deploys.md) has the details.
+
+## Your calendar and apps
+
+Add your calendar under **Connectors**: iCloud, Fastmail, Nextcloud, or any CalDAV account, or the private iCal link of a Google or Outlook calendar. The assistant then answers "what's on tomorrow?" and adds events, and the **Morning briefing** template writes you a briefing each morning. It can also send email and Discord messages and run your workflows from chat. Reading never asks; anything that goes out asks you in the chat first, except in Full access.
+
+## On your phone
+
+Open Sling on your phone and add it to the home screen. Under **Settings → Notifications**, turn on notifications for that device: approvals, finished tasks, and replies then reach you with Sling closed, and a tap opens the right page. Push needs an HTTPS address, which the Tailscale and Cloudflare Tunnel setups give you. See [docs/notifications.md](docs/notifications.md).
+
 ## Extensions
 
 Under **Extensions**, install connectors, sandbox providers, and workflow templates that aren't built in. Sling ships a catalog with three: [ntfy](extensions/ntfy) push notifications, a [Fly Machines](extensions/fly-machines) sandbox provider, and [Task alerts](extensions/task-alerts), a template that pings your phone when a task finishes. Add other catalogs by URL, or upload a `.slx` file.
@@ -72,9 +84,11 @@ Each conversation has a mode, and each machine can cap the mode it accepts. Deta
 - [Reach Sling from your phone, at home or away](docs/remote-access.md)
 - [Permission modes and what enforces them](docs/modes.md)
 - [Personalities: who answers, and what it may use](docs/personalities.md)
+- [Deploys: merge, deploy, and check a fix](docs/deploys.md)
+- [Notifications and the phone app](docs/notifications.md)
 - [Workflows, nodes, and templates](docs/workflows.md)
 - [Routing and sandboxes](docs/sandboxes.md), and [the sandbox image](docs/sandbox-image.md)
-- Connectors: [Discord](docs/connectors/discord.md), [Email](docs/connectors/email.md), [Docker](docs/connectors/docker.md), [Railway](docs/connectors/railway.md)
+- Connectors: [Discord](docs/connectors/discord.md), [Email](docs/connectors/email.md), [Calendar](docs/connectors/calendar.md), [Docker](docs/connectors/docker.md), [Railway](docs/connectors/railway.md)
 - [Extensions](docs/extensions/README.md): installing them, and writing [connectors](docs/extensions/connectors.md), [sandbox providers](docs/extensions/providers.md), and [workflow packages](docs/extensions/workflow-packages.md), with [signing and catalogs](docs/extensions/signing.md) and [the CLI](docs/extensions/cli.md)
 - [Threat model](docs/threat-model.md)
 - [Development](docs/development.md)

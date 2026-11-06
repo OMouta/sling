@@ -13,8 +13,11 @@ Sling works at one address at a time, `SLING_PUBLIC_URL`. With a tunnel, that's 
 | On the phone | The Tailscale app | Nothing |
 | You need | A Tailscale account | A domain in a Cloudflare account |
 | At home | Stays on your network | Goes out through Cloudflare and back |
+| Push notifications | Yes. Opening Sling from one needs the tailnet | Yes |
 
 With either one, Sling is published on `127.0.0.1` only, so the tunnel is the only way in from other devices.
+
+Both give Sling an HTTPS address, which browsers need before they let you add Sling to a phone's home screen or turn on [push notifications](notifications.md). The push itself goes from your server to Apple's, Google's, or Mozilla's push service, encrypted for your device, and from there to the phone, so it arrives even when the phone is away from home.
 
 ## Tailscale
 

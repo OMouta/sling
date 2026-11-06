@@ -13,7 +13,20 @@ In Supervised and Auto, Claude Code refuses to start rather than run commands un
 
 New conversations start in the workspace default (**Settings**, Auto out of the box). You can switch any conversation from its header. A switch applies to tasks started after it, and running tasks keep the mode they started with. Every task records its mode in the audit log.
 
-Stage 1 has no merge or deploy steps yet, so in practice Auto pushes and opens PRs on its own, and Supervised asks for both.
+Merge and deploy happen only when a task is delivered as a deploy, to a repo with a [deploy target](deploys.md). Auto then pushes and opens the PR on its own and asks once, "Approve deployment?", after the PR exists. Supervised asks for push and PR first, then for the deployment. Full access merges and deploys without asking, and a Read-only conversation can't deploy at all.
+
+## Sending from chat
+
+With a personality that has Apps and workflows, the assistant can read your calendar and use the apps you connected. Reading never asks. Anything that leaves Sling, such as an email, a Discord message, a new calendar event, or a workflow run with side effects, follows the conversation's mode:
+
+| Mode | Sending something |
+|---|---|
+| Read-only | Refused |
+| Supervised | Asks you in the chat first |
+| Auto | Asks you in the chat first |
+| Full access | Goes out at once |
+
+The question shows what would go out, such as `Email ana@example.com: Lunch moved`, with Deny and Allow. If nobody answers within 5 minutes, nothing is sent. See [personalities.md](personalities.md).
 
 ## Commands
 
@@ -37,7 +50,7 @@ The assistant never picks the mode. It isn't a tool parameter, and the server re
 **On the control plane**
 - The task gets the conversation's current mode.
 - A machine whose reported cap is below the conversation's mode isn't picked for the task. If no machine qualifies, the task is refused, or offered to a sandbox (see [sandboxes.md](sandboxes.md)).
-- Push and PR steps that need approval wait as approval records. They survive restarts and expire after 24 hours.
+- Push, PR, merge, and deploy steps that need approval wait as approval records. They survive restarts and expire after 24 hours.
 
 **On the Runner** (holds even if the control plane is compromised)
 - `max-mode` in the local config. Tasks above it are refused.
@@ -47,6 +60,7 @@ The assistant never picks the mode. It isn't a tool parameter, and the server re
 - Read-only tasks can't push at all.
 - Commands run outside the read-only sandbox only when `max-mode` is Full access and the conversation isn't Read-only. `commands off` refuses them all.
 - Codex never commits or pushes. The Runner does, after the gate.
+- Merges and deploys are refused with `sling-runner config set deploys off`, or when `max-mode` is Read-only. A merge takes only a Sling task branch, never forces, and a deploy runs only the command set on that machine, only on a commit that's already on the remote's default branch. See [deploys.md](deploys.md#what-the-machine-refuses).
 
 ## Network
 

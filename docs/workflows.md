@@ -48,7 +48,7 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 |---|---|
 | **Triggers** | |
 | Manual run | Starts from the **Run** button, the API, or another workflow |
-| Schedule | Cron schedule |
+| Schedule | Cron schedule, in the time zone you set on the node, or the workspace's (**Settings → General**) when it's empty |
 | Webhook | `POST` to the URL shown once published. Anyone with the URL can start the workflow |
 | Chat message | A message sent in the web app |
 | Conversation update | A note Sling adds to a conversation this workflow owns, for example a task finishing |
@@ -77,6 +77,9 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | HTTP request | Calls a URL. GET and HEAD retry on network errors, 429, and 5xx |
 | Send Discord message | Channel or DM, optionally with Approve and Reject buttons |
 | Send email | Plain text over SMTP |
+| List calendar events, Add calendar event | Read a day or a range of your calendar, with recurring events expanded, or add an event. See [connectors/calendar.md](connectors/calendar.md) |
+| Check deploy targets | Runs every [deploy target](deploys.md)'s health checks, or one target's, and outputs the ones that went down or came back up |
+| Notify my devices | A push notification to the devices you turned on under **Settings → Notifications**. A tap opens the page you give. See [notifications.md](notifications.md) |
 
 ## Templates
 
@@ -89,6 +92,8 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | Important email to Discord | Summarizes mail from senders on a list and posts the summary and action items. Edit the list in the **If** node |
 | Approval notifications in Discord | Posts every new approval with Approve and Reject buttons |
 | Website health monitor | Checks a URL every five minutes and posts when it errors or can't be reached |
+| Site down alert | Checks every deploy target each minute, and pushes "Website is down" or "back up" to your devices. Tapping the alert opens a chat with the Incident personality and a draft that says what failed |
+| Morning briefing | At 07:30 in your time zone, reads today's calendar and has the assistant write the day's briefing in a new chat, then pushes it to your devices |
 
 Templates live in `workflows/` in the repo, as the same JSON the editor exports. Extensions can add more: a template from an extension shows which one it came from, and works the same way.
 
@@ -96,7 +101,8 @@ Templates live in `workflows/` in the repo, as the same JSON the editor exports.
 
 ## Connectors
 
-Discord and email are set up under **Connectors**, as are connectors from [extensions](extensions/README.md), which add their own nodes. A connector only listens for events while an enabled workflow uses it, which is why an installation can show as idle.
+Discord, email, and your calendar are set up under **Connectors**, as are connectors from [extensions](extensions/README.md), which add their own nodes. A connector that listens for events, such as Discord or email, only does so while an enabled workflow uses it, which is why an installation can show as idle.
 
 - [Discord](connectors/discord.md)
 - [Email](connectors/email.md)
+- [Calendar](connectors/calendar.md)

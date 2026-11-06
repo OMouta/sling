@@ -23,7 +23,7 @@ The script asks how Sling should be reached, then writes `deploy/.env`, generate
 | Tailscale | `https://<name>.<tailnet>.ts.net` | Your devices on your tailnet, at home and away |
 | Cloudflare Tunnel | `https://<your hostname>` | Anyone, from anywhere |
 
-Sling works at one address at a time, so pick the one your phone will use. Run `./setup.sh` again to change it. It keeps the secrets already in `.env`. [remote-access.md](remote-access.md) covers the tunnels in more detail.
+Sling works at one address at a time, so pick the one your phone will use. Only the two HTTPS choices let a phone add Sling to its home screen and get [push notifications](notifications.md). Run `./setup.sh` again to change it. It keeps the secrets already in `.env`. [remote-access.md](remote-access.md) covers the tunnels in more detail.
 
 On a machine without bash, or to set it up by hand:
 

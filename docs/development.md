@@ -57,7 +57,7 @@ The routing and sandbox end-to-end tests (`apps/server/test/stage3.e2e.test.ts`)
 | `crates/harness-codex` | Codex adapter and `fake-codex` |
 | `crates/harness-claude-code` | Claude Code adapter and `fake-claude` |
 | `deploy` | Dockerfile and compose files. `deploy/sandbox` builds the sandbox image |
-| `plan` | Spec, decisions log, Stage 1 plan, spike notes |
+| `plan` | Spec, decisions log, each stage's plan, spike notes |
 
 The server runs TypeScript directly with Node's type stripping, so there's no build step. That means no TS enums or parameter properties (`erasableSyntaxOnly` catches them).
 
