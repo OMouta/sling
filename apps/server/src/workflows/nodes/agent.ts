@@ -13,7 +13,7 @@ export const delegateNode = defineNode({
   version: 1,
   title: "Delegate coding task",
   description:
-    "Starts a coding task on the machine Sling picks, or in a sandbox, and waits until it finishes, needs approval, or is delivered.",
+    "Starts a coding task on the machine Sling picks, or in a sandbox, and waits until it finishes, needs approval, or is delivered. A deploy is delivered once its site has been checked.",
   category: "agent",
   configSchema: z.object({
     machine: z
@@ -45,7 +45,7 @@ export const delegateNode = defineNode({
       .enum(DELIVERY_KINDS)
       .default("pr")
       .describe(
-        "local keeps the commit where it ran, push pushes the branch, pr also opens a pull request.",
+        "local keeps the commit where it ran, push pushes the branch, pr also opens a pull request. deploy also merges it once approved, deploys it through the repo's deploy target, and checks the site; the repo needs a deploy target.",
       ),
     mode: z
       .enum(PERMISSION_MODES)

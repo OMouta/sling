@@ -1,0 +1,125 @@
+{
+  "schema": "sling.workflow/v1",
+  "name": "Site down alert",
+  "description": "Pushes an alert when a deploy target goes down, and when it's back up.",
+  "nodes": [
+    {
+      "id": "everyMinute",
+      "type": "core.schedule",
+      "version": 1,
+      "position": { "x": 0, "y": 0 },
+      "config": { "cron": "* * * * *" },
+      "label": "Every minute"
+    },
+    {
+      "id": "check",
+      "type": "deploys.check",
+      "version": 1,
+      "position": { "x": 300, "y": 0 },
+      "config": {},
+      "label": "Check deploy targets"
+    },
+    {
+      "id": "each",
+      "type": "core.for_each",
+      "version": 1,
+      "position": { "x": 600, "y": 0 },
+      "config": {},
+      "label": "Each change"
+    },
+    {
+      "id": "keep",
+      "type": "core.set_var",
+      "version": 1,
+      "position": { "x": 900, "y": 0 },
+      "config": { "name": "change" },
+      "label": "Keep the change"
+    },
+    {
+      "id": "backUp",
+      "type": "core.if",
+      "version": 1,
+      "position": { "x": 1200, "y": 0 },
+      "config": { "condition": "vars.change.up" },
+      "label": "Back up?"
+    },
+    {
+      "id": "notifyUp",
+      "type": "app.notify",
+      "version": 1,
+      "position": { "x": 1500, "y": -100 },
+      "config": {
+        "title": "={{ vars.change.target & \" is back up\" }}",
+        "body": "Every health check passes again.",
+        "open": "/deploys",
+        "urgency": "normal",
+        "ttlMinutes": 60
+      },
+      "label": "Back up"
+    },
+    {
+      "id": "notifyDown",
+      "type": "app.notify",
+      "version": 1,
+      "position": { "x": 1500, "y": 100 },
+      "config": {
+        "title": "={{ vars.change.target & \" is down: \" & vars.change.reason }}",
+        "body": "={{ \"Failing since \" & vars.change.sinceTime & \". Tap to start a chat about it.\" }}",
+        "open": "={{ \"/?personality=incident&draft=\" & $encodeUrlComponent(vars.change.target & \" is down (\" & vars.change.reason & \" since \" & vars.change.sinceTime & \"). Find out why and fix it.\") }}",
+        "urgency": "high",
+        "ttlMinutes": 60
+      },
+      "label": "Down"
+    }
+  ],
+  "edges": [
+    {
+      "id": "x_everyMinute_check",
+      "kind": "exec",
+      "from": { "node": "everyMinute", "port": "next" },
+      "to": { "node": "check", "port": "in" }
+    },
+    {
+      "id": "x_check_each",
+      "kind": "exec",
+      "from": { "node": "check", "port": "next" },
+      "to": { "node": "each", "port": "in" }
+    },
+    {
+      "id": "d_check_changed_each_items",
+      "kind": "data",
+      "from": { "node": "check", "port": "changed" },
+      "to": { "node": "each", "port": "items" }
+    },
+    {
+      "id": "x_each_keep",
+      "kind": "exec",
+      "from": { "node": "each", "port": "each" },
+      "to": { "node": "keep", "port": "in" }
+    },
+    {
+      "id": "d_each_item_keep_value",
+      "kind": "data",
+      "from": { "node": "each", "port": "item" },
+      "to": { "node": "keep", "port": "value" }
+    },
+    {
+      "id": "x_keep_backUp",
+      "kind": "exec",
+      "from": { "node": "keep", "port": "next" },
+      "to": { "node": "backUp", "port": "in" }
+    },
+    {
+      "id": "x_backUp_notifyUp",
+      "kind": "exec",
+      "from": { "node": "backUp", "port": "true" },
+      "to": { "node": "notifyUp", "port": "in" }
+    },
+    {
+      "id": "x_backUp_notifyDown",
+      "kind": "exec",
+      "from": { "node": "backUp", "port": "false" },
+      "to": { "node": "notifyDown", "port": "in" }
+    }
+  ]
+}
