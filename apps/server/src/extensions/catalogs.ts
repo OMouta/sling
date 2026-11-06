@@ -310,7 +310,9 @@ export class CatalogStore {
     state.attemptedAt = Date.now();
     let changed = false;
     try {
-      const fetched = await this.#fetch(new URL(state.url as string), state.etag);
+      // Checked again: the server may no longer allow plain HTTP to this machine.
+      const url = checkSourceUrl(state.url as string, this.#allowLoopback);
+      const fetched = await this.#fetch(url, state.etag);
       if (fetched.document) {
         state.document = fetched.document;
         state.name = fetched.document.name;

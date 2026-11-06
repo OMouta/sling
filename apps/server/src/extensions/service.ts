@@ -76,7 +76,8 @@ import {
 export const DIGEST_MISMATCH = "The stored package doesn't match its digest";
 const MISSING_PACKAGE = "The stored package is missing";
 const STAGING_MS = 15 * 60 * 1000;
-const MAX_STAGED = 20;
+/** Each can hold a 20 MB package, so only a few are kept. */
+const MAX_STAGED = 8;
 const SWEEP_EVERY_MS = 60 * 1000;
 const EMPTY_HOSTS: ReadonlySet<string> = new Set();
 
@@ -1012,7 +1013,11 @@ export class ExtensionService {
     }
     const target = version ?? updateFor(x, catalog)?.version;
     if (!target) throw new ExtensionError(`${x.row.name} is up to date.`, 409);
-    return this.preview(actor, { catalogId: catalog.id, extensionId: id, version: target });
+    const entry = catalog.document.extensions.find((e) => e.id === id);
+    const listed = entry?.versions.find((v) => v.version === target);
+    if (!entry || !listed)
+      throw new ExtensionError(`${catalog.name} doesn't list ${id} ${target}.`, 404);
+    return this.#previewFromCatalog(catalog, entry, listed);
   }
 
   #trust(s: Pick<Staged, "source" | "pkg" | "catalogPublisher">): TrustResult {
