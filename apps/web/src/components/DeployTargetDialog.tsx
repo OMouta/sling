@@ -453,10 +453,16 @@ function CommandFields({
   onChange: (runnerId: string) => void;
 }) {
   if (!remoteKey) {
+    // The same shape as once a repo is picked, so nothing jumps when it is.
     return (
-      <p className="text-xs leading-[18px] text-muted">
-        Pick a repo, then the machine whose deploy command runs it.
-      </p>
+      <Field
+        label="Machine"
+        hint="The deploy command lives on the machine, so Sling picks where it runs but never what runs."
+      >
+        <Select value="" disabled onChange={() => {}}>
+          <option value="">Pick a repo first</option>
+        </Select>
+      </Field>
     );
   }
   const line = setCommandLine(repoNameFor(remote, remoteKey));
