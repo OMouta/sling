@@ -116,7 +116,7 @@ export function assistantInstructions(
     }
     const depends =
       commands || coding
-        ? `the user's machines, files, repos, or tasks${apps ? ", their calendar or apps" : ""}`
+        ? `the user's machines, files, repos, ${apps ? "tasks, calendar, or apps" : "or tasks"}`
         : "the user's calendar or apps";
     chat.push(
       `- Answer directly from what you know when you can. Use a tool only when the answer depends on ${depends}, or when they want something done.`,
