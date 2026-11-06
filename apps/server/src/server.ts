@@ -105,7 +105,10 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   ctx.events = new EventBus(ctx);
   ctx.workflows = new WorkflowService(ctx, opts.templatesDir);
   ctx.connectors = new ConnectorRuntime(ctx);
-  ctx.extensions = new ExtensionService(ctx, opts.extensionRuntime ?? new ProcessRuntime());
+  ctx.extensions = new ExtensionService(
+    ctx,
+    opts.extensionRuntime ?? new ProcessRuntime({ log: app.log.child({ component: "extensions" }) }),
+  );
   ctx.runners.handlers = ctx.tasks;
   ctx.tasks.onSettled = async (taskId, reason) => {
     // First, so a failing hook below can't keep a sandbox alive.

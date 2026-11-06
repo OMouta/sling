@@ -162,11 +162,14 @@ Each enabled extension with code gets its own Node process, started like this:
 
 ```text
 node --permission
-     --allow-fs-read=<unpacked package dir>,<child runtime dir>
+     --allow-fs-read=<child runtime dir>
+     --allow-fs-read=<unpacked package dir>
      --max-old-space-size=<memoryMb>
      --disallow-code-generation-from-strings
      <child runtime>/main.mjs
 ```
+
+One `--allow-fs-read` per directory: Node 26 denied reads under the second path of a comma-separated list. Both paths go through `realpath` first, because macOS's `/var` symlink otherwise blocks the module loader.
 
 - **What the process can't do.** With no other `--allow-*` flag it can't:
   - write files, or read any outside those two directories
@@ -174,7 +177,7 @@ node --permission
   - start child processes or worker threads
   - load addons, FFI, or WASI, or open the inspector
 - **Environment.** It's empty.
-- **IPC.** The only way out is the IPC channel, using Node's structured-clone serialization.
+- **The channel.** The only way out is stdin and stdout, carrying length-prefixed V8 structured-clone frames. Not Node's `ipc` channel: it reads a whole message before the server sees it, so a child could send a buffer far larger than its heap cap and exhaust the server. With its own framing the server refuses anything over 16 MB from the 4-byte header. A pipe on fd 3 isn't possible, because `--permission` denies opening it.
 - **Node version.** Node 24 can't deny network, so the server checks for `--allow-net` support before starting any extension process. Without it, extensions show "needs Node 26", and none of their code runs. The project moves to Node 26 LTS.
 - **Unpacking.** On start, and on install or update, the server unpacks each enabled package from Postgres into a fresh directory under `SLING_EXTENSION_CACHE` (default `<tmpdir>/sling-extensions`). It checks the digest as it goes, and removes directories from earlier runs.
 
@@ -221,7 +224,7 @@ The extension's bundle only default-exports `defineExtension({ connectors })`. S
 The child has no network of its own. The child runtime's `fetch` and `WebSocket` send each request to the server, which checks it:
 
 1. **The host must be allowed**, by one of:
-   - the manifest's `network.hosts`, exact or `*.example.com`
+   - the manifest's `network.hosts`, exact or `*.example.com` (which covers `example.com` too)
    - the hostname of a URL in a config field the manifest lists in `network.configHosts`, from any installation of this extension's connectors
 2. **The scheme:** `https:` and `wss:`. `http:` and `ws:` work only with `localNetwork`, and only when the name resolves to a private address.
 3. **The address.** The server resolves the name itself and checks every address. Without `localNetwork`, it refuses loopback, private, link-local, CGNAT, and unique-local addresses. It connects to the address it checked, so a DNS answer that changes in between can't slip through.
