@@ -30,7 +30,7 @@ You also need, on the same machine and as the same user:
 - At least one coding agent, installed and logged in:
   - Codex: `codex login`
   - Claude Code: `claude auth login`, or `ANTHROPIC_API_KEY` set in the Runner's environment. On Linux, Supervised and Auto tasks also need `bubblewrap` and `socat` for Claude Code's sandbox. Without them Claude Code refuses to start those tasks rather than run commands unsandboxed.
-- Optional: GitHub CLI logged in (`gh auth login`), so Sling can open pull requests. Without it Sling gives you a compare link instead.
+- Optional: GitHub CLI logged in (`gh auth login`), so Sling can open and merge pull requests. Without it Sling gives you a compare link instead, and merges with git.
 
 The Runner checks each agent with its own CLI (`codex login status`, `claude auth status`) and never reads their credential files. A task for an agent that isn't installed and logged in is refused.
 
@@ -92,15 +92,17 @@ sling-runner config set name "work laptop"
 sling-runner config set labels ios,gpu          # comma-separated; "" clears them
 sling-runner config set codex-bin /opt/codex/bin/codex
 sling-runner config set claude-bin ~/.local/bin/claude
+sling-runner config set gh-bin /opt/homebrew/bin/gh
 sling-runner config set remote-repos off         # on | off
 sling-runner config set commands off             # on | off
+sling-runner config set deploys off              # on | off
 sling-runner config set scan-roots ~/code,~/work # "" means your home directory
 sling-runner config set server-url https://sling.tail1234.ts.net
 ```
 
 `server-url` is for when Sling moves to a new address, for example onto a tunnel. The machine keeps its pairing and connects to the new address after you restart the Runner. Only you can change it, here on the machine. To pair with a different Sling, use `sling-runner pair` instead.
 
-`max-mode` is the highest permission mode this machine accepts. A task above it is refused here, whatever the control plane says. Below Full access, the assistant's commands also stay in the read-only sandbox. `commands` decides whether the assistant may run commands here at all. See [Commands](#commands).
+`max-mode` is the highest permission mode this machine accepts. A task above it is refused here, whatever the control plane says. Below Full access, the assistant's commands also stay in the read-only sandbox, and at Read-only the machine doesn't merge or deploy. `commands` decides whether the assistant may run commands here at all. See [Commands](#commands). `deploys` decides whether Sling may merge and deploy here. See [Merges and deploys](#merges-and-deploys).
 
 ## Labels
 
@@ -184,6 +186,82 @@ Commands run in a read-only sandbox unless the conversation's mode lets them out
 
 A command leaves the sandbox only when the machine's `max-mode` is Full access and the conversation isn't Read-only. Sling asks you in the chat first outside Full access. [modes.md](modes.md#commands) has the table. `sling-runner config set commands off` refuses every command, and the Machines page shows it.
 
+## Merges and deploys
+
+A task delivered with a deploy ends with a merge and, for a deploy target that runs a command, a deploy. Sling sends each one to a machine that has the repo. Any such machine can merge, not only the one that ran the task. Only a machine with a deploy command for the repo deploys.
+
+### Deploy commands
+
+The command lives on the machine, and only you set it:
+
+```sh
+sling-runner repo set site deploy-command "fly deploy"
+sling-runner repo set site deploy-timeout 1800   # seconds, 900 by default
+sling-runner repo unset site deploy-command      # or deploy-timeout, back to 900
+sling-runner repo list                           # shows each repo's command
+```
+
+Sling picks which machine deploys, but never what runs there. The Runner reports each repo's command and time limit to Sling, with anything that looks like a token masked, so the deploy target dialog can show it. A command is at most 4 KB. Put anything longer in a script and run that.
+
+### How a merge runs
+
+With a GitHub PR and `gh` logged in, the Runner merges through `gh`:
+
+1. It runs `gh pr view <url>` and checks that the PR is in this repo's origin, that its head is the task's branch, and that its base is the default branch.
+2. For a PR that's already merged, it returns the merge commit, so asking twice is safe.
+3. It runs `gh pr merge <url>` with the target's method: `--squash`, `--merge`, or `--rebase`. When the task ran on this machine, it adds `--match-head-commit` with the commit Sling made, so GitHub refuses the merge if anyone pushed to the PR since.
+
+`gh` runs from an empty directory outside the repo, so it never touches your checkout. GitHub's branch protection still applies. A PR that waits for checks or a merge queue fails the step.
+
+Otherwise the Runner merges with git:
+
+1. It fetches, then makes a temporary detached worktree at `origin/<default branch>`.
+2. It squash-merges the task branch, or merges it with a merge commit when the target says `merge`. Rebasing needs `gh`, so `rebase` squash-merges instead, and the step's message says so.
+3. The commit has the task's title and body and a `Sling-Task: <task id>` trailer. Commit hooks don't run.
+4. It pushes the commit to the default branch, never forced. Pre-push hooks don't run either, because they'd run in a fresh checkout without the repo's dependencies.
+5. If origin refuses the push because someone else pushed meanwhile, it fetches and merges again on top, once.
+
+A conflict aborts the merge, and the step fails with the files that conflict. Before merging, the Runner looks for the trailer on the default branch. A branch that's already there counts as merged too, so asking twice is safe here as well. The Runner removes the temporary worktree afterwards and leaves your own checkout and branches alone. Your local default branch doesn't move. The next `git pull` brings the merge in.
+
+### How a deploy runs
+
+1. The Runner fetches and checks that the commit is on `origin/<default branch>`.
+2. It makes a temporary detached worktree at that commit.
+3. It runs the command there through your login shell, outside the command sandbox. That's `$SHELL -lc` when your shell is zsh, bash, sh, dash, or ksh, and `/bin/sh -lc` otherwise. stdin is empty, and stderr joins stdout so the two stay in order.
+4. The environment is yours without `SLING_*` variables. The Runner adds `SLING_DEPLOY_COMMIT`, the full SHA, and `SLING_DEPLOY_REPO`, the repo's name on this machine, plus `NO_COLOR=1` and `GIT_TERMINAL_PROMPT=0`.
+5. Output streams to Sling about every 100 ms, whole lines at a time, with secrets masked as in task output. Sling gets the first 256 KB, then a note that the rest was cut.
+6. Exit code 0 is success. Any other code fails the step, and the message ends with the last lines of output.
+7. At the time limit the Runner sends SIGTERM to the command's process group, then SIGKILL 5 seconds later.
+8. It removes the worktree.
+
+Because the worktree goes away, the command should build and ship, not serve from its own directory. Processes it leaves running keep running, but the Runner stops reading their output half a second after the command exits. One deploy per repo runs on a machine at a time. A second deploy of the same repo fails while the first runs.
+
+### What the Runner refuses
+
+Whatever Sling asks, the Runner refuses:
+
+- any merge or deploy while `deploys` is off
+- any merge or deploy while `max-mode` is Read-only
+- a repo it doesn't have
+- merging a branch outside `sling/`, or into anything but the repo's default branch on this machine
+- merging a PR that isn't in the repo's origin, or whose head or base doesn't match
+- deploying a commit that isn't on `origin/<default branch>`
+- deploying a repo with no deploy command
+
+It never force-pushes. The task shows each refusal's reason.
+
+To keep Sling from merging or deploying from this machine at all:
+
+```sh
+sling-runner config set deploys off
+```
+
+The Runner reads this from disk for every merge and deploy, so it takes effect at once. `sling-runner config show` and `sling-runner doctor` show the setting and which repos have a deploy command. It's on by default, and always off in a sandbox. Sling merges a sandbox's PR itself through GitHub, after the sandbox is gone.
+
+### Results
+
+The Runner keeps each merge's and deploy's result in memory until Sling acknowledges it, and sends it again after a reconnect. Sling may send the same request again, for example after a reconnect. A request that's running or finished never runs twice. The Runner answers with the result it has. If the Runner itself restarts, results it hadn't delivered are lost, and Sling marks the step "interrupted, outcome unknown".
+
 ## Running it
 
 | Command | What it does |
@@ -192,7 +270,7 @@ A command leaves the sandbox only when the machine's `max-mode` is Full access a
 | `sling-runner service install` | launchd on macOS, a systemd user unit on Linux, a logon task on Windows. |
 | `sling-runner service status` / `uninstall` | |
 | `sling-runner gc` | Remove worktrees of finished tasks older than 7 days. Also runs daily on its own. |
-| `sling-runner doctor` | Check git, the agents, and gh, show which repos match across machines, and count the found repos Sling can offer. |
+| `sling-runner doctor` | Check git, the agents, and gh, show which repos match across machines, count the found repos Sling can offer, and say whether this machine merges and deploys. |
 | `sling-runner sandbox` | The entrypoint of the sandbox image. You don't run it yourself; see below. |
 
 On Linux, `loginctl enable-linger $USER` keeps the service running while you're logged out. On Windows the logon task only runs while you're logged in.
@@ -206,6 +284,7 @@ On Linux, `loginctl enable-linger $USER` keeps the service running while you're 
 | `~/.local/share/sling/spool/` | Task events not yet acknowledged by the server |
 | `~/.local/share/sling/worktrees/` | One git worktree per task |
 | `~/.local/share/sling/chat/` | One empty directory per running chat turn, deleted when the turn ends |
+| `~/.local/share/sling/actions/` | Temporary worktrees for merges and deploys, deleted when each one ends |
 | `~/.local/share/sling/runner.log` | Log when running as a service |
 
 On Windows these live under `%APPDATA%\Sling` and `%LOCALAPPDATA%\Sling`. `SLING_RUNNER_HOME` puts everything in one directory, which lets you run two Runners on one machine.
