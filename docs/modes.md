@@ -15,6 +15,21 @@ New conversations start in the workspace default (**Settings**, Auto out of the 
 
 Stage 1 has no merge or deploy steps yet, so in practice Auto pushes and opens PRs on its own, and Supervised asks for both.
 
+## Commands
+
+The assistant can run shell commands on your machines itself, to list a folder, read a file, or check a version, without starting a coding task. A command runs as you, in your home directory unless the assistant picks another one. By default it runs in the machine's read-only sandbox, which can read files but can't write them, use the network, open apps, send Apple Events, or signal other processes. That's `sandbox-exec` on macOS and bubblewrap on Linux.
+
+| Mode | A command that only reads | A command that writes or needs the network |
+|---|---|---|
+| Read-only | Runs in the sandbox | Refused |
+| Supervised | Runs in the sandbox | Asks you in the chat, then runs outside it |
+| Auto | Runs in the sandbox | Asks you in the chat, then runs outside it |
+| Full access | Runs outside the sandbox | Runs outside the sandbox |
+
+The question shows on the command in the chat, with Deny and Run it. If nobody answers within 5 minutes, the command doesn't run. On a machine with no sandbox, for example Linux without bubblewrap, every command asks first in Supervised and Auto, and Read-only can't run any.
+
+A machine whose `max-mode` is below Full access runs every command in its sandbox, whatever the conversation's mode, and refuses to leave it. `sling-runner config set commands off` turns commands off on a machine. Every command, and every approval or denial, goes in the audit log.
+
 ## What enforces what
 
 The assistant never picks the mode. It isn't a tool parameter, and the server reads it from the conversation when a task is created. Limits are enforced in code, in two places:
@@ -30,6 +45,7 @@ The assistant never picks the mode. It isn't a tool parameter, and the server re
 - Branch names must start with `sling/` and can't be the default branch.
 - Pushes never force, and only push the task's own branch.
 - Read-only tasks can't push at all.
+- Commands run outside the read-only sandbox only when `max-mode` is Full access and the conversation isn't Read-only. `commands off` refuses them all.
 - Codex never commits or pushes. The Runner does, after the gate.
 
 ## Network

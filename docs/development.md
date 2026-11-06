@@ -31,7 +31,7 @@ export SLING_RUNNER_HOME=/tmp/sling-dev-runner
 ./target/debug/sling-runner run
 ```
 
-`fake-codex` behaves like `codex exec --json`, and `fake-claude` like `claude -p --output-format stream-json`. Put `[fake:fail]`, `[fake:hang]`, `[fake:crash]`, `[fake:noop]`, or `[fake:env]` in a task objective to pick a scenario. `env` reports which `SLING_*` variables, tokens, and API keys the agent can see.
+`fake-codex` behaves like `codex exec --json`, and `fake-claude` like `claude -p --output-format stream-json`. With Codex as the chat's assistant, a message with `[fake:call] {"name": "run_command", "arguments": {"command": "ls"}}` makes fake-codex call that Sling tool, so commands, approvals, and tasks can be tried in the chat without a Codex login. Put `[fake:fail]`, `[fake:hang]`, `[fake:crash]`, `[fake:noop]`, or `[fake:env]` in a task objective to pick a scenario. `env` reports which `SLING_*` variables, tokens, and API keys the agent can see.
 
 The routing and sandbox end-to-end tests (`apps/server/test/stage3.e2e.test.ts`) register two test execution providers from `test/fixtures/providers.ts`. `test-fake` boots a TypeScript Runner in the test process that pairs with the sandbox's code. `test-process` runs the real `target/debug/sling-runner sandbox` as a child process with the sandbox's environment, cloning from a local bare repo and running `fake-codex`; its test skips itself when the Runner build has no `sandbox` command. The server's `testing` config passes `SLING_CODEX_BIN` to sandboxes and allows `file://` clone URLs.
 

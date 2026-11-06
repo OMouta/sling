@@ -93,10 +93,11 @@ sling-runner config set labels ios,gpu          # comma-separated; "" clears the
 sling-runner config set codex-bin /opt/codex/bin/codex
 sling-runner config set claude-bin ~/.local/bin/claude
 sling-runner config set remote-repos off         # on | off
+sling-runner config set commands off             # on | off
 sling-runner config set scan-roots ~/code,~/work # "" means your home directory
 ```
 
-`max-mode` is the highest permission mode this machine accepts. A task above it is refused here, whatever the control plane says.
+`max-mode` is the highest permission mode this machine accepts. A task above it is refused here, whatever the control plane says. Below Full access, the assistant's commands also stay in the read-only sandbox. `commands` decides whether the assistant may run commands here at all. See [Commands](#commands).
 
 ## Labels
 
@@ -150,9 +151,9 @@ A running Runner picks up config changes within a minute.
 
 Sling's assistant runs on a machine's Codex or Claude Code, with the login that's already there. If that login is a ChatGPT or Claude subscription, chat runs on the subscription, and Sling needs no API key for it.
 
-Each message to the assistant is one turn. Sling sends the turn to a machine, and the Runner runs one turn of the agent's CLI in a new, empty directory under `~/.local/share/sling/chat/`, outside every repo. The reply and the agent's thinking stream back to Sling as they come, and the Runner deletes the directory when the turn ends. Sling saves the thinking, each tool call it served with its arguments and result, and anything the agent wrote before a tool call, with the reply, for the chat to show. The chat shows the answer, with that work folded above it. They're never sent to a model again. Up to four turns run at once. They run alongside tasks and don't count toward `max-concurrent-tasks`. If the connection to Sling drops, the Runner stops its running turns, and Sling shows them as failed.
+Each message to the assistant is one turn. Sling sends the turn to a machine, and the Runner runs one turn of the agent's CLI in a new, empty directory under `~/.local/share/sling/chat/`, outside every repo. The reply and the agent's thinking stream back to Sling as they come, and the Runner deletes the directory when the turn ends. Sling saves the thinking, each tool call it served with its arguments and result, and anything the agent wrote before a tool call, with the reply. The chat shows that work in order above the answer, and keeps it in the history. None of it goes to a model again. Up to four turns run at once. They run alongside tasks and don't count toward `max-concurrent-tasks`. If the connection to Sling drops, the Runner stops its running turns, and Sling shows them as failed.
 
-The assistant's only tools are Sling's own: starting a task, listing machines, and getting or cancelling a task. The agent's CLI starts `sling-runner mcp`, a small MCP server that sends each tool call to Sling with a token Sling made for that one turn. The token never appears on a command line. Claude Code reads it from an MCP config file in the turn's directory that only you can read. Codex gets it in its environment and passes it to the MCP server through `env_vars`.
+The assistant's only tools are Sling's own: running a command, starting a task, listing machines, and getting or cancelling a task. The agent's CLI starts `sling-runner mcp`, a small MCP server that sends each tool call to Sling with a token Sling made for that one turn. The token never appears on a command line. Claude Code reads it from an MCP config file in the turn's directory that only you can read. Codex gets it in its environment and passes it to the MCP server through `env_vars`.
 
 A turn's model and effort follow the same rules as a task's. The agent keeps its own session, in `~/.claude/projects` or `~/.codex/sessions`, and the next turn on the same machine resumes it. When the session isn't on this machine, for example because the last turn ran on another one, the Runner starts a new session and gives it the conversation so far.
 
@@ -168,6 +169,17 @@ A turn's model and effort follow the same rules as a task's. The agent keeps its
 | Thinking | Summarized, with `--thinking-display summarized` | Reasoning summaries, with `model_reasoning_summary="auto"` |
 
 Codex has a gap. Its read-only sandbox stops writes, not reads, so a Codex tool may still read any file you can read and run commands that don't write. Codex 0.166 has no such tool left once the Runner turns the shell and image viewer off. A later Codex could add a tool the Runner doesn't know to turn off, and through it the assistant could read files on this machine. Claude Code starts with no built-in tools at all, so it doesn't have this gap.
+
+## Commands
+
+The assistant's `run_command` tool runs one shell command on a machine, as you, and returns its output. Any assistant can use it, whether it runs on a machine's CLI or on an API key. The Runner starts your shell (zsh, bash, or sh) with `-c`, in your home directory or the directory the assistant names. stdin is empty, `NO_COLOR` and `TERM=dumb` are set, and `SLING_*` variables and GitHub tokens are removed from its environment, as for agents. A command stops after 60 seconds unless the assistant asks for up to 5 minutes, and anything it leaves running is stopped when it ends. The first 48 KB and last 16 KB of output go back to Sling. Up to 8 commands run at once.
+
+Commands run in a read-only sandbox unless the conversation's mode lets them out:
+
+- On macOS, `sandbox-exec` with a profile that allows everything except writing files, the network, Apple Events, signals to other processes, and the services that would write for it: preferences, the pasteboard, Launch Services, file coordination, and the keychain.
+- On Linux, bubblewrap with the whole filesystem read-only, empty `/tmp` and `/run`, and no network, IPC, or other processes. Without bubblewrap there's no sandbox, and the inventory says so.
+
+A command leaves the sandbox only when the machine's `max-mode` is Full access and the conversation isn't Read-only. Sling asks you in the chat first outside Full access. [modes.md](modes.md#commands) has the table. `sling-runner config set commands off` refuses every command, and the Machines page shows it.
 
 ## Running it
 

@@ -53,6 +53,34 @@ const CAPABILITY_LABEL: Record<string, string> = {
   "git.pr.github": "GitHub CLI",
 };
 
+/** Whether the assistant can run commands on a machine, and how. */
+function commandsSummary(runner: RunnerView): { text: string; warn: boolean; detail?: string } {
+  const shell = runner.capabilities.find((c) => c.name === "shell");
+  const sandbox = runner.capabilities.find((c) => c.name === "shell.sandbox");
+  if (!shell) return { text: "Update sling-runner to run commands here", warn: true };
+  if (!shell.ready) return { text: "Off", warn: true, detail: shell.detail };
+  if (!sandbox?.ready) {
+    return {
+      text: "No sandbox, so each one asks first",
+      warn: true,
+      ...(sandbox?.detail ? { detail: sandbox.detail } : {}),
+    };
+  }
+  if (runner.maxMode !== "full-access") {
+    return {
+      text: "Sandbox only",
+      warn: false,
+      detail: "Its max mode is below Full access, so commands never leave the read-only sandbox.",
+    };
+  }
+  return {
+    text: "Sandboxed unless approved",
+    warn: false,
+    detail:
+      "Commands run in a read-only sandbox. Leaving it asks you first, except in Full access.",
+  };
+}
+
 /**
  * The workspace's sandbox repo list, keyed by remote. The same repo on two
  * machines shares one entry, so its switch moves on both.
@@ -341,9 +369,10 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
   });
   const { confirm, dialog } = useConfirm();
   const tools = runner.capabilities.filter(
-    (c) => !isAgentCapability(c.name) && c.name !== CHAT_CAPABILITY,
+    (c) => !isAgentCapability(c.name) && c.name !== CHAT_CAPABILITY && !c.name.startsWith("shell"),
   );
   const canChat = runner.capabilities.some((c) => c.name === CHAT_CAPABILITY && c.ready);
+  const commands = commandsSummary(runner);
   const facts = [
     runner.os && (OS_LABEL[runner.os] ?? runner.os),
     runner.arch,
@@ -432,6 +461,12 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
         <div className="flex items-center gap-2">
           <dt className="text-subtle">Tasks at once</dt>
           <dd className="tabular text-soft">{runner.maxConcurrentTasks}</dd>
+        </div>
+        <div className="flex items-center gap-2">
+          <dt className="text-subtle">Commands</dt>
+          <dd className={commands.warn ? "text-warn" : "text-soft"} title={commands.detail}>
+            {commands.text}
+          </dd>
         </div>
         <div className="flex items-center gap-2">
           <dt className="text-subtle">Chat</dt>
