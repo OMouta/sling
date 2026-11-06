@@ -385,6 +385,7 @@ export class BrokerSession {
   readonly policy: NetworkPolicy;
   readonly #deps: SessionDeps;
   readonly #agent: Agent;
+  readonly #socketAgent: Agent;
   readonly #resolved = new Map<string, { at: number; addresses: Promise<ResolvedAddress[]> }>();
   readonly #sockets = new Set<WebSocket>();
   #opening = 0;
@@ -393,9 +394,26 @@ export class BrokerSession {
   constructor(policy: NetworkPolicy, deps: SessionDeps) {
     this.policy = policy;
     this.#deps = deps;
-    const https = buildConnector({ lookup: this.#lookupFor("https"), ...(deps.tls ?? {}) });
+    this.#agent = new Agent({ connect: this.#connector(true) });
+    // WebSockets stay on HTTP/1.1. Over HTTP/2, undici uses extended CONNECT,
+    // which many servers (ntfy.sh among them) don't support, so the handshake fails.
+    this.#socketAgent = new Agent({
+      connect: this.#connector(false),
+      allowH2: false,
+      webSocket: { maxPayloadSize: deps.limits.maxSocketMessageBytes },
+    } as Agent.Options);
+  }
+
+  /** Connects only to addresses the policy allows, checked after the server's own lookup. */
+  #connector(allowH2: boolean): ConnectFn {
+    const deps = this.#deps;
+    const https = buildConnector({
+      lookup: this.#lookupFor("https"),
+      allowH2,
+      ...(deps.tls ?? {}),
+    } as buildConnector.BuildOptions);
     const http = buildConnector({ lookup: this.#lookupFor("http") });
-    const connect: ConnectFn = (opts, cb) => {
+    return (opts, cb) => {
       const scheme: Scheme = opts.protocol === "https:" ? "https" : "http";
       const host = normalizeHost(opts.hostname);
       if (isIP(host)) {
@@ -413,10 +431,6 @@ export class BrokerSession {
       }
       (scheme === "https" ? https : http)(opts, cb);
     };
-    this.#agent = new Agent({
-      connect,
-      webSocket: { maxPayloadSize: deps.limits.maxSocketMessageBytes },
-    });
   }
 
   get openSockets(): number {
@@ -664,7 +678,7 @@ export class BrokerSession {
     return await new Promise<RelaySocket>((resolve, reject) => {
       let ws: WebSocket;
       try {
-        ws = new WebSocket(url, { protocols, dispatcher: this.#agent as Dispatcher });
+        ws = new WebSocket(url, { protocols, dispatcher: this.#socketAgent as Dispatcher });
       } catch (err) {
         this.#opening--;
         reject(err instanceof Error ? new TypeError(err.message) : err);
@@ -754,6 +768,6 @@ export class BrokerSession {
     for (const ws of this.#sockets) ws.close(1000, "The extension stopped");
     this.#sockets.clear();
     this.#deps.closed();
-    await this.#agent.destroy().catch(() => {});
+    await Promise.all([this.#agent.destroy(), this.#socketAgent.destroy()]).catch(() => {});
   }
 }

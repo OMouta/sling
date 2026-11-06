@@ -1,5 +1,10 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createSecureServer } from "node:http2";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import {
@@ -453,6 +458,63 @@ describe("brokered WebSocket", () => {
     expect(c.closed).toEqual([[4000, "bye"]]);
     expect(s.openSockets).toBe(0);
     await s.close();
+  });
+
+  it("opens wss sockets over HTTP/1.1 on servers that also speak HTTP/2", async () => {
+    // Like ntfy.sh: HTTP/2 is offered, but WebSocket upgrades work only over HTTP/1.1.
+    const dir = mkdtempSync(join(tmpdir(), "broker-tls-"));
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-days",
+        "1",
+        "-subj",
+        "/CN=api.acme.test",
+        "-addext",
+        "subjectAltName=DNS:api.acme.test",
+        "-keyout",
+        join(dir, "key.pem"),
+        "-out",
+        join(dir, "cert.pem"),
+      ],
+      { stdio: "ignore" },
+    );
+    const cert = readFileSync(join(dir, "cert.pem"));
+    const tlsServer = createSecureServer({
+      key: readFileSync(join(dir, "key.pem")),
+      cert,
+      allowHTTP1: true,
+    });
+    tlsServer.on("request", (_req, res) => res.end("ok"));
+    const tlsWss = new WebSocketServer({ noServer: true });
+    tlsServer.on("upgrade", (req, socket, head) => {
+      tlsWss.handleUpgrade(req, socket, head, (ws) => ws.send("over tls"));
+    });
+    await new Promise<void>((r) => tlsServer.listen(0, "127.0.0.1", r));
+    const tlsPort = (tlsServer.address() as AddressInfo).port;
+    try {
+      const broker = new NetworkBroker({ resolver: table(LOCAL), tls: { ca: cert } });
+      const s = broker.session(local);
+      const c = collect();
+      const ws = await s.openSocket(`wss://api.acme.test:${tlsPort}/`, [], c.events);
+      await until(() => c.got.length > 0);
+      expect(c.got).toEqual(["over tls"]);
+      ws.close(1000);
+      // fetch keeps HTTP/2 on the same server.
+      const res = await get(s, `https://api.acme.test:${tlsPort}/`);
+      expect(res.status).toBe(200);
+      await s.close();
+    } finally {
+      for (const client of tlsWss.clients) client.terminate();
+      tlsWss.close();
+      await new Promise((r) => tlsServer.close(r));
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("refuses sockets to undeclared hosts and plain ws without localNetwork", async () => {
