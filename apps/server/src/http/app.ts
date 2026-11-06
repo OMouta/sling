@@ -12,6 +12,7 @@ import { agentToolRoutes } from "../agent/tool-routes.ts";
 import type { Config } from "../config.ts";
 import type { AppContext } from "../context.ts";
 import { conversationRoutes } from "../conversations/routes.ts";
+import { extensionRoutes } from "../extensions/routes.ts";
 import { hubRoutes } from "../realtime/hub.ts";
 import { authRoutes } from "../routes/auth.ts";
 import { settingsRoutes } from "../routes/settings.ts";
@@ -85,6 +86,9 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   });
   await app.register(async (scope) => {
     await connectorRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await extensionRoutes(scope, ctx);
   });
   await app.register(async (scope) => {
     await webhookRoutes(scope, ctx);

@@ -29,17 +29,22 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
   r.get(
     "/api/connectors",
     async (): Promise<ConnectorView[]> =>
-      ctx.registry.connectors().map((c) => ({
-        id: c.id,
-        name: c.name,
-        description: c.description,
-        setupHelp: c.setupHelp ?? null,
-        credentialsSchema: toJsonSchema(c.credentialsSchema),
-        secretFields: c.secretFields,
-        configSchema: toJsonSchema(c.configSchema),
-        nodeTypes: c.nodes.map((n) => n.type),
-        isExecutionProvider: c.executionProvider !== undefined,
-      })),
+      ctx.registry.connectors().map(
+        (c) =>
+          // Extension connectors use the schemas they described at install.
+          ctx.extensions.connectorView(c.id) ?? {
+            id: c.id,
+            name: c.name,
+            description: c.description,
+            setupHelp: c.setupHelp ?? null,
+            credentialsSchema: toJsonSchema(c.credentialsSchema),
+            secretFields: c.secretFields,
+            configSchema: toJsonSchema(c.configSchema),
+            nodeTypes: c.nodes.map((n) => n.type),
+            isExecutionProvider: c.executionProvider !== undefined,
+            extension: null,
+          },
+      ),
   );
 
   async function owned(workspaceId: string, id: string) {
@@ -131,6 +136,8 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
         subjectId: id,
         details: { connectorId: connector.id, name: body.name },
       });
+      // Before the source starts, so it may already reach the host in its config.
+      await ctx.extensions.installationsChanged(connector.id);
       await ctx.connectors.reconcile(actor.workspaceId);
       const fresh = (await owned(actor.workspaceId, id)) ?? row;
       return publish(fresh);
@@ -208,6 +215,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
           credentialsChanged: Boolean(creds),
         },
       });
+      if (config) await ctx.extensions.installationsChanged(row.connectorId);
       // New credentials or config only take effect in a fresh source.
       if (creds || config || body.enabled !== undefined) await ctx.connectors.restart(row.id);
       const fresh = await owned(actor.workspaceId, row.id);
@@ -260,6 +268,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
       }
     });
     await ctx.connectors.reconcile(actor.workspaceId);
+    await ctx.extensions.installationsChanged(row.connectorId);
     await audit(ctx, {
       workspaceId: actor.workspaceId,
       actorType: "user",
