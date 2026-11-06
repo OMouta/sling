@@ -1,4 +1,4 @@
-import type { ConversationView, WorkflowSummaryView } from "@sling/core";
+import type { WorkflowSummaryView } from "@sling/core";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api.ts";
+import { useConversations } from "../lib/conversations.ts";
 import { setTheme, useTheme } from "../lib/theme.ts";
 import { qk } from "../lib/workflowApi.ts";
 import { NAV } from "./nav.ts";
@@ -34,10 +35,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const list = useRef<HTMLDivElement>(null);
-  const conversations = useQuery({
-    queryKey: ["conversations"],
-    queryFn: () => api.get<ConversationView[]>("/api/conversations"),
-  });
+  const conversations = useConversations();
   const workflows = useQuery({
     queryKey: qk.workflows(),
     queryFn: () => api.get<WorkflowSummaryView[]>("/api/workflows"),
@@ -49,7 +47,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       onClose();
     };
     const all: Item[] = [
-      { id: "new", group: "Actions", label: "New conversation", icon: SquarePen, run: go("/") },
+      { id: "new", group: "Actions", label: "New chat", icon: SquarePen, run: go("/") },
       {
         id: "theme",
         group: "Actions",

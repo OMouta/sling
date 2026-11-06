@@ -160,8 +160,8 @@ function TopBar({
             variant="ghost"
             iconOnly
             icon={SquarePen}
-            aria-label="New conversation"
-            title="New conversation"
+            aria-label="New chat"
+            title="New chat"
             onClick={shell.newConversation}
           />
           <span className="mx-1.5 h-4 w-px bg-border" />

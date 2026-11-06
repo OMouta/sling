@@ -8,7 +8,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowRight, ArrowUp, Check, ChevronDown, Cpu, Laptop } from "lucide-react";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { Logo } from "../components/Logo.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
@@ -19,6 +19,7 @@ import { api } from "../lib/api.ts";
 import { ago } from "../lib/format.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
+import { NEW_CHAT_EVENT } from "../lib/newChat.ts";
 import type { Settings } from "../lib/types.ts";
 
 export function HomePage() {
@@ -37,7 +38,14 @@ export function HomePage() {
     queryFn: () => api.get<TaskView[]>("/api/tasks"),
   });
   const [text, setText] = useState("");
+  const input = useRef<HTMLTextAreaElement>(null);
   const catalog = useModelCatalog();
+  // "New chat" lands here; the composer takes the focus, keeping any draft.
+  useEffect(() => {
+    const focus = () => input.current?.focus({ preventScroll: true });
+    window.addEventListener(NEW_CHAT_EVENT, focus);
+    return () => window.removeEventListener(NEW_CHAT_EVENT, focus);
+  }, []);
   // Unset means "the workspace default", so a default changed elsewhere still applies.
   const [assistant, setAssistant] = useState<AssistantChoice | undefined>();
   const [mode, setMode] = useState<PermissionMode | undefined>();
@@ -66,6 +74,10 @@ export function HomePage() {
   // A machine's logged-in CLI is enough to chat; an API key is the other way.
   const hasModel = Boolean(catalog.data?.defaults.assistant) || Boolean(settings.data?.model);
   const ready = hasModel && hasMachine;
+  // The composer is disabled until Sling knows it can chat, so focus it then.
+  useEffect(() => {
+    if (ready) input.current?.focus({ preventScroll: true });
+  }, [ready]);
   const recent = (tasks.data ?? []).slice(0, 5);
 
   function submit(e: FormEvent) {
@@ -123,6 +135,7 @@ export function HomePage() {
               )}
             >
               <textarea
+                ref={input}
                 rows={3}
                 value={text}
                 onChange={(e) => setText(e.target.value)}

@@ -10,6 +10,7 @@ import {
 import { AppLayout } from "./components/Shell.tsx";
 import { ApprovalsPage } from "./pages/Approvals.tsx";
 import { ChatPage } from "./pages/Chat.tsx";
+import { ChatsPage } from "./pages/Chats.tsx";
 import { ConnectorsPage } from "./pages/Connectors.tsx";
 import { ExtensionsPage } from "./pages/Extensions.tsx";
 import { HomePage } from "./pages/Home.tsx";
@@ -44,6 +45,14 @@ export const chatRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/c/$id",
   component: ChatPage,
+});
+export const chatsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/chats",
+  // `q` searches names and messages.
+  validateSearch: (search: Record<string, unknown>): { q?: string } =>
+    typeof search.q === "string" && search.q.trim() ? { q: search.q } : {},
+  component: ChatsPage,
 });
 export const machinesRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -131,6 +140,7 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     homeRoute,
     chatRoute,
+    chatsRoute,
     machinesRoute,
     sandboxesRoute,
     approvalsRoute,

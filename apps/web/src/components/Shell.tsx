@@ -1,17 +1,19 @@
-import type { ApprovalView, ConversationView, RunnerView, TaskView } from "@sling/core";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ApprovalView, RunnerView, TaskView } from "@sling/core";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { MessageSquare, PanelLeftClose, Plus, SquarePen } from "lucide-react";
+import { MessageSquare, PanelLeftClose, SquarePen } from "lucide-react";
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api.ts";
 import { decisionCount } from "../lib/approvals.ts";
 import { machinesOnly } from "../lib/machines.ts";
+import { NEW_CHAT_EVENT } from "../lib/newChat.ts";
 import { connectRealtime, useConnection } from "../lib/realtime.ts";
 import { useSandboxes } from "../lib/sandboxApi.ts";
 import type { Status } from "../lib/types.ts";
 import { Logo } from "./Logo.tsx";
 import { NAV, type NavItem } from "./nav.ts";
 import { ShellContext } from "./Page.tsx";
+import { SidebarChats } from "./SidebarChats.tsx";
 import { Button, Count, cx, Spinner } from "./ui.tsx";
 
 const CommandPalette = lazy(() =>
@@ -53,13 +55,11 @@ function Shell() {
   const [navOpen, setNavOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(readCollapsed);
-  const create = useMutation({
-    mutationFn: () => api.post<ConversationView>("/api/conversations"),
-    onSuccess: (c) => {
-      void qc.invalidateQueries({ queryKey: ["conversations"] });
-      void navigate({ to: "/c/$id", params: { id: c.id } });
-    },
-  });
+  // A new chat is the empty composer. The conversation is made when the
+  // first message is sent, so nothing empty piles up in the list.
+  const newChat = useCallback(() => {
+    void navigate({ to: "/" }).then(() => window.dispatchEvent(new Event(NEW_CHAT_EVENT)));
+  }, [navigate]);
   const toggleSidebar = useCallback(() => {
     setCollapsed((c) => {
       try {
@@ -92,16 +92,15 @@ function Shell() {
   }, [toggleSidebar]);
 
   const closeSearch = useCallback(() => setSearchOpen(false), []);
-  const newConversation = create.mutate;
   const shell = useMemo(
     () => ({
       openNav: () => setNavOpen(true),
       openSearch: () => setSearchOpen(true),
       collapsed,
       toggleSidebar,
-      newConversation: () => newConversation(),
+      newConversation: newChat,
     }),
-    [collapsed, toggleSidebar, newConversation],
+    [collapsed, toggleSidebar, newChat],
   );
 
   return (
@@ -114,11 +113,7 @@ function Shell() {
             collapsed && "md:hidden",
           )}
         >
-          <Sidebar
-            onNew={() => create.mutate()}
-            creating={create.isPending}
-            onCollapse={toggleSidebar}
-          />
+          <Sidebar onNew={newChat} onCollapse={toggleSidebar} />
         </aside>
         {navOpen && (
           <button
@@ -168,19 +163,7 @@ function SectionLabel({ children, action }: { children: ReactNode; action?: Reac
   );
 }
 
-function Sidebar({
-  onNew,
-  creating,
-  onCollapse,
-}: {
-  onNew: () => void;
-  creating: boolean;
-  onCollapse: () => void;
-}) {
-  const conversations = useQuery({
-    queryKey: ["conversations"],
-    queryFn: () => api.get<ConversationView[]>("/api/conversations"),
-  });
+function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => void }) {
   const approvals = useQuery({
     queryKey: ["approvals"],
     queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
@@ -228,9 +211,8 @@ function Sidebar({
           size="sm"
           iconOnly
           icon={SquarePen}
-          aria-label="New conversation"
-          title="New conversation"
-          busy={creating}
+          aria-label="New chat"
+          title="New chat"
           onClick={onNew}
         />
         <Button
@@ -272,37 +254,7 @@ function Sidebar({
           {section("infrastructure")}
         </div>
 
-        <div className="mt-5 space-y-px">
-          <SectionLabel
-            action={
-              <button
-                type="button"
-                aria-label="Start a conversation"
-                onClick={onNew}
-                className="grid size-5 cursor-pointer place-items-center rounded-md text-subtle transition-colors duration-150 hover:bg-surface-3 hover:text-icon"
-              >
-                <Plus aria-hidden="true" size={12} />
-              </button>
-            }
-          >
-            Conversations
-          </SectionLabel>
-          {conversations.data?.slice(0, 40).map((c) => (
-            <Link
-              key={c.id}
-              to="/c/$id"
-              params={{ id: c.id }}
-              className="group flex h-[30px] items-center gap-2.5 rounded-lg px-2 text-sm text-muted transition-colors duration-150 hover:text-text"
-              activeProps={{ className: navActive }}
-            >
-              <span className="size-1.5 shrink-0 rounded-full bg-faint transition-colors duration-150 group-hover:bg-subtle group-[.active]:bg-accent-text" />
-              <span className="min-w-0 flex-1 truncate">{c.title}</span>
-            </Link>
-          ))}
-          {conversations.data?.length === 0 && (
-            <p className="px-2 py-1.5 text-xs text-subtle">No conversations yet.</p>
-          )}
-        </div>
+        <SidebarChats onNew={onNew} />
       </nav>
 
       <div className="shrink-0 space-y-2 px-3 pb-3">

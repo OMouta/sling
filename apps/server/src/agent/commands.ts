@@ -175,6 +175,15 @@ export class Commands {
     return decision;
   }
 
+  /** Conversations with a command waiting for the user's answer. */
+  waitingConversations(workspaceId: string): Set<string> {
+    return new Set(
+      [...this.#approvals.values()]
+        .filter((a) => a.workspaceId === workspaceId)
+        .map((a) => a.conversationId),
+    );
+  }
+
   /** The user's answer. False when there's no such approval waiting in this conversation. */
   decide(
     workspaceId: string,

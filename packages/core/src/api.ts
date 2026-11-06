@@ -231,6 +231,22 @@ export interface ConversationView {
   updatedAt: string;
 }
 
+/** A conversation in a list: what it is, where it's at, and its latest message. */
+export interface ConversationSummaryView extends ConversationView {
+  /** The latest message, shortened to one line. */
+  preview: string | null;
+  previewRole: "user" | "assistant" | "system" | null;
+  lastMessageAt: string | null;
+  /** Tasks it started, and how many are still queued or running. */
+  taskCount: number;
+  activeTasks: number;
+  /** Something in it waits for the user: a task's approval, or a command. */
+  waiting: boolean;
+  agentStatus: AgentStatus;
+  /** Where it comes from: the web app, or a channel such as Discord. */
+  source: string;
+}
+
 /** A message as the chat UI shows it. Tool calls are summarized, not raw. */
 export interface MessageView {
   id: string;

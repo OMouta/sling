@@ -12,7 +12,7 @@ import {
   type WorkflowDetailView,
   type WorkflowVersionView,
 } from "@sling/workflow";
-import { and, asc, desc, eq, isNull, max } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, max, sql } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { workspaceOwner } from "./connectors/installations.ts";
@@ -469,7 +469,8 @@ export class WorkflowService {
       if (assistant) {
         await this.#ctx.db
           .update(schema.conversations)
-          .set({ workflowId: assistant })
+          // Linking an old conversation isn't activity, so it keeps its place in the list.
+          .set({ workflowId: assistant, updatedAt: sql`${schema.conversations.updatedAt}` })
           .where(
             and(
               eq(schema.conversations.workspaceId, ws.id),

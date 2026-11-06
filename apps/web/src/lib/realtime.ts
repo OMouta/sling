@@ -1,4 +1,5 @@
 import type {
+  ConversationSummaryView,
   InstallationView,
   NodeRunView,
   RunDetailView,
@@ -14,6 +15,7 @@ import type {
 import type { WorkflowDetailView } from "@sling/workflow";
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
+import { byActivity, conversationsKey, previewText } from "./conversations.ts";
 import { applyExtension, forgetExtension } from "./extensionApi.ts";
 import { modelsKey } from "./models.ts";
 import type { ConversationDetail, TaskDetail } from "./types.ts";
@@ -110,6 +112,38 @@ function upsert<T extends { id: string }>(list: T[] | undefined, item: T, prepen
   return copy;
 }
 
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Refetches the conversation lists soon, once for a burst of changes. */
+function refreshConversations(qc: QueryClient) {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => void qc.invalidateQueries({ queryKey: conversationsKey }), 400);
+}
+
+/**
+ * Changes one conversation in the list. One that isn't there yet, such as a
+ * new conversation's first message, makes the list refetch instead, since
+ * the server decides what's in it.
+ */
+function patchConversation(
+  qc: QueryClient,
+  id: string,
+  fn: (c: ConversationSummaryView) => ConversationSummaryView,
+) {
+  let found = false;
+  qc.setQueryData<ConversationSummaryView[]>(conversationsKey, (list) => {
+    if (!list) return list;
+    const i = list.findIndex((c) => c.id === id);
+    const current = list[i];
+    if (!current) return list;
+    found = true;
+    const next = list.slice();
+    next[i] = fn(current);
+    return next.sort(byActivity);
+  });
+  if (!found) refreshConversations(qc);
+}
+
 function applyTask(qc: QueryClient, task: TaskView) {
   qc.setQueryData<TaskDetail>(["task", task.id], (d) => (d ? { ...d, task } : d));
   qc.setQueryData<TaskView[]>(["tasks"], (list) => upsertLoaded(list, task, true));
@@ -117,6 +151,7 @@ function applyTask(qc: QueryClient, task: TaskView) {
     qc.setQueryData<ConversationDetail>(["conversation", task.conversationId], (d) =>
       d ? { ...d, tasks: upsert(d.tasks, task) } : d,
     );
+    refreshConversations(qc);
   }
 }
 
@@ -236,21 +271,22 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       return;
     case "approval.updated":
       void qc.invalidateQueries({ queryKey: ["approvals"] });
+      refreshConversations(qc);
       return;
     case "conversation.updated":
-      qc.setQueryData(
-        ["conversations"],
-        (list: ConversationDetail["conversation"][] | undefined) => {
-          const next = upsert(list, ev.conversation, true);
-          return next.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-        },
-      );
+      patchConversation(qc, ev.conversation.id, (c) => ({ ...c, ...ev.conversation }));
       qc.setQueryData<ConversationDetail>(["conversation", ev.conversation.id], (d) =>
         d ? { ...d, conversation: ev.conversation } : d,
       );
       return;
     case "message.created":
       if (ev.message.role === "assistant") clearStream(ev.message.conversationId);
+      patchConversation(qc, ev.message.conversationId, (c) => ({
+        ...c,
+        preview: previewText(ev.message.text, ev.message.role) || c.preview,
+        previewRole: ev.message.role,
+        lastMessageAt: ev.message.createdAt,
+      }));
       qc.setQueryData<ConversationDetail>(["conversation", ev.message.conversationId], (d) =>
         d ? { ...d, messages: upsert(d.messages, ev.message) } : d,
       );
@@ -272,6 +308,10 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       });
       return;
     case "agent.tool":
+      if (ev.step.approval) {
+        const waiting = ev.step.approval.state === "pending";
+        patchConversation(qc, ev.conversationId, (c) => ({ ...c, waiting }));
+      }
       patchStream(ev.conversationId, (r) => {
         const i = r.steps.findIndex((s) => s.kind === "tool" && s.id === ev.step.id);
         if (i === -1) {
@@ -293,6 +333,7 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       qc.setQueryData<ConversationDetail>(["conversation", ev.conversationId], (d) =>
         d ? { ...d, agentStatus: ev.status } : d,
       );
+      patchConversation(qc, ev.conversationId, (c) => ({ ...c, agentStatus: ev.status }));
       return;
     case "workflow.updated":
       applyWorkflow(qc, ev.workflow);

@@ -13,7 +13,14 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import type { LiveReplyView, MessageView, PermissionMode, RunnerView, ToolStep } from "@sling/core";
+import type {
+  ConversationSummaryView,
+  LiveReplyView,
+  MessageView,
+  PermissionMode,
+  RunnerView,
+  ToolStep,
+} from "@sling/core";
 import { newId } from "@sling/core";
 import { schema } from "@sling/db";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
@@ -302,5 +309,50 @@ describe("commands on the user's machine", () => {
 
     const bad = await ask(id, { command: "ls", cwd: join(work, "missing") });
     expect(result(bad).error).toContain("isn't a directory");
+  });
+});
+
+describe("the conversation list", () => {
+  it("leaves out empty conversations, and shows each one's latest message and status", async () => {
+    const empty = await api<{ id: string }>("POST", "/api/conversations");
+    const id = await conversation("auto");
+    await ask(id, { command: "echo listed", cwd: work });
+    const list = await api<ConversationSummaryView[]>("GET", "/api/conversations");
+    expect(list.some((c) => c.id === empty.id)).toBe(false);
+    const row = list.find((c) => c.id === id);
+    expect(row).toMatchObject({
+      preview: "Done.",
+      previewRole: "assistant",
+      taskCount: 0,
+      waiting: false,
+      agentStatus: "idle",
+      source: "app",
+    });
+    expect(list[0]?.id).toBe(id);
+  });
+
+  it("finds conversations by what was said in them", async () => {
+    const id = await conversation("auto");
+    plan.push({ command: "true", cwd: work });
+    await api("POST", `/api/conversations/${id}/messages`, { text: "Look for the zebra file" });
+    await until("its reply", async () =>
+      (await detail(id)).messages.some((m) => m.role === "assistant"),
+    );
+    const hits = await api<ConversationSummaryView[]>("GET", "/api/conversations?q=ZEBRA");
+    expect(hits.map((c) => c.id)).toEqual([id]);
+    expect(await api<ConversationSummaryView[]>("GET", "/api/conversations?q=100%25")).toEqual([]);
+  });
+
+  it("marks a conversation with a command waiting for the user", async () => {
+    const id = await conversation("auto");
+    const pending = ask(id, { command: "touch waiting.txt", cwd: work, outsideSandbox: true });
+    await until("the approval", async () => {
+      const list = await api<ConversationSummaryView[]>("GET", "/api/conversations");
+      return list.find((c) => c.id === id && c.waiting && c.agentStatus === "thinking");
+    });
+    await answer(id, "deny");
+    await pending;
+    const list = await api<ConversationSummaryView[]>("GET", "/api/conversations");
+    expect(list.find((c) => c.id === id)?.waiting).toBe(false);
   });
 });
