@@ -74,6 +74,7 @@ function harness(config: Partial<NtfyConfig> = {}, credentials: NtfyCredentials 
   const sockets: FakeSocket[] = [];
   const emitted: { type: string; payload: NtfyMessage; dedupeKey?: string }[] = [];
   const statuses: [SourceStatus, string | undefined][] = [];
+  const warnings: { message: string; data?: Record<string, unknown> }[] = [];
   const state = new Map<string, string>();
   const controller = new AbortController();
   const ctx: SourceContext<NtfyCredentials, NtfyConfig> = {
@@ -81,7 +82,7 @@ function harness(config: Partial<NtfyConfig> = {}, credentials: NtfyCredentials 
     workspaceId: "ws_1",
     credentials,
     config: { server: "https://ntfy.example.com", topics: ["alerts", "deploys"], ...config },
-    log: { info() {}, warn() {}, error() {} },
+    log: { info() {}, warn: (message, data) => warnings.push({ message, data }), error() {} },
     signal: controller.signal,
     emit: async (e) => {
       emitted.push(e as (typeof emitted)[number]);
@@ -113,6 +114,7 @@ function harness(config: Partial<NtfyConfig> = {}, credentials: NtfyCredentials 
     sockets,
     emitted,
     statuses,
+    warnings,
     state,
     async start() {
       const running = await source.start(ctx);
@@ -178,11 +180,15 @@ describe("ntfy source", () => {
     await until(() => h.state.get(SINCE_KEY) === "1700000000");
     first.drop();
     await until(() => h.sockets.length === 2);
-    expect(
-      h.statuses.some(
-        ([s, d]) => s === "error" && /closed \(1006, connection reset\)/.test(d ?? ""),
-      ),
-    ).toBe(true);
+    // A drop after the socket opened isn't an error, just a reconnect.
+    expect(h.statuses.some(([s]) => s === "error")).toBe(false);
+    expect(h.warnings).toContainEqual({
+      message: "ntfy connection dropped",
+      data: {
+        where: "ntfy.example.com/alerts,deploys",
+        error: "The connection to ntfy.example.com/alerts,deploys closed (1006, connection reset)",
+      },
+    });
     const second = h.sockets[1] as FakeSocket;
     expect(second.url).toContain("since=1700000000");
     expect(second.url).toContain(`auth=${authParam("tk_1")}`);
@@ -210,7 +216,10 @@ describe("ntfy source", () => {
     first.open();
     await until(() => h.sockets.length === 2, 3000);
     expect(first.closed).toEqual({ code: 4000, reason: "silent" });
-    expect(h.statuses.some(([, d]) => /No message or keepalive/.test(d ?? ""))).toBe(true);
+    expect(h.warnings.map((w) => w.data?.error)).toContain(
+      "No message or keepalive from ntfy.example.com/alerts,deploys for 0 seconds",
+    );
+    expect(h.statuses.some(([s]) => s === "error")).toBe(false);
   });
 
   it("closes the socket on stop and doesn't reconnect", async () => {

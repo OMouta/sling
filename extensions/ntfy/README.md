@@ -41,7 +41,11 @@ Its outputs are the message `id` and the `topic`. It isn't retried on its own af
 
 ## How it connects
 
-One WebSocket per installation, to `wss://<server>/<topic1>,<topic2>/ws`. ntfy sends a keepalive every 45 seconds, and the extension reconnects when it hears nothing for two minutes, waiting 2 seconds after the first failure and up to 2 minutes after repeated ones. On reconnect it asks ntfy for messages since the last one it handed on, so a short outage or a restart loses nothing ntfy still has cached (12 hours on ntfy.sh). Each message reaches workflows once, by its ID.
+One WebSocket per installation, to `wss://<server>/<topic1>,<topic2>/ws`. ntfy sends a keepalive every 45 seconds, and the extension treats two minutes of silence as a dropped connection.
+
+When a connection that was open drops, the extension reconnects after about 2 seconds, and the installation shows **Connecting** meanwhile. When it can't connect at all, the installation shows the reason, and Sling starts it again after 1 second, then 2, 4, and so on up to 5 minutes.
+
+Each time it reconnects, it asks ntfy for messages since the last one it handed on, so a short outage or a Sling restart loses nothing ntfy still has cached. ntfy.sh keeps messages for 12 hours. Each message reaches workflows once, by its ID.
 
 ## Permissions
 

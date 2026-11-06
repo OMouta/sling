@@ -1,6 +1,6 @@
 /**
  * The ntfy event source: one WebSocket subscription to every watched topic,
- * `wss://<server>/<topic1>,<topic2>/ws`. It reconnects with backoff, asks for
+ * `wss://<server>/<topic1>,<topic2>/ws`. It reconnects after a drop, asks for
  * what it missed with `since`, and treats a connection with no keepalive for
  * two minutes as dead.
  */
@@ -102,34 +102,51 @@ export function createNtfySource(
   };
 }
 
-/** Keeps the subscription open until the signal aborts. */
+interface Outcome {
+  /** Whether the socket opened before it closed. */
+  opened: boolean;
+  /** Why it closed, or null for a clean close or a stop. */
+  error: string | null;
+}
+
+/**
+ * Keeps the subscription open until the signal aborts. A connection that
+ * drops after it opened is routine for a socket kept open for hours, so it
+ * reconnects quietly, reporting "connecting". One that never opens is an
+ * error worth showing. In Sling, reporting it stops this source and starts a
+ * new one with the connector runtime's backoff; anywhere else, this loop
+ * keeps trying with its own.
+ */
 async function watch(ctx: Ctx, topics: string[], options: NtfySourceOptions, signal: AbortSignal) {
   const backoff = options.backoff ?? DEFAULT_BACKOFF;
   const where = describeSubscription(ctx.config, topics);
   let failures = 0;
   while (!signal.aborted) {
     ctx.setStatus("connecting");
+    let outcome: Outcome;
     try {
       const since = await ctx.state.get(SINCE_KEY);
       const url = subscribeUrl(ctx.config, ctx.credentials, topics, since);
-      await subscribe(ctx, url, where, options, signal, () => {
-        failures = 0;
-        ctx.setStatus("connected", `Watching ${topics.join(", ")}`);
-      });
+      outcome = await subscribe(ctx, url, where, options, signal, () =>
+        ctx.setStatus("connected", `Watching ${topics.join(", ")}`),
+      );
     } catch (error) {
-      if (!signal.aborted) {
-        const message = error instanceof Error ? error.message : String(error);
-        ctx.log.warn("ntfy subscription failed", { where, error: message });
-        ctx.setStatus("error", message);
-      }
+      outcome = { opened: false, error: error instanceof Error ? error.message : String(error) };
     }
     if (signal.aborted) break;
-    failures += 1;
+    if (outcome.error) {
+      ctx.log.warn(outcome.opened ? "ntfy connection dropped" : "ntfy subscription failed", {
+        where,
+        error: outcome.error,
+      });
+      if (!outcome.opened) ctx.setStatus("error", outcome.error);
+    }
+    failures = outcome.opened ? 1 : failures + 1;
     await sleep(backoffDelay(failures, backoff), signal);
   }
 }
 
-/** One connection. Resolves when it closes cleanly, rejects with the reason otherwise. */
+/** One connection, until it closes or the signal aborts. */
 function subscribe(
   ctx: Ctx,
   url: string,
@@ -137,10 +154,10 @@ function subscribe(
   options: NtfySourceOptions,
   signal: AbortSignal,
   onOpen: () => void,
-): Promise<void> {
+): Promise<Outcome> {
   const silenceMs = options.silenceMs ?? DEFAULT_SILENCE_MS;
   const connect = options.connect ?? ((u: string) => new WebSocket(u) as unknown as SocketLike);
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const socket = connect(url);
     let opened = false;
     let failure: string | null = null;
@@ -149,19 +166,18 @@ function subscribe(
     let queue: Promise<void> = Promise.resolve();
     let silence: ReturnType<typeof setTimeout> | undefined;
 
-    const finish = (error: Error | null) => {
+    const finish = (error: string | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(silence);
       signal.removeEventListener("abort", onAbort);
-      void queue.then(() => (error ? reject(error) : resolve()));
+      void queue.then(() => resolve({ opened, error }));
     };
     const watchdog = () => {
       clearTimeout(silence);
       silence = setTimeout(() => {
-        failure = `No message or keepalive from ${where} for ${Math.round(silenceMs / 1000)} seconds`;
+        finish(`No message or keepalive from ${where} for ${Math.round(silenceMs / 1000)} seconds`);
         socket.close(4000, "silent");
-        finish(new Error(failure));
       }, silenceMs);
     };
     const onAbort = () => {
@@ -201,16 +217,12 @@ function subscribe(
       if (signal.aborted) return finish(null);
       if (!opened) {
         return finish(
-          new Error(
-            `Couldn't subscribe to ${where}${failure ? `: ${failure}` : ""}. Check the server URL, the topics, and the access token.`,
-          ),
+          `Couldn't subscribe to ${where}${failure ? `: ${failure}` : ""}. Check the server URL, the topics, and the access token.`,
         );
       }
       if (code === 1000) return finish(null);
       finish(
-        new Error(
-          `The connection to ${where} closed (${code}${reason ? ` ${reason}` : ""}${failure ? `, ${failure}` : ""})`,
-        ),
+        `The connection to ${where} closed (${code}${reason ? ` ${reason}` : ""}${failure ? `, ${failure}` : ""})`,
       );
     });
   });
