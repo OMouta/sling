@@ -12,6 +12,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
+  Bell,
   Box,
   Cpu,
   Fingerprint,
@@ -19,6 +20,7 @@ import {
   type LucideIcon,
   Plus,
   ShieldCheck,
+  SlidersHorizontal,
   Smartphone,
 } from "lucide-react";
 import {
@@ -34,10 +36,11 @@ import {
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { ProviderIcon } from "../components/ProviderIcon.tsx";
+import { SettingsSection } from "../components/SettingsSection.tsx";
+import { TimeZonePicker } from "../components/TimeZonePicker.tsx";
 import {
   Badge,
   Button,
-  Card,
   cx,
   ErrorText,
   Field,
@@ -58,12 +61,16 @@ import {
   secretsBody,
 } from "../lib/sandbox.ts";
 import { isSandboxSettingsView, sandboxApi, useSandboxSettings } from "../lib/sandboxApi.ts";
+import { saveTimeZone } from "../lib/timezone.ts";
 import type { ProviderInfo, Settings } from "../lib/types.ts";
 import { qk, useConnectors, useInstallations } from "../lib/workflowApi.ts";
+import { NotificationsSection } from "./SettingsNotifications.tsx";
 
 const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
+  { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "model", label: "Models", icon: Cpu },
   { id: "mode", label: "Permission mode", icon: ShieldCheck },
+  { id: "notifications", label: "Notifications", icon: Bell },
   { id: "sandboxes", label: "Sandboxes", icon: Box },
   { id: "security", label: "Sign-in security", icon: KeyRound },
 ];
@@ -73,7 +80,7 @@ export function SettingsPage() {
     queryKey: ["settings"],
     queryFn: () => api.get<Settings>("/api/settings"),
   });
-  const [current, setCurrent] = useState("model");
+  const [current, setCurrent] = useState("general");
   const nav = useRef<HTMLElement>(null);
   // A section picked from the list stays current until the reader scrolls
   // themselves, even when the page can't scroll it all the way to the top.
@@ -91,7 +98,7 @@ export function SettingsPage() {
         return;
       }
       const top = scroller.getBoundingClientRect().top + 96;
-      let active = SECTIONS[0]?.id ?? "model";
+      let active = SECTIONS[0]?.id ?? "general";
       for (const sec of SECTIONS) {
         const el = document.getElementById(sec.id);
         if (el && el.getBoundingClientRect().top <= top) active = sec.id;
@@ -163,8 +170,10 @@ export function SettingsPage() {
           <ErrorText error={settings.error} />
           {settings.data && (
             <>
+              <GeneralSection settings={settings.data} />
               <ModelSection settings={settings.data} />
               <ModeSection settings={settings.data} />
+              <NotificationsSection settings={settings.data} />
             </>
           )}
           <SandboxSection />
@@ -175,29 +184,27 @@ export function SettingsPage() {
   );
 }
 
-function Section({
-  id,
-  title,
-  description,
-  children,
-}: {
-  id: string;
-  title: string;
-  description?: ReactNode;
-  children: ReactNode;
-}) {
+function GeneralSection({ settings }: { settings: Settings }) {
+  const qc = useQueryClient();
+  const save = useMutation({ mutationFn: (timeZone: string) => saveTimeZone(qc, timeZone) });
   return (
-    <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-6 space-y-3">
-      <div>
-        <h2 id={`${id}-title`} className="text-sm font-medium">
-          {title}
-        </h2>
-        {description && (
-          <p className="mt-1 max-w-2xl text-xs leading-[18px] text-muted">{description}</p>
-        )}
+    <SettingsSection id="general" title="General">
+      <div className="space-y-1.5">
+        <span id="time-zone-label" className="block text-xs font-medium text-soft">
+          Time zone
+        </span>
+        <TimeZonePicker
+          value={settings.timeZone}
+          labelledBy="time-zone-label"
+          onChange={(tz) => save.mutate(tz)}
+        />
+        <span className="block text-xs leading-4 text-subtle">
+          What “today” means in your calendar, in schedules that don't name a zone, and in the date
+          the assistant goes by.
+        </span>
+        <ErrorText error={save.error} />
       </div>
-      <Card className="p-5">{children}</Card>
-    </section>
+    </SettingsSection>
   );
 }
 
@@ -214,7 +221,7 @@ function ModelSection({ settings }: { settings: Settings }) {
     return catalog.data?.assistant.find((p) => p.provider === SUBSCRIPTIONS[id].cli);
   };
   return (
-    <Section
+    <SettingsSection
       id="model"
       title="Models"
       description="Sling chats through the coding agents on your machines, on the login that's already there, so your ChatGPT or Claude subscription covers it. The assistant picks the agent and model for each task."
@@ -227,7 +234,7 @@ function ModelSection({ settings }: { settings: Settings }) {
           ))}
         </ul>
       </div>
-    </Section>
+    </SettingsSection>
   );
 }
 
@@ -454,7 +461,7 @@ function ModeSection({ settings }: { settings: Settings }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
   });
   return (
-    <Section
+    <SettingsSection
       id="mode"
       title="Default permission mode"
       description="New conversations start in this mode. You can switch any conversation later. Each machine can also cap the mode it accepts."
@@ -482,14 +489,14 @@ function ModeSection({ settings }: { settings: Settings }) {
         ))}
       </div>
       <ErrorText error={save.error} />
-    </Section>
+    </SettingsSection>
   );
 }
 
 function SandboxSection() {
   const settings = useSandboxSettings();
   return (
-    <Section
+    <SettingsSection
       id="sandboxes"
       title="Sandboxes"
       description={
@@ -511,7 +518,7 @@ function SandboxSection() {
           <SandboxSecrets secrets={settings.data.secrets} />
         </div>
       )}
-    </Section>
+    </SettingsSection>
   );
 }
 
@@ -818,7 +825,7 @@ function SecuritySection() {
     (session.data?.user as { twoFactorEnabled?: boolean } | undefined)?.twoFactorEnabled,
   );
   return (
-    <Section
+    <SettingsSection
       id="security"
       title="Sign-in security"
       description="This account can start work on your machines, so protect it with a passkey or a second factor."
@@ -831,7 +838,7 @@ function SecuritySection() {
         />
         <Passkeys />
       </div>
-    </Section>
+    </SettingsSection>
   );
 }
 

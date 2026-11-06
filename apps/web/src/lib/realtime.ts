@@ -371,6 +371,31 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
   }
 }
 
+/** The socket open now, which presence goes out on. */
+let current: WebSocket | null = null;
+let openConversation: string | null = null;
+let lastPresence = "";
+
+/**
+ * Tells the server which conversation this window shows and whether anyone
+ * can see it, so replies there aren't also pushed to this person's devices.
+ * Sends only what changed, except right after connecting.
+ */
+function sendPresence(force = false) {
+  if (current?.readyState !== 1) return;
+  const visible = typeof document === "undefined" || document.visibilityState === "visible";
+  const msg = JSON.stringify({ type: "presence", conversationId: openConversation, visible });
+  if (!force && msg === lastPresence) return;
+  lastPresence = msg;
+  current.send(msg);
+}
+
+/** The conversation the page shows, or null on any other page. */
+export function setOpenConversation(id: string | null) {
+  openConversation = id;
+  sendPresence();
+}
+
 export function connectRealtime(qc: QueryClient): () => void {
   let ws: WebSocket | null = null;
   let attempt = 0;
@@ -382,10 +407,12 @@ export function connectRealtime(qc: QueryClient): () => void {
     connection.set("connecting");
     const proto = location.protocol === "https:" ? "wss" : "ws";
     ws = new WebSocket(`${proto}://${location.host}/api/ws`);
+    current = ws;
     ws.onopen = () => {
       const reconnected = attempt > 0;
       attempt = 0;
       connection.set("open");
+      sendPresence(true);
       // Anything could have changed while we were away.
       if (reconnected) void qc.invalidateQueries();
       ping = window.setInterval(() => ws?.readyState === 1 && ws.send("ping"), 25_000);
@@ -407,11 +434,15 @@ export function connectRealtime(qc: QueryClient): () => void {
       timer = window.setTimeout(open, delay);
     };
   };
+  const onVisibility = () => sendPresence();
+  document.addEventListener("visibilitychange", onVisibility);
   open();
   return () => {
     stopped = true;
+    document.removeEventListener("visibilitychange", onVisibility);
     window.clearTimeout(timer);
     window.clearInterval(ping);
+    if (current === ws) current = null;
     ws?.close();
   };
 }

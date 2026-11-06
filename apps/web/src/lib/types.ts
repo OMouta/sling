@@ -4,6 +4,7 @@ import type {
   ConversationView,
   LiveReplyView,
   MessageView,
+  NotificationSettings,
   PermissionMode,
   PersonalityView,
   RunnerView,
@@ -50,6 +51,10 @@ export interface ProviderInfo {
 export interface Settings {
   defaultMode: PermissionMode;
   modes: PermissionMode[];
+  /** The workspace's IANA time zone. Null until the web app sets it. */
+  timeZone: string | null;
+  /** Which pushes the signed-in user gets. Missing from a server older than this app. */
+  notifications?: NotificationSettings;
   providers: ProviderInfo[];
   model: {
     provider: ProviderInfo["id"];

@@ -7,8 +7,9 @@ import { api } from "../lib/api.ts";
 import { decisionCount } from "../lib/approvals.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { NEW_CHAT_EVENT } from "../lib/newChat.ts";
-import { connectRealtime, useConnection } from "../lib/realtime.ts";
+import { connectRealtime, setOpenConversation, useConnection } from "../lib/realtime.ts";
 import { useSandboxes } from "../lib/sandboxApi.ts";
+import { useDefaultTimeZone } from "../lib/timezone.ts";
 import type { Status } from "../lib/types.ts";
 import { Logo } from "./Logo.tsx";
 import { NAV, type NavItem } from "./nav.ts";
@@ -85,6 +86,9 @@ function Shell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => connectRealtime(qc), [qc]);
+  // Replies in the chat on screen aren't pushed to this person's devices.
+  useEffect(() => setOpenConversation(/^\/c\/([^/]+)/.exec(pathname)?.[1] ?? null), [pathname]);
+  useDefaultTimeZone();
   // biome-ignore lint/correctness/useExhaustiveDependencies: close the drawer on navigation.
   useEffect(() => setNavOpen(false), [pathname]);
   useEffect(() => {
