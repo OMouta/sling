@@ -82,6 +82,7 @@ const ACTION_ICON = {
 } as Record<string, typeof Upload>;
 
 const ACTION_STATE: Record<ActionView["state"], string> = {
+  queued: "Not started",
   awaiting_approval: "Waiting for approval",
   ready: "Ready",
   sent: "In progress",

@@ -325,6 +325,12 @@ export class RunnerGateway {
       case "execResult":
         this.#ctx.commands?.handleResult(session, envelope.body.value);
         return;
+      case "repoActionOutput":
+        await this.#ctx.deploys?.repoActionOutput(session, envelope.body.value);
+        return;
+      case "repoActionResult":
+        await this.#ctx.deploys?.repoActionResult(session, envelope.body.value);
+        return;
       case "repoChangeResult": {
         const r = envelope.body.value;
         const pending = this.#repoChanges.get(r.requestId);
@@ -357,6 +363,7 @@ export class RunnerGateway {
           remoteUrl: f.remoteUrl.slice(0, 1024),
         })),
         remoteRepos: inv.remoteRepos,
+        deploys: inv.deploys,
         maxMode: modeFromProto(inv.maxMode),
         maxConcurrentTasks: Math.max(1, Math.min(inv.maxConcurrentTasks || 1, 16)),
         labels: normalizeLabels(inv.labels),
@@ -377,6 +384,7 @@ export class RunnerGateway {
           remoteUrl: repo.remoteUrl,
           remoteKey: remoteKey(repo.remoteUrl),
           network: repo.network,
+          deployCommand: repo.deployCommand.slice(0, 2000),
         })
         .onConflictDoUpdate({
           target: [schema.repos.runnerId, schema.repos.name],
@@ -385,6 +393,7 @@ export class RunnerGateway {
             remoteUrl: repo.remoteUrl,
             remoteKey: remoteKey(repo.remoteUrl),
             network: repo.network,
+            deployCommand: repo.deployCommand.slice(0, 2000),
             removedAt: null,
           },
         });

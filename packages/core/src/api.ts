@@ -42,6 +42,8 @@ export interface RepoView {
   defaultBranch: string;
   remoteUrl: string;
   network: boolean;
+  /** The deploy command set for this repo on the machine. Empty when none is set. */
+  deployCommand: string;
   /** Normalized remote, `host/owner/name`, shared by the same repo on every machine. Null without a remote. */
   remoteKey: string | null;
 }
@@ -68,6 +70,8 @@ export interface RunnerView {
   sandboxId: string | null;
   /** Git repos the machine found that aren't allowed yet. */
   foundRepos: FoundRepoView[];
+  /** False when the machine refuses merges and deploys (`deploys off`). */
+  deploys: boolean;
   /** Whether repos can be allowed and removed from Sling. Turned off on the machine. */
   remoteRepos: boolean;
 }
@@ -172,6 +176,89 @@ export interface ActionView {
   url: string | null;
   message: string | null;
   approvalId: string | null;
+  /** Merge, deploy, and verify: the deploy target. */
+  targetId: string | null;
+  targetName: string | null;
+  /** Merge and deploy: where it ran, a machine's name or "Sling" for the control plane. */
+  ranOn: string | null;
+  /** Merge: the merged commit. Deploy and verify: the commit deployed. */
+  commitSha: string | null;
+  /** A deploy command's output, redacted and shortened. */
+  output: string | null;
+  /** Verify only. */
+  verify: VerifyDetail | null;
+}
+
+/** What one health check saw. */
+export interface DeployCheckResult {
+  url: string;
+  ok: boolean;
+  /** Null when there was no answer. */
+  status: number | null;
+  ms: number;
+  /** Why it failed: the wrong status, missing text, a timeout, or a network error. */
+  error: string | null;
+}
+
+export interface VerifyDetail {
+  attempts: number;
+  /** Results of the last attempt. */
+  checks: DeployCheckResult[];
+  /** Null when the target has no version URL. */
+  versionSeen: boolean | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export const DEPLOY_METHODS = ["merge", "command", "hook"] as const;
+export type DeployMethod = (typeof DEPLOY_METHODS)[number];
+
+export const MERGE_METHODS = ["squash", "merge", "rebase"] as const;
+export type MergeMethod = (typeof MERGE_METHODS)[number];
+
+export interface DeployCheck {
+  url: string;
+  /** Exact status to expect. Null accepts 200 to 399. */
+  status: number | null;
+  /** Text the body must contain. */
+  contains: string | null;
+}
+
+/** A repo Sling knows how to deploy and check. */
+export interface DeployTargetView {
+  id: string;
+  name: string;
+  /** Normalized remote, `host/owner/name`. */
+  remoteKey: string;
+  method: DeployMethod;
+  mergeMethod: MergeMethod;
+  /** `command` only: the machine that runs it. */
+  runnerId: string | null;
+  runnerName: string | null;
+  /** `command` only: what that machine reports it will run. Empty when it has none set. */
+  command: string | null;
+  /** `hook` only. The URL itself is never sent back. */
+  hook: { httpMethod: "POST" | "GET"; host: string; hasHeader: boolean } | null;
+  checks: DeployCheck[];
+  versionUrl: string | null;
+  settleSeconds: number;
+  timeoutSeconds: number;
+  lastCheck: {
+    at: string;
+    up: boolean;
+    /** Failed checks in a row. */
+    failures: number;
+    results: DeployCheckResult[];
+  } | null;
+  lastDeploy: {
+    taskId: string;
+    taskTitle: string;
+    commitSha: string | null;
+    at: string;
+    state: ActionState;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ApprovalView {
@@ -262,12 +349,16 @@ export interface MessageView {
   trace: ReplyTrace | null;
 }
 
-/** A command waiting on the user, or what they decided. */
+/** A command or a send waiting on the user in a chat, or what they decided. */
 export interface CommandApprovalView {
   id: string;
+  /** `command`: a command that wants to leave the sandbox. `send`: something that leaves Sling. */
+  kind: "command" | "send";
   state: "pending" | "approved" | "denied" | "expired";
-  /** The machine it would run on. */
+  /** Commands: the machine it would run on. Sends: empty. */
   machine: string;
+  /** Sends: what would go out, for example "Email ana@example.com: Lunch moved". */
+  summary: string;
 }
 
 /** A tool call the assistant made while replying. */
@@ -497,7 +588,14 @@ export interface PublisherRef {
 
 export interface ExtensionContents {
   connectors: { id: string; name: string; isExecutionProvider: boolean }[];
-  nodes: { type: string; version: number; title: string; isTrigger: boolean }[];
+  nodes: {
+    type: string;
+    version: number;
+    title: string;
+    isTrigger: boolean;
+    /** Present when the assistant may call the node from chat. */
+    assistant?: { sends: boolean };
+  }[];
   templates: { key: string; name: string }[];
 }
 
@@ -612,6 +710,49 @@ export interface CatalogView {
   extensionCount: number;
 }
 
+/** A device that gets push notifications. */
+export interface PushSubscriptionView {
+  id: string;
+  /** From the browser that subscribed, for example "Safari on iPhone". */
+  label: string;
+  /** The push service's host, such as web.push.apple.com. */
+  service: string;
+  createdAt: string;
+  lastDeliveredAt: string | null;
+  lastError: string | null;
+}
+
+/** Which pushes a user gets. `app.notify` from a workflow always delivers. */
+export interface NotificationSettings {
+  approvals: boolean;
+  tasks: boolean;
+  replies: boolean;
+}
+
+export const DEFAULT_NOTIFICATIONS: NotificationSettings = {
+  approvals: true,
+  tasks: true,
+  replies: true,
+};
+
+/** What a push carries, encrypted for the device. */
+export interface PushPayload {
+  title: string;
+  body: string;
+  /** A path in the app to open on tap. */
+  url: string;
+  /** Pushes with the same tag replace each other on the device. */
+  tag: string;
+}
+
+/** What the web app's socket tells the server. */
+export type ClientEvent = {
+  type: "presence";
+  /** The conversation a visible window shows, or null. */
+  conversationId: string | null;
+  visible: boolean;
+};
+
 export type AgentStatus = "idle" | "thinking" | "error";
 
 export type ServerEvent =
@@ -633,4 +774,6 @@ export type ServerEvent =
   | { type: "extension.updated"; extension: ExtensionView }
   | { type: "extension.removed"; id: string }
   | { type: "personality.updated"; personality: PersonalityView }
-  | { type: "personality.removed"; id: string };
+  | { type: "personality.removed"; id: string }
+  | { type: "deploy_target.updated"; target: DeployTargetView }
+  | { type: "deploy_target.removed"; id: string };

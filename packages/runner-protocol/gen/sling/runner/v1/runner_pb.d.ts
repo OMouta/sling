@@ -78,6 +78,18 @@ export declare type Envelope = Message<"sling.runner.v1.Envelope"> & {
     case: "execResult";
   } | {
     /**
+     * @generated from field: sling.runner.v1.RepoActionOutput repo_action_output = 8;
+     */
+    value: RepoActionOutput;
+    case: "repoActionOutput";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.RepoActionResult repo_action_result = 9;
+     */
+    value: RepoActionResult;
+    case: "repoActionResult";
+  } | {
+    /**
      * Server to Runner.
      *
      * @generated from field: sling.runner.v1.Challenge challenge = 20;
@@ -156,6 +168,18 @@ export declare type Envelope = Message<"sling.runner.v1.Envelope"> & {
      */
     value: ExecRequest;
     case: "execRequest";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.RepoAction repo_action = 33;
+     */
+    value: RepoAction;
+    case: "repoAction";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.RepoActionAck repo_action_ack = 34;
+     */
+    value: RepoActionAck;
+    case: "repoActionAck";
   } | { case: undefined; value?: undefined };
 };
 
@@ -443,6 +467,14 @@ export declare type Inventory = Message<"sling.runner.v1.Inventory"> & {
    * @generated from field: bool remote_repos = 7;
    */
   remoteRepos: boolean;
+
+  /**
+   * Whether this machine accepts RepoAction merges and deploys. Turned off
+   * with `sling-runner config set deploys off`.
+   *
+   * @generated from field: bool deploys = 8;
+   */
+  deploys: boolean;
 };
 
 /**
@@ -615,6 +647,14 @@ export declare type Repo = Message<"sling.runner.v1.Repo"> & {
    * @generated from field: bool network = 4;
    */
   network: boolean;
+
+  /**
+   * The command a DEPLOY RepoAction runs for this repo, set only with
+   * `sling-runner repo set <name> deploy-command`. Empty when none is set.
+   *
+   * @generated from field: string deploy_command = 5;
+   */
+  deployCommand: string;
 };
 
 /**
@@ -1931,6 +1971,245 @@ export declare type ExecResult = Message<"sling.runner.v1.ExecResult"> & {
  * Use `create(ExecResultSchema)` to create a new message.
  */
 export declare const ExecResultSchema: GenMessage<ExecResult>;
+
+/**
+ * Server to Runner: merge a task's branch, or deploy a merged commit, in one
+ * of this machine's repos. Unlike ActionRequest it isn't tied to a task's
+ * spool, so any machine with the repo can take it. The Runner refuses when
+ * `deploys` is off, when its max_mode is Read-only, when the branch isn't a
+ * Sling task branch, when a deploy's commit isn't on the remote's default
+ * branch, or when the repo has no deploy command. It never force-pushes.
+ *
+ * The Runner answers with RepoActionOutput chunks, then one RepoActionResult,
+ * which it sends again after a reconnect until the server answers with
+ * RepoActionAck.
+ *
+ * @generated from message sling.runner.v1.RepoAction
+ */
+export declare type RepoAction = Message<"sling.runner.v1.RepoAction"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: sling.runner.v1.RepoAction.Kind kind = 2;
+   */
+  kind: RepoAction_Kind;
+
+  /**
+   * The task this belongs to, for logs.
+   *
+   * @generated from field: string task_id = 3;
+   */
+  taskId: string;
+
+  /**
+   * Name of the repo on this Runner.
+   *
+   * @generated from field: string repo = 4;
+   */
+  repo: string;
+
+  /**
+   * MERGE: the task's branch, and the branch it merges into.
+   *
+   * @generated from field: string branch = 5;
+   */
+  branch: string;
+
+  /**
+   * @generated from field: string default_branch = 6;
+   */
+  defaultBranch: string;
+
+  /**
+   * MERGE: the task's PR, when one was opened. Empty merges with plain git.
+   *
+   * @generated from field: string pr_url = 7;
+   */
+  prUrl: string;
+
+  /**
+   * MERGE: "squash", "merge", or "rebase".
+   *
+   * @generated from field: string merge_method = 8;
+   */
+  mergeMethod: string;
+
+  /**
+   * MERGE: the commit message's title and body, for a merge made with git.
+   *
+   * @generated from field: string title = 9;
+   */
+  title: string;
+
+  /**
+   * @generated from field: string body = 10;
+   */
+  body: string;
+
+  /**
+   * DEPLOY: the merged commit to deploy.
+   *
+   * @generated from field: string commit_sha = 11;
+   */
+  commitSha: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.RepoAction.
+ * Use `create(RepoActionSchema)` to create a new message.
+ */
+export declare const RepoActionSchema: GenMessage<RepoAction>;
+
+/**
+ * @generated from enum sling.runner.v1.RepoAction.Kind
+ */
+export enum RepoAction_Kind {
+  /**
+   * @generated from enum value: KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: KIND_MERGE = 1;
+   */
+  MERGE = 1,
+
+  /**
+   * @generated from enum value: KIND_DEPLOY = 2;
+   */
+  DEPLOY = 2,
+}
+
+/**
+ * Describes the enum sling.runner.v1.RepoAction.Kind.
+ */
+export declare const RepoAction_KindSchema: GenEnum<RepoAction_Kind>;
+
+/**
+ * @generated from message sling.runner.v1.RepoActionAck
+ */
+export declare type RepoActionAck = Message<"sling.runner.v1.RepoActionAck"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.RepoActionAck.
+ * Use `create(RepoActionAckSchema)` to create a new message.
+ */
+export declare const RepoActionAckSchema: GenMessage<RepoActionAck>;
+
+/**
+ * Runner to server: output of a deploy command as it runs, redacted.
+ *
+ * @generated from message sling.runner.v1.RepoActionOutput
+ */
+export declare type RepoActionOutput = Message<"sling.runner.v1.RepoActionOutput"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string chunk = 2;
+   */
+  chunk: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.RepoActionOutput.
+ * Use `create(RepoActionOutputSchema)` to create a new message.
+ */
+export declare const RepoActionOutputSchema: GenMessage<RepoActionOutput>;
+
+/**
+ * @generated from message sling.runner.v1.RepoActionResult
+ */
+export declare type RepoActionResult = Message<"sling.runner.v1.RepoActionResult"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: sling.runner.v1.RepoAction.Kind kind = 2;
+   */
+  kind: RepoAction_Kind;
+
+  /**
+   * @generated from field: sling.runner.v1.RepoActionResult.Outcome outcome = 3;
+   */
+  outcome: RepoActionResult_Outcome;
+
+  /**
+   * @generated from field: string message = 4;
+   */
+  message: string;
+
+  /**
+   * MERGE: the merged commit. DEPLOY: the commit that was deployed.
+   *
+   * @generated from field: string commit_sha = 5;
+   */
+  commitSha: string;
+
+  /**
+   * MERGE: the PR's URL, when there was one.
+   *
+   * @generated from field: string url = 6;
+   */
+  url: string;
+
+  /**
+   * DEPLOY: the command's exit code. Unset when it never ran or was killed.
+   *
+   * @generated from field: optional int32 exit_code = 7;
+   */
+  exitCode?: number | undefined;
+};
+
+/**
+ * Describes the message sling.runner.v1.RepoActionResult.
+ * Use `create(RepoActionResultSchema)` to create a new message.
+ */
+export declare const RepoActionResultSchema: GenMessage<RepoActionResult>;
+
+/**
+ * @generated from enum sling.runner.v1.RepoActionResult.Outcome
+ */
+export enum RepoActionResult_Outcome {
+  /**
+   * @generated from enum value: OUTCOME_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: OUTCOME_SUCCEEDED = 1;
+   */
+  SUCCEEDED = 1,
+
+  /**
+   * @generated from enum value: OUTCOME_FAILED = 2;
+   */
+  FAILED = 2,
+
+  /**
+   * The Runner's own rules refused it.
+   *
+   * @generated from enum value: OUTCOME_REFUSED = 3;
+   */
+  REFUSED = 3,
+}
+
+/**
+ * Describes the enum sling.runner.v1.RepoActionResult.Outcome.
+ */
+export declare const RepoActionResult_OutcomeSchema: GenEnum<RepoActionResult_Outcome>;
 
 /**
  * @generated from enum sling.runner.v1.PermissionMode

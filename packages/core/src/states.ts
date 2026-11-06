@@ -30,8 +30,13 @@ export function isTerminalTask(state: TaskState): boolean {
   return TASK_TRANSITIONS[state].length === 0;
 }
 
-/** Follow-up actions such as push and open PR. */
+/**
+ * Steps after a task finishes, such as push, PR, merge, deploy, and verify.
+ * `queued` steps haven't been reached yet: merge and deploy wait there and get
+ * their approvals only once the steps before them have succeeded.
+ */
 export const ACTION_STATES = [
+  "queued",
   "awaiting_approval",
   "ready",
   "sent",
@@ -45,6 +50,7 @@ export const ACTION_STATES = [
 export type ActionState = (typeof ACTION_STATES)[number];
 
 const ACTION_TRANSITIONS: Record<ActionState, readonly ActionState[]> = {
+  queued: ["awaiting_approval", "ready", "skipped"],
   awaiting_approval: ["ready", "rejected", "expired", "skipped"],
   ready: ["sent", "skipped"],
   sent: ["succeeded", "failed", "refused", "ready"],
@@ -67,8 +73,13 @@ export function isTerminalAction(state: ActionState): boolean {
 export const APPROVAL_STATES = ["pending", "approved", "rejected", "expired"] as const;
 export type ApprovalState = (typeof APPROVAL_STATES)[number];
 
-/** Pending approvals expire after this long (decisions.md defaults). */
+/** Pending approvals expire after this long. */
 export const APPROVAL_TTL_MS = 24 * 60 * 60 * 1000;
 
-export const DELIVERY_KINDS = ["local", "push", "pr"] as const;
+/**
+ * What happens after a coding task succeeds. `deploy` also merges the PR,
+ * deploys the merged commit through the repo's deploy target, and checks the
+ * site.
+ */
+export const DELIVERY_KINDS = ["local", "push", "pr", "deploy"] as const;
 export type Delivery = (typeof DELIVERY_KINDS)[number];

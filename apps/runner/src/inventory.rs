@@ -92,6 +92,7 @@ pub async fn build(cfg: &Config, found: &[Found], sandbox: &Sandbox) -> Inventor
             default_branch: git::default_branch(&r.path).await,
             remote_url: git::remote_url(&r.path).await.unwrap_or_default(),
             network: r.network,
+            deploy_command: String::new(),
         });
     }
 
@@ -107,6 +108,7 @@ pub async fn build(cfg: &Config, found: &[Found], sandbox: &Sandbox) -> Inventor
             Vec::new()
         },
         remote_repos: cfg.remote_repos,
+        deploys: false,
     }
 }
 

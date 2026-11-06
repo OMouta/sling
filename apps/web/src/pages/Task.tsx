@@ -15,6 +15,7 @@ const DELIVER: Record<Delivery, string> = {
   local: "A local commit",
   push: "A pushed branch",
   pr: "A pull request",
+  deploy: "A deploy, checked",
 };
 
 function when(iso: string | null): string {

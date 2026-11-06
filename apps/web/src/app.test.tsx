@@ -28,6 +28,7 @@ const runner: RunnerView = {
       remoteUrl: "git@github.com:a/site.git",
       network: false,
       remoteKey: "github.com/a/site",
+      deployCommand: "",
     },
   ],
   labels: ["os:macos", "arch:aarch64"],
@@ -48,6 +49,7 @@ const runner: RunnerView = {
     },
   ],
   remoteRepos: true,
+  deploys: true,
 };
 
 const conversation: ConversationView = {
@@ -98,6 +100,12 @@ const task: TaskView = {
       url: null,
       message: null,
       approvalId: "apv_1",
+      targetId: null,
+      targetName: null,
+      ranOn: null,
+      commitSha: null,
+      output: null,
+      verify: null,
     },
     {
       id: "act_2",
@@ -108,6 +116,12 @@ const task: TaskView = {
       url: null,
       message: null,
       approvalId: "apv_2",
+      targetId: null,
+      targetName: null,
+      ranOn: null,
+      commitSha: null,
+      output: null,
+      verify: null,
     },
   ],
 };

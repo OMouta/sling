@@ -21,8 +21,10 @@ import {
   Copy,
   Drama,
   Ellipsis,
+  LayoutGrid,
   LayoutTemplate,
   Plus,
+  Rocket,
   Star,
   Terminal,
   Trash2,
@@ -65,11 +67,18 @@ type Draft = Pick<
   "name" | "description" | "instructions" | "tools" | "color" | "shape"
 >;
 
-const TOOL_ICONS: Record<PersonalityTool, typeof Terminal> = { commands: Terminal, coding: Wrench };
+const TOOL_ICONS: Record<PersonalityTool, typeof Terminal> = {
+  commands: Terminal,
+  coding: Wrench,
+  apps: LayoutGrid,
+  deploys: Rocket,
+};
 
 const TOOL_SHORT: Record<PersonalityTool, string> = {
   commands: "Commands",
   coding: "Coding tasks",
+  apps: "Apps",
+  deploys: "Deploys",
 };
 
 function toolsLine(tools: PersonalityTool[]): string {

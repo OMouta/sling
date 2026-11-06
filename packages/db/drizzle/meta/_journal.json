@@ -64,6 +64,13 @@
       "when": 1793986769174,
       "tag": "0008_personality_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793993394209,
+      "tag": "0009_deploys",
+      "breakpoints": true
     }
   ]
 }

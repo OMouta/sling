@@ -11,12 +11,14 @@ import { createAuth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
 import type { AppContext } from "./context.ts";
 import { deriveKey } from "./crypto.ts";
+import { DeployService } from "./deploys/service.ts";
 import { ProcessRuntime } from "./extensions/process-runtime.ts";
 import type { ExtensionRuntime } from "./extensions/runtime.ts";
 import { ExtensionService } from "./extensions/service.ts";
 import { createServer, registerRoutes } from "./http/app.ts";
 import { startJobs } from "./jobs.ts";
 import { ensurePersonalities } from "./personalities/service.ts";
+import { PushService } from "./push/service.ts";
 import { Hub } from "./realtime/hub.ts";
 import { RunnerGateway } from "./runners/gateway.ts";
 import { SandboxService } from "./sandboxes/service.ts";
@@ -99,6 +101,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     workflows: undefined as unknown as WorkflowService,
     connectors: undefined as unknown as ConnectorRuntime,
     extensions: undefined as unknown as ExtensionService,
+    deploys: undefined as unknown as DeployService,
+    push: undefined as unknown as PushService,
   };
   ctx.runners = new RunnerGateway(ctx);
   ctx.tasks = new TaskService(ctx);
@@ -115,6 +119,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     opts.extensionRuntime ??
       new ProcessRuntime({ log: app.log.child({ component: "extensions" }) }),
   );
+  ctx.deploys = new DeployService(ctx);
+  ctx.push = new PushService(ctx);
   ctx.runners.handlers = ctx.tasks;
   ctx.tasks.onSettled = async (taskId, reason) => {
     // First, so a failing hook below can't keep a sandbox alive.

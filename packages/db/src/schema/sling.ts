@@ -5,10 +5,15 @@ import type {
   ApprovalState,
   ChatSettings,
   Delivery,
+  DeployCheck,
+  DeployCheckResult,
+  DeployMethod,
   FoundRepoView,
   GlyphShape,
   Harness,
+  MergeMethod,
   ModelProviderId,
+  NotificationSettings,
   PermissionMode,
   PersonalityColor,
   PersonalityTool,
@@ -16,6 +21,7 @@ import type {
   RoutingView,
   SandboxState,
   TaskState,
+  VerifyDetail,
 } from "@sling/core";
 import { sql } from "drizzle-orm";
 import {
@@ -70,6 +76,8 @@ export const workspaces = pgTable("workspaces", {
   sandboxSettings: jsonb("sandbox_settings").$type<SandboxSettings>().notNull().default({}),
   /** What new conversations start with: the assistant's model and the coding agent. */
   chatDefaults: jsonb("chat_defaults").$type<ChatSettings>(),
+  /** IANA time zone, such as Europe/Lisbon. Null until the web app sets it; null counts as UTC. */
+  timeZone: text("time_zone"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -84,6 +92,8 @@ export const workspaceMembers = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     role: text("role").$type<"owner" | "admin" | "member">().notNull(),
+    /** Which pushes this member gets. Null uses the defaults. */
+    notifications: jsonb("notifications").$type<NotificationSettings>(),
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.workspaceId, t.userId] })],
@@ -94,14 +104,16 @@ export type CredentialKind =
   | "connector"
   | "harness_openai"
   | "harness_anthropic"
-  | "git_token";
+  | "git_token"
+  | "deploy_hook";
 
 export const credentials = pgTable("credentials", {
   id: text("id").primaryKey(),
   ...owned(),
   /**
    * `model_api_key` for the assistant's model, `connector` for an installation's
-   * blob, and the sandbox secrets: `harness_openai`, `harness_anthropic`, `git_token`.
+   * blob, the sandbox secrets (`harness_openai`, `harness_anthropic`, `git_token`),
+   * and `deploy_hook` for a deploy target's hook.
    */
   kind: text("kind").$type<CredentialKind>().notNull(),
   /** base64 of iv | auth tag | ciphertext, AES-256-GCM. */
@@ -158,6 +170,8 @@ export const runners = pgTable(
     foundRepos: jsonb("found_repos").$type<FoundRepoView[]>().notNull().default([]),
     /** Whether the machine accepts repo changes from Sling. */
     remoteRepos: boolean("remote_repos").notNull().default(false),
+    /** Whether the machine accepts merges and deploys, from its inventory. */
+    deploys: boolean("deploys").notNull().default(true),
     /** A sandbox's Runner: hidden from Machines and revoked with its sandbox. */
     ephemeral: boolean("ephemeral").notNull().default(false),
     sandboxId: text("sandbox_id").references((): AnyPgColumn => sandboxes.id, {
@@ -198,6 +212,8 @@ export const repos = pgTable(
     /** Normalized remote, `host/owner/name`, shared by the same repo on every machine. */
     remoteKey: text("remote_key"),
     network: boolean("network").notNull().default(false),
+    /** The deploy command set for this repo in the machine's config. Empty when none. */
+    deployCommand: text("deploy_command").notNull().default(""),
     /** Set when the Runner stops advertising this repo. */
     removedAt: ts("removed_at"),
     updatedAt: updatedAt(),
@@ -396,6 +412,20 @@ export const actions = pgTable(
     prBody: text("pr_body"),
     url: text("url"),
     message: text("message"),
+    /** Merge, deploy, and verify: the deploy target. */
+    targetId: text("target_id").references((): AnyPgColumn => deployTargets.id, {
+      onDelete: "set null",
+    }),
+    /** Merge and deploy: the machine it went to. Null when the control plane did it. */
+    runnerId: text("runner_id").references(() => runners.id, { onDelete: "set null" }),
+    /** Merge: the merged commit. Deploy and verify: the commit deployed. */
+    commitSha: text("commit_sha"),
+    /** A deploy command's output, redacted, at most 256 KB. */
+    output: text("output"),
+    /** Verify: what the checks saw. */
+    detail: jsonb("detail").$type<VerifyDetail>(),
+    /** The `RepoAction` request a merge or deploy on a machine was sent as. */
+    requestId: text("request_id"),
     createdAt: createdAt(),
     sentAt: ts("sent_at"),
     finishedAt: ts("finished_at"),
@@ -519,4 +549,79 @@ export const sandboxRepos = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.workspaceId, t.remoteKey] })],
+);
+
+/** How a deploy target's hook is called. Stored encrypted as JSON in `credentials`. */
+export interface DeployHook {
+  url: string;
+  httpMethod: "POST" | "GET";
+  headerName?: string;
+  headerValue?: string;
+}
+
+/** What the last health check of a target saw. */
+export interface DeployLastCheck {
+  at: string;
+  up: boolean;
+  failures: number;
+  results: DeployCheckResult[];
+}
+
+/** A repo Sling knows how to deploy and check, keyed by its normalized remote. */
+export const deployTargets = pgTable(
+  "deploy_targets",
+  {
+    id: text("id").primaryKey(),
+    ...owned(),
+    name: text("name").notNull(),
+    remoteKey: text("remote_key").notNull(),
+    method: text("method").$type<DeployMethod>().notNull(),
+    mergeMethod: text("merge_method").$type<MergeMethod>().notNull().default("squash"),
+    /** `command`: the machine that runs the repo's deploy command. */
+    runnerId: text("runner_id").references(() => runners.id, { onDelete: "set null" }),
+    /** `hook`: the encrypted DeployHook. */
+    hookCredentialId: text("hook_credential_id").references(() => credentials.id, {
+      onDelete: "set null",
+    }),
+    /** `hook`: shown in place of the URL. */
+    hookHost: text("hook_host"),
+    hookMethod: text("hook_method").$type<"POST" | "GET">(),
+    hookHasHeader: boolean("hook_has_header").notNull().default(false),
+    checks: jsonb("checks").$type<DeployCheck[]>().notNull(),
+    versionUrl: text("version_url"),
+    settleSeconds: integer("settle_seconds").notNull().default(0),
+    timeoutSeconds: integer("timeout_seconds").notNull().default(600),
+    lastCheck: jsonb("last_check").$type<DeployLastCheck>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("deploy_targets_name_idx").on(t.workspaceId, t.name),
+    uniqueIndex("deploy_targets_remote_idx").on(t.workspaceId, t.remoteKey),
+  ],
+);
+
+/** A browser that gets push notifications for one user. */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    endpoint: text("endpoint").notNull().unique(),
+    /** The browser's P-256 public key and auth secret, base64url. */
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    label: text("label").notNull(),
+    createdAt: createdAt(),
+    lastDeliveredAt: ts("last_delivered_at"),
+    lastError: text("last_error"),
+    /** Failed deliveries in a row. */
+    failures: integer("failures").notNull().default(0),
+  },
+  (t) => [index("push_subscriptions_user_idx").on(t.workspaceId, t.userId)],
 );

@@ -17,6 +17,7 @@ import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { encryptSecret, SECRET_KEY_VERSION } from "../crypto.ts";
 import { actorOf, requireActor } from "../http/session.ts";
+import { isTimeZone } from "../timezone.ts";
 
 const ModelInput = z.object({
   provider: z.enum(["openai", "anthropic", "openai-compatible"]),
@@ -40,6 +41,8 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
     return {
       defaultMode: ws?.defaultMode ?? "auto",
       modes: PERMISSION_MODES,
+      /** Null until set; the web app sets it from the browser then. */
+      timeZone: ws?.timeZone ?? null,
       providers: await Promise.all(
         Object.values(MODEL_PROVIDERS).map(async (p) => {
           const c = await providerConfig(ctx, actor.workspaceId, p.id);
@@ -84,6 +87,32 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
         subjectType: "workspace",
         subjectId: actor.workspaceId,
         details: { mode },
+      });
+      return { ok: true };
+    },
+  );
+
+  r.put(
+    "/api/settings/time-zone",
+    { schema: { body: z.object({ timeZone: z.string().min(1).max(64) }) } },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const { timeZone } = request.body;
+      if (!isTimeZone(timeZone)) {
+        return reply.code(400).send({ error: `${timeZone} isn't a time zone this server knows.` });
+      }
+      await ctx.db
+        .update(schema.workspaces)
+        .set({ timeZone })
+        .where(eq(schema.workspaces.id, actor.workspaceId));
+      await audit(ctx, {
+        workspaceId: actor.workspaceId,
+        actorType: "user",
+        actorId: actor.userId,
+        verb: "settings.time_zone_changed",
+        subjectType: "workspace",
+        subjectId: actor.workspaceId,
+        details: { timeZone },
       });
       return { ok: true };
     },

@@ -7,7 +7,9 @@ import type { CliChat } from "./agent/cli-chat.ts";
 import type { Commands } from "./agent/commands.ts";
 import type { Auth } from "./auth/auth.ts";
 import type { Config } from "./config.ts";
+import type { DeployService } from "./deploys/service.ts";
 import type { ExtensionService } from "./extensions/service.ts";
+import type { PushService } from "./push/service.ts";
 import type { Hub } from "./realtime/hub.ts";
 import type { RunnerGateway } from "./runners/gateway.ts";
 import type { SandboxService } from "./sandboxes/service.ts";
@@ -44,6 +46,10 @@ export interface AppContext {
   connectors: ConnectorRuntime;
   /** Installed extensions, catalogs, and trusted publishers. */
   extensions: ExtensionService;
+  /** Deploy targets, and the merge, deploy, and verify steps of tasks. */
+  deploys: DeployService;
+  /** Web Push to people's devices. */
+  push: PushService;
   /** Durable jobs. Null until the server has started it. */
   boss: PgBoss | null;
   /** Replaces the workspace model everywhere. Tests use a scripted mock. */

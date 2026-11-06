@@ -27,6 +27,7 @@ const LABEL = {
   open_pr: "Open pull request",
   merge: "Merge",
   deploy: "Deploy",
+  verify: "Check the site",
 };
 
 export function ApprovalsPage() {
@@ -89,7 +90,13 @@ export function ApprovalsPage() {
   );
 }
 
-const ICON = { push: Upload, open_pr: GitPullRequest, merge: GitBranch, deploy: GitBranch };
+const ICON = {
+  push: Upload,
+  open_pr: GitPullRequest,
+  merge: GitBranch,
+  deploy: GitBranch,
+  verify: GitBranch,
+};
 
 function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: ApprovalView[] }) {
   const qc = useQueryClient();

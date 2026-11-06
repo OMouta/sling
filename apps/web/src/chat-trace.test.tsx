@@ -241,7 +241,13 @@ describe("chat replies", () => {
         input: { command: "rm ~/Desktop/old.txt", outsideSandbox: true },
         status: "running",
         output: null,
-        approval: { id: "cap_1", state: "pending", machine: "devbox" },
+        approval: {
+          id: "cap_1",
+          kind: "command",
+          state: "pending",
+          machine: "devbox",
+          summary: "",
+        },
       },
     });
     expect(screen.getByText(/outside the sandbox\?/)).toBeTruthy();
@@ -298,7 +304,13 @@ describe("chat replies", () => {
           input: { command: "touch x" },
           status: "running",
           output: null,
-          approval: { id: "cap_9", state: "pending", machine: "devbox" },
+          approval: {
+            id: "cap_9",
+            kind: "command",
+            state: "pending",
+            machine: "devbox",
+            summary: "",
+          },
         },
       ],
     };

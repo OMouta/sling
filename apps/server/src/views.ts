@@ -50,12 +50,14 @@ export function toRunnerView(r: RunnerRow, repos: RepoRow[]): RunnerView {
         remoteUrl: p.remoteUrl,
         network: p.network,
         remoteKey: p.remoteKey ?? remoteKey(p.remoteUrl),
+        deployCommand: p.deployCommand,
       })),
     labels: effectiveLabels(r),
     ephemeral: r.ephemeral,
     sandboxId: r.sandboxId,
     foundRepos: r.foundRepos,
     remoteRepos: r.remoteRepos,
+    deploys: r.deploys,
   };
 }
 
@@ -92,7 +94,18 @@ export async function runnerView(ctx: AppContext, runnerId: string): Promise<Run
   return toRunnerView(row, repos);
 }
 
-export function toActionView(a: ActionRow, approvalId: string | null): ActionView {
+/** Names an action view shows: its deploy target, and the machine a merge or deploy ran on. */
+export interface ActionNames {
+  targetName?: string | null;
+  runnerName?: string | null;
+}
+
+export function toActionView(
+  a: ActionRow,
+  approvalId: string | null,
+  names: ActionNames = {},
+): ActionView {
+  const onMachine = a.kind === "merge" || a.kind === "deploy";
   return {
     id: a.id,
     taskId: a.taskId,
@@ -102,6 +115,15 @@ export function toActionView(a: ActionRow, approvalId: string | null): ActionVie
     url: a.url,
     message: a.message,
     approvalId,
+    targetId: a.targetId,
+    targetName: names.targetName ?? null,
+    ranOn:
+      onMachine && a.state !== "queued" && a.state !== "awaiting_approval"
+        ? (names.runnerName ?? (a.runnerId ? null : "Sling"))
+        : null,
+    commitSha: a.commitSha,
+    output: a.output,
+    verify: a.detail ?? null,
   };
 }
 
@@ -125,9 +147,32 @@ async function actionsFor(ctx: AppContext, taskIds: string[]): Promise<Map<strin
         )
     : [];
   const approvalByAction = new Map(approvals.map((a) => [a.actionId, a.id]));
+  const targetIds = [...new Set(rows.flatMap((r) => (r.targetId ? [r.targetId] : [])))];
+  const runnerIds = [...new Set(rows.flatMap((r) => (r.runnerId ? [r.runnerId] : [])))];
+  const [targets, runners] = await Promise.all([
+    targetIds.length
+      ? ctx.db
+          .select({ id: schema.deployTargets.id, name: schema.deployTargets.name })
+          .from(schema.deployTargets)
+          .where(inArray(schema.deployTargets.id, targetIds))
+      : [],
+    runnerIds.length
+      ? ctx.db
+          .select({ id: schema.runners.id, name: schema.runners.name })
+          .from(schema.runners)
+          .where(inArray(schema.runners.id, runnerIds))
+      : [],
+  ]);
+  const targetName = new Map(targets.map((t) => [t.id, t.name]));
+  const runnerName = new Map(runners.map((r) => [r.id, r.name]));
   for (const row of rows) {
     const list = out.get(row.taskId) ?? [];
-    list.push(toActionView(row, approvalByAction.get(row.id) ?? null));
+    list.push(
+      toActionView(row, approvalByAction.get(row.id) ?? null, {
+        targetName: row.targetId ? (targetName.get(row.targetId) ?? null) : null,
+        runnerName: row.runnerId ? (runnerName.get(row.runnerId) ?? null) : null,
+      }),
+    );
     out.set(row.taskId, list);
   }
   return out;

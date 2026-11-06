@@ -151,8 +151,10 @@ export class Commands {
     const id = `cap_${randomBytes(12).toString("hex")}`;
     const view = (state: CommandApprovalView["state"]): CommandApprovalView => ({
       id,
+      kind: "command",
       state,
       machine: opts.machine,
+      summary: "",
     });
     const decision = await new Promise<Decision>((resolve) => {
       const settle = (d: Decision) => {

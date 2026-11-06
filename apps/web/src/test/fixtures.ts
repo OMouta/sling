@@ -618,6 +618,7 @@ export const devbox: RunnerView = {
       remoteUrl: "git@github.com:a/site.git",
       network: false,
       remoteKey: "github.com/a/site",
+      deployCommand: "",
     },
     {
       id: "rpo_2",
@@ -626,6 +627,7 @@ export const devbox: RunnerView = {
       remoteUrl: "",
       network: false,
       remoteKey: null,
+      deployCommand: "",
     },
   ],
   labels: ["ios", "os:macos", "arch:aarch64"],
@@ -633,6 +635,7 @@ export const devbox: RunnerView = {
   sandboxId: null,
   foundRepos: [],
   remoteRepos: false,
+  deploys: true,
 };
 
 export const buildbox: RunnerView = {
@@ -657,6 +660,7 @@ export const buildbox: RunnerView = {
       remoteUrl: "https://github.com/a/api.git",
       network: true,
       remoteKey: "github.com/a/api",
+      deployCommand: "",
     },
   ],
   labels: ["gpu", "os:linux", "arch:x86_64"],
@@ -664,6 +668,7 @@ export const buildbox: RunnerView = {
   sandboxId: null,
   foundRepos: [],
   remoteRepos: false,
+  deploys: true,
 };
 
 /** A sandbox's own Runner, which the Machines page never shows. */
@@ -679,6 +684,7 @@ export const sandboxRunner: RunnerView = {
   sandboxId: "sbx_1",
   foundRepos: [],
   remoteRepos: false,
+  deploys: true,
 };
 
 export const providerConnectors: ConnectorView[] = [

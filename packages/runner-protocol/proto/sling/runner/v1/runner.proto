@@ -35,6 +35,8 @@ message Envelope {
     RepoChangeResult repo_change_result = 5;
     ChatEvent chat_event = 6;
     ExecResult exec_result = 7;
+    RepoActionOutput repo_action_output = 8;
+    RepoActionResult repo_action_result = 9;
 
     // Server to Runner.
     Challenge challenge = 20;
@@ -50,6 +52,8 @@ message Envelope {
     ChatTurn chat_turn = 30;
     ChatCancel chat_cancel = 31;
     ExecRequest exec_request = 32;
+    RepoAction repo_action = 33;
+    RepoActionAck repo_action_ack = 34;
   }
 }
 
@@ -129,6 +133,9 @@ message Inventory {
   // Whether this machine accepts RepoChange. Turned off with
   // `sling-runner config set remote-repos off`.
   bool remote_repos = 7;
+  // Whether this machine accepts RepoAction merges and deploys. Turned off
+  // with `sling-runner config set deploys off`.
+  bool deploys = 8;
 }
 
 message FoundRepo {
@@ -178,6 +185,9 @@ message Repo {
   // Whether the harness may use the network in this repo. Set only on the
   // Runner.
   bool network = 4;
+  // The command a DEPLOY RepoAction runs for this repo, set only with
+  // `sling-runner repo set <name> deploy-command`. Empty when none is set.
+  string deploy_command = 5;
 }
 
 // ---------------------------------------------------------------- tasks
@@ -508,4 +518,72 @@ message ExecResult {
   bool sandboxed = 8;
   // The directory it ran in.
   string cwd = 9;
+}
+
+// ---------------------------------------------------------------- repo actions
+
+// Server to Runner: merge a task's branch, or deploy a merged commit, in one
+// of this machine's repos. Unlike ActionRequest it isn't tied to a task's
+// spool, so any machine with the repo can take it. The Runner refuses when
+// `deploys` is off, when its max_mode is Read-only, when the branch isn't a
+// Sling task branch, when a deploy's commit isn't on the remote's default
+// branch, or when the repo has no deploy command. It never force-pushes.
+//
+// The Runner answers with RepoActionOutput chunks, then one RepoActionResult,
+// which it sends again after a reconnect until the server answers with
+// RepoActionAck.
+message RepoAction {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_MERGE = 1;
+    KIND_DEPLOY = 2;
+  }
+  string request_id = 1;
+  Kind kind = 2;
+  // The task this belongs to, for logs.
+  string task_id = 3;
+  // Name of the repo on this Runner.
+  string repo = 4;
+  // MERGE: the task's branch, and the branch it merges into.
+  string branch = 5;
+  string default_branch = 6;
+  // MERGE: the task's PR, when one was opened. Empty merges with plain git.
+  string pr_url = 7;
+  // MERGE: "squash", "merge", or "rebase".
+  string merge_method = 8;
+  // MERGE: the commit message's title and body, for a merge made with git.
+  string title = 9;
+  string body = 10;
+  // DEPLOY: the merged commit to deploy.
+  string commit_sha = 11;
+}
+
+message RepoActionAck {
+  string request_id = 1;
+}
+
+// Runner to server: output of a deploy command as it runs, redacted.
+message RepoActionOutput {
+  string request_id = 1;
+  string chunk = 2;
+}
+
+message RepoActionResult {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_SUCCEEDED = 1;
+    OUTCOME_FAILED = 2;
+    // The Runner's own rules refused it.
+    OUTCOME_REFUSED = 3;
+  }
+  string request_id = 1;
+  RepoAction.Kind kind = 2;
+  Outcome outcome = 3;
+  string message = 4;
+  // MERGE: the merged commit. DEPLOY: the commit that was deployed.
+  string commit_sha = 5;
+  // MERGE: the PR's URL, when there was one.
+  string url = 6;
+  // DEPLOY: the command's exit code. Unset when it never ran or was killed.
+  optional int32 exit_code = 7;
 }

@@ -166,6 +166,9 @@ function created(c: CreatedTask) {
 export const TOOLS_BY_GROUP: Record<PersonalityTool, readonly string[]> = {
   commands: ["list_machines", "run_command"],
   coding: ["list_machines", "delegate_coding_task", "get_task", "cancel_task"],
+  // Also every connector action flagged for the assistant, added per turn.
+  apps: ["run_workflow"],
+  deploys: ["list_machines", "check_deploy_target", "deploy_task"],
 };
 
 /** Tool names a personality with these groups may call. */

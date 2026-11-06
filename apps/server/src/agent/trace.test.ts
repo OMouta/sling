@@ -71,7 +71,13 @@ describe("reply traces", () => {
 describe("tool calls that change while they run", () => {
   it("applies a change that came before the call was recorded", () => {
     const { trace, events } = recorder();
-    const approval = { id: "cap_1", state: "pending" as const, machine: "devbox" };
+    const approval = {
+      id: "cap_1",
+      kind: "command" as const,
+      state: "pending" as const,
+      machine: "devbox",
+      summary: "",
+    };
     trace.toolUpdate("t1", { approval });
     expect(events).toEqual([]);
     trace.toolStarted("t1", "run_command", { command: "touch x" });

@@ -5,7 +5,7 @@
  */
 
 /** Groups of Sling's assistant tools a personality can be given. */
-export const PERSONALITY_TOOLS = ["commands", "coding"] as const;
+export const PERSONALITY_TOOLS = ["commands", "coding", "apps", "deploys"] as const;
 export type PersonalityTool = (typeof PERSONALITY_TOOLS)[number];
 
 export const PERSONALITY_TOOL_INFO: Record<
@@ -19,6 +19,15 @@ export const PERSONALITY_TOOL_INFO: Record<
   coding: {
     label: "Coding tasks",
     description: "Hands work in a repo to Codex or Claude Code, and follows the task.",
+  },
+  apps: {
+    label: "Apps and workflows",
+    description:
+      "Reads your calendar, runs your workflows, and sends through your connectors, asking first.",
+  },
+  deploys: {
+    label: "Deploys",
+    description: "Checks your deploy targets and deploys finished fixes, asking first.",
   },
 };
 

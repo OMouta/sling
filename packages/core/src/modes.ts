@@ -9,9 +9,13 @@ export const DEFAULT_MODE: PermissionMode = "auto";
 
 export type Sandbox = "read-only" | "workspace-write" | "danger-full-access";
 
-/** Things a task can do after the harness finishes. */
+/** Steps that may wait for a person, depending on the mode. */
 export const ACTION_KINDS = ["push", "open_pr", "merge", "deploy"] as const;
-export type ActionKind = (typeof ACTION_KINDS)[number];
+export type GatedActionKind = (typeof ACTION_KINDS)[number];
+
+/** Every step a task can run after the harness finishes. `verify` never asks. */
+export const STEP_KINDS = [...ACTION_KINDS, "verify"] as const;
+export type ActionKind = (typeof STEP_KINDS)[number];
 
 export interface ModePolicy {
   label: string;
@@ -20,7 +24,7 @@ export interface ModePolicy {
   /** Whether the harness may change files at all. */
   writes: boolean;
   /** Actions that wait for a person before running. */
-  approvalRequired: readonly ActionKind[];
+  approvalRequired: readonly GatedActionKind[];
 }
 
 export const MODE_POLICY: Record<PermissionMode, ModePolicy> = {
@@ -70,5 +74,17 @@ export function modeWithinCap(mode: PermissionMode, cap: PermissionMode): boolea
 }
 
 export function needsApproval(mode: PermissionMode, action: ActionKind): boolean {
-  return MODE_POLICY[mode].approvalRequired.includes(action);
+  return (MODE_POLICY[mode].approvalRequired as readonly string[]).includes(action);
+}
+
+/**
+ * What the assistant may do when it would send something outside Sling from
+ * chat: a message, an email, a calendar event, or a workflow with side effects.
+ */
+export type SendPolicy = "refuse" | "ask" | "run";
+
+export function sendPolicy(mode: PermissionMode): SendPolicy {
+  if (mode === "read-only") return "refuse";
+  if (mode === "full-access") return "run";
+  return "ask";
 }

@@ -301,9 +301,10 @@ GET    /api/push/subscriptions                this user's devices
 POST   /api/push/subscriptions                { endpoint, keys, label }
 DELETE /api/push/subscriptions/:id
 POST   /api/push/test                         sends a test push to one device
-PATCH  /api/me/notifications                  { approvals, tasks, replies }
-PATCH  /api/workspace                         gains { timeZone }
-POST   /api/conversations/:id/approvals/:approvalId   now covers sends as well as commands
+PUT    /api/settings/notifications            { approvals, tasks, replies }, for the signed-in user
+PUT    /api/settings/time-zone                { timeZone }
+GET    /api/settings                          gains timeZone and notifications
+POST   /api/conversations/:id/commands/:approvalId    now answers sends as well as commands
 ```
 
 - **Realtime.** New event `deploy_target.updated`. The client sends `{ type: "presence", conversationId | null, visible }`.
