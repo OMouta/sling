@@ -2,6 +2,87 @@
 
 Deploys and everyday help, from your phone. This is spec section 15, Stage 5, with the choices in `decisions.md` applied (D72 to D81 are new for this stage).
 
+## Status (2026-11-06)
+
+W0 to W6 are built and on `main`. The contracts went in first: core views, the `RepoAction` messages, migration `0009_deploys`, SDK 1.1.0, the deploy and push service slots, and `app.notify`. Five parallel workstreams followed: Runner, server deploys, calendar and apps, push and the installed app, and the web UI. Each was cherry-picked onto `main`. Integration then ran against a preview server with its own database and Runner, a real GitHub repo, and a real CalDAV server.
+
+| "Done when" item | Verified by |
+|---|---|
+| 1. Deploy targets | `deploys.e2e` (CRUD, checks, each method). In the browser: the Deploys page, and the dialog for each method, including a repo no machine has a deploy command for |
+| 2. Incident to deploy, in Auto | `deploys.e2e` on the real `sling-runner` and `fake-codex`, once per method. **Live**, in the preview, in one chat: the assistant (Claude Code, Haiku 5.5) checked Website and saw the 500, then delegated to Codex (GPT-6-Luna, low) with `deploy`. The Runner pushed and opened real PR #1 on a private GitHub repo. "Approve deployment?" showed in the chat and on **Approvals**, and I approved it in the browser. The machine merged it with `gh`. Verify passed in 12 s, with the version URL showing `5699841`, and the assistant reported it. The push for the approval is covered by `push.e2e`, not checked on a device |
+| 3. The other modes | `deploys.e2e`: Supervised asks twice, the deploy only after the PR; Read-only is refused; Full access doesn't ask |
+| 4. A deploy that doesn't fix it | `deploys.e2e`: verify fails with each check's result, and the update says so |
+| 5. The machine's own limits | Rust tests for every guard, against real repos with bare remotes, plus the refusals in `deploys.e2e` on the real Runner |
+| 6. A real merge | Live, above: GitHub reports the PR `MERGED`, and `main` is `5699841 Fix wrong year in website footer (#1)` |
+| 7. Deploy later | `deploys.e2e`, plus DOM tests for **Deploy** and its 409 |
+| 8. Site down alert | The template and `deploys.check` in `deploys.e2e`. In the preview: with the template on, a target pointed at a dead URL went down after two checks, and its notify step ran with "Couldn't reach it". In the browser: the alert's link opened a new chat with Incident and the draft. Not checked on a device |
+| 9. Calendar | `calendar.integration` against Radicale 3.8.3.0: discovery, recurring events across the October clock change, create, and an idempotent repeat. Also a local iCal server with ETag. In the preview: the connection test said "Found 2 calendars: Home, Work." |
+| 10. Morning briefing | `apps.e2e`, on its schedule, with the mock model. Not run live |
+| 11. The assistant uses your apps | `apps.e2e` in every mode, against GreenMail and the fake Discord: allow, deny, expire, `run_workflow`, the audit rows, and ntfy's publish as a tool, on both the in-process and the real extension runtime. **Live:** the assistant read tomorrow's calendar without asking, added an event after **Allow** (it's in Radicale), and added nothing after **Deny**. In the browser: the ntfy install dialog lists "Publish to ntfy", marked Sends |
+| 12. Push | `push.e2e` against a local push endpoint: every category, each payload decrypted with the subscription's key, and a 410 removing the subscription. Unit tests check RFC 8291's worked example byte for byte. In the browser: a push delivered over DevTools became the right notification in the service worker. Headless Chromium denies notifications, so `showNotification` was stubbed. Not checked against a real push service or device |
+| 13. Installable | DevTools, with a production build: no manifest or installability errors. The second start's navigation came from the service worker, and its caches held no `/api` entries |
+| 14. Checked in a browser | Playwright against the preview at 1440×900 and 390×844, in dark and light. Pages: Deploys; the target dialog for all three methods; task steps and "Approve deployment?" in the chat and on Approvals; the task page; send approvals pending, allowed, and denied; Settings → General and Notifications; Connectors with the calendar; the personality form's tool groups; the ntfy install dialog; and the alert's link |
+
+Test counts on `main`:
+- **Unit:** 937 in TypeScript across 17 packages, and 205 in Rust (1 live test ignored).
+- **Integration:** 8 against Radicale and 12 against GreenMail.
+- **End to end:** 205 across 12 suites, with 67 in three new ones: deploys 39, push 14, apps 14. The extension and apps suites also pass on real extension processes, 29 and 14.
+- **Live:**
+  - 9 real CLI turns, none in fast mode: 8 chat turns on Claude Code with Haiku 5.5, and 1 Codex task on GPT-6-Luna at low effort. One chat turn was cut off when the Mac slept, and one ran on a session started before a prompt fix.
+  - 1 real GitHub PR merged, on a private throwaway repo.
+
+| Budget | Measured |
+|---|---|
+| Approval to `RepoAction` sent, p95 | 12.4 to 13.4 ms |
+| Verify sees a site come back | 10.0 to 11.0 s after it answered |
+| Hook step overhead | 9 to 15 ms, median about 10 |
+| Push, event to request at the push service, p95 | 1.7 to 3.7 ms |
+| Push encryption per message | 75 to 77 µs |
+| Today's events from 1,000 CalDAV events, repeat read | 63 to 65 ms median |
+| Same, first read of a day | **508 to 525 ms, over budget.** Radicale's own REPORT is 397 to 407 ms of it |
+| Parse a 1 MB iCal feed and read a day | 24 to 34 ms median |
+| Tool layer per connector action | 0.8 to 0.9 ms median |
+| Second start from the cached shell, 4× CPU slowdown | 87 to 104 ms, median 95; the cold first load is 269 ms |
+| Service worker and manifest | 5.2 KB |
+| Web bundle growth, gzipped | 23.3 KB JS and 0.3 KB CSS (396.2 to 419.5 KB JS) |
+
+Found and fixed during integration:
+- **The Runner scanned the whole home folder before connecting.** On this Mac that took over 20 seconds, so three end-to-end suites hung. It now connects first and scans after.
+- **Verify ran two rounds at once.** A round against a hanging site waits out its 10-second timeout, so two down sites could hold up a third deploy's check. It now runs eight.
+- **Deploys showed "Down" after a verified deploy.** The page now shows the newer of the target's last check and the last verify. The alert still compares against its own checks.
+- **The assistant asked in its reply instead of calling the send tool.** The prompt now says to call the tool and let Sling ask.
+- **A send's approval didn't show an email's body.** It now lists every value that would go out. Its summary writes dates as "Sat 7 Nov, 18:00", and its wording ("Allow this?") fits events and messages as well as email.
+- **Task summaries showed raw Markdown,** with links to files in the agent's worktree. They now render, with those links as code.
+- **The server ignored each repo's deploy timeout.** The Runner reports it (`Repo.deploy_timeout_seconds`); the server stores it (migration `0010_deploy_timeout`) and waits that long.
+- **Tasks didn't carry their repo's remote,** so the web app guessed a task's target. `TaskView.remoteKey` makes it exact.
+- **The calendar card** had the plug icon and said "Not listening". `ConnectorView.hasSource` hides that for connectors that never listen, and the calendar gets its own icon.
+- **A finished chat task sent two pushes,** "Done" and then the reply. Now it sends one, the reply, unless replies are off.
+- **The Command method left an empty panel** before a repo was picked. It now shows the machine picker, disabled.
+- **The apps suite passed only on the in-process stand-in.** Its loopback ntfy needs `localNetwork` on the real runtime.
+- **The Mac slept twice during the checks.** Both Runners dropped at the same second, and the power log shows "Wake from Deep Idle". `caffeinate` kept it awake after that.
+- **Found by the workstreams themselves:**
+  - a step sent to the Runner before it was marked `sent`, so a fast Runner left it stuck
+  - ical.js's event constructor scanning every sibling event, which made a feed quadratic (330 ms to 25 ms)
+  - CLI tool call IDs taken from Fastify request IDs, which start over on restart and would have broken idempotency keys
+  - presence sent on connect, which was lost before the socket's session check finished
+  - the test Runner's close handler stopping a newer connection's heartbeat
+
+Not done or not verified yet:
+- **A real push service and a real phone.** No subscription went through Apple's or Google's push service. On an iPhone, the Home Screen install, the safe areas, and tapping a notification are unchecked. Needs the app on an HTTPS address (Tailscale or Cloudflare Tunnel) and a phone.
+- **The first CalDAV read of a day is over budget.** About 400 ms of the 520 ms is Radicale answering the REPORT. iCloud and Fastmail may be faster or slower, and haven't been tried.
+- **Real calendars and hosts.** No iCloud, Fastmail, Google, or Outlook calendar, and no live deploy hook or deploy command against a real host. Both methods ran against local stand-ins only.
+- **Merging a sandbox's PR through GitHub's API** has run against a fake API only.
+- **The Morning briefing at its time,** with a real model.
+- **The revert flow live.** The assistant offering a revert after a failed verify is in the prompt, but no real turn has shown it.
+- **A Runner restarted mid-deploy** loses the result it hadn't sent, and doesn't stop the command's process group.
+- **Windows** kills a deploy's direct child only, after 5 seconds.
+- **Linux and Windows end to end,** and CI, since the repo has no remote.
+- **The throwaway repo** `OMouta/sling-deploy-check-11062152` still exists: `gh` lacks the `delete_repo` scope. Deleting it needs `gh auth refresh -h github.com -s delete_repo`, then `gh repo delete OMouta/sling-deploy-check-11062152 --yes`.
+- **Smaller gaps:**
+  - a target with one check says "Not checked yet" twice on its card
+  - a chat's Claude Code session keeps the system prompt it started with, so prompt changes reach new chats only
+  - PR checks before the deploy approval, and GitHub deployment statuses, are out of scope
+
 ## Goal
 
 Two people use Sling from a phone. The first is away from their desk when their site goes down. Their phone buzzes, they tap the alert, and they tell Sling to fix it. Sling checks the site, hands the fix to a coding agent on their machine, and asks "Approve deployment?" once the PR is open. After they approve, Sling merges, deploys, checks that the site is back, and says so.
@@ -271,6 +352,7 @@ Migration `0009_deploys`:
 | `deploy_targets` (new) | The fields above, plus workspace, owner, and timestamps. Unique on (workspace, name) and (workspace, remote key) |
 | `push_subscriptions` (new) | Workspace, user, endpoint (unique), `p256dh`, `auth`, device label, created, last delivered, last error, failures in a row |
 | `actions` | Kinds `merge`, `deploy`, `verify`. State `queued`. New columns: `target_id`, `runner_id` (where a merge or deploy ran), `commit_sha` (the merged commit), `output` (text, at most 256 KB), `detail` (jsonb: verify results) |
+| `repos` | `deploy_command` and, in `0010_deploy_timeout`, `deploy_timeout_seconds` |
 | `workspaces` | `time_zone` |
 | `workspace_members` | `notifications` (jsonb: approvals, tasks, replies) |
 | `personalities` | The default gains `apps` and `deploys` (data only) |
@@ -278,7 +360,7 @@ Migration `0009_deploys`:
 
 ## Protocol
 
-- **`Repo`** gains `deploy_command`, empty when none is set.
+- **`Repo`** gains `deploy_command`, empty when none is set, and `deploy_timeout_seconds`.
 - **`Inventory`** gains `deploys`: false after `deploys off`.
 - **Server to Runner:**
   - `RepoAction { request_id, kind (MERGE | DEPLOY), task_id, repo, branch, default_branch, pr_url, merge_method, title, body, commit_sha }`
@@ -308,7 +390,7 @@ POST   /api/conversations/:id/commands/:approvalId    now answers sends as well 
 ```
 
 - **Realtime.** New event `deploy_target.updated`. The client sends `{ type: "presence", conversationId | null, visible }`.
-- **Views.** `ToolStep.approval` gains `kind` (`command` or `send`) and `summary`.
+- **Views.** `ToolStep.approval` gains `kind` (`command` or `send`) and `summary`. `TaskView` gains `remoteKey`, and `ConnectorView` gains `hasSource`.
 
 ## Workstreams
 
