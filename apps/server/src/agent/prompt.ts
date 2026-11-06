@@ -1,4 +1,5 @@
 import { MODE_POLICY, type PermissionMode, type PersonalityTool } from "@sling/core";
+import { deploysSection } from "./deploy-prompt.ts";
 import { allowedTools } from "./tools.ts";
 
 /** What the prompt needs from a personality. */
@@ -93,6 +94,7 @@ export function assistantInstructions(
   const commands = personality.tools.includes("commands");
   const coding = personality.tools.includes("coding");
   const apps = personality.tools.includes("apps");
+  const deploys = personality.tools.includes("deploys");
   const policy = MODE_POLICY[mode];
   const out: string[] = [personality.instructions.trim()];
 
@@ -101,7 +103,7 @@ export function assistantInstructions(
     "- The chat shows Markdown. Use it where it helps: short paragraphs, lists, a table to compare things, code blocks for code and commands.",
     "- You can't browse the web. When something needs current information you don't have, say so instead of guessing.",
   ];
-  if (!commands && !coding && !apps) {
+  if (!commands && !coding && !apps && !deploys) {
     chat.push(
       "- You have no tools in this chat. You can't see or change anything on the user's machines, files, or repos. If they ask for that, say you can't do it here, and that a chat with a personality that reaches their machines can.",
     );
@@ -114,10 +116,17 @@ export function assistantInstructions(
         "- You can read the user's calendar, use the apps they connected to Sling, such as their email, and run their workflows.",
       );
     }
+    if (deploys) {
+      chat.push(
+        "- You can check the sites and services the user deploys, and deploy a finished fix once they approve.",
+      );
+    }
     const depends =
       commands || coding
         ? `the user's machines, files, repos, ${apps ? "tasks, calendar, or apps" : "or tasks"}`
-        : "the user's calendar or apps";
+        : apps
+          ? `the user's calendar${deploys ? ", apps, or sites" : " or apps"}`
+          : "the user's sites";
     chat.push(
       `- Answer directly from what you know when you can. Use a tool only when the answer depends on ${depends}, or when they want something done.`,
     );
@@ -170,7 +179,9 @@ export function assistantInstructions(
     );
   }
 
-  if (commands || coding || apps) {
+  if (deploys) out.push(deploysSection(mode));
+
+  if (commands || coding || apps || deploys) {
     out.push(
       `This conversation is in ${policy.label} mode: ${policy.description} You can't change the mode. The user switches it in the app.`,
     );

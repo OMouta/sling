@@ -18,6 +18,7 @@ import { ENVIRONMENTS } from "../routing/router.ts";
 import { type CreatedTask, TaskInputError, TaskRoutingError } from "../tasks/service.ts";
 import { runnerViews, taskPlace, taskView } from "../views.ts";
 import { APPROVAL_WAIT_MS, type CommandResult } from "./commands.ts";
+import { checkDeployTargetTool, deployTargetNames, deployTaskTool } from "./deploy-tools.ts";
 import type { TraceRecorder } from "./trace.ts";
 
 export interface ToolScope {
@@ -181,21 +182,26 @@ export function allowedTools(groups: readonly PersonalityTool[]): Set<string> {
  * are enforced here, never left to the prompt.
  */
 export function agentTools(ctx: AppContext, scope: ToolScope, allowed?: ReadonlySet<string>) {
-  const all = allTools(ctx, scope);
+  // Without the deploy tools, delegate_coding_task doesn't offer the deploy delivery either.
+  const all = allTools(ctx, scope, !allowed || allowed.has("deploy_task"));
   if (!allowed) return all;
   return Object.fromEntries(Object.entries(all).filter(([name]) => allowed.has(name))) as Partial<
     typeof all
   >;
 }
 
-function allTools(ctx: AppContext, scope: ToolScope) {
+function allTools(ctx: AppContext, scope: ToolScope, canDeploy: boolean) {
+  const deliveries = canDeploy ? DELIVERY_KINDS : DELIVERY_KINDS.filter((d) => d !== "deploy");
   return {
     list_machines: tool({
       description:
         "List the user's paired machines: whether each is online, its repos, labels, which coding agents are ready, and its permission cap. You don't need this to delegate, because Sling picks the machine. Use it to answer questions about machines, or to find the id of a machine the user names.",
       inputSchema: z.object({}),
       execute: async () => {
-        const runners = await runnerViews(ctx, scope.workspaceId);
+        const [runners, targets] = await Promise.all([
+          runnerViews(ctx, scope.workspaceId),
+          deployTargetNames(ctx, scope.workspaceId),
+        ]);
         const allowed = new Set(
           (
             await ctx.db
@@ -233,6 +239,7 @@ function allTools(ctx: AppContext, scope: ToolScope) {
               defaultBranch: p.defaultBranch,
               remote: p.remoteKey,
               allowedInSandboxes: p.remoteKey ? allowed.has(p.remoteKey) : false,
+              deployTarget: (p.remoteKey && targets.get(p.remoteKey)) || null,
             })),
           };
         });
@@ -252,10 +259,12 @@ function allTools(ctx: AppContext, scope: ToolScope) {
             "Self-contained instructions for the coding agent: what to change, why, and how to check it. It can't see this conversation.",
           ),
         deliver: z
-          .enum(DELIVERY_KINDS)
+          .enum(deliveries as [string, ...string[]])
           .default("pr")
           .describe(
-            "local: keep the commit where it ran. push: push the branch. pr: push and open a PR.",
+            canDeploy
+              ? 'local: keep the commit where it ran. push: push the branch. pr: push and open a PR. deploy: open a PR, then merge it, deploy it through the repo\'s deploy target, and check the site, once the user approves the deploy. Use "deploy" only when the user wants the change live or the site is down, and only for a repo with a deploy target.'
+              : "local: keep the commit where it ran. push: push the branch. pr: push and open a PR.",
           ),
         machineId: z
           .string()
@@ -314,7 +323,7 @@ function allTools(ctx: AppContext, scope: ToolScope) {
             title: input.title,
             objective: input.objective,
             mode: conv.mode,
-            deliver: input.deliver,
+            deliver: input.deliver as (typeof DELIVERY_KINDS)[number],
             environment: input.environment,
             machineId: input.machineId ?? null,
             harness: input.harness ?? null,
@@ -502,6 +511,9 @@ function allTools(ctx: AppContext, scope: ToolScope) {
         };
       },
     }),
+
+    check_deploy_target: checkDeployTargetTool(ctx, scope),
+    deploy_task: deployTaskTool(ctx, scope),
 
     cancel_task: tool({
       description: "Cancel a queued or running task. Only do this when the user asks.",
