@@ -842,6 +842,7 @@ const baseTask: TaskView = {
   environment: { kind: "machine", sandboxId: null, sandboxState: null, providerName: null },
   routing: null,
   repoName: "site",
+  remoteKey: null,
   title: "Make footer year dynamic",
   objective: "Use the current year.",
   mode: "supervised",

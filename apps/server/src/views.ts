@@ -179,6 +179,7 @@ async function actionsFor(ctx: AppContext, taskIds: string[]): Promise<Map<strin
 interface SandboxSummary {
   state: SandboxState;
   providerName: string;
+  remoteKey: string | null;
 }
 
 function toTaskView(
@@ -186,6 +187,7 @@ function toTaskView(
   runnerName: string | null,
   actions: ActionView[],
   sandbox: SandboxSummary | null,
+  remoteKey: string | null,
 ): TaskView {
   const target = t.routing?.target;
   const environment: TaskEnvironmentView = {
@@ -205,6 +207,7 @@ function toTaskView(
     environment,
     routing: t.routing ?? null,
     repoName: t.repoName,
+    remoteKey,
     title: t.title,
     objective: t.objective,
     mode: t.mode,
@@ -250,6 +253,7 @@ export async function taskViews(ctx: AppContext, rows: TaskRow[]): Promise<TaskV
         id: schema.sandboxes.id,
         state: schema.sandboxes.state,
         providerName: schema.connectorInstallations.name,
+        remoteKey: schema.sandboxes.remoteKey,
       })
       .from(schema.sandboxes)
       .leftJoin(
@@ -258,17 +262,35 @@ export async function taskViews(ctx: AppContext, rows: TaskRow[]): Promise<TaskV
       )
       .where(inArray(schema.sandboxes.id, sandboxIds));
     for (const s of found) {
-      sandboxes.set(s.id, { state: s.state, providerName: s.providerName ?? "a deleted provider" });
+      sandboxes.set(s.id, {
+        state: s.state,
+        providerName: s.providerName ?? "a deleted provider",
+        remoteKey: s.remoteKey,
+      });
     }
   }
-  return rows.map((t) =>
-    toTaskView(
+  const repoIds = [...new Set(rows.flatMap((t) => (t.repoId ? [t.repoId] : [])))];
+  const repoRemotes = new Map(
+    repoIds.length
+      ? (
+          await ctx.db
+            .select({ id: schema.repos.id, remoteKey: schema.repos.remoteKey })
+            .from(schema.repos)
+            .where(inArray(schema.repos.id, repoIds))
+        ).map((r) => [r.id, r.remoteKey])
+      : [],
+  );
+  return rows.map((t) => {
+    const sandbox = t.sandboxId ? (sandboxes.get(t.sandboxId) ?? null) : null;
+    const remote = (t.repoId ? repoRemotes.get(t.repoId) : null) ?? sandbox?.remoteKey ?? null;
+    return toTaskView(
       t,
       t.runnerId ? (names.get(t.runnerId) ?? "unknown") : null,
       actions.get(t.id) ?? [],
-      t.sandboxId ? (sandboxes.get(t.sandboxId) ?? null) : null,
-    ),
-  );
+      sandbox,
+      remote,
+    );
+  });
 }
 
 /**

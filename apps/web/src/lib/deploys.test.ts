@@ -98,13 +98,15 @@ describe("deploy helpers", () => {
     });
   });
 
-  it("finds a task's target by its steps, its repo's remote, or a lone name match", () => {
+  it("finds a task's target by its steps, its remote, or its machine's repo", () => {
     expect(targetForTask(deployWaitingTask, [websiteTarget, docsTarget], [])?.id).toBe("dpt_site");
     expect(targetForTask(deliveredPrTask, [docsTarget, websiteTarget], [studioMac])?.id).toBe(
       "dpt_site",
     );
-    // Without a machine to go by, a target whose remote ends in the repo's name.
-    expect(targetForTask(deliveredPrTask, [docsTarget, websiteTarget], [])?.id).toBe("dpt_site");
+    // A sandbox's task has no machine repo, and carries its remote itself.
+    const inSandbox = { ...deliveredPrTask, remoteKey: websiteTarget.remoteKey };
+    expect(targetForTask(inSandbox, [docsTarget, websiteTarget], [])?.id).toBe("dpt_site");
+    expect(targetForTask(deliveredPrTask, [docsTarget, websiteTarget], [])).toBeUndefined();
     expect(targetForTask(deliveredPrTask, [docsTarget], [studioMac])).toBeUndefined();
     expect(targetForRemote("https://github.com/A/site.git", [websiteTarget])?.id).toBe("dpt_site");
   });

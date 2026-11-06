@@ -423,8 +423,7 @@ export function taskRepo(task: TaskView, runners: RunnerView[] | undefined): Rep
 
 /**
  * The target a task deploys to: the one its steps name, else the one for its
- * repo's remote. A task in a sandbox may have no machine repo to go by, so a
- * single target whose remote ends in the repo's name counts too.
+ * repo's remote.
  */
 export function targetForTask(
   task: TaskView,
@@ -434,11 +433,8 @@ export function targetForTask(
   if (!targets?.length) return undefined;
   const named = task.actions.find((a) => a.targetId)?.targetId;
   if (named) return targets.find((t) => t.id === named);
-  const key = taskRepo(task, runners)?.remoteKey;
-  if (key) return targets.find((t) => t.remoteKey === key);
-  const name = task.repoName.toLowerCase();
-  const byName = targets.filter((t) => t.remoteKey.split("/").at(-1) === name);
-  return byName.length === 1 ? byName[0] : undefined;
+  const key = task.remoteKey ?? taskRepo(task, runners)?.remoteKey;
+  return key ? targets.find((t) => t.remoteKey === key) : undefined;
 }
 
 /** The target for a remote URL, as an approval carries it. */

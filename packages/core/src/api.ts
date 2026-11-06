@@ -122,6 +122,8 @@ export interface TaskView {
   environment: TaskEnvironmentView;
   routing: RoutingView | null;
   repoName: string;
+  /** The repo's normalized remote, `host/owner/name`, which deploy targets are keyed by. Null without one. */
+  remoteKey: string | null;
   title: string;
   objective: string;
   mode: PermissionMode;
