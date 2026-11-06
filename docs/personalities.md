@@ -32,11 +32,14 @@ Chats from before personalities, and chats a workflow starts (Discord, for examp
 |---|---|
 | Commands on your machines | `list_machines` and `run_command` |
 | Coding tasks | `list_machines`, `delegate_coding_task`, `get_task`, and `cancel_task` |
+| Apps and workflows | `run_workflow`, and a tool for each connector action that's open to the assistant and has an enabled installation, such as `calendar_list_events`, `calendar_create_event`, `email_send`, and `discord_send_message`. At most 30 |
+
+With Apps and workflows, reading, such as the calendar, never asks. Anything that sends or creates something outside Sling, or a workflow that does, is refused in Read-only, asks you in the chat first in Supervised and Auto, and runs at once in Full access. If you decline, or don't answer within 5 minutes, nothing is sent. Every call is in the audit log as `assistant.action`. Values the assistant passes are used as they are, never as `={{ }}` expressions.
 
 Sling enforces this on the server. A personality without a tool never gets it, on an API key or on a machine's Codex or Claude Code, whatever its instructions say. The conversation's [permission mode](modes.md) still limits what the tools do. A personality with no tools has no permission mode to pick.
 
 ## Instructions
 
-The instructions say who it is and how it answers. Sling adds the rest: that the chat shows Markdown, that it can't browse the web, the rules for each tool it has, the permission mode, and today's date. On Claude Code they replace Claude Code's own system prompt. On Codex they go in as developer instructions, after Codex's own prompt.
+The instructions say who it is and how it answers. Sling adds the rest: that the chat shows Markdown, that it can't browse the web, the rules for each tool it has, the permission mode, and the date and time in the workspace's time zone. On Claude Code they replace Claude Code's own system prompt. On Codex they go in as developer instructions, after Codex's own prompt.
 
 Changing the name, instructions, or tools bumps the personality's revision, and each reply records the revision that wrote it. Deleting a personality hides it from new chats, and chats that already use it keep it.

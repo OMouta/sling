@@ -132,6 +132,7 @@ export const createContact = defineNode({
 | `execInput`, `execOutputs` | Exec ports. Every node except a trigger has the exec input. Every non-trigger node also gets an `error` exec output and data output automatically |
 | `idempotent` | Whether running it twice with the same inputs is safe. Sling retries only idempotent nodes, and only for errors marked `retryable` |
 | `retry` | `{ maxAttempts, backoffMs }` for idempotent nodes |
+| `assistant` | `{ sends, summary? }` lets the assistant call the node from chat, as a tool named after its type with dots as underscores (`acme.create_contact` becomes `acme_create_contact`). Set `sends: true` when it reaches outside Sling: then it's refused in Read-only and asks in the chat first in Supervised and Auto. `summary`, such as `"Post {text}"`, is filled from the call's values for the approval and the audit. Only nodes with an exec input that finish without waiting or resuming can be tools, and the manifest needs `sdk: "^1.1.0"`. The install dialog lists these nodes |
 
 Port types are `any`, `string`, `number`, `boolean`, `json`, `list<T>`, and Sling's named types: `email`, `discord.message`, `conversation`, `task`, `approval`, and `http.response`. Extensions can't add named types, so pass structured values as `json`.
 
