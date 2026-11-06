@@ -72,6 +72,7 @@ Each conversation has a mode, and each machine can cap the mode it accepts. Deta
 - [Run Sling Runner on a machine](docs/runner.md)
 - [Reach Sling from outside your network](docs/remote-access.md)
 - [Permission modes and what enforces them](docs/modes.md)
+- [Personalities: who answers, and what it may use](docs/personalities.md)
 - [Workflows, nodes, and templates](docs/workflows.md)
 - [Routing and sandboxes](docs/sandboxes.md), and [the sandbox image](docs/sandbox-image.md)
 - Connectors: [Discord](docs/connectors/discord.md), [Email](docs/connectors/email.md), [Docker](docs/connectors/docker.md), [Railway](docs/connectors/railway.md)
