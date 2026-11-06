@@ -286,6 +286,10 @@
   }
 }
 
+/* Long paths, links, and ids wrap instead of running off a narrow screen. */
+.prose-chat {
+  overflow-wrap: anywhere;
+}
 .prose-chat > * + * {
   margin-top: 0.6em;
 }

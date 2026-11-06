@@ -63,6 +63,21 @@ export function useLiveReply(conversationId: string): LiveReply | null {
   return all[conversationId] ?? null;
 }
 
+/**
+ * Fills in a reply that was already being written when the chat opened, from
+ * the server's copy. What streamed in since stays when it's further along.
+ */
+export function seedLiveReply(conversationId: string, live: LiveReply) {
+  const current = streaming.get()[conversationId];
+  if (
+    current &&
+    current.steps.length >= live.steps.length &&
+    current.text.length >= live.text.length
+  )
+    return;
+  streaming.set({ ...streaming.get(), [conversationId]: live });
+}
+
 function clearStream(conversationId: string) {
   if (!(conversationId in streaming.get())) return;
   const next = { ...streaming.get() };

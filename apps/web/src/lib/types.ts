@@ -2,6 +2,7 @@ import type {
   AgentStatus,
   ApprovalView,
   ConversationView,
+  LiveReplyView,
   MessageView,
   PermissionMode,
   RunnerView,
@@ -21,6 +22,8 @@ export interface ConversationDetail {
   messages: MessageView[];
   tasks: TaskView[];
   agentStatus: AgentStatus;
+  /** The reply being written, when the page opens mid-turn. */
+  live?: LiveReplyView | null;
   usage: { inputTokens: number; outputTokens: number };
 }
 
