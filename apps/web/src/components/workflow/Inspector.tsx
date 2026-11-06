@@ -3,7 +3,7 @@ import { expressionSource, isExpression, type NodeSpecView, toExpression } from 
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useMemo, useRef } from "react";
 import { type FormField, formFields } from "../../lib/schemaForm.ts";
-import { portsOf } from "../../lib/workflow/catalog.ts";
+import { CATEGORY_LABEL, portsOf } from "../../lib/workflow/catalog.ts";
 import {
   type AvailableFields,
   availableFields,
@@ -94,9 +94,13 @@ function NodeInspector({
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <h2 className="min-w-0 flex-1 truncate font-medium">{spec?.title ?? "Unknown node"}</h2>
-          {spec && <Badge>{spec.category}</Badge>}
+          {spec && (
+            <Badge>
+              {CATEGORY_LABEL[spec.category as keyof typeof CATEGORY_LABEL] ?? spec.category}
+            </Badge>
+          )}
         </div>
-        <p className="font-mono text-xs text-muted">{data.type}</p>
+        <p className="font-mono text-[11px] text-subtle">{data.type}</p>
         {spec?.description && (
           <p className="text-xs leading-[18px] text-muted">{spec.description}</p>
         )}

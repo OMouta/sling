@@ -16,7 +16,7 @@ import {
   SquarePen,
   Sun,
 } from "lucide-react";
-import { createContext, type ReactNode, useContext } from "react";
+import { createContext, type ReactNode, useContext, useEffect } from "react";
 import { api } from "../lib/api.ts";
 import { decisionCount } from "../lib/approvals.ts";
 import { authClient } from "../lib/auth.ts";
@@ -31,13 +31,29 @@ export const ShellContext = createContext<{
   collapsed: boolean;
   toggleSidebar: () => void;
   newConversation: () => void;
+  /**
+   * For pages that need the whole width, such as the workflow editor: the
+   * sidebar hides while they're open, without changing the saved choice.
+   */
+  setFocus: (on: boolean) => void;
 }>({
   openNav: () => {},
   openSearch: () => {},
   collapsed: false,
   toggleSidebar: () => {},
   newConversation: () => {},
+  setFocus: () => {},
 });
+
+/** Hides the sidebar while the calling page is open. */
+export function useFocusMode(on = true) {
+  const { setFocus } = useContext(ShellContext);
+  useEffect(() => {
+    if (!on) return;
+    setFocus(true);
+    return () => setFocus(false);
+  }, [on, setFocus]);
+}
 
 /**
  * A page inside the shell: the header bar, then an optional tab row and

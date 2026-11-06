@@ -7,10 +7,20 @@ import type {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
-import { CircleCheck, Play, Upload, X } from "lucide-react";
+import {
+  Cable,
+  CircleCheck,
+  CircleHelp,
+  Play,
+  Plus,
+  SlidersHorizontal,
+  Upload,
+  X,
+  Zap,
+} from "lucide-react";
 import { type ReactNode, useCallback, useState } from "react";
 import { CopyButton } from "../components/JsonView.tsx";
-import { Page } from "../components/Page.tsx";
+import { Page, useFocusMode } from "../components/Page.tsx";
 import { JsonInput } from "../components/SchemaForm.tsx";
 import {
   Badge,
@@ -25,9 +35,9 @@ import {
   Tabs,
   Textarea,
 } from "../components/ui.tsx";
+import { AddStepMenu } from "../components/workflow/AddStepMenu.tsx";
 import { GraphCanvas } from "../components/workflow/Canvas.tsx";
 import { Inspector } from "../components/workflow/Inspector.tsx";
-import { Palette } from "../components/workflow/Palette.tsx";
 import { RunsTab } from "../components/workflow/RunsTab.tsx";
 import { VersionsTab } from "../components/workflow/VersionsTab.tsx";
 import { api } from "../lib/api.ts";
@@ -117,6 +127,8 @@ function EditorSession({
   const [publishing, setPublishing] = useState(false);
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // The canvas needs the room, so the app's sidebar steps aside.
+  useFocusMode();
 
   const setTab = (next: EditorTab) =>
     void navigate({
@@ -358,20 +370,32 @@ function SaveIndicator({ autosave }: { autosave: Autosave }) {
   );
 }
 
-function CanvasTab({
-  detail,
-  issuesOpen,
-  onCloseIssues,
-  onPatch,
-}: {
+interface CanvasProps {
   detail: WorkflowDetailView;
   issuesOpen: boolean;
   onCloseIssues: () => void;
   onPatch: (body: { description?: string }) => void;
-}) {
+}
+
+function CanvasTab(props: CanvasProps) {
+  return (
+    <ReactFlowProvider>
+      <CanvasView {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+/**
+ * The canvas has the whole area. Adding steps, help, and the workflow's
+ * details float over it, and a step's settings open beside it only while
+ * it's selected.
+ */
+function CanvasView({ detail, issuesOpen, onCloseIssues, onPatch }: CanvasProps) {
   const store = useGraphStore();
   const phone = useIsPhone();
-  const hasSelection = useGraph((s) => s.graph.nodes.some((n) => n.selected));
+  const hasSelection = useGraph(
+    (s) => s.graph.nodes.some((n) => n.selected) || s.graph.edges.some((e) => e.selected),
+  );
   const webhookFor = (nodeId: string) => detail.webhooks.find((w) => w.nodeId === nodeId);
 
   const nodeExtra = (nodeId: string, spec: NodeSpecView | undefined) => {
@@ -394,26 +418,160 @@ function CanvasTab({
     );
   };
 
-  const empty = <WorkflowPanel detail={detail} onPatch={onPatch} />;
+  const rf = useReactFlow();
+  const [adding, setAdding] = useState<"step" | "trigger" | null>(null);
+  const [details, setDetails] = useState(false);
+  const [help, setHelp] = useState(false);
+  const [showData, setShowData] = useState(false);
+  const empty = useGraph((s) => s.graph.nodes.length === 0);
+  const afterLabel = useGraph((s) => {
+    const ids = g.selectedNodeIds(s.graph);
+    const node = ids.length === 1 && ids[0] ? g.nodeById(s.graph, ids[0]) : undefined;
+    return node ? node.data.label || (store.spec(node.data.type)?.title ?? null) : null;
+  });
+  const panelOpen = !phone && (hasSelection || details);
+
+  // A new step goes after the selected one, or in the middle of what's in view.
+  const addStep = (spec: NodeSpecView) => {
+    const box = document.querySelector(".sling-canvas")?.getBoundingClientRect();
+    const at = rf.screenToFlowPosition({
+      x: box ? box.left + box.width / 2 : window.innerWidth / 2,
+      y: box ? box.top + box.height / 2 : window.innerHeight / 2,
+    });
+    const offset = (store.get().graph.nodes.length % 5) * 24;
+    const id = store.addStep(spec, { x: at.x - 128 + offset, y: at.y - 40 + offset });
+    setAdding(null);
+    setDetails(false);
+    // Bring it into view if it landed outside.
+    requestAnimationFrame(() => {
+      const node = g.nodeById(store.get().graph, id);
+      if (!node) return;
+      const p = rf.flowToScreenPosition(node.position);
+      const outside =
+        !box || p.x < box.left || p.x + 256 > box.right || p.y < box.top || p.y + 80 > box.bottom;
+      if (outside)
+        void rf.setCenter(node.position.x + 128, node.position.y + 40, { duration: 250 });
+    });
+  };
 
   return (
-    <ReactFlowProvider>
-      <div className="flex h-full min-h-0">
-        {!phone && (
-          <aside className="w-60 shrink-0 border-r border-border bg-sidebar">
-            <Palette />
-          </aside>
-        )}
-        <div className="relative min-w-0 flex-1">
-          <GraphCanvas interactive={!phone} />
-          {issuesOpen && <IssuesPanel onClose={onCloseIssues} />}
+    <div className="relative h-full min-h-0">
+      <GraphCanvas interactive={!phone} className={cx(showData && "show-all-ports")} />
+
+      {!phone && (
+        <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex flex-wrap items-start gap-2">
+          <div className="pointer-events-auto flex items-center gap-0.5 rounded-full bg-surface-2 p-1 shadow-raised">
+            <Button
+              size="sm"
+              variant="primary"
+              icon={Plus}
+              aria-expanded={adding !== null}
+              onClick={() => setAdding((a) => (a ? null : "step"))}
+            >
+              Add step
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={Cable}
+              aria-pressed={showData}
+              title="Show every step's data inputs and outputs, not just the wired ones"
+              className={cx(showData && "bg-surface-3 text-text")}
+              onClick={() => setShowData((v) => !v)}
+            >
+              Data
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={CircleHelp}
+              aria-pressed={help}
+              className={cx(help && "bg-surface-3 text-text")}
+              onClick={() => setHelp((v) => !v)}
+            >
+              How it works
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={SlidersHorizontal}
+              aria-pressed={details && !hasSelection}
+              onClick={() => {
+                store.update((s) => g.select(s, []));
+                setDetails((v) => !v || hasSelection);
+              }}
+            >
+              Details
+            </Button>
+          </div>
+          <TriggerSummary onAddTrigger={() => setAdding("trigger")} />
         </div>
-        {!phone && (
-          <aside className="w-80 shrink-0 overflow-y-auto border-l border-border bg-sidebar">
-            <Inspector empty={empty} nodeExtra={nodeExtra} />
-          </aside>
-        )}
-      </div>
+      )}
+
+      {adding && (
+        <div className="absolute top-16 bottom-3 left-3 z-30 flex items-start">
+          <AddStepMenu
+            after={afterLabel}
+            title={adding === "trigger" ? "Choose a trigger" : "Add a step"}
+            triggers={adding === "trigger"}
+            onPick={addStep}
+            onClose={() => setAdding(null)}
+          />
+        </div>
+      )}
+      {help && !adding && <HowItWorks onClose={() => setHelp(false)} />}
+
+      {empty && !adding && !phone && (
+        <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center p-6">
+          <div className="pointer-events-auto max-w-sm rounded-2xl bg-surface p-6 text-center shadow-popover">
+            <p className="text-sm font-medium">Start with what makes it run</p>
+            <p className="mt-1.5 text-[13px] leading-5 text-muted">
+              A trigger starts a run: a chat message, an email, a schedule, or a webhook. Then add
+              the steps it takes.
+            </p>
+            <Button
+              className="mt-4"
+              variant="primary"
+              icon={Zap}
+              onClick={() => setAdding("trigger")}
+            >
+              Choose a trigger
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {issuesOpen && <IssuesPanel onClose={onCloseIssues} />}
+
+      {panelOpen && (
+        <aside
+          aria-label={hasSelection ? "Step settings" : "Workflow details"}
+          className="anim-pop absolute top-3 right-3 bottom-3 z-20 flex w-[360px] max-w-[calc(100%-1.5rem)] origin-top-right flex-col overflow-hidden rounded-2xl bg-surface shadow-popover"
+        >
+          <div className="flex items-center justify-between border-b border-border py-1.5 pr-1.5 pl-4">
+            <p className="text-xs font-medium text-subtle">
+              {hasSelection ? "Step settings" : "Workflow details"}
+            </p>
+            <Button
+              size="sm"
+              variant="ghost"
+              iconOnly
+              icon={X}
+              aria-label="Close"
+              onClick={() => {
+                store.update((s) => g.select(s, []));
+                setDetails(false);
+              }}
+            />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <Inspector
+              empty={<WorkflowPanel detail={detail} onPatch={onPatch} />}
+              nodeExtra={nodeExtra}
+            />
+          </div>
+        </aside>
+      )}
       {phone && hasSelection && (
         <div className="anim-pop fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto overscroll-contain rounded-t-2xl bg-surface shadow-popover">
           <div className="flex justify-end px-2 pt-2">
@@ -429,7 +587,89 @@ function CanvasTab({
           <Inspector empty={null} nodeExtra={nodeExtra} />
         </div>
       )}
-    </ReactFlowProvider>
+    </div>
+  );
+}
+
+/** What starts this workflow, in a line over the canvas. Each trigger selects its step. */
+function TriggerSummary({ onAddTrigger }: { onAddTrigger: () => void }) {
+  const store = useGraphStore();
+  const nodes = useGraph((s) => s.graph.nodes);
+  const triggers = nodes.filter((n) => store.spec(n.data.type)?.isTrigger);
+  if (nodes.length === 0) return null;
+  return (
+    <div className="pointer-events-auto flex min-h-[38px] flex-wrap items-center gap-1.5 rounded-full bg-surface-2/90 px-3 py-1 text-xs text-muted shadow-raised backdrop-blur">
+      {triggers.length === 0 ? (
+        <>
+          <span className="text-warn">No trigger yet, so it never runs.</span>
+          <button
+            type="button"
+            onClick={onAddTrigger}
+            className="cursor-pointer font-medium text-text underline-offset-2 hover:underline"
+          >
+            Choose one
+          </button>
+        </>
+      ) : (
+        <>
+          <Zap aria-hidden="true" size={12} className="text-subtle" />
+          Runs when
+          {triggers.map((t, i) => (
+            <span key={t.id} className="flex items-center gap-1.5">
+              {i > 0 && <span>or</span>}
+              <button
+                type="button"
+                onClick={() => store.update((s) => g.select(s, [t.id]))}
+                className="cursor-pointer rounded-full bg-surface-3 px-2 py-0.5 font-medium text-soft transition-colors duration-150 hover:text-text"
+              >
+                {t.data.label || store.spec(t.data.type)?.title}
+              </button>
+            </span>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** The editor in a few lines, for anyone opening it the first time. */
+function HowItWorks({ onClose }: { onClose: () => void }) {
+  return (
+    <section
+      aria-label="How workflows work"
+      className="anim-pop absolute top-16 left-3 z-30 w-[380px] max-w-[calc(100%-1.5rem)] origin-top-left rounded-2xl bg-surface p-4 shadow-popover"
+    >
+      <div className="flex items-center justify-between">
+        <h2 className="text-[13px] font-medium">How workflows work</h2>
+        <Button size="sm" variant="ghost" iconOnly icon={X} aria-label="Close" onClick={onClose} />
+      </div>
+      <ol className="mt-2 space-y-2.5 text-[13px] leading-5 text-soft">
+        <li>
+          <span className="font-medium text-text">A trigger starts a run.</span> A chat message, an
+          email, a schedule, a webhook, or a button you press.
+        </li>
+        <li>
+          <span className="font-medium text-text">Steps run along the thick lines</span>, left to
+          right. A step with branches, like If, follows the one that matches.
+        </li>
+        <li>
+          <span className="font-medium text-text">Thin colored lines carry data</span>, such as a
+          message's text, from one step into another. Turn on Data to see every input and output.
+        </li>
+        <li>
+          <span className="font-medium text-text">Select a step to set it up.</span> Add step puts
+          the new one after the selected step and connects them.
+        </li>
+        <li>
+          <span className="font-medium text-text">Changes save as a draft.</span> Publish makes the
+          draft the version that runs, and Run starts that version now.
+        </li>
+      </ol>
+      <p className="mt-3 border-t border-border pt-3 text-xs leading-4 text-muted">
+        Drag from a port to connect. Shift-drag to select several. Delete removes the selection. ⌘
+        or Ctrl with Z undoes, and with C, X, V, or D copies, cuts, pastes, or duplicates.
+      </p>
+    </section>
   );
 }
 
@@ -463,7 +703,9 @@ function WorkflowPanel({
       <section className="space-y-2">
         <h3 className="section-label">Triggers</h3>
         {triggers.length === 0 ? (
-          <p className="text-xs text-muted">Add a trigger from the palette to start runs.</p>
+          <p className="text-xs text-muted">
+            No trigger yet, so it never runs. Add one with Add step.
+          </p>
         ) : (
           <ul className="space-y-1 text-[13px]">
             {triggers.map((n) => (
@@ -498,11 +740,6 @@ function WorkflowPanel({
           </ul>
         </section>
       )}
-      <section className="space-y-1.5 text-xs leading-4 text-muted">
-        <h3 className="section-label">Shortcuts</h3>
-        <p>Drag from a port to connect. Shift-drag to box select.</p>
-        <p>Delete removes the selection. Ctrl or ⌘ with C, X, V, D, A, Z, Shift+Z.</p>
-      </section>
       <DeleteWorkflow workflowId={detail.id} name={detail.name} />
     </div>
   );
@@ -573,7 +810,7 @@ function IssuesPanel({ onClose }: { onClose: () => void }) {
   return (
     <section
       aria-label="Problems"
-      className="anim-pop absolute inset-x-3 bottom-3 z-10 max-h-[40%] overflow-hidden rounded-xl bg-surface shadow-popover sm:left-auto sm:w-96"
+      className="anim-pop absolute bottom-3 left-1/2 z-20 max-h-[40%] w-[min(26rem,calc(100%-1.5rem))] -translate-x-1/2 overflow-hidden rounded-xl bg-surface shadow-popover"
     >
       <div className="flex items-center justify-between border-b border-border py-2 pr-2 pl-3">
         <h2 className="text-[13px] font-medium">

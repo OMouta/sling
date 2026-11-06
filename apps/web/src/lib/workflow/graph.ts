@@ -5,6 +5,7 @@
  */
 import {
   type Edge as DefEdge,
+  EXEC_ERROR,
   EXEC_IN,
   isAssignable,
   type NodeInstance,
@@ -422,6 +423,69 @@ export function addNode(
   const nodes = [...withSelection(state.nodes, new Set()), node];
   const edges = withEdgeSelection(state.edges, new Set());
   return { state: commit(state, { nodes, edges }), id };
+}
+
+/** Gap between a step and the one added after it. */
+const STEP_GAP = { x: 330, y: 150 };
+
+/**
+ * Adds a step. With one node selected, it goes to the right of that node and
+ * that node's first free exec output, other than `error`, leads to it. Otherwise
+ * it goes at `fallback`, unconnected. Either way it's one undo step.
+ */
+export function addAfterSelection(
+  state: GraphState,
+  catalog: CatalogIndex,
+  spec: NodeSpecView,
+  fallback: { x: number; y: number },
+  newId: IdFactory = randomId,
+): { state: GraphState; id: string; connected: boolean } {
+  const [only, ...more] = selectedNodeIds(state);
+  const from = only && more.length === 0 ? nodeById(state, only) : undefined;
+  const fromSpec = from ? catalog.byType.get(from.data.type) : undefined;
+  if (!from || !fromSpec || spec.isTrigger) {
+    return { ...addNode(state, spec, fallback, newId), connected: false };
+  }
+  const used = new Set(
+    state.edges.filter((e) => e.source === from.id && e.type === "exec").map((e) => e.sourceHandle),
+  );
+  const out = portsOf(fromSpec, from.data.config).execOut.find(
+    (p) => p.name !== EXEC_ERROR && !used.has(handleId("exec", p.name)),
+  );
+  // To the right, below anything already there.
+  let at = { x: from.position.x + STEP_GAP.x, y: from.position.y };
+  while (
+    state.nodes.some(
+      (n) => Math.abs(n.position.x - at.x) < 240 && Math.abs(n.position.y - at.y) < STEP_GAP.y - 20,
+    )
+  ) {
+    at = { x: at.x, y: at.y + STEP_GAP.y };
+  }
+  const added = addNode(state, spec, at, newId);
+  if (!out) return { ...added, connected: false };
+  const request: ConnectionRequest = {
+    source: from.id,
+    sourceHandle: handleId("exec", out.name),
+    target: added.id,
+    targetHandle: handleId("exec", EXEC_IN),
+  };
+  const check = checkConnection(added.state, catalog, request);
+  if (!check.ok) return { ...added, connected: false };
+  const edge: GraphEdge = {
+    id: newId("e"),
+    type: check.kind,
+    source: from.id,
+    sourceHandle: request.sourceHandle ?? null,
+    target: added.id,
+    targetHandle: request.targetHandle ?? null,
+    data: { portType: check.portType },
+  };
+  // The same history entry as the new node, so one undo takes both away.
+  return {
+    state: { ...added.state, edges: [...added.state.edges, edge] },
+    id: added.id,
+    connected: true,
+  };
 }
 
 export function removeElements(

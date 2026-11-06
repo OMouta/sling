@@ -1,7 +1,7 @@
 {
   "schema": "sling.workflow/v1",
   "name": "Sling Assistant",
-  "description": "The assistant you chat with in the web app. It delegates coding work to Codex on your machines and reports back when tasks finish.",
+  "description": "The assistant you chat with in the web app. It runs commands on your machines, hands coding work to a coding agent there, and reports back when tasks finish.",
   "nodes": [
     {
       "id": "chat",

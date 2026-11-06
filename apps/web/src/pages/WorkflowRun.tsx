@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { RotateCcw, Square, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { JsonView } from "../components/JsonView.tsx";
-import { Page } from "../components/Page.tsx";
+import { Page, useFocusMode } from "../components/Page.tsx";
 import { RUN_TONE, RunStatusBadge } from "../components/StatusBadge.tsx";
 import { Badge, Button, cx, Dot, ErrorText, Skeleton, Spinner } from "../components/ui.tsx";
 import { ReadOnlyCanvas, useReadOnlyStore } from "../components/workflow/ReadOnlyCanvas.tsx";
@@ -21,6 +21,7 @@ import { runRoute } from "../router.tsx";
 const ACTIVE = new Set(["queued", "running", "waiting"]);
 
 export function WorkflowRunPage() {
+  useFocusMode();
   const { id: workflowId, runId } = runRoute.useParams();
   const detail = useRun(runId);
   const catalog = useCatalogIndex();

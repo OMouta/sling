@@ -479,3 +479,54 @@ describe("rendering cost", () => {
     expect(next.nodes.filter((n, i) => n !== state.nodes[i]).map((n) => n.id)).toEqual(["n_ai"]);
   });
 });
+
+describe("adding a step after the selected one", () => {
+  it("places it to the right and wires the first free output to it, in one undo step", () => {
+    let state = blank();
+    const newId = ids();
+    const trigger = g.addNode(state, spec("core.manual"), { x: 0, y: 0 }, newId);
+    state = trigger.state;
+    const r = g.addAfterSelection(state, catalog, spec("http.request"), { x: 999, y: 999 }, newId);
+    expect(r.connected).toBe(true);
+    const node = g.nodeById(r.state, r.id);
+    expect(node?.position).toEqual({ x: 330, y: 0 });
+    expect(node?.selected).toBe(true);
+    expect(r.state.edges).toEqual([
+      expect.objectContaining({
+        type: "exec",
+        source: trigger.id,
+        sourceHandle: "x:next",
+        target: r.id,
+        targetHandle: "x:in",
+      }),
+    ]);
+    const undone = g.undo(r.state);
+    expect(undone.nodes.map((n) => n.id)).toEqual([trigger.id]);
+    expect(undone.edges).toEqual([]);
+  });
+
+  it("stacks a second step below the first, and uses the next free branch", () => {
+    let state = blank();
+    const newId = ids();
+    const iff = g.addNode(state, spec("core.if"), { x: 0, y: 0 }, newId);
+    state = iff.state;
+    const first = g.addAfterSelection(state, catalog, spec("http.request"), { x: 0, y: 0 }, newId);
+    state = g.select(first.state, [iff.id]);
+    const second = g.addAfterSelection(state, catalog, spec("http.request"), { x: 0, y: 0 }, newId);
+    expect(g.nodeById(second.state, second.id)?.position).toEqual({ x: 330, y: 150 });
+    expect(second.state.edges.map((e) => e.sourceHandle)).toEqual(["x:true", "x:false"]);
+  });
+
+  it("puts a trigger, or a step with nothing selected, where it's asked", () => {
+    let state = blank();
+    const newId = ids();
+    state = g.addNode(state, spec("core.manual"), { x: 0, y: 0 }, newId).state;
+    const t = g.addAfterSelection(state, catalog, spec("core.manual"), { x: 50, y: 60 }, newId);
+    expect(t.connected).toBe(false);
+    expect(g.nodeById(t.state, t.id)?.position).toEqual({ x: 50, y: 60 });
+    const none = g.select(t.state, []);
+    const s = g.addAfterSelection(none, catalog, spec("http.request"), { x: 7, y: 8 }, newId);
+    expect(s.connected).toBe(false);
+    expect(s.state.edges).toEqual([]);
+  });
+});

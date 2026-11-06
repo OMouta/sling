@@ -50,6 +50,7 @@ function Port({
         "sling-port",
         side === "in" ? "is-in" : "is-out",
         kind === "exec" ? "is-exec" : "is-data",
+        connected && "is-wired",
         issue && "has-issue",
         name === ERROR_OUTPUT.name && side === "out" && "is-error",
       )}
@@ -76,6 +77,14 @@ function Port({
       </span>
     </div>
   );
+}
+
+/** A port name as words: `messageId` reads "message id". */
+export function portWords(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
 }
 
 function issueOnPort(issues: ValidationIssue[] | undefined, port: string): boolean {
@@ -107,7 +116,7 @@ function KnownPorts({
       side={side}
       kind="data"
       name={p.name}
-      label={p.label ?? p.name}
+      label={p.label ?? portWords(p.name)}
       type={p.type}
       description={p.description}
       required={side === "in" && p.required}
@@ -139,7 +148,10 @@ function KnownPorts({
             side="out"
             kind="exec"
             name={p.name}
-            label={p.label ?? p.name}
+            // A lone "next" needs no name: the arrow says it.
+            label={
+              ports.execOut.length === 1 && p.name === "next" ? "" : (p.label ?? portWords(p.name))
+            }
             connected={has("out", "exec", p.name)}
             issue={issueOnPort(issues, p.name)}
             connectable={connectable}
@@ -193,7 +205,9 @@ export const NodeView = memo(function NodeView({ id, data, selected }: NodeProps
   const showingRun = useGraph((s) => s.decor.statuses.size > 0);
   const connectable = !store.readOnly;
   const title = data.label || spec?.title || data.type;
-  const subtitle = data.label ? (spec?.title ?? data.type) : data.type;
+  // What the step does, in words. A renamed step says what it is instead.
+  const renamed = Boolean(data.label) && data.label !== spec?.title;
+  const subtitle = renamed ? (spec?.title ?? data.type) : spec?.description || data.type;
 
   return (
     <div
@@ -207,11 +221,12 @@ export const NodeView = memo(function NodeView({ id, data, selected }: NodeProps
       style={{ "--cat": categoryColor(spec?.category ?? "") } as CSSProperties}
       data-status={status}
       data-testid={`node-${id}`}
+      title={spec ? `${spec.title}: ${spec.type}` : undefined}
     >
       <div className="sling-node-header">
         <div className="min-w-0 flex-1">
           <div className="sling-node-title">{title}</div>
-          <div className="sling-node-sub">{spec ? subtitle : `Unknown type ${data.type}`}</div>
+          <div className="sling-node-sub">{spec ? subtitle : `Unknown step ${data.type}`}</div>
         </div>
         {issues && (
           <span

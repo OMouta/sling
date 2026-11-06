@@ -214,6 +214,8 @@ export function GraphCanvas({
   const store = useGraphStore();
   const rf = useReactFlow();
   const editable = interactive && !store.readOnly;
+  // Every port shows while a connection is being dragged, so there's somewhere to drop it.
+  const connecting = useConnection((c) => c.inProgress);
   const nodes = useGraph((s) => s.graph.nodes);
   const edges = useGraph((s) => s.graph.edges);
   const [flash, setFlash] = useState<string | null>(null);
@@ -278,7 +280,11 @@ export function GraphCanvas({
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: drop target for palette items; the palette also adds on click.
     <div
-      className={cx("sling-canvas relative h-full w-full", className)}
+      className={cx(
+        "sling-canvas relative h-full w-full",
+        connecting && "is-connecting",
+        className,
+      )}
       onDragOver={onDragOver}
       onDrop={onDrop}
     >

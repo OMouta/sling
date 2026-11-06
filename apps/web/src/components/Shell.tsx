@@ -55,12 +55,24 @@ function Shell() {
   const [navOpen, setNavOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  // A page in focus mode hides the sidebar; showing it then lasts until the page closes.
+  const [focus, setFocusState] = useState(false);
+  const [peek, setPeek] = useState(false);
+  const setFocus = useCallback((on: boolean) => {
+    setFocusState(on);
+    setPeek(false);
+  }, []);
+  const hidden = focus ? !peek : collapsed;
   // A new chat is the empty composer. The conversation is made when the
   // first message is sent, so nothing empty piles up in the list.
   const newChat = useCallback(() => {
     void navigate({ to: "/" }).then(() => window.dispatchEvent(new Event(NEW_CHAT_EVENT)));
   }, [navigate]);
   const toggleSidebar = useCallback(() => {
+    if (focus) {
+      setPeek((p) => !p);
+      return;
+    }
     setCollapsed((c) => {
       try {
         localStorage.setItem(SIDEBAR_KEY, c ? "open" : "collapsed");
@@ -69,7 +81,7 @@ function Shell() {
       }
       return !c;
     });
-  }, []);
+  }, [focus]);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => connectRealtime(qc), [qc]);
@@ -96,11 +108,12 @@ function Shell() {
     () => ({
       openNav: () => setNavOpen(true),
       openSearch: () => setSearchOpen(true),
-      collapsed,
+      collapsed: hidden,
       toggleSidebar,
       newConversation: newChat,
+      setFocus,
     }),
-    [collapsed, toggleSidebar, newChat],
+    [hidden, toggleSidebar, newChat, setFocus],
   );
 
   return (
@@ -110,7 +123,7 @@ function Shell() {
           className={cx(
             "fixed inset-y-0 left-0 z-30 flex w-[254px] flex-col border-r border-border bg-sidebar transition-transform duration-300 ease-[var(--ease-out)] md:static md:translate-x-0 md:transition-none",
             navOpen ? "translate-x-0" : "-translate-x-full",
-            collapsed && "md:hidden",
+            hidden && "md:hidden",
           )}
         >
           <Sidebar onNew={newChat} onCollapse={toggleSidebar} />

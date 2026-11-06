@@ -167,6 +167,17 @@ export class GraphStore {
     return check;
   }
 
+  /** Adds a step after the selected one when it can, else at `fallback`. Returns its ID. */
+  addStep(spec: NodeSpecView, fallback: { x: number; y: number }): string {
+    let id = "";
+    this.update((graph) => {
+      const r = g.addAfterSelection(graph, this.catalog, spec, fallback);
+      id = r.id;
+      return r.state;
+    });
+    return id;
+  }
+
   addNode(spec: NodeSpecView, position: { x: number; y: number }): string {
     let id = "";
     this.update((graph) => {

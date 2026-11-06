@@ -351,7 +351,7 @@
 }
 
 .sling-node {
-  width: 228px;
+  width: 256px;
   border-radius: 12px;
   background: var(--surface);
   box-shadow:
@@ -414,7 +414,7 @@
 }
 .sling-node-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 9px 10px 8px;
   border-bottom: 1px solid var(--border);
@@ -430,6 +430,7 @@
   width: 8px;
   height: 8px;
   flex-shrink: 0;
+  margin-top: 4px;
   border-radius: 3px;
   background: var(--cat);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--cat) 22%, transparent);
@@ -442,13 +443,24 @@
   white-space: nowrap;
 }
 .sling-node-sub {
+  display: -webkit-box;
   overflow: hidden;
-  margin-top: 2px;
-  color: var(--subtle);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 14px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+/*
+ * Data ports show when they're wired, on the selected step, while a
+ * connection is being dragged, or everywhere with "Show data". Otherwise a
+ * step shows just its flow, which keeps the canvas readable.
+ */
+.sling-canvas:not(.show-all-ports, .is-connecting)
+  .sling-node:not(.is-selected)
+  .sling-port.is-data:not(.is-wired, .has-issue) {
+  display: none;
 }
 .sling-node-badge {
   flex-shrink: 0;

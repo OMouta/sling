@@ -232,7 +232,7 @@ describe("workflows list", () => {
 });
 
 describe("workflow editor", () => {
-  it("loads the draft and renders its nodes and the palette", async () => {
+  it("loads the draft with its nodes, and says what starts it", async () => {
     renderAt("/workflows/wf_1");
     expect(await findNode("n_trigger")).toBeTruthy();
     expect(screen.getByText("From a VIP?")).toBeTruthy();
@@ -240,15 +240,47 @@ describe("workflow editor", () => {
     expect(screen.getByText("DM me")).toBeTruthy();
     expect(screen.getByText("v1 active")).toBeTruthy();
     expect(screen.getByText("Unpublished changes")).toBeTruthy();
-    // Palette, grouped by category.
-    expect(screen.getByRole("searchbox", { name: "Search nodes" })).toBeTruthy();
-    expect(screen.getAllByText("Triggers").length).toBeGreaterThan(0);
-    expect(screen.getByText("HTTP request")).toBeTruthy();
+    expect(screen.getByText("Runs when")).toBeTruthy();
+    // No settings panel until something is selected.
+    expect(screen.queryByRole("complementary", { name: "Step settings" })).toBeNull();
     // Exec and data ports are distinct handles.
     const ifNode = await findNode("n_if");
     expect(ifNode.querySelector('[data-port="x:true"] .sling-handle-exec')).toBeTruthy();
     expect(ifNode.querySelector('[data-port="d:value"] .sling-handle-data')).toBeTruthy();
     expect(ifNode.querySelector('[data-port="x:error"]')).toBeTruthy();
+  });
+
+  it("adds a step after the selected one and connects it", async () => {
+    renderAt("/workflows/wf_1");
+    fireEvent.click(await findNode("n_send"));
+    expect(screen.getByRole("complementary", { name: "Step settings" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    const menu = within(screen.getByRole("dialog", { name: "Add a step" }));
+    fireEvent.change(menu.getByLabelText("Search steps"), { target: { value: "http" } });
+    fireEvent.click(menu.getByText("HTTP request"));
+    expect(screen.queryByRole("dialog", { name: "Add a step" })).toBeNull();
+    await waitFor(() => expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(1), {
+      timeout: 3000,
+    });
+    const saved = callsTo("PUT", "/api/workflows/wf_1/draft")[0]?.body as {
+      nodes: { id: string; type: string }[];
+      edges: { from: { node: string; port: string }; to: { node: string } }[];
+    };
+    const added = saved.nodes.find((n) => n.type === "http.request");
+    expect(saved.edges).toContainEqual(
+      expect.objectContaining({
+        from: { node: "n_send", port: "next" },
+        to: expect.objectContaining({ node: added?.id }),
+      }),
+    );
+  });
+
+  it("explains how workflows work", async () => {
+    renderAt("/workflows/wf_1");
+    await findNode("n_trigger");
+    fireEvent.click(screen.getByRole("button", { name: "How it works" }));
+    expect(screen.getByRole("region", { name: "How workflows work" })).toBeTruthy();
+    expect(screen.getByText("A trigger starts a run.")).toBeTruthy();
   });
 
   it("edits a field in the inspector and saves the draft", async () => {
@@ -334,7 +366,8 @@ describe("workflow editor", () => {
     expect(node.querySelector('[data-port="d:context"]')?.className).toContain("has-issue");
     // Clicking the issue selects its node.
     fireEvent.click(screen.getByText("Prompt needs a context input"));
-    expect(await screen.findByText("Asks the model and returns its text.")).toBeTruthy();
+    const settings = await screen.findByRole("complementary", { name: "Step settings" });
+    expect(within(settings).getByText("Asks the model and returns its text.")).toBeTruthy();
   });
 
   it("reports a clean validation", async () => {
