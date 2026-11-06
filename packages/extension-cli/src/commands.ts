@@ -233,7 +233,7 @@ const verify: Command = {
     ctx.out.out(`Digest: ${pkg.digest}`);
     ctx.out.out(`SDK: ${m.sdk} (this sling-ext has ${SDK_VERSION})`);
     const lines = describePermissions(m.permissions);
-    ctx.out.out(`Permissions: ${lines.length ? "" : "none beyond the fixed minimum"}`);
+    ctx.out.out(lines.length ? "Permissions:" : "Permissions: none beyond the fixed minimum");
     for (const l of lines) ctx.out.out(`  ${l.risk === "high" ? "[high] " : ""}${l.text}`);
     const outcome = verifyPackage(pkg, flag(args, "fingerprint"));
     if (!outcome.ok) {
