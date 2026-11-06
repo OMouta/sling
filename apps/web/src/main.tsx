@@ -4,11 +4,14 @@ import { LucideProvider } from "lucide-react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { ApiError } from "./lib/api.ts";
+import { registerServiceWorker } from "./lib/pwa.ts";
 import { applyTheme, storedTheme } from "./lib/theme.ts";
 import { router } from "./router.tsx";
 import "./styles.css";
 
 applyTheme(storedTheme());
+// A tapped notification opens its page in this window, without a reload.
+registerServiceWorker((href) => void router.navigate({ href }));
 
 const queryClient = new QueryClient({
   defaultOptions: {

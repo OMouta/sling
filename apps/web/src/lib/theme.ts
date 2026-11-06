@@ -19,10 +19,16 @@ function prefersLight(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: light)").matches;
 }
 
+/** The page background per theme, which the browser's own bars take on. */
+const BAR = { dark: "#161616", light: "#fbfbfb" } as const;
+
 /** Sets `data-theme` on the root element. `index.html` does the same before first paint. */
 export function applyTheme(pref: ThemePref) {
   const resolved = pref === "system" ? (prefersLight() ? "light" : "dark") : pref;
   document.documentElement.dataset.theme = resolved;
+  for (const meta of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) {
+    meta.content = BAR[resolved];
+  }
 }
 
 export function setTheme(pref: ThemePref) {
