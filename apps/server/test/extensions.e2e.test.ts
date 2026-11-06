@@ -23,6 +23,7 @@ import type {
   PublisherView,
   RunDetailView,
   RunView,
+  ServerEvent,
 } from "@sling/core";
 import { schema } from "@sling/db";
 import { readPackage, type SigningKey, writePackage } from "@sling/extension-package";
@@ -1546,6 +1547,65 @@ describe("disable and remove", () => {
     expect(await verbs()).toEqual(
       expect.arrayContaining(["extension.disabled", "extension.enabled"]),
     );
+  });
+
+  it("tells open tabs when an extension changes or goes", async () => {
+    const events: ServerEvent[] = [];
+    let closed = () => {};
+    // A stand-in for a browser tab's socket.
+    const socket = {
+      OPEN: 1,
+      readyState: 1,
+      send: (data: string) => events.push(JSON.parse(data) as ServerEvent),
+      on: (event: string, fn: () => void) => {
+        if (event === "close") closed = fn;
+      },
+    };
+    server.ctx.hub.add(await workspaceId(), socket as never);
+    try {
+      await c.call("PATCH", "/api/extensions/plain-echo", { enabled: false });
+      expect(events).toContainEqual({
+        type: "extension.updated",
+        extension: expect.objectContaining({
+          id: "plain-echo",
+          enabled: false,
+          status: "disabled",
+        }),
+      });
+      await c.call("DELETE", "/api/extensions/plain-echo");
+      expect(events.at(-1)).toEqual({ type: "extension.removed", id: "plain-echo" });
+    } finally {
+      closed();
+    }
+  });
+
+  it("serves an extension's icon with a sandboxing policy", async () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect width="1" height="1"/></svg>';
+    const built = await buildExtension({
+      id: "icon-echo",
+      source: echoSource("icon-echo"),
+      manifest: { icon: "icon.svg" },
+      files: { "icon.svg": svg },
+    });
+    const view = await upload(c, built);
+    expect(view.hasIcon).toBe(true);
+    const connectors = await c.call<ConnectorView[]>("GET", "/api/connectors");
+    expect(connectors.find((x) => x.id === "icon-echo")?.extension?.hasIcon).toBe(true);
+    const res = await c.raw("GET", "/api/extensions/icon-echo/icon");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/svg+xml");
+    expect(res.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    );
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await res.text()).toBe(svg);
+    const etag = res.headers.get("etag") as string;
+    const again = await c.raw("GET", "/api/extensions/icon-echo/icon", undefined, {
+      "if-none-match": etag,
+    });
+    expect(again.status).toBe(304);
+    await c.call("DELETE", "/api/extensions/icon-echo");
   });
 
   it("removes an extension, its installations, and its node types", async () => {
