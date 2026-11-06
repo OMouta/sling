@@ -7,3 +7,4 @@ target/
 !.env.example
 *.log
 deploy/.env
+extensions/dist/

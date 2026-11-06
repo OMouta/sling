@@ -3,6 +3,7 @@ packages:
   - apps/web
   - packages/*
   - integrations/*
+  - extensions/*
 allowBuilds:
   "@bufbuild/buf": false
   cpu-features: false
