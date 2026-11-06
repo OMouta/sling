@@ -137,9 +137,12 @@ export class Verifier {
       deleteAfterSeconds: 24 * 60 * 60,
     });
     // Rounds are scheduled ahead, so polling, not NOTIFY, keeps them on time.
+    // A round against a site that hangs waits out its 10-second timeout, which
+    // is common when a site is down, so enough run at once that a few down
+    // sites don't hold up another deploy's checks.
     await boss.work<VerifyJob>(
       VERIFY_QUEUE,
-      { pollingIntervalSeconds: 1, localConcurrency: 2 },
+      { pollingIntervalSeconds: 1, localConcurrency: 8 },
       async (jobs) => {
         for (const job of jobs) await this.#round(job.data);
       },
