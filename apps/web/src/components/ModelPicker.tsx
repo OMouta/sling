@@ -11,7 +11,17 @@ import {
 } from "@sling/core";
 import { Link } from "@tanstack/react-router";
 import { Check, ChevronUp, Laptop, Search, Shield, ShieldAlert, Star, Zap } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   favoriteKey,
   findAssistantModel,
@@ -62,27 +72,79 @@ export function modelLabel(catalog: ModelCatalogView | undefined, choice: Assist
   return choice.model;
 }
 
-/** The model pill under a composer. It opens the picker, which also holds the mode. */
+/**
+ * Where a popover goes so it's never clipped: above its button when it fits,
+ * otherwise below, kept inside the window, in a layer over the whole page.
+ * Null until it's been measured.
+ */
+function useAnchoredStyle(
+  open: boolean,
+  anchor: RefObject<HTMLElement | null>,
+  popover: RefObject<HTMLElement | null>,
+): CSSProperties | null {
+  const [style, setStyle] = useState<CSSProperties | null>(null);
+  useLayoutEffect(() => {
+    if (!open) {
+      setStyle(null);
+      return;
+    }
+    const place = () => {
+      const a = anchor.current?.getBoundingClientRect();
+      const p = popover.current;
+      if (!a || !p) return;
+      const gap = 8;
+      const edge = 12;
+      const above = a.top - gap - edge;
+      const below = window.innerHeight - a.bottom - gap - edge;
+      const up = above >= p.offsetHeight || above >= below;
+      const left = Math.max(edge, Math.min(a.left, window.innerWidth - p.offsetWidth - edge));
+      setStyle(
+        up
+          ? { left, bottom: window.innerHeight - a.top + gap, transformOrigin: "bottom left" }
+          : { left, top: a.bottom + gap, transformOrigin: "top left" },
+      );
+    };
+    place();
+    window.addEventListener("resize", place);
+    // Any scrolling container can move the button.
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, anchor, popover]);
+  return style;
+}
+
+/**
+ * The controls under a composer: the model pill, which opens the picker,
+ * and on its own, the conversation's permission mode.
+ */
 export function ChatControls(props: PickerProps & { className?: string }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
-  const { catalog, assistant, mode } = props;
+  const button = useRef<HTMLButtonElement>(null);
+  const popover = useRef<HTMLDivElement>(null);
+  const { catalog, assistant, mode, onMode } = props;
   const current = findAssistantModel(catalog, assistant);
   const label = modelLabel(catalog, assistant);
   const effort = assistant?.effort ?? current?.defaultEffort ?? null;
+  const style = useAnchoredStyle(open, button, popover);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (!root.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!root.current?.contains(t) && !popover.current?.contains(t)) setOpen(false);
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
 
   return (
-    <div ref={root} className={cx("relative flex min-w-0 items-center gap-1", props.className)}>
+    <div ref={root} className={cx("flex min-w-0 items-center gap-1", props.className)}>
       <button
+        ref={button}
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
@@ -97,22 +159,30 @@ export function ChatControls(props: PickerProps & { className?: string }) {
           <Zap aria-label="Fast" size={13} className="shrink-0 text-warn" fill="currentColor" />
         )}
       </button>
-      {mode === "full-access" && (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="flex h-[26px] shrink-0 cursor-pointer items-center gap-1 rounded-full px-2 text-xs text-danger hover:bg-[var(--tag-red-bg)]"
-        >
-          <ShieldAlert aria-hidden="true" size={13} />
-          Full access
-        </button>
+      {mode && onMode && (
+        <div className="ml-auto shrink-0">
+          <ModeMenu mode={mode} onMode={onMode} />
+        </div>
       )}
-      {open && <ModelPicker {...props} onClose={() => setOpen(false)} />}
+      {open &&
+        createPortal(
+          <ModelPicker
+            {...props}
+            ref={popover}
+            style={style}
+            onClose={() => {
+              setOpen(false);
+              button.current?.focus({ preventScroll: true });
+            }}
+          />,
+          document.body,
+        )}
     </div>
   );
 }
 
-function ModeMenu({
+/** The conversation's permission mode, with what each one allows. */
+export function ModeMenu({
   mode,
   onMode,
 }: {
@@ -125,6 +195,7 @@ function ModeMenu({
       label="Permission mode"
       side="top"
       align="end"
+      menuClassName="w-80 max-sm:w-72"
       trigger={({ open, toggle }) => (
         <button
           type="button"
@@ -133,13 +204,15 @@ function ModeMenu({
           aria-label={`Permission mode: ${MODE_POLICY[mode].label}`}
           onClick={toggle}
           className={cx(
-            "flex h-[28px] cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-colors duration-150 hover:bg-surface-3",
-            mode === "full-access" ? "text-danger" : "text-soft",
+            "pressable flex h-[30px] cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-[13px] transition-colors duration-150 aria-expanded:bg-surface-3",
+            mode === "full-access"
+              ? "text-danger hover:bg-[var(--tag-red-bg)]"
+              : "text-muted hover:bg-surface-3 hover:text-soft",
           )}
         >
           <Icon aria-hidden="true" size={14} />
-          {MODE_POLICY[mode].label}
-          <ChevronUp aria-hidden="true" size={13} className="text-faint" />
+          <span className="max-sm:hidden">{MODE_POLICY[mode].label}</span>
+          <ChevronUp aria-hidden="true" size={13} className="opacity-60" />
         </button>
       )}
     >
@@ -148,6 +221,7 @@ function ModeMenu({
           key={m}
           icon={m === "full-access" ? ShieldAlert : Shield}
           danger={m === "full-access"}
+          description={MODE_POLICY[m].description}
           onSelect={() => onMode(m)}
           trailing={m === mode ? <Check aria-hidden="true" className="text-text" /> : null}
         >
@@ -162,10 +236,15 @@ export function ModelPicker({
   catalog,
   assistant,
   onAssistant,
-  mode,
-  onMode,
   onClose,
-}: PickerProps & { onClose: () => void }) {
+  ref,
+  style,
+}: PickerProps & {
+  onClose: () => void;
+  ref?: RefObject<HTMLDivElement | null>;
+  /** Where it goes, from its button. Hidden until it's placed. */
+  style?: CSSProperties | null;
+}) {
   const favorites = useFavorites();
   const providers = usable(catalog);
   const [rail, setRail] = useState<Rail>(() =>
@@ -284,10 +363,15 @@ export function ModelPicker({
 
   return (
     <div
+      ref={ref}
       role="dialog"
       aria-label="Choose a model"
       onKeyDown={onKeyDown}
-      className="anim-pop absolute bottom-full left-0 z-40 mb-2 flex w-[min(620px,calc(100vw-2rem))] origin-bottom-left flex-col overflow-hidden rounded-2xl bg-surface shadow-popover"
+      style={{ ...(style ?? { left: 0, top: 0, visibility: "hidden" }) }}
+      className={cx(
+        "fixed z-50 flex w-[min(620px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl bg-surface shadow-popover",
+        style && "anim-pop",
+      )}
     >
       <div className="grid h-[min(360px,55vh)] grid-cols-[56px_minmax(0,1fr)] sm:grid-cols-[56px_minmax(0,1fr)_200px]">
         <div className="flex flex-col items-center gap-1.5 border-r border-border py-2.5">
@@ -468,7 +552,6 @@ export function ModelPicker({
         {assistant?.fast && creditsForFast && (
           <span className="text-xs text-subtle">Billed to usage credits</span>
         )}
-        <div className="ml-auto">{mode && onMode && <ModeMenu mode={mode} onMode={onMode} />}</div>
       </div>
     </div>
   );

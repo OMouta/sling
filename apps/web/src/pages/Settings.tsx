@@ -21,7 +21,16 @@ import {
   ShieldCheck,
   Smartphone,
 } from "lucide-react";
-import { type FormEvent, lazy, type ReactNode, Suspense, useEffect, useId, useState } from "react";
+import {
+  type FormEvent,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { ProviderIcon } from "../components/ProviderIcon.tsx";
@@ -65,10 +74,54 @@ export function SettingsPage() {
     queryFn: () => api.get<Settings>("/api/settings"),
   });
   const [current, setCurrent] = useState("model");
+  const nav = useRef<HTMLElement>(null);
+  // A section picked from the list stays current until the reader scrolls
+  // themselves, even when the page can't scroll it all the way to the top.
+  const picked = useRef<string | null>(null);
+  const loaded = Boolean(settings.data);
+
+  // The list follows the page: the current section is the last one whose
+  // heading has reached the top, or the last one once the page ends.
+  useEffect(() => {
+    const scroller = loaded ? nav.current?.closest(".overflow-y-auto") : null;
+    if (!scroller) return;
+    const update = () => {
+      if (picked.current) {
+        setCurrent(picked.current);
+        return;
+      }
+      const top = scroller.getBoundingClientRect().top + 96;
+      let active = SECTIONS[0]?.id ?? "model";
+      for (const sec of SECTIONS) {
+        const el = document.getElementById(sec.id);
+        if (el && el.getBoundingClientRect().top <= top) active = sec.id;
+      }
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) {
+        active = SECTIONS.at(-1)?.id ?? active;
+      }
+      setCurrent(active);
+    };
+    const release = () => {
+      picked.current = null;
+    };
+    update();
+    scroller.addEventListener("scroll", update, { passive: true });
+    for (const ev of ["wheel", "touchstart", "keydown"]) {
+      scroller.addEventListener(ev, release, { passive: true });
+    }
+    return () => {
+      scroller.removeEventListener("scroll", update);
+      for (const ev of ["wheel", "touchstart", "keydown"]) {
+        scroller.removeEventListener(ev, release);
+      }
+    };
+  }, [loaded]);
+
   return (
     <Page title="Settings">
       <div className="mx-auto flex w-full max-w-5xl gap-10 px-5 py-6">
         <nav
+          ref={nav}
           aria-label="Settings sections"
           className="sticky top-6 hidden w-44 shrink-0 self-start lg:block"
         >
@@ -79,7 +132,11 @@ export function SettingsPage() {
                 <li key={sec.id}>
                   <a
                     href={`#${sec.id}`}
-                    onClick={() => setCurrent(sec.id)}
+                    aria-current={current === sec.id ? "true" : undefined}
+                    onClick={() => {
+                      picked.current = sec.id;
+                      setCurrent(sec.id);
+                    }}
                     className={cx(
                       "group flex h-[30px] items-center gap-2 rounded-lg px-2 text-[13px] font-medium transition-colors duration-150",
                       current === sec.id

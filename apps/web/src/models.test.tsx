@@ -280,14 +280,17 @@ describe("model picker", () => {
     expect(screen.queryByText("Billed to usage credits")).toBeNull();
   });
 
-  it("holds the permission mode in its footer", () => {
+  it("keeps the permission mode beside the model, outside the picker", () => {
     wrap(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    const dialog = screen.getByRole("dialog", { name: "Choose a model" });
+    expect(within(dialog).queryByRole("button", { name: /Permission mode/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Permission mode: Supervised" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Full access/ }));
-    // Full access shows in the footer and next to the pill, so it can't be missed.
+    // Each mode says what it allows.
+    const full = screen.getByRole("menuitem", { name: /Full access/ });
+    expect(full.textContent).toContain("without a sandbox");
+    fireEvent.click(full);
     expect(screen.getByRole("button", { name: "Permission mode: Full access" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Full access" })).toBeTruthy();
   });
 
   it("stars a model and lists it under favorites with a shortcut", () => {

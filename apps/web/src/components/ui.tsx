@@ -657,6 +657,7 @@ export function Menu({
   side = "bottom",
   children,
   className,
+  menuClassName,
 }: {
   trigger: (props: { open: boolean; toggle: () => void }) => ReactNode;
   label: string;
@@ -664,6 +665,8 @@ export function Menu({
   side?: "top" | "bottom";
   children: ReactNode;
   className?: string;
+  /** For the menu itself, such as a width. */
+  menuClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -694,6 +697,7 @@ export function Menu({
             "anim-pop absolute z-40 min-w-52 rounded-xl bg-surface p-1 shadow-popover",
             side === "bottom" ? "top-full mt-1.5" : "bottom-full mb-1.5",
             align === "end" ? "right-0" : "left-0",
+            menuClassName,
           )}
           style={{
             transformOrigin: `${side === "bottom" ? "top" : "bottom"} ${align === "end" ? "right" : "left"}`,
@@ -722,12 +726,15 @@ export function MenuItem({
   children,
   danger,
   trailing,
+  description,
 }: {
   icon?: LucideIcon;
   onSelect: () => void;
   children: ReactNode;
   danger?: boolean;
   trailing?: ReactNode;
+  /** A second, smaller line under the label. */
+  description?: ReactNode;
 }) {
   const close = useContext(MenuClose);
   return (
@@ -739,13 +746,28 @@ export function MenuItem({
         onSelect();
       }}
       className={cx(
-        "flex h-[30px] w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-[13px] outline-none focus-visible:bg-surface-3 hover:bg-surface-3",
+        "flex w-full cursor-pointer gap-2 rounded-lg px-2 text-left text-[13px] outline-none focus-visible:bg-surface-3 hover:bg-surface-3",
+        description ? "items-start py-1.5" : "h-[30px] items-center",
         danger ? "text-danger" : "text-text",
       )}
     >
-      {Icon && <Icon aria-hidden="true" className={danger ? "" : "text-subtle"} />}
-      <span className="min-w-0 flex-1 truncate">{children}</span>
-      {trailing}
+      {Icon && (
+        <Icon
+          aria-hidden="true"
+          className={cx("shrink-0", description ? "mt-[3px]" : false, danger ? "" : "text-subtle")}
+        />
+      )}
+      {description ? (
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium">{children}</span>
+          <span className="mt-0.5 block text-xs leading-4 text-muted">{description}</span>
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1 truncate">{children}</span>
+      )}
+      {trailing && (
+        <span className={cx("shrink-0", description ? "mt-[3px]" : false)}>{trailing}</span>
+      )}
     </button>
   );
 }
