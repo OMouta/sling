@@ -21,7 +21,7 @@ import {
 /** Where extensions come from, and whose signatures Sling accepts. */
 export function Sources({ installed }: { installed: ExtensionView[] }) {
   return (
-    <div className="max-w-4xl space-y-9 px-5 pt-1 pb-6">
+    <div className="space-y-9 px-5 pt-1 pb-6">
       <Catalogs />
       <Publishers installed={installed} />
     </div>

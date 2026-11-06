@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readmeBody } from "../components/extensions/DetailsDialog.tsx";
 import { discoverEntries, ntfyExtension } from "../test/fixtures.ts";
 import {
   EXTENSION_ID,
@@ -54,5 +55,13 @@ describe("extension helpers", () => {
     });
     const fly = discoverEntries.find((e) => e.id === "fly-machines")?.latest?.permissions ?? [];
     expect(permissionSummary(fly).text).toMatch(/^Start sandboxes/);
+  });
+});
+
+describe("readmeBody", () => {
+  it("drops a first heading that repeats the name, and keeps any other", () => {
+    expect(readmeBody("# ntfy\n\nPush notifications.\n", "ntfy")).toBe("Push notifications.\n");
+    expect(readmeBody("# Setting up\n\nSteps.", "ntfy")).toBe("# Setting up\n\nSteps.");
+    expect(readmeBody("Intro\n# ntfy\n", "ntfy")).toBe("Intro\n# ntfy\n");
   });
 });

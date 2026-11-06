@@ -279,7 +279,7 @@ function Installed({
     );
   }
   return (
-    <div className="max-w-5xl space-y-3 px-5 pt-1 pb-6">
+    <div className="space-y-3 px-5 pt-1 pb-6">
       {pending && (
         <>
           <Skeleton className="h-[172px] w-full rounded-xl" />
@@ -448,7 +448,7 @@ function Discover({
   return (
     <div className="px-5 pt-1 pb-6">
       <ErrorText error={discover.error} />
-      <div className="grid max-w-6xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {discover.isPending &&
           [0, 1, 2].map((i) => <Skeleton key={i} className="h-[187px] w-full rounded-xl" />)}
         {shown.map((e) => (

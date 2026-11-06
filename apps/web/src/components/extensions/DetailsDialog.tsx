@@ -40,7 +40,7 @@ export function DetailsDialog({ ext, onClose }: { ext: ExtensionView; onClose: (
               </div>
             ) : d?.readme ? (
               <div className="prose-chat text-[13px] leading-6 text-soft">
-                <ChatMarkdown skipHtml>{d.readme}</ChatMarkdown>
+                <ChatMarkdown skipHtml>{readmeBody(d.readme, d.name)}</ChatMarkdown>
               </div>
             ) : (
               d && <p className="text-[13px] text-muted">It has no README.</p>
@@ -240,4 +240,12 @@ function Log({ detail }: { detail?: ExtensionDetailView }) {
       ))}
     </ol>
   );
+}
+
+/** The README without a first heading that only repeats the name, which the dialog's title shows already. */
+export function readmeBody(readme: string, name: string): string {
+  const m = /^\s*#\s+(.+?)\s*\n/.exec(readme);
+  return m && m[1]?.trim().toLowerCase() === name.trim().toLowerCase()
+    ? readme.slice(m[0].length)
+    : readme;
 }
