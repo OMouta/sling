@@ -67,8 +67,9 @@ COPY scripts/install.sh scripts/install.ps1 scripts/
 COPY --from=web /app/apps/web/dist /app/web
 # Included extensions: catalog.json and the .slx files it lists.
 COPY --from=extensions /app/extensions/dist /app/extensions
+# extensions/*/ holds only the package.json files the install step copied in.
 RUN rm -rf packages/*/src/*.test.ts packages/*/src/*.test-util.ts apps/server/src/*.test.ts \
-    integrations/*/src/*.test.ts integrations/*/test
+    integrations/*/src/*.test.ts integrations/*/test extensions/*/
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s \
