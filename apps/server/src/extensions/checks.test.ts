@@ -234,6 +234,22 @@ describe("contentsOf", () => {
     expect(flagged?.assistant).toEqual({ sends: true, summary: "Post {text}" });
     expect(plain?.assistant).toBeUndefined();
   });
+
+  it("keeps the fields a rule may pin on nodes that send, and whether a node checks itself", () => {
+    const send = {
+      ...node("chat.send"),
+      assistant: { sends: true, ruleFields: ["channel"] },
+      hasVerify: true,
+      verifyForSeconds: 600,
+    };
+    const read = { ...node("chat.history"), assistant: { sends: false, ruleFields: ["channel"] } };
+    const parsed = parseDescription(description([{ id: "chat", nodes: [send, read] }]));
+    const [flagged, reads] = parsed.connectors[0]?.nodes ?? [];
+    expect(flagged).toMatchObject({ hasVerify: true, verifyForSeconds: 600 });
+    expect(flagged && assistantUse(flagged)).toEqual({ sends: true, ruleFields: ["channel"] });
+    // Nothing asks before a read, so there's nothing for a rule to skip.
+    expect(reads && assistantUse(reads)).toEqual({ sends: false });
+  });
 });
 
 describe("hostOf", () => {

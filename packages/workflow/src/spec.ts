@@ -158,6 +158,32 @@ export interface AssistantUse {
    * from its arguments. For example `"Email {to}: {subject}"`.
    */
   summary?: string;
+  /**
+   * Config fields an "Always allow" rule may pin, such as `["to"]` for an
+   * email. A rule pins a string exactly, or as a suffix after a leading `*`,
+   * and leaves the fields it doesn't pin free. Only for nodes that send.
+   */
+  ruleFields?: string[];
+}
+
+/**
+ * What a node's `verify` found. `passed` and `failed` are final. `waiting`
+ * asks Sling to call it again. `unchecked` means it couldn't tell, such as
+ * when the account gives no way to read the result back.
+ */
+export interface VerifyResult {
+  state: "passed" | "failed" | "waiting" | "unchecked";
+  /** One line for the person, such as "In Work, Mon 9 Nov 10:00" or "Bounced: mailbox not found". */
+  message: string;
+  /** With `waiting`: when to look again. Sling picks a default without it. */
+  retryAfterSeconds?: number;
+}
+
+export interface NodeVerifyArgs<Config> {
+  inputs: Record<string, unknown>;
+  config: Config;
+  /** What `run` returned on its outputs. */
+  outputs: Record<string, unknown>;
 }
 
 export interface NodeRunArgs<Config> {
@@ -204,6 +230,16 @@ export interface NodeSpec<Config = Record<string, unknown>, Services = unknown> 
     ctx: NodeContext<Services>,
     args: NodeRunArgs<Config> & { resolution: WaitResolution },
   ): Promise<NodeResult>;
+  /**
+   * Checks that what `run` did outside Sling happened: reads an event back,
+   * fetches a sent message, or looks for a bounce. Sling calls it right after
+   * the node runs from chat, and again while it answers `waiting`, for up to
+   * `verifyForSeconds`. `ctx.attempt` counts the calls. A node without it
+   * claims no check.
+   */
+  verify?(ctx: NodeContext<Services>, args: NodeVerifyArgs<Config>): Promise<VerifyResult>;
+  /** How long `verify` may keep answering `waiting`. 10 minutes when absent. */
+  verifyForSeconds?: number;
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: a registry holds specs of every config shape.

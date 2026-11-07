@@ -22,6 +22,7 @@ import {
   NodeError,
   type NodeResult,
   type TriggerMatch,
+  type VerifyResult,
 } from "@sling/workflow";
 import { z } from "zod";
 import { parseSetupResult } from "../workflows/connectors/setup.ts";
@@ -113,6 +114,24 @@ function checkNodeResult(extensionId: string, value: unknown): NodeResult {
   return r.data as NodeResult;
 }
 
+const VerifyResultSchema = z.object({
+  state: z.enum(["passed", "failed", "waiting", "unchecked"]),
+  message: z.string().max(500),
+  retryAfterSeconds: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60 * 60)
+    .optional(),
+});
+
+/** What a node's verify may return. */
+function checkVerifyResult(value: unknown): VerifyResult {
+  const r = VerifyResultSchema.safeParse(value);
+  if (!r.success) throw invalidResult("check result", r.error);
+  return r.data;
+}
+
 // ------------------------------------------------------------- description
 
 const JsonObject = z.record(z.string(), z.unknown());
@@ -157,7 +176,21 @@ const NodeDescriptionSchema = z.object({
   hasResume: z.boolean(),
   // Left out by extensions built on SDK 1.0.
   assistant: z
-    .object({ sends: z.boolean(), summary: z.string().max(200).optional() })
+    .object({
+      sends: z.boolean(),
+      summary: z.string().max(200).optional(),
+      // Left out by extensions built on SDK 1.2 and older.
+      ruleFields: z.array(z.string().min(1).max(200)).max(20).optional(),
+    })
+    .nullable()
+    .optional(),
+  // Left out by extensions built on SDK 1.2 and older.
+  hasVerify: z.boolean().optional(),
+  verifyForSeconds: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 60 * 60)
     .nullable()
     .optional(),
 });
@@ -264,24 +297,28 @@ export function buildConnectors(host: ExtensionHost, version: HostVersion): AnyC
     if (n.retry) spec.retry = n.retry;
     const use = assistantUse(n);
     if (use) spec.assistant = use;
-    const call = async (
-      method: "run" | "resume",
+    const callExtension = (
+      method: "run" | "resume" | "verify",
       ctx: NodeContext,
       extra: Record<string, unknown>,
-    ): Promise<NodeResult> => {
+    ): Promise<unknown> => {
       const scope: CallScope = {
         kind: "call",
         log: ctx.log,
         installation: installationReader(ctx),
       };
-      const result = await host.call(
+      return host.call(
         version,
         method,
         { type: n.type, version: n.version, ctx: nodeFields(ctx), ...extra },
         { signal: ctx.signal, scope },
       );
-      return checkNodeResult(ext.id, result);
     };
+    const call = async (
+      method: "run" | "resume",
+      ctx: NodeContext,
+      extra: Record<string, unknown>,
+    ): Promise<NodeResult> => checkNodeResult(ext.id, await callExtension(method, ctx, extra));
     if (n.trigger) {
       const event = n.trigger.event;
       spec.trigger = {
@@ -313,6 +350,12 @@ export function buildConnectors(host: ExtensionHost, version: HostVersion): AnyC
     if (n.hasResume) {
       spec.resume = (ctx, { inputs, config, resolution }) =>
         call("resume", ctx, { inputs, config, resolution });
+    }
+    // Only a node the assistant can call runs outside a workflow, where its check shows.
+    if (n.hasVerify && use) {
+      spec.verify = async (ctx, { inputs, config, outputs }) =>
+        checkVerifyResult(await callExtension("verify", ctx, { inputs, config, outputs }));
+      if (n.verifyForSeconds) spec.verifyForSeconds = n.verifyForSeconds;
     }
     return spec;
   }

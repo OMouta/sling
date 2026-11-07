@@ -86,7 +86,31 @@ describe("describe", () => {
       properties: { server: { default: "https://acme.test" } },
     });
     expect(c?.nodes[0]).toMatchObject({ type: "acme.send", trigger: null, hasResume: false });
+    expect(c?.nodes[0]).toMatchObject({
+      assistant: null,
+      hasVerify: false,
+      verifyForSeconds: null,
+    });
     expect(JSON.parse(JSON.stringify(d))).toEqual(d);
+  });
+
+  it("says which arguments a rule may pin, and whether the node checks itself", () => {
+    const checked = defineNode({
+      ...send,
+      type: "acme.post",
+      assistant: { sends: true, summary: "Post to {to}", ruleFields: ["to"] },
+      verify: async () => ({ state: "passed", message: "Posted" }),
+      verifyForSeconds: 600,
+    });
+    const d = defineExtension({
+      connectors: [{ ...connector, nodes: [send, checked] }],
+    }).describe();
+    expect(d.connectors[0]?.nodes[1]).toMatchObject({
+      type: "acme.post",
+      assistant: { sends: true, summary: "Post to {to}", ruleFields: ["to"] },
+      hasVerify: true,
+      verifyForSeconds: 600,
+    });
   });
 });
 

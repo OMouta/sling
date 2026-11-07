@@ -38,6 +38,10 @@ export interface NodeDescription {
   hasResume: boolean;
   /** Present when the assistant may call the node from chat. Absent in descriptions from SDK 1.0. */
   assistant?: AssistantUse | null;
+  /** The node checks what it did. Absent in descriptions from SDK 1.2 and older. */
+  hasVerify?: boolean;
+  /** How long its `verify` may keep answering `waiting`. Null for the default. */
+  verifyForSeconds?: number | null;
 }
 
 export interface ConnectorDescription {
@@ -122,8 +126,13 @@ export function defineExtension(def: { connectors: AnyConnector[] }): ExtensionD
             ? {
                 sends: n.assistant.sends,
                 ...(n.assistant.summary ? { summary: n.assistant.summary } : {}),
+                ...(n.assistant.ruleFields?.length
+                  ? { ruleFields: [...n.assistant.ruleFields] }
+                  : {}),
               }
             : null,
+          hasVerify: typeof n.verify === "function",
+          verifyForSeconds: n.verifyForSeconds ?? null,
         })),
       })),
     }),

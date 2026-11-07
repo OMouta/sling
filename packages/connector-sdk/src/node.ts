@@ -17,11 +17,13 @@ export {
   type NodeResult,
   type NodeRunArgs,
   type NodeSpec,
+  type NodeVerifyArgs,
   type PortSpec,
   type RetryPolicy,
   type TriggerEvent,
   type TriggerMatch,
   type TriggerSpec,
+  type VerifyResult,
   type WaitResolution,
   type WaitSpec,
 } from "@sling/workflow/spec";

@@ -289,6 +289,10 @@ export interface NodeDescription {
     hasResume: boolean;
     /** Present when the assistant may call the node from chat. Absent in descriptions from SDK 1.0. */
     assistant?: AssistantUse | null;
+    /** The node checks what it did. Absent in descriptions from SDK 1.2 and older. */
+    hasVerify?: boolean;
+    /** How long its `verify` may keep answering `waiting`. Null for the default. */
+    verifyForSeconds?: number | null;
 }
 export interface ConnectorDescription {
     id: string;
@@ -337,7 +341,7 @@ export declare function defineExtension(def: {
  */
 import { z } from "zod";
 /** The SDK version this package implements. Manifests name a range that must include it. */
-export declare const SDK_VERSION = "1.2.0";
+export declare const SDK_VERSION = "1.3.0";
 /** 3 to 40 characters: lowercase letters, digits, and hyphens, starting with a letter. */
 export declare const EXTENSION_ID_PATTERN: RegExp;
 export declare const NetworkPermissionSchema: z.ZodObject<{
@@ -509,7 +513,7 @@ export declare function signedMessage(id: string, version: string, digest: strin
  * outputs) and what it gets while it runs.
  */
 import type { NodeSpec } from "@sling/workflow/spec";
-export { type AnyNodeSpec, type AssistantUse, type DynamicExecOutputs, type ExecPortSpec, type Installation, type NodeCategory, type NodeContext, NodeError, type NodeLogger, type NodeResult, type NodeRunArgs, type NodeSpec, type PortSpec, type RetryPolicy, type TriggerEvent, type TriggerMatch, type TriggerSpec, type WaitResolution, type WaitSpec, } from "@sling/workflow/spec";
+export { type AnyNodeSpec, type AssistantUse, type DynamicExecOutputs, type ExecPortSpec, type Installation, type NodeCategory, type NodeContext, NodeError, type NodeLogger, type NodeResult, type NodeRunArgs, type NodeSpec, type NodeVerifyArgs, type PortSpec, type RetryPolicy, type TriggerEvent, type TriggerMatch, type TriggerSpec, type VerifyResult, type WaitResolution, type WaitSpec, } from "@sling/workflow/spec";
 export { NAMED_TYPES, type NamedType, type PortType } from "@sling/workflow/types";
 /**
  * Builds a node spec with its config type inferred from the schema. In an
@@ -671,6 +675,30 @@ export interface AssistantUse {
      * from its arguments. For example `"Email {to}: {subject}"`.
      */
     summary?: string;
+    /**
+     * Config fields an "Always allow" rule may pin, such as `["to"]` for an
+     * email. A rule pins a string exactly, or as a suffix after a leading `*`,
+     * and leaves the fields it doesn't pin free. Only for nodes that send.
+     */
+    ruleFields?: string[];
+}
+/**
+ * What a node's `verify` found. `passed` and `failed` are final. `waiting`
+ * asks Sling to call it again. `unchecked` means it couldn't tell, such as
+ * when the account gives no way to read the result back.
+ */
+export interface VerifyResult {
+    state: "passed" | "failed" | "waiting" | "unchecked";
+    /** One line for the person, such as "In Work, Mon 9 Nov 10:00" or "Bounced: mailbox not found". */
+    message: string;
+    /** With `waiting`: when to look again. Sling picks a default without it. */
+    retryAfterSeconds?: number;
+}
+export interface NodeVerifyArgs<Config> {
+    inputs: Record<string, unknown>;
+    config: Config;
+    /** What `run` returned on its outputs. */
+    outputs: Record<string, unknown>;
 }
 export interface NodeRunArgs<Config> {
     inputs: Record<string, unknown>;
@@ -714,6 +742,16 @@ export interface NodeSpec<Config = Record<string, unknown>, Services = unknown> 
     resume?(ctx: NodeContext<Services>, args: NodeRunArgs<Config> & {
         resolution: WaitResolution;
     }): Promise<NodeResult>;
+    /**
+     * Checks that what `run` did outside Sling happened: reads an event back,
+     * fetches a sent message, or looks for a bounce. Sling calls it right after
+     * the node runs from chat, and again while it answers `waiting`, for up to
+     * `verifyForSeconds`. `ctx.attempt` counts the calls. A node without it
+     * claims no check.
+     */
+    verify?(ctx: NodeContext<Services>, args: NodeVerifyArgs<Config>): Promise<VerifyResult>;
+    /** How long `verify` may keep answering `waiting`. 10 minutes when absent. */
+    verifyForSeconds?: number;
 }
 export type AnyNodeSpec = NodeSpec<any, any>;
 /** Exec outputs for a node instance, including config-driven and error ports. */

@@ -5,7 +5,7 @@
 import { z } from "zod";
 
 /** The SDK version this package implements. Manifests name a range that must include it. */
-export const SDK_VERSION = "1.2.0";
+export const SDK_VERSION = "1.3.0";
 
 /** 3 to 40 characters: lowercase letters, digits, and hyphens, starting with a letter. */
 export const EXTENSION_ID_PATTERN = /^[a-z][a-z0-9-]{1,38}[a-z0-9]$/;

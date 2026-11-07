@@ -42,6 +42,10 @@ export function assistantUse(n: NodeDescription): AssistantUse | null {
   return {
     sends: n.assistant.sends,
     ...(n.assistant.summary ? { summary: n.assistant.summary } : {}),
+    // Pinning is only for the question a send asks.
+    ...(n.assistant.sends && n.assistant.ruleFields?.length
+      ? { ruleFields: [...n.assistant.ruleFields] }
+      : {}),
   };
 }
 

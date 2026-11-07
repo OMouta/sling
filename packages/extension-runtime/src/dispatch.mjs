@@ -167,6 +167,24 @@ export function createDispatcher(definition, extensionId, peer, log) {
   }
 
   /**
+   * @param {any} p
+   * @param {AbortSignal} signal
+   */
+  async function verifyNode(p, signal) {
+    const spec = node(p);
+    if (typeof spec.verify !== "function") {
+      throw new Error(`Node ${spec.type} has no verify function`);
+    }
+    const config = parseWith(spec.configSchema, p.config);
+    if (!config.success) throw new NodeError(`Invalid config: ${config.error}`, "invalid_config");
+    return await spec.verify(nodeContext(p, signal), {
+      inputs: p.inputs ?? {},
+      config: config.data,
+      outputs: p.outputs ?? {},
+    });
+  }
+
+  /**
    * Extension nodes can wait for a time or for one of their own events.
    * Approvals and tasks belong to Sling.
    * @param {any} wait
@@ -307,6 +325,8 @@ export function createDispatcher(definition, extensionId, peer, log) {
         return await runNode(p, signal, false);
       case "resume":
         return await runNode(p, signal, true);
+      case "verify":
+        return await verifyNode(p, signal);
       case "match": {
         const spec = node(p);
         if (!spec.trigger) throw new Error(`Node ${spec.type} isn't a trigger`);
