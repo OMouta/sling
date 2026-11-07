@@ -1,36 +1,35 @@
 import { z } from "zod";
 
-const port = (fallback: number, help: string) =>
-  z.coerce.number().int().min(1).max(65535).default(fallback).describe(help);
+const port = (fallback: number, title: string) =>
+  z.coerce.number().int().min(1).max(65535).default(fallback).meta({ title, advanced: true });
+
+const SERVER = { advanced: true, lookup: true } as const;
 
 export const credentialsSchema = z.object({
   imapHost: z
     .string()
     .min(1)
-    .describe("IMAP server for reading mail, for example imap.gmail.com or imap.fastmail.com"),
-  imapPort: port(993, "IMAP port. 993 is IMAP over TLS"),
+    .meta({ ...SERVER, title: "IMAP server", order: 10 }),
+  imapPort: port(993, "IMAP port").meta({ order: 11 }),
   imapSecure: z
     .boolean()
     .default(true)
-    .describe("Use TLS from the start. Turn off only for port 143, which upgrades with STARTTLS"),
+    .meta({ title: "IMAP over TLS", description: "Off for STARTTLS", advanced: true, order: 12 }),
   smtpHost: z
     .string()
     .min(1)
-    .describe("SMTP server for sending mail, for example smtp.gmail.com or smtp.fastmail.com"),
-  smtpPort: port(465, "SMTP port. 465 is SMTP over TLS"),
+    .meta({ ...SERVER, title: "SMTP server", order: 13 }),
+  smtpPort: port(465, "SMTP port").meta({ order: 14 }),
   smtpSecure: z
     .boolean()
     .default(true)
-    .describe("Use TLS from the start. Turn off only for port 587, which upgrades with STARTTLS"),
-  username: z.string().min(1).describe("Login for both servers, usually your full email address"),
-  password: z
-    .string()
-    .min(1)
-    .describe("An app password for this mailbox. Gmail and Fastmail don't accept your normal one"),
+    .meta({ title: "SMTP over TLS", description: "Off for STARTTLS", advanced: true, order: 15 }),
+  username: z.string().min(1).meta({ title: "Login", advanced: true, order: 16 }),
+  password: z.string().min(1).meta({ title: "Password", order: 1 }),
   fromAddress: z
     .string()
     .min(3)
-    .describe("Address mail is sent from, like you@example.com or Sling <you@example.com>"),
+    .meta({ title: "Email address", placeholder: "you@example.com", lookup: true, order: 0 }),
 });
 
 export type EmailCredentials = z.infer<typeof credentialsSchema>;
@@ -40,9 +39,7 @@ export const configSchema = z.object({
     .array(z.string().min(1))
     .min(1)
     .default(["INBOX"])
-    .describe(
-      "IMAP folders to watch for new mail. An Email received trigger fires only for one of these.",
-    ),
+    .meta({ title: "Folders to watch", advanced: true }),
 });
 
 export type EmailConfig = z.infer<typeof configSchema>;

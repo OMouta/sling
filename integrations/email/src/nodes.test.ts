@@ -111,19 +111,21 @@ describe("email connector definition", () => {
     expect(connector.configSchema.parse({})).toEqual({ folders: ["INBOX"] });
   });
 
-  it("describes every config field, for the editor's form", () => {
-    const schemas = [
-      connector.credentialsSchema,
-      connector.configSchema,
-      ...connector.nodes.map((n) => n.configSchema),
-    ];
-    for (const schema of schemas) {
-      const json = z.toJSONSchema(schema, { io: "input" }) as {
-        properties: Record<string, { description?: string }>;
-      };
-      for (const [key, prop] of Object.entries(json.properties)) {
+  it("labels every setup field, and describes every node field for the editor", () => {
+    const props = (schema: z.ZodType) =>
+      Object.entries(
+        (
+          z.toJSONSchema(schema, { io: "input" }) as {
+            properties: Record<string, { title?: string; description?: string }>;
+          }
+        ).properties,
+      );
+    for (const schema of [connector.credentialsSchema, connector.configSchema]) {
+      for (const [key, prop] of props(schema)) expect(prop.title, key).toBeTruthy();
+    }
+    for (const node of connector.nodes) {
+      for (const [key, prop] of props(node.configSchema))
         expect(prop.description, key).toBeTruthy();
-      }
     }
   });
 

@@ -1,4 +1,5 @@
 import { type ConnectorDefinition, defineConnector, type TestResult } from "@sling/connector-sdk";
+import { type AutoconfigDeps, addressOf, findServers } from "./autoconfig.ts";
 import { errorMessage } from "./backoff.ts";
 import { closeImap, imapClient, imapErrorMessage, smtpTransport } from "./clients.ts";
 import { emailReceived, sendEmail } from "./nodes.ts";
@@ -68,16 +69,18 @@ async function testSmtp(
   }
 }
 
+export interface EmailConnectorOptions extends EmailSourceOptions {
+  /** How server lookups reach the network. Tests replace it. */
+  autoconfig?: AutoconfigDeps;
+}
+
 export function createEmailConnector(
-  options: EmailSourceOptions = {},
+  options: EmailConnectorOptions = {},
 ): ConnectorDefinition<EmailCredentials, EmailConfig> {
   return defineConnector<EmailCredentials, EmailConfig>({
     id: CONNECTOR_ID,
     name: "Email",
-    description:
-      "Any mailbox over IMAP and SMTP. Workflows can react to new mail and send email from your address.",
-    setupHelp:
-      "Use your provider's IMAP and SMTP servers and an app password. Gmail: imap.gmail.com and smtp.gmail.com, with an app password from your Google account's security settings (needs 2-Step Verification). Fastmail: imap.fastmail.com and smtp.fastmail.com, with an app password from Settings > Privacy & Security.",
+    description: "Read and send mail from your address.",
     credentialsSchema,
     secretFields: ["password"],
     configSchema,
@@ -89,6 +92,60 @@ export function createEmailConnector(
       const smtpProblem = await testSmtp(credentials, signal);
       if (smtpProblem) return { ok: false, error: smtpProblem };
       return { ok: true, detail: `IMAP and SMTP logins worked. Watching ${folders.join(", ")}.` };
+    },
+
+    async setup({ credentials, signal }) {
+      const from = addressOf(credentials.fromAddress);
+      if (!from) return {};
+      const typed = (k: keyof EmailCredentials) =>
+        typeof credentials[k] === "string" && credentials[k] !== "";
+      const found = await findServers(from.domain, signal, options.autoconfig);
+      if (!found) {
+        // Someone who typed the servers already doesn't need to hear it.
+        if (typed("imapHost") && typed("smtpHost")) return { name: from.address };
+        return {
+          name: from.address,
+          credentials: { username: from.address },
+          reveal: ["imapHost", "smtpHost"],
+          notes: [
+            {
+              field: "fromAddress",
+              tone: "warn",
+              text: `Couldn't find the mail servers for ${from.domain}. Fill them in below.`,
+            },
+          ],
+        };
+      }
+      const login = found.login === "local" ? from.address.split("@")[0] : from.address;
+      return {
+        name: from.address,
+        credentials: {
+          imapHost: found.imap.host,
+          imapPort: found.imap.port,
+          imapSecure: found.imap.secure,
+          smtpHost: found.smtp.host,
+          smtpPort: found.smtp.port,
+          smtpSecure: found.smtp.secure,
+          username: login,
+        },
+        notes: [
+          {
+            field: "fromAddress",
+            tone: "ok",
+            text: found.provider ?? `${found.imap.host} and ${found.smtp.host}`,
+          },
+          ...(found.appPassword
+            ? [
+                {
+                  field: "password",
+                  tone: "info" as const,
+                  text: found.appPassword.label,
+                  link: { label: "Make one", url: found.appPassword.url },
+                },
+              ]
+            : []),
+        ],
+      };
     },
 
     nodes: [emailReceived, sendEmail],
