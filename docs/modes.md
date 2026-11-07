@@ -28,6 +28,10 @@ With a personality that has Apps and workflows, the assistant can read your cale
 
 The question shows what would go out, such as `Email ana@example.com: Lunch moved`, with Deny and Allow. If nobody answers within 5 minutes, nothing is sent. See [personalities.md](personalities.md).
 
+## Rules
+
+**Always allow** on a question makes an allow rule, such as "Email to anyone at acme.com". In Supervised and Auto, a send the rule covers then goes without asking, and so does a task's push or pull request in Supervised. Read-only still refuses, and Full access never asked. Merges, deploys, commands outside the sandbox, and setup changes never match a rule. A start rule opens a chat when a check changes, in Read-only, Supervised, or Auto, never Full access. See [rules.md](rules.md).
+
 ## Changing Sling's setup
 
 With a personality that has Change Sling's setup, the assistant can add deploy targets, connect app accounts, add and change workflows, edit personalities, and change workspace settings. Reading the setup never asks. A change follows the conversation's mode:
