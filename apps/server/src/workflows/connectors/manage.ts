@@ -10,6 +10,7 @@ import { and, eq } from "drizzle-orm";
 import type { z } from "zod";
 import { audit } from "../../audit.ts";
 import type { AppContext } from "../../context.ts";
+import { withSignIn } from "../../oauth/credentials.ts";
 import { type InstallationRow, toInstallationView } from "../views.ts";
 import { readCredentials, writeCredentials } from "./installations.ts";
 
@@ -134,7 +135,16 @@ export async function createInstallation(
   const config = connector.configSchema.safeParse(body.config);
   if (!config.success) throw new InstallationError(`Config: ${issuesOf(config.error)}`);
   if (body.check) {
-    const result = await testConnection(ctx, connector, creds.data, config.data);
+    const result = await testConnection(
+      ctx,
+      connector,
+      await withSignIn(
+        ctx,
+        { workspaceId: actor.workspaceId, connectorId: connector.id, config: config.data },
+        creds.data as Record<string, unknown>,
+      ),
+      config.data,
+    );
     if (!result.ok) throw new InstallationError(result.error, 422, "failed");
   }
   const name = body.name ?? (await freeInstallationName(ctx, actor.workspaceId, connector.name));
@@ -212,11 +222,16 @@ export async function updateInstallation(
     config = parsed.data as Record<string, unknown>;
   }
   if (body.check && (creds || config)) {
+    const tested = config ?? connector.configSchema.parse(row.config);
     const result = await testConnection(
       ctx,
       connector,
-      creds ?? connector.credentialsSchema.parse(await readCredentials(ctx, row)),
-      config ?? connector.configSchema.parse(row.config),
+      await withSignIn(
+        ctx,
+        { ...row, config: tested },
+        creds ?? connector.credentialsSchema.parse(await readCredentials(ctx, row)),
+      ),
+      tested,
       row.id,
     );
     if (!result.ok) throw new InstallationError(result.error, 422, "failed");

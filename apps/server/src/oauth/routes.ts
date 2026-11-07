@@ -1,9 +1,10 @@
+import type { OAuthConnectionView } from "@sling/core";
 import { fromNodeHeaders } from "better-auth/node";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
-import { actorOf, requireActor } from "../http/session.ts";
+import { actorFromHeaders, actorOf, requireActor } from "../http/session.ts";
 import { OAUTH_PROVIDERS, OAuthCallbackQuery, OAuthError, OAuthStartQuery } from "./service.ts";
 
 const Provider = z.object({ provider: z.enum(OAUTH_PROVIDERS) });
@@ -11,7 +12,7 @@ const Provider = z.object({ provider: z.enum(OAUTH_PROVIDERS) });
 /** Where the browser lands after a consent, on the Connectors page. */
 function back(
   outcome: "connected" | "failed",
-  detail?: { installationId?: string; error?: string },
+  detail?: { installationId?: string | undefined; error?: string },
 ) {
   const q = new URLSearchParams({ oauth: outcome });
   if (detail?.installationId) q.set("installation", detail.installationId);
@@ -21,27 +22,39 @@ function back(
 
 export async function oauthRoutes(app: FastifyInstance, ctx: AppContext) {
   const r = app.withTypeProvider<ZodTypeProvider>();
-  r.addHook("preHandler", requireActor(ctx));
 
   /** The session the consent is bound to. */
   const sessionId = async (request: FastifyRequest) =>
     (await ctx.auth.api.getSession({ headers: fromNodeHeaders(request.headers) }))?.session.id ??
     "";
 
+  // Both are browser navigations, so a problem goes back to the Connectors page rather than
+  // ending on an error body.
   r.get(
     "/api/oauth/:provider/start",
     { schema: { params: Provider, querystring: OAuthStartQuery } },
     async (request, reply) => {
+      const installationId = request.query.installationId;
+      const actor = await actorFromHeaders(ctx, request.headers);
+      if (!actor) {
+        return reply.redirect(
+          back("failed", { installationId, error: "Sign in to Sling, then connect again." }),
+        );
+      }
       try {
         const url = await ctx.oauth.startUrl(
-          actorOf(request),
+          actor,
           await sessionId(request),
           request.params.provider,
-          request.query.installationId,
+          installationId,
         );
         return reply.redirect(url);
       } catch (err) {
-        if (err instanceof OAuthError) return reply.code(err.status).send({ error: err.message });
+        if (err instanceof OAuthError) {
+          return reply.redirect(
+            back("failed", { installationId: err.installationId, error: err.message }),
+          );
+        }
         throw err;
       }
     },
@@ -59,10 +72,20 @@ export async function oauthRoutes(app: FastifyInstance, ctx: AppContext) {
         );
         return reply.redirect(back("connected", { installationId: done.installationId }));
       } catch (err) {
-        if (err instanceof OAuthError)
-          return reply.redirect(back("failed", { error: err.message }));
+        if (err instanceof OAuthError) {
+          return reply.redirect(
+            back("failed", { installationId: err.installationId, error: err.message }),
+          );
+        }
         throw err;
       }
     },
+  );
+
+  r.get(
+    "/api/oauth/connections",
+    { preHandler: requireActor(ctx) },
+    async (request): Promise<OAuthConnectionView[]> =>
+      ctx.oauth.connections(actorOf(request).workspaceId),
   );
 }

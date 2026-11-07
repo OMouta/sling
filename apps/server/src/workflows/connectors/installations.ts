@@ -4,6 +4,7 @@ import { type Installation, NodeError } from "@sling/workflow";
 import { and, eq } from "drizzle-orm";
 import type { AppContext } from "../../context.ts";
 import { decryptSecret, encryptSecret, SECRET_KEY_VERSION } from "../../crypto.ts";
+import { withSignIn } from "../../oauth/credentials.ts";
 import { secretStrings } from "../redact.ts";
 import type { InstallationRow } from "../views.ts";
 
@@ -87,7 +88,7 @@ export async function loadInstallation(
       code: "installation_disabled",
     });
   }
-  const credentials = await readCredentials(ctx, row);
+  const credentials = await withSignIn(ctx, row, await readCredentials(ctx, row));
   const connector = ctx.registry.connector(row.connectorId);
   const secretFields = connector?.secretFields ?? Object.keys(credentials);
   return {

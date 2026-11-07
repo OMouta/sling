@@ -568,6 +568,30 @@ export interface ConnectorView {
   hasSetup?: boolean;
   /** The extension that adds this connector. Null for connectors built into Sling. */
   extension?: ExtensionRef | null;
+  /** Set when installations sign in with OAuth through the person's own client, such as Google Calendar. */
+  signIn?: ConnectorSignInView | null;
+}
+
+/**
+ * How a connector's installations sign in with OAuth. Adding one ends on the
+ * provider's consent page, at `GET /api/oauth/:provider/start`.
+ */
+export interface ConnectorSignInView {
+  provider: string;
+  /** Such as "Google". */
+  providerName: string;
+  /** Only installations whose config has these values sign in, such as `{ kind: "google" }`. */
+  when: Record<string, string>;
+  /** Credential fields the sign-in needs: the client ID and secret. */
+  fields: string[];
+}
+
+/** An installation that's signed in with OAuth. One that isn't has none. */
+export interface OAuthConnectionView {
+  installationId: string;
+  provider: string;
+  scopes: string[];
+  connectedAt: string;
 }
 
 export interface SetupOptionView {

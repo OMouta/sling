@@ -8,6 +8,8 @@ import { z } from "zod";
 import { audit } from "../../audit.ts";
 import type { AppContext } from "../../context.ts";
 import { actorOf, requireActor } from "../../http/session.ts";
+import { withSignIn } from "../../oauth/credentials.ts";
+import { signInView } from "../../oauth/providers.ts";
 import { liveSandboxCount } from "../../sandboxes/routes.ts";
 import { toJsonSchema } from "../registry.ts";
 import { toInstallationView } from "../views.ts";
@@ -63,6 +65,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
             hasSource: c.source !== undefined,
             hasSetup: c.setup !== undefined,
             extension: null,
+            signIn: signInView(c),
           },
       ),
   );
@@ -140,7 +143,8 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!connector) return { ok: false, error: `Connector ${row.connectorId} isn't available` };
     try {
       const config = connector.configSchema.parse(row.config);
-      const credentials = connector.credentialsSchema.parse(await readCredentials(ctx, row));
+      const stored = await withSignIn(ctx, row, await readCredentials(ctx, row));
+      const credentials = connector.credentialsSchema.parse(stored);
       return await testConnection(ctx, connector, credentials, config, row.id);
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -175,7 +179,16 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
         stored = true;
       }
       const result = await runSetup(connector, {
-        credentials,
+        credentials: await withSignIn(
+          ctx,
+          {
+            ...(stored ? { id: body.installationId } : {}),
+            workspaceId: actor.workspaceId,
+            connectorId: connector.id,
+            config: body.config,
+          },
+          credentials,
+        ),
         config: body.config,
         log: connectorLog(ctx, connector.id, body.installationId),
       });
