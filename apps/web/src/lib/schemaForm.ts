@@ -24,6 +24,8 @@ export interface FieldMeta {
   /** A picker that also takes a typed value. */
   allowOther: boolean;
   order: number | null;
+  /** Filled in by the setup lookup, never shown. */
+  hidden: boolean;
 }
 
 interface FieldBase {
@@ -141,6 +143,7 @@ function metaOf(s: Schema): FieldMeta {
     emptyMeansAll: s.emptyMeansAll === true,
     allowOther: s.allowOther === true,
     order: typeof s.order === "number" ? s.order : null,
+    hidden: s.hidden === true,
   };
 }
 

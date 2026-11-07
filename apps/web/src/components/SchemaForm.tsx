@@ -158,7 +158,8 @@ function Control({
         id={id}
         value={typeof value === "string" ? value : ""}
         options={options}
-        required={field.required}
+        // A picker's choices come from the lookup; "none" is only there until one is picked.
+        offerNone={!field.required && !field.meta.picker}
         disabled={disabled}
         onChange={set}
       />
@@ -277,6 +278,7 @@ function Control({
         <ChipList
           id={id}
           label={field.label}
+          placeholder={field.meta.placeholder ?? undefined}
           value={Array.isArray(value) ? value.map(String) : []}
           disabled={disabled}
           onChange={set}
@@ -320,21 +322,21 @@ function OptionSelect({
   id,
   value,
   options,
-  required,
+  offerNone,
   disabled,
   onChange,
 }: {
   id: string;
   value: string;
   options: SetupOptionView[];
-  required: boolean;
+  offerNone: boolean;
   disabled?: boolean;
   onChange: (v: string) => void;
 }) {
   const known = value === "" || options.some((o) => o.value === value);
   return (
     <Select id={id} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-      {(!required || value === "") && <option value="">{required ? "Pick one" : "None"}</option>}
+      {(offerNone || value === "") && <option value="">{offerNone ? "None" : "Pick one"}</option>}
       {!known && <option value={value}>{value}</option>}
       {options.map((o) => (
         <option key={o.value} value={o.value}>
@@ -660,12 +662,14 @@ export function LongText({
 function ChipList({
   id,
   label,
+  placeholder,
   value,
   disabled,
   onChange,
 }: {
   id: string;
   label: string;
+  placeholder?: string;
   value: string[];
   disabled?: boolean;
   onChange: (v: string[]) => void;
@@ -704,7 +708,7 @@ function ChipList({
             id={id}
             aria-label={`Add to ${label}`}
             className="h-7 w-full bg-transparent px-1.5 text-[13px] outline-none placeholder:text-subtle focus-visible:outline-none"
-            placeholder={value.length ? "Add another" : "Type and press Enter"}
+            placeholder={value.length ? "Add another" : (placeholder ?? "Type and press Enter")}
             value={draft}
             disabled={disabled}
             onChange={(e) => setDraft(e.target.value)}

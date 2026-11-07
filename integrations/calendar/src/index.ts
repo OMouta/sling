@@ -11,6 +11,7 @@ import {
   configSchema,
   credentialsSchema,
 } from "./schemas.ts";
+import { calendarSetup, type SetupDeps } from "./setup.ts";
 
 export type { CalendarEvent } from "./format.ts";
 export type { CalendarConfig, CalendarCredentials } from "./schemas.ts";
@@ -70,6 +71,8 @@ async function testInstallation(
 export interface CalendarConnectorOptions {
   /** iCal feed caching. Tests shorten it. */
   feeds?: FeedCacheOptions;
+  /** How the setup lookup reaches DNS and the server. Tests replace it. */
+  setup?: SetupDeps;
 }
 
 export function createCalendarConnector(
@@ -79,16 +82,7 @@ export function createCalendarConnector(
   return defineConnector<CalendarCredentials, CalendarConfig>({
     id: CONNECTOR_ID,
     name: "Calendar",
-    description:
-      "Your calendar over CalDAV (iCloud, Fastmail, Nextcloud, and others), or read-only from iCal links such as Google's or Outlook's private address. Workflows and the assistant read events and add new ones.",
-    setupHelp: [
-      "**CalDAV** (reads and adds events): set Kind to caldav, the server URL, your username, and an app password.",
-      "- iCloud: https://caldav.icloud.com, your Apple ID, and an app-specific password from account.apple.com.",
-      "- Fastmail: https://caldav.fastmail.com, your email, and an app password with CalDAV access.",
-      "- Nextcloud: https://<your server>/remote.php/dav, and an app password from Security settings.",
-      "",
-      "**iCal links** (read-only): set Kind to ics and paste up to five private addresses. Google Calendar: Settings → your calendar → Integrate calendar → Secret address in iCal format. Outlook: Settings → Calendar → Shared calendars → Publish a calendar → ICS. Anyone with the link can read the calendar, so Sling stores it like a password.",
-    ].join("\n"),
+    description: "Read and add events in your calendar.",
     credentialsSchema,
     secretFields: ["password", "feedUrls"],
     configSchema,
@@ -100,6 +94,9 @@ export function createCalendarConnector(
         return { ok: false, error: errorMessage(err) };
       }
     },
+
+    setup: ({ credentials, config, signal }) =>
+      calendarSetup(credentials, config, feeds, signal, options.setup),
 
     nodes: [createListEvents(feeds), createEvent],
   });

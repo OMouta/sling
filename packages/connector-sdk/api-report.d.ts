@@ -61,6 +61,8 @@ export interface FieldMeta {
     allowOther?: boolean;
     /** Where the field goes in the form. Lower first; credentials come before config otherwise. */
     order?: number;
+    /** Filled in by the setup lookup, never shown. */
+    hidden?: boolean;
     /** `segmented` shows a short choice as buttons; `textarea` a long text. */
     widget?: "segmented" | "textarea";
 }

@@ -105,6 +105,8 @@ export function ConnectorSetupDialog({
   const [more, setMore] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
+  // Once shown, a field stays put, even after a later lookup fills it.
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
   const credentialsStored = editing && installation.hasCredentials;
 
   const current = (key: string): unknown =>
@@ -115,11 +117,11 @@ export function ConnectorSetupDialog({
       const v = current(key) ?? row?.field.default;
       if (!allowed.includes(v as Primitive)) return false;
     }
+    if (f.meta.hidden) return false;
     if (f.meta.picker && !(found.options?.[f.key]?.length ?? 0)) return false;
     return true;
   };
   const shown = rows.filter((r) => visible(r.field));
-  const revealed = new Set(found.reveal ?? []);
   const main = shown.filter((r) => !r.field.meta.advanced || revealed.has(r.field.key));
   const advanced = shown.filter((r) => r.field.meta.advanced && !revealed.has(r.field.key));
 
@@ -153,6 +155,9 @@ export function ConnectorSetupDialog({
         setCredentials((prev) => fill(prev, result.credentials));
         setConfig((prev) => fill(prev, result.config));
         setFound(result);
+        if (result.reveal?.length) {
+          setRevealed((prev) => new Set([...prev, ...(result.reveal ?? [])]));
+        }
       } catch {
         // The form works without the lookup.
       }

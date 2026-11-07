@@ -3,6 +3,9 @@ import { z } from "zod";
 export const CONNECTOR_ID = "calendar";
 export const MAX_FEEDS = 5;
 
+const ACCOUNT = { showWhen: { kind: "caldav" } } as const;
+const LINKS = { showWhen: { kind: "ics" } } as const;
+
 /**
  * Stored encrypted and never sent back. A private iCal address works as a
  * password, so the links live here, not in the settings.
@@ -11,16 +14,12 @@ export const credentialsSchema = z.object({
   password: z
     .string()
     .optional()
-    .describe(
-      "CalDAV only: an app password for the account. iCloud, Fastmail, and most providers don't accept your normal one",
-    ),
+    .meta({ ...ACCOUNT, title: "Password", lookup: true, order: 2 }),
   feedUrls: z
     .array(z.string().min(1))
     .max(MAX_FEEDS)
     .optional()
-    .describe(
-      "iCal links only: one to five private iCal addresses, such as Google Calendar's “Secret address in iCal format”",
-    ),
+    .meta({ ...LINKS, title: "iCal links", placeholder: "Paste a link", lookup: true, order: 1 }),
 });
 
 export type CalendarCredentials = z.infer<typeof credentialsSchema>;
@@ -28,33 +27,39 @@ export type CalendarCredentials = z.infer<typeof credentialsSchema>;
 export const configSchema = z
   .object({
     kind: z
-      .enum(["caldav", "ics"])
+      .union([
+        z.literal("caldav").meta({ title: "Account" }),
+        z.literal("ics").meta({ title: "iCal link" }),
+      ])
       .default("caldav")
-      .describe(
-        "caldav reads and adds events on a CalDAV account. ics reads iCal links, and can't add events",
-      ),
-    serverUrl: z
-      .string()
-      .default("")
-      .describe(
-        "CalDAV only: the server, for example https://caldav.icloud.com or https://caldav.fastmail.com",
-      ),
+      .meta({ title: "Connect with", widget: "segmented", lookup: true, order: 0 }),
     username: z
       .string()
       .default("")
-      .describe("CalDAV only: the account's login, usually your email"),
+      .meta({ ...ACCOUNT, title: "Email", placeholder: "you@icloud.com", lookup: true, order: 1 }),
+    serverUrl: z
+      .string()
+      .default("")
+      .meta({
+        ...ACCOUNT,
+        title: "Server",
+        placeholder: "https://caldav.example.com",
+        advanced: true,
+        lookup: true,
+        order: 3,
+      }),
     calendars: z
       .array(z.string().min(1))
       .default([])
-      .describe("CalDAV only: the calendars to read, by name. Empty reads all of them"),
+      .meta({ ...ACCOUNT, title: "Calendars", picker: true, emptyMeansAll: true, order: 4 }),
     defaultCalendar: z
       .string()
       .default("")
-      .describe("CalDAV only: where new events go, by name. Empty uses the first calendar"),
+      .meta({ ...ACCOUNT, title: "New events go to", picker: true, order: 5 }),
     feedNames: z
       .array(z.string().min(1))
       .default([])
-      .describe("iCal links only: a name for each link, in the same order, such as Work or Family"),
+      .meta({ title: "Names, in the same order", hidden: true }),
   })
   .superRefine((c, ctx) => {
     if (c.kind !== "caldav") return;
