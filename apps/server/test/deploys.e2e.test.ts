@@ -608,7 +608,12 @@ async function githubHandler(req: IncomingMessage, res: ServerResponse) {
   const pr = m ? github.pulls.get(Number(m[1])) : undefined;
   // GitHub knows the PR as soon as it's open; the test learns its branch later.
   if (m && !m[2] && !pr && m[1] === "7" && authorized) {
-    return json(200, { state: "open", merged: false, head: { ref: "", sha: PR_HEAD }, base: { ref: "main" } });
+    return json(200, {
+      state: "open",
+      merged: false,
+      head: { ref: "", sha: PR_HEAD },
+      base: { ref: "main" },
+    });
   }
   if (!m || !pr) return json(404, { message: "Not Found" });
   if (!authorized) {
