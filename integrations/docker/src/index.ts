@@ -1,4 +1,10 @@
-import { type ConnectorDefinition, defineConnector, type TestResult } from "@sling/connector-sdk";
+import {
+  type ConnectorDefinition,
+  defineConnector,
+  type SetupNote,
+  type SetupResult,
+  type TestResult,
+} from "@sling/connector-sdk";
 import { createEngineClient, type DockerApi } from "./engine.ts";
 import { createDockerProvider } from "./provider.ts";
 import {
@@ -31,6 +37,46 @@ export { DEFAULT_HOST, DEFAULT_IMAGE } from "./schemas.ts";
 
 export const PLAINTEXT_WARNING =
   "This connection isn't encrypted, so anyone on the network path can read sandbox secrets and control the Docker host. Use TLS unless the network is private to you.";
+
+/** What the setup form says about the host as soon as it opens: is Docker there, and is the image. */
+async function dockerSetup(
+  client: (credentials: DockerCredentials) => DockerApi,
+  typed: Partial<DockerCredentials>,
+  config: Partial<DockerConfig>,
+  signal: AbortSignal,
+): Promise<SetupResult<DockerCredentials, DockerConfig>> {
+  const parsed = credentialsSchema.safeParse(typed);
+  if (!parsed.success) return {};
+  const credentials = parsed.data;
+  const image = config.image?.trim() || DEFAULT_IMAGE;
+  let api: DockerApi;
+  let version: Awaited<ReturnType<DockerApi["version"]>>;
+  try {
+    api = client(credentials);
+    await api.ping(signal);
+    version = await api.version(signal);
+  } catch (error) {
+    return { notes: [{ field: "host", tone: "error", text: errorMessage(error) }] };
+  }
+  const notes: SetupNote[] = [
+    { field: "host", tone: "ok", text: `Docker ${version.Version} at ${api.endpoint}` },
+  ];
+  if (api.plaintextTcp) notes.push({ field: "host", tone: "warn", text: PLAINTEXT_WARNING });
+  try {
+    if (!(await api.imageExists(image, signal))) {
+      notes.push({
+        tone: image === DEFAULT_IMAGE ? "warn" : "info",
+        text:
+          image === DEFAULT_IMAGE
+            ? `${image} isn't on this host yet. Build it there: docker build -f deploy/sandbox/Dockerfile -t ${image} .`
+            : `${image} isn't on this host yet. It's pulled the first time a sandbox starts.`,
+      });
+    }
+  } catch {
+    // The connection check on Add says it again, with the reason.
+  }
+  return { name: api.endpoint === "unix:///var/run/docker.sock" ? "Docker" : api.endpoint, notes };
+}
 
 export interface DockerConnectorOptions {
   /** Builds the Engine API client. Tests pass a fake. */
@@ -91,10 +137,9 @@ export function createDockerConnector(
   return defineConnector<DockerCredentials, DockerConfig>({
     id: CONNECTOR_ID,
     name: "Docker",
-    description:
-      "Runs coding tasks in fresh containers on a Docker host you control, when no machine can take them or you ask for a sandbox.",
+    description: "Run coding tasks in fresh containers on a Docker host.",
     setupHelp:
-      "For the Docker on Sling's own host, keep the default socket, unix:///var/run/docker.sock. If Sling runs in compose, start it with deploy/docker-compose.sandbox.yml, which mounts the socket, and set the network to sling-sandboxes and the control plane URL to http://sling:8080. Mounting the socket gives Sling root on that host; a remote host over TLS avoids that. For a remote host, use tcp://host:2376 and paste ca.pem, cert.pem, and key.pem. Build the sandbox image on the host first: docker build -f deploy/sandbox/Dockerfile -t sling-sandbox:latest .",
+      "Keep the default socket for the Docker on Sling's own host. For a remote host, use tcp://host:2376 with its ca.pem, cert.pem, and key.pem. Build the image there first: docker build -f deploy/sandbox/Dockerfile -t sling-sandbox:latest .",
     credentialsSchema,
     secretFields: ["tlsKey", "registryUsername", "registryPassword"],
     configSchema,
@@ -105,6 +150,10 @@ export function createDockerConnector(
       } catch (error) {
         return { ok: false, error: errorMessage(error) };
       }
+    },
+
+    async setup({ credentials, config, signal }) {
+      return dockerSetup(client, credentials, config, signal);
     },
 
     nodes: [],

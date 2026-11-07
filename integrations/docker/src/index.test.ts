@@ -124,7 +124,8 @@ describe("Docker connector definition", () => {
     expect(connector.nodes).toEqual([]);
     expect(connector.source).toBeUndefined();
     expect(connector.executionProvider).toBeDefined();
-    expect(connector.setupHelp).toMatch(/docker-compose\.sandbox\.yml/);
+    expect(connector.setupHelp).toMatch(/deploy\/sandbox\/Dockerfile/);
+    expect(connector.setup).toBeDefined();
   });
 
   it("keeps the key and registry login secret", () => {
@@ -163,13 +164,13 @@ describe("Docker connector definition", () => {
     expect(() => connector.configSchema.parse({ extraEnv: { "1BAD": "x" } })).toThrow();
   });
 
-  it("describes every field, for the form", () => {
+  it("labels every field, for the form", () => {
     for (const schema of [connector.credentialsSchema, connector.configSchema]) {
       const json = z.toJSONSchema(schema, { io: "input" }) as {
-        properties: Record<string, { description?: string }>;
+        properties: Record<string, { title?: string }>;
       };
       for (const [key, prop] of Object.entries(json.properties)) {
-        expect(prop.description, key).toBeTruthy();
+        expect(prop.title, key).toBeTruthy();
       }
     }
   });
@@ -181,5 +182,57 @@ describe("Docker connector definition", () => {
     for (const key of ["image", "controlPlaneUrl", "cpus", "memoryMb"]) {
       expect(json.properties).toHaveProperty(key);
     }
+  });
+});
+
+describe("Docker setup lookup", () => {
+  const setup = (docker: FakeDocker, credentials = {}, config = {}) =>
+    // biome-ignore lint/style/noNonNullAssertion: Docker has a setup lookup.
+    createDockerConnector({ client: () => docker }).setup!({
+      credentials,
+      config,
+      log: silentLog,
+      signal: new AbortController().signal,
+    });
+
+  it("says which Docker answered, as soon as the form opens", async () => {
+    const docker = new FakeDocker();
+    docker.images.add("sling-sandbox:latest");
+    expect(await setup(docker)).toEqual({
+      name: "Docker",
+      notes: [{ field: "host", tone: "ok", text: "Docker 29.4.0 at unix:///var/run/docker.sock" }],
+    });
+  });
+
+  it("says how to build the image when it's missing", async () => {
+    const out = await setup(new FakeDocker());
+    expect(out.notes).toContainEqual({
+      tone: "warn",
+      text: expect.stringContaining("docker build -f deploy/sandbox/Dockerfile"),
+    });
+  });
+
+  it("puts the reason under the host when Docker doesn't answer", async () => {
+    const docker = new FakeDocker();
+    docker.failures.set(
+      "ping",
+      new DockerError("Can't reach Docker at unix:///var/run/docker.sock"),
+    );
+    expect(await setup(docker)).toEqual({
+      notes: [
+        { field: "host", tone: "error", text: "Can't reach Docker at unix:///var/run/docker.sock" },
+      ],
+    });
+  });
+
+  it("warns about a tcp:// host without TLS", async () => {
+    const docker = new FakeDocker();
+    docker.plaintextTcp = true;
+    docker.images.add("sling-sandbox:latest");
+    expect((await setup(docker)).notes).toContainEqual({
+      field: "host",
+      tone: "warn",
+      text: PLAINTEXT_WARNING,
+    });
   });
 });

@@ -13,91 +13,81 @@ function isHttpsUrl(value: string): boolean {
   }
 }
 
+const MORE = { advanced: true } as const;
+
 export const credentialsSchema = z.object({
   apiToken: z
     .string()
     .trim()
     .min(1)
-    .meta({ title: "API token" })
-    .describe(
-      "A Railway account or workspace token, from Account Settings > Tokens or the workspace's settings. A project token works too: set the token type to project",
-    ),
+    .meta({ title: "API token", description: "From Account Settings → Tokens", order: 0 }),
   tokenType: z
-    .enum(["account", "project"])
+    .union([
+      z.literal("account").meta({ title: "Account or workspace" }),
+      z.literal("project").meta({ title: "Project" }),
+    ])
     .default("account")
-    .describe(
-      "account for an account or workspace token, which Railway's sandbox docs use. project for a project token, which reaches only one environment",
-    ),
-  environmentId: z
-    .string()
-    .trim()
-    .min(1)
-    .meta({ title: "Environment ID" })
-    .describe(
-      "ID of the Railway environment sandboxes run in. Press Cmd+K or Ctrl+K in the project to copy it. Use an environment that holds nothing else",
-    ),
+    .meta({ ...MORE, title: "Token type", widget: "segmented" }),
+  environmentId: z.string().trim().min(1).meta({
+    title: "Environment ID",
+    description: "Cmd+K or Ctrl+K in an empty project copies it",
+    order: 1,
+  }),
   registryUsername: z
     .string()
     .trim()
     .optional()
-    .describe("Registry username, if the image is in a private registry"),
+    .meta({ ...MORE, title: "Registry username" }),
   registryPassword: z
     .string()
     .optional()
-    .describe(
-      "Registry password or a read-only access token, if the image is in a private registry",
-    ),
+    .meta({ ...MORE, title: "Registry password" }),
 });
 
 export type RailwayCredentials = z.infer<typeof credentialsSchema>;
 
 export const configSchema = z.object({
-  image: z
-    .string()
-    .trim()
-    .min(1)
-    .describe(
-      "Sandbox image, pulled from inside each Railway sandbox, so it must be on a registry: public, or private with the registry login set. For example ghcr.io/you/sling-sandbox:latest",
-    ),
+  image: z.string().trim().min(1).meta({
+    title: "Image",
+    placeholder: "ghcr.io/you/sling-sandbox:latest",
+    description: "On a registry the sandbox can pull from",
+  }),
   controlPlaneUrl: z
     .string()
     .trim()
     .refine(isHttpsUrl, "Railway sandboxes reach Sling over the internet: use an https:// URL")
-    .meta({ title: "Control plane URL" })
-    .describe(
-      "Sling's public HTTPS URL, which sandboxes connect back to. Usually SLING_PUBLIC_URL",
-    ),
+    .meta({ title: "Sling's public address", placeholder: "https://sling.example.com" }),
   cpus: z
     .number()
     .positive()
     .max(32)
     .optional()
-    .meta({ title: "CPUs" })
-    .describe("vCPUs per sandbox. Empty uses your workspace's sandbox default"),
+    .meta({ ...MORE, title: "vCPUs per sandbox" }),
   memoryMb: z
     .number()
     .int()
     .min(512)
     .optional()
-    .meta({ title: "Memory in MB" })
-    .describe("Memory per sandbox, in MB. Empty uses your workspace's sandbox default"),
+    .meta({ ...MORE, title: "Memory per sandbox, in MB" }),
   idleTimeoutMinutes: z
     .number()
     .int()
     .min(1)
     .max(MAX_IDLE_TIMEOUT_MINUTES)
     .default(5)
-    .meta({ title: "Idle timeout in minutes" })
-    .describe(
-      "Minutes Railway keeps a sandbox after its container stops before destroying it. 1 to 5 on Trial and Free, up to 120 on Hobby and Pro",
-    ),
+    .meta({
+      ...MORE,
+      title: "Keep a stopped sandbox for, in minutes",
+      description: "Up to 5 on Trial and Free, 120 on Hobby and Pro",
+    }),
   testCreatesSandbox: z
     .boolean()
     .default(false)
-    .meta({ title: "Check in a test sandbox" })
-    .describe(
-      "Make Test start a small sandbox, check Docker and the image in it, and destroy it. Takes about a minute and bills for that time",
-    ),
+    .meta({
+      ...MORE,
+      title: "Start a test sandbox when checking",
+      description: "Takes about a minute, billed",
+    }),
 });
 
 export type RailwayConfig = z.infer<typeof configSchema>;

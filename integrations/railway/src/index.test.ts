@@ -187,13 +187,13 @@ describe("Railway connector definition", () => {
     });
   });
 
-  it("describes every field, for the form", () => {
+  it("labels every field, for the form", () => {
     for (const schema of [connector.credentialsSchema, connector.configSchema]) {
       const json = z.toJSONSchema(schema, { io: "input" }) as {
-        properties: Record<string, { description?: string }>;
+        properties: Record<string, { title?: string }>;
       };
       for (const [key, prop] of Object.entries(json.properties)) {
-        expect(prop.description, key).toBeTruthy();
+        expect(prop.title, key).toBeTruthy();
       }
     }
   });

@@ -95,7 +95,7 @@ async function testConnection(
   if (!config.testCreatesSandbox) {
     return {
       ok: true,
-      detail: `${reached} Turn on the sandbox check to also start a test sandbox and check Docker and the image in it.`,
+      detail: reached,
     };
   }
 
@@ -133,8 +133,7 @@ export function createRailwayConnector(
   return defineConnector<RailwayCredentials, RailwayConfig>({
     id: CONNECTOR_ID,
     name: "Railway",
-    description:
-      "Runs coding tasks in fresh Railway Sandboxes on your own Railway account, when no machine can take them or you ask for a sandbox.",
+    description: "Run coding tasks in fresh sandboxes on your Railway account.",
     setupHelp:
       "In Railway, create a project for Sling with nothing else in it, open it, and press Cmd+K or Ctrl+K to copy its environment ID. Create a token under Account Settings > Tokens. Push the sandbox image to a registry the sandbox can pull from, such as ghcr.io, and add a registry login if it's private. The control plane URL must be Sling's public HTTPS address, since sandboxes connect back over the internet.",
     credentialsSchema,
