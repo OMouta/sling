@@ -46,7 +46,7 @@ Once it connects, the dialog lists the repos the machine found. Pick the ones Sl
 
 The assistant chats through that machine's Codex or Claude Code, on your own login, so it runs on your subscription with no API key. It picks the coding agent and model for each task itself, unless you name one. API keys under **Settings** are optional, for chatting when no machine is on or through another provider such as Ollama.
 
-To use Discord or email, add them under **Connectors**, then install a template under **Workflows**, for example **Important email to Discord** or **Discord assistant**.
+To use Discord, Telegram, or email, add them under **Connectors**, then install a template under **Workflows**, for example **Important email to Discord**, **Discord assistant**, or **Telegram assistant**.
 
 ## Deploys
 
@@ -54,7 +54,7 @@ Add your site under **Checks**: a URL that says it works, and, if Sling should d
 
 ## Your calendar and apps
 
-Add your calendar under **Connectors**: iCloud, Fastmail, Nextcloud, or any CalDAV account, or the private iCal link of a Google or Outlook calendar. The assistant then answers "what's on tomorrow?" and adds events, and the **Morning briefing** template writes you a briefing each morning. It can also send email and Discord messages and run your workflows from chat. Reading never asks; anything that goes out asks you in the chat first, except in Full access.
+Add your calendar under **Connectors**: iCloud, Fastmail, Nextcloud, or any CalDAV account, Google Calendar through your own OAuth client, or the private iCal link of an Outlook calendar. The assistant then answers "what's on tomorrow?" and adds events, and the **Morning briefing** template writes you a briefing each morning. It can also search and read your email, send email, Discord, and Telegram messages, and run your workflows from chat. Reading never asks; anything that goes out asks you in the chat first, except in Full access.
 
 ## Setting Sling up from chat
 
@@ -92,7 +92,7 @@ Each conversation has a mode, and each machine can cap the mode it accepts. Deta
 - [Notifications and the phone app](docs/notifications.md)
 - [Workflows, nodes, and templates](docs/workflows.md)
 - [Routing and sandboxes](docs/sandboxes.md), and [the sandbox image](docs/sandbox-image.md)
-- Connectors: [Discord](docs/connectors/discord.md), [Email](docs/connectors/email.md), [Calendar](docs/connectors/calendar.md), [Docker](docs/connectors/docker.md), [Railway](docs/connectors/railway.md)
+- Connectors: [Discord](docs/connectors/discord.md), [Telegram](docs/connectors/telegram.md), [Email](docs/connectors/email.md), [Calendar](docs/connectors/calendar.md), [Docker](docs/connectors/docker.md), [Railway](docs/connectors/railway.md)
 - [Extensions](docs/extensions/README.md): installing them, and writing [connectors](docs/extensions/connectors.md), [sandbox providers](docs/extensions/providers.md), and [workflow packages](docs/extensions/workflow-packages.md), with [signing and catalogs](docs/extensions/signing.md) and [the CLI](docs/extensions/cli.md)
 - [Threat model](docs/threat-model.md)
 - [Development](docs/development.md)
