@@ -233,6 +233,7 @@ mod chat {
             fast: false,
             resume,
             web: false,
+            images: Vec::new(),
         }
     }
 

@@ -5,12 +5,12 @@
 //! added. Sling's tools run without approval.
 
 use std::collections::{HashSet, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 use sling_runner_protocol::{
-    ChatDelta, ChatThinking, ChatToolResult, ChatToolUse, chat_event, task_event::Kind,
+    ChatDelta, ChatImage, ChatThinking, ChatToolResult, ChatToolUse, chat_event, task_event::Kind,
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
@@ -77,6 +77,9 @@ pub struct ChatOptions {
     pub resume: Option<String>,
     /// Codex's own live web search, which also opens pages.
     pub web: bool,
+    /// Images sent with the message. They're written in `dir` and attached
+    /// with `--image`.
+    pub images: Vec<ChatImage>,
 }
 
 /// Session IDs are UUIDs. Anything else is refused, so an ID can never pass
@@ -113,6 +116,42 @@ pub fn toml_string(s: &str) -> String {
 fn toml_array(items: &[String]) -> String {
     let items: Vec<String> = items.iter().map(|s| toml_string(s)).collect();
     format!("[{}]", items.join(","))
+}
+
+/// Where each image is written in the turn's directory. The names are
+/// Sling's own, so nothing from the user's file name reaches a path.
+pub fn image_paths(o: &ChatOptions) -> Vec<PathBuf> {
+    o.images
+        .iter()
+        .enumerate()
+        .map(|(i, image)| {
+            let ext = match image.media_type.as_str() {
+                "image/png" => "png",
+                "image/gif" => "gif",
+                "image/webp" => "webp",
+                _ => "jpg",
+            };
+            o.dir.join(format!("image-{}.{ext}", i + 1))
+        })
+        .collect()
+}
+
+fn write_private(path: &Path, data: &[u8]) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)?;
+        f.write_all(data)?;
+    }
+    #[cfg(not(unix))]
+    std::fs::write(path, data)?;
+    Ok(())
 }
 
 fn instructions_fit(o: &ChatOptions) -> bool {
@@ -175,6 +214,11 @@ pub fn chat_args(o: &ChatOptions) -> Vec<String> {
     }
     if let Some(id) = &o.resume {
         args.extend(["resume".into(), id.clone()]);
+    }
+    // Attached with `=`, each takes exactly one value, so the `-` after it
+    // stays the prompt. After `resume`, they're that command's own option.
+    for path in image_paths(o) {
+        args.push(format!("--image={}", path.display()));
     }
     // The prompt comes from stdin.
     args.push("-".into());
@@ -371,6 +415,9 @@ impl Run {
         if let Some(id) = &o.resume {
             ensure!(valid_session_id(id), "refusing session ID {id:?}");
         }
+        for (image, path) in o.images.iter().zip(image_paths(o)) {
+            write_private(&path, &image.data)?;
+        }
         let Spawned {
             child,
             pid,
@@ -444,6 +491,7 @@ mod tests {
             fast: false,
             resume: None,
             web: false,
+            images: Vec::new(),
         }
     }
 
@@ -655,5 +703,74 @@ mod tests {
             .collect();
         assert_eq!(thought, ["**Checking machines**", "\n\nOne is online."]);
         assert_eq!(p.outcome(Some(0), &[]).text, "You have one.");
+    }
+
+    #[test]
+    fn attaches_images_written_in_the_turn_folder() {
+        let mut o = opts();
+        o.images = vec![
+            ChatImage {
+                name: "../../etc/sign.png".into(),
+                media_type: "image/png".into(),
+                data: vec![1],
+            },
+            ChatImage {
+                name: "photo".into(),
+                media_type: "image/jpeg".into(),
+                data: vec![2],
+            },
+        ];
+        let args = chat_args(&o);
+        let tail: Vec<&str> = args
+            .iter()
+            .rev()
+            .take(3)
+            .rev()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(
+            tail,
+            [
+                "--image=/data/chat/abc/image-1.png",
+                "--image=/data/chat/abc/image-2.jpg",
+                "-"
+            ]
+        );
+        o.resume = Some("6f1b2c3d-1111-4222-8333-444455556666".into());
+        let args = chat_args(&o);
+        let at = args.iter().position(|a| a == "resume").unwrap();
+        assert_eq!(
+            &args[at..],
+            [
+                "resume",
+                "6f1b2c3d-1111-4222-8333-444455556666",
+                "--image=/data/chat/abc/image-1.png",
+                "--image=/data/chat/abc/image-2.jpg",
+                "-"
+            ]
+        );
+        assert!(!chat_args(&opts()).iter().any(|a| a.starts_with("--image")));
+    }
+
+    #[tokio::test]
+    async fn writes_the_images_before_codex_starts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut o = opts();
+        o.dir = dir.path().to_path_buf();
+        o.bin = "/bin/cat".into();
+        o.env = None;
+        o.images = vec![ChatImage {
+            name: "a.png".into(),
+            media_type: "image/png".into(),
+            data: vec![9, 8, 7],
+        }];
+        let (tx, _rx) = mpsc::channel(8);
+        let (mut run, reader) = Run::start_chat(&o, tx).await.unwrap();
+        let _ = run.wait().await;
+        let _ = reader.finish(Some(0)).await;
+        assert_eq!(
+            std::fs::read(dir.path().join("image-1.png")).unwrap(),
+            [9, 8, 7]
+        );
     }
 }

@@ -10,7 +10,7 @@
  */
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { createServer as httpServer, type Server } from "node:http";
+import { request as httpRequest, createServer as httpServer, type Server } from "node:http";
 import { type AddressInfo, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -149,6 +149,35 @@ async function api<T = unknown>(method: string, path: string, body?: unknown): P
 async function upload(path: string, name: string, bytes: Uint8Array) {
   const res = await call("POST", `${path}?name=${encodeURIComponent(name)}`, bytes, true);
   return { status: res.status, body: (await res.json()) as SourceView & { error?: string } };
+}
+
+/** An upload that says it's one byte over the limit, and sends only its start. */
+function oversized(path: string): Promise<{ status: number; body: unknown }> {
+  return new Promise((ok, fail) => {
+    const req = httpRequest(server.url + path, {
+      method: "POST",
+      headers: {
+        origin,
+        cookie,
+        "content-type": "application/octet-stream",
+        "content-length": String(25 * 1024 * 1024 + 1),
+      },
+    });
+    req.on("response", (res) => {
+      let text = "";
+      res.on("data", (d) => {
+        text += d;
+      });
+      res.on("end", () => {
+        req.destroy();
+        ok({ status: res.statusCode ?? 0, body: JSON.parse(text) });
+      });
+    });
+    req.on("error", (err) => {
+      if ((err as { code?: string }).code !== "EPIPE") fail(err);
+    });
+    req.write(Buffer.alloc(1024, 97));
+  });
 }
 
 async function until<T>(label: string, fn: () => Promise<T | null | undefined | false>) {
@@ -415,13 +444,10 @@ describe("limits and ownership", () => {
     expect(zip.body.error).toMatch(/Sling reads PDFs/);
     const photo = await upload(`/api/personalities/${writer.id}/sources`, "a.png", PNG_PIXEL);
     expect(photo.status).toBe(415);
-    const big = await upload(
-      `/api/personalities/${writer.id}/sources`,
-      "big.txt",
-      new Uint8Array(25 * 1024 * 1024 + 1).fill(97),
-    );
+    // The server answers from the declared size, before the body arrives.
+    const big = await oversized(`/api/personalities/${writer.id}/sources?name=big.txt`);
     expect(big.status).toBe(413);
-    expect(big.body.error).toBe("Files are at most 25 MB.");
+    expect(big.body).toEqual({ error: "Files are at most 25 MB." });
 
     const ws = (await workspaceOf()) ?? "";
     const [owner] = await server.ctx.db.select().from(schema.users).limit(1);
@@ -612,7 +638,7 @@ describe("a turn on Claude Code", () => {
     });
   }, 120_000);
 
-  it("gets a document in its prompt", async () => {
+  it("gets a document in its prompt, and an image on stdin", async () => {
     const id = await chat(writer);
     await api("PATCH", `/api/conversations/${id}`, {
       settings: { assistant: { provider: "claude-code", model: "", effort: null, fast: false } },
@@ -629,5 +655,14 @@ describe("a turn on Claude Code", () => {
     expect(reply.text).toContain('<document name="recipe.md">');
     expect(reply.text).toContain("Bake at 180 degrees for 25 minutes.");
     expect(reply.text).toContain("How long does it bake?");
+    const photo = await upload("/api/attachments", "dish.png", PNG_PIXEL);
+    const seen = await ask(id, "And this?", {
+      attachmentIds: [photo.body.id],
+      answer: "fake-claude",
+    });
+    // With an image, stdin is one stream-json user message with an image block.
+    expect(seen.text).toContain('"type":"image"');
+    expect(seen.text).toContain('"media_type":"image/png"');
+    expect(seen.text).toContain("[image: dish.png]");
   });
 });

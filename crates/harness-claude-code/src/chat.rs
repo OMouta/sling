@@ -8,9 +8,10 @@ use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, ensure};
+use base64::Engine;
 use serde_json::{Value, json};
 use sling_runner_protocol::{
-    ChatDelta, ChatThinking, ChatToolResult, ChatToolUse, chat_event, task_event::Kind,
+    ChatDelta, ChatImage, ChatThinking, ChatToolResult, ChatToolUse, chat_event, task_event::Kind,
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
@@ -59,6 +60,9 @@ pub struct ChatOptions {
     pub resume: Option<String>,
     /// Claude Code's own web search and page reading.
     pub web: bool,
+    /// Images sent with the message. With any, stdin is one stream-json
+    /// message instead of plain text.
+    pub images: Vec<ChatImage>,
 }
 
 /// Claude Code's built-in tools a web turn gets.
@@ -100,6 +104,10 @@ pub fn chat_args(o: &ChatOptions) -> Vec<String> {
     .map(String::from)
     .to_vec();
     args.push(file_arg(&o.dir, MCP_CONFIG_FILE));
+    // Plain text can't carry images; a stream-json message can.
+    if !o.images.is_empty() {
+        args.extend(["--input-format".into(), "stream-json".into()]);
+    }
     args.extend(
         [
             // A message starting with `/` is text, not a command or skill.
@@ -162,6 +170,36 @@ pub fn chat_stdin(prompt: &str) -> String {
     } else {
         prompt.to_string()
     }
+}
+
+/// Stdin for a turn: the prompt as text, or, with images, one stream-json
+/// user message holding the prompt and an image block for each.
+pub fn chat_input(o: &ChatOptions) -> String {
+    if o.images.is_empty() {
+        return chat_stdin(&o.prompt);
+    }
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let mut content = Vec::with_capacity(o.images.len() + 1);
+    if !o.prompt.trim().is_empty() {
+        content.push(json!({ "type": "text", "text": chat_stdin(&o.prompt) }));
+    }
+    for image in &o.images {
+        content.push(json!({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": image.media_type,
+                "data": b64.encode(&image.data),
+            },
+        }));
+    }
+    let message = json!({
+        "type": "user",
+        "message": { "role": "user", "content": content },
+        "parent_tool_use_id": null,
+        "session_id": "",
+    });
+    format!("{message}\n")
 }
 
 fn write_private(path: &Path, text: &str) -> Result<()> {
@@ -468,7 +506,7 @@ impl Run {
             &chat_args(o),
             &o.dir,
             o.env.as_deref(),
-            &chat_stdin(&o.prompt),
+            &chat_input(o),
         )
         .await?;
 
@@ -535,6 +573,7 @@ mod tests {
             fast: false,
             resume: None,
             web: false,
+            images: Vec::new(),
         }
     }
 
@@ -584,6 +623,7 @@ mod tests {
                 .any(|w| w == ["--thinking-display", "summarized"])
         );
         assert!(!args.iter().any(|a| a == "--settings"));
+        assert!(!args.iter().any(|a| a == "--input-format"));
 
         o.model = Some("claude-haiku-5-5".into());
         o.effort = Some("low".into());
@@ -726,6 +766,47 @@ mod tests {
     fn a_leading_slash_stays_a_message() {
         assert_eq!(chat_stdin("/cost"), " /cost");
         assert_eq!(chat_stdin("hi /cost"), "hi /cost");
+        assert_eq!(chat_input(&opts()), "hi");
+    }
+
+    #[test]
+    fn images_go_on_stdin_as_one_stream_json_message() {
+        let mut o = opts();
+        o.prompt = "/what is this?".into();
+        o.images = vec![
+            ChatImage {
+                name: "sign.png".into(),
+                media_type: "image/png".into(),
+                data: vec![1, 2, 3],
+            },
+            ChatImage {
+                name: "lease.jpg".into(),
+                media_type: "image/jpeg".into(),
+                data: b"hi".to_vec(),
+            },
+        ];
+        assert!(
+            chat_args(&o)
+                .windows(2)
+                .any(|w| w == ["--input-format", "stream-json"])
+        );
+        let input = chat_input(&o);
+        assert!(input.ends_with('\n') && input.lines().count() == 1);
+        let v: Value = serde_json::from_str(input.trim()).unwrap();
+        assert_eq!(v["type"], "user");
+        assert_eq!(v["message"]["role"], "user");
+        assert_eq!(
+            v["message"]["content"],
+            json!([
+                { "type": "text", "text": " /what is this?" },
+                { "type": "image", "source": { "type": "base64", "media_type": "image/png", "data": "AQID" } },
+                { "type": "image", "source": { "type": "base64", "media_type": "image/jpeg", "data": "aGk=" } },
+            ])
+        );
+        // An image alone has no text block.
+        o.prompt = String::new();
+        let v: Value = serde_json::from_str(chat_input(&o).trim()).unwrap();
+        assert_eq!(v["message"]["content"].as_array().unwrap().len(), 2);
     }
 
     #[test]

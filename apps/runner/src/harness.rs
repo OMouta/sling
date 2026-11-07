@@ -12,9 +12,9 @@ use std::time::Duration;
 use anyhow::Result;
 use sling_harness_claude_code as claude;
 use sling_harness_codex as codex;
-use sling_runner_protocol::AgentModel;
 use sling_runner_protocol::chat_event;
 use sling_runner_protocol::task_event::Kind;
+use sling_runner_protocol::{AgentModel, ChatImage};
 use tokio::sync::mpsc;
 
 use crate::config::{Config, Mode};
@@ -105,6 +105,8 @@ pub struct ChatSpec {
     pub tools_token: String,
     /// The agent's own web search and page reading.
     pub web: bool,
+    /// Images sent with the message the turn answers.
+    pub images: Vec<ChatImage>,
 }
 
 impl ChatSpec {
@@ -313,6 +315,7 @@ impl Harness for Codex {
                 fast: spec.fast,
                 resume: spec.resume.clone(),
                 web: spec.web,
+                images: spec.images.clone(),
             };
             let (run, reader) = codex::Run::start_chat(&opts, tx).await?;
             Ok(Box::new(CodexChat { run, reader }) as Box<dyn ChatRun>)
@@ -483,6 +486,7 @@ impl Harness for ClaudeCode {
                 fast: spec.fast,
                 resume: spec.resume.clone(),
                 web: spec.web,
+                images: spec.images.clone(),
             };
             let (run, reader) = claude::Run::start_chat(&opts, tx).await?;
             Ok(Box::new(ClaudeChat { run, reader }) as Box<dyn ChatRun>)

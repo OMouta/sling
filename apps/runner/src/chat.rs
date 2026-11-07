@@ -264,6 +264,7 @@ impl Manager {
             tools_url: t.tools_url.clone(),
             tools_token: t.tools_token.clone(),
             web: t.web,
+            images: t.images.clone(),
         };
         let (mut outcome, mut cancelled) = self
             .chat_attempt(agent, &spec, &t.turn_id, &mut cancel, out)
