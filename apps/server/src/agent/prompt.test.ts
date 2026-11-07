@@ -145,8 +145,7 @@ describe("the assistant's prompt", () => {
   });
 
   it("tells a personality with only memory it can remember, and that it reaches nothing else", () => {
-    expect(finance.tools).toEqual(["memory"]);
-    const p = assistantInstructions(finance, "read-only", now, {
+    const p = assistantInstructions({ ...finance, tools: ["memory"] }, "read-only", now, {
       cli: true,
       memory: "What you know about the user:\n- Vegetarian",
     });

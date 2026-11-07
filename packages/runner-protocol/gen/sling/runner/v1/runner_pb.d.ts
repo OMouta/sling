@@ -1812,6 +1812,20 @@ export declare type ChatTurn = Message<"sling.runner.v1.ChatTurn"> & {
    * @generated from field: string history = 11;
    */
   history: string;
+
+  /**
+   * Turn on the agent's own web search and page reading for this turn.
+   *
+   * @generated from field: bool web = 12;
+   */
+  web: boolean;
+
+  /**
+   * Images sent with the user's message, already shrunk by the browser.
+   *
+   * @generated from field: repeated sling.runner.v1.ChatImage images = 13;
+   */
+  images: ChatImage[];
 };
 
 /**
@@ -1819,6 +1833,36 @@ export declare type ChatTurn = Message<"sling.runner.v1.ChatTurn"> & {
  * Use `create(ChatTurnSchema)` to create a new message.
  */
 export declare const ChatTurnSchema: GenMessage<ChatTurn>;
+
+/**
+ * One image for a chat turn.
+ *
+ * @generated from message sling.runner.v1.ChatImage
+ */
+export declare type ChatImage = Message<"sling.runner.v1.ChatImage"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * image/jpeg, image/png, image/webp, or image/gif.
+   *
+   * @generated from field: string media_type = 2;
+   */
+  mediaType: string;
+
+  /**
+   * @generated from field: bytes data = 3;
+   */
+  data: Uint8Array;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChatImage.
+ * Use `create(ChatImageSchema)` to create a new message.
+ */
+export declare const ChatImageSchema: GenMessage<ChatImage>;
 
 /**
  * Server to Runner: stop a turn.
@@ -1877,6 +1921,12 @@ export declare type ChatEvent = Message<"sling.runner.v1.ChatEvent"> & {
      */
     value: ChatThinking;
     case: "thinking";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ChatToolResult tool_result = 6;
+     */
+    value: ChatToolResult;
+    case: "toolResult";
   } | { case: undefined; value?: undefined };
 };
 
@@ -1924,7 +1974,10 @@ export declare type ChatDelta = Message<"sling.runner.v1.ChatDelta"> & {
 export declare const ChatDeltaSchema: GenMessage<ChatDelta>;
 
 /**
- * The agent called one of Sling's tools.
+ * The agent called a tool. For Sling's own tools only the name is set,
+ * since the server records those calls as it serves them. For the agent's
+ * built-in tools, such as web search, the id and input are set too, and a
+ * ChatToolResult follows.
  *
  * @generated from message sling.runner.v1.ChatToolUse
  */
@@ -1933,6 +1986,23 @@ export declare type ChatToolUse = Message<"sling.runner.v1.ChatToolUse"> & {
    * @generated from field: string name = 1;
    */
   name: string;
+
+  /**
+   * @generated from field: string id = 2;
+   */
+  id: string;
+
+  /**
+   * The tool's input as JSON.
+   *
+   * @generated from field: string input_json = 3;
+   */
+  inputJson: string;
+
+  /**
+   * @generated from field: bool builtin = 4;
+   */
+  builtin: boolean;
 };
 
 /**
@@ -1940,6 +2010,37 @@ export declare type ChatToolUse = Message<"sling.runner.v1.ChatToolUse"> & {
  * Use `create(ChatToolUseSchema)` to create a new message.
  */
 export declare const ChatToolUseSchema: GenMessage<ChatToolUse>;
+
+/**
+ * What a built-in tool returned.
+ *
+ * @generated from message sling.runner.v1.ChatToolResult
+ */
+export declare type ChatToolResult = Message<"sling.runner.v1.ChatToolResult"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * As JSON for web_search ({ results: [{ title, url }] }) and web_fetch
+   * ({ title?, text }), otherwise text.
+   *
+   * @generated from field: string output = 2;
+   */
+  output: string;
+
+  /**
+   * @generated from field: bool error = 3;
+   */
+  error: boolean;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChatToolResult.
+ * Use `create(ChatToolResultSchema)` to create a new message.
+ */
+export declare const ChatToolResultSchema: GenMessage<ChatToolResult>;
 
 /**
  * @generated from message sling.runner.v1.ChatDone

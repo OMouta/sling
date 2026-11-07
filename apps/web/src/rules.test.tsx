@@ -247,6 +247,11 @@ describe("Always allow on a send", () => {
         role: "assistant",
         text: "Sent.",
         taskIds: [],
+        attachments: [],
+        personalityId: null,
+        research: false,
+        feedback: null,
+        replaceable: false,
         createdAt: "2026-11-07T10:01:00.000Z",
         trace: {
           ms: 1000,

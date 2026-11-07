@@ -19,6 +19,7 @@ import type { Hub } from "./realtime/hub.ts";
 import type { RuleService } from "./rules/service.ts";
 import type { RunnerGateway } from "./runners/gateway.ts";
 import type { SandboxService } from "./sandboxes/service.ts";
+import type { SourceService } from "./sources/service.ts";
 import type { TaskService } from "./tasks/service.ts";
 import type { ConnectorRuntime } from "./workflows/connectors/runtime.ts";
 import type { Engine } from "./workflows/engine.ts";
@@ -68,6 +69,8 @@ export interface AppContext {
   channels: ChannelService;
   /** OAuth sign-in and tokens for connectors that use the user's own client. */
   oauth: OAuthService;
+  /** Files and links personalities answer from, and files attached in chats. */
+  sources: SourceService;
   /** Durable jobs. Null until the server has started it. */
   boss: PgBoss | null;
   /** Replaces the workspace model everywhere. Tests use a scripted mock. */

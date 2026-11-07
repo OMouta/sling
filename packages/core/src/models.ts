@@ -26,6 +26,14 @@ export function providerVendor(provider: AssistantProvider): ModelProviderId {
   return provider;
 }
 
+/**
+ * Whether a model can search the web: both CLIs and both first-party APIs
+ * can, and OpenAI-compatible servers such as Ollama can't.
+ */
+export function canSearch(choice: { provider: AssistantProvider } | null | undefined): boolean {
+  return Boolean(choice) && choice?.provider !== "openai-compatible";
+}
+
 /** Reasoning effort names, lowest first. Each model takes a subset. */
 export const EFFORT_ORDER = [
   "none",

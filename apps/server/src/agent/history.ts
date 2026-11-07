@@ -64,6 +64,16 @@ export function toMessageView(row: MessageRow): MessageView | null {
     text,
     taskIds: row.taskId ? [row.taskId] : [],
     createdAt: row.createdAt.toISOString(),
-    trace: row.trace?.steps.length ? row.trace : null,
+    trace: row.trace?.steps.length || hasExtras(row.trace) ? (row.trace ?? null) : null,
+    attachments: [],
+    personalityId: row.meta?.personalityId ?? null,
+    research: row.meta?.research ?? false,
+    feedback: null,
+    replaceable: false,
   };
+}
+
+/** A reply with no steps still has a trace worth showing when it cites sources or suggests follow-ups. */
+function hasExtras(trace: MessageRow["trace"]): boolean {
+  return Boolean(trace?.sources?.length || trace?.followUps?.length);
 }

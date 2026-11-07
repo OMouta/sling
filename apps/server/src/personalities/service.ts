@@ -166,6 +166,7 @@ export function toPersonalityView(row: PersonalityRow): PersonalityView {
     position: row.position,
     revision: row.revision,
     templateKey: row.templateKey,
+    assistant: row.assistant ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

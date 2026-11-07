@@ -1068,6 +1068,11 @@ describe("an action's check in the chat", () => {
         role: "assistant",
         text: "Added it.",
         taskIds: [],
+        attachments: [],
+        personalityId: null,
+        research: false,
+        feedback: null,
+        replaceable: false,
         createdAt: "2026-11-06T18:00:00.000Z",
         trace: {
           ms: 900,

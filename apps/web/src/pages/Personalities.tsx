@@ -22,6 +22,7 @@ import {
   Drama,
   Ellipsis,
   FolderSearch,
+  Globe,
   LayoutGrid,
   Plus,
   Rocket,
@@ -77,6 +78,7 @@ const TOOL_ICONS: Record<PersonalityTool, typeof Terminal> = {
   setup: SlidersHorizontal,
   memory: Brain,
   files: FolderSearch,
+  web: Globe,
 };
 
 const TOOL_SHORT: Record<PersonalityTool, string> = {
@@ -87,6 +89,7 @@ const TOOL_SHORT: Record<PersonalityTool, string> = {
   setup: "Setup",
   memory: "Memory",
   files: "Files",
+  web: "Web",
 };
 
 function toolsLine(tools: PersonalityTool[]): string {

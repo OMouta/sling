@@ -92,6 +92,13 @@
       "when": 1794060345589,
       "tag": "0012_assistant_memory",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794078300332,
+      "tag": "0013_assistant_sources",
+      "breakpoints": true
     }
   ]
 }

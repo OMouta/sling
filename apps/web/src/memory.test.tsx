@@ -42,6 +42,7 @@ const planner = {
   position: 1,
   revision: 1,
   templateKey: "planner",
+  assistant: null,
   createdAt: "2026-11-01T00:00:00.000Z",
   updatedAt: "2026-11-01T00:00:00.000Z",
 } satisfies PersonalityView;
@@ -87,6 +88,11 @@ function reply(steps: ToolStep[]): MessageView {
     role: "assistant",
     text: "Noted.",
     taskIds: [],
+    attachments: [],
+    personalityId: null,
+    research: false,
+    feedback: null,
+    replaceable: false,
     createdAt: "2026-11-06T10:01:00.000Z",
     trace: { ms: 1200, steps },
   };

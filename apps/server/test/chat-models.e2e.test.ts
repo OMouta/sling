@@ -606,7 +606,7 @@ describe("personalities", () => {
   it("starts a workspace with Sling only, and adds the rest from templates", async () => {
     const list = await api<P[]>("GET", "/api/personalities");
     expect(list.map((p) => [p.name, p.tools, p.isDefault])).toEqual([
-      ["Sling", ["commands", "coding", "apps", "deploys", "setup", "memory", "files"], true],
+      ["Sling", ["commands", "coding", "apps", "deploys", "setup", "memory", "files", "web"], true],
     ]);
     // Chats from before personalities get the default, so they keep who answers them.
     const convs = await server.ctx.db.select().from(schema.conversations);
@@ -630,19 +630,19 @@ describe("personalities", () => {
       "chef",
       "language-coach",
     ]);
-    expect(templates.find((t) => t.key === "ops")?.tools).toEqual(["commands", "memory"]);
+    expect(templates.find((t) => t.key === "ops")?.tools).toEqual(["commands", "memory", "web"]);
     const finance = await api<P & { templateKey: string }>(
       "POST",
-      "/api/personalities/templates/finance",
+      "/api/personalities/templates/chef",
     );
     expect(finance).toMatchObject({
-      name: "Finance",
+      name: "Chef",
       tools: ["memory"],
       isDefault: false,
-      templateKey: "finance",
+      templateKey: "chef",
     });
     // Adding it again gives back the one that's there.
-    expect((await api<P>("POST", "/api/personalities/templates/finance")).id).toBe(finance.id);
+    expect((await api<P>("POST", "/api/personalities/templates/chef")).id).toBe(finance.id);
     expect((await raw("POST", "/api/personalities/templates/nope")).status).toBe(404);
     // The installed one counts as added from its template.
     expect((await api<P>("POST", "/api/personalities/templates/sling")).id).toBe(list[0]?.id);
@@ -665,8 +665,8 @@ describe("personalities", () => {
     await api("DELETE", `/api/personalities/${trips.id}`);
   });
 
-  it("gives a Finance chat on a CLI only its memory, and refuses other tools if it asks", async () => {
-    const finance = await byName("Finance");
+  it("gives a Chef chat on a CLI only its memory, and refuses other tools if it asks", async () => {
+    const finance = await byName("Chef");
     const conv = await api<{ id: string; personalityId: string }>("POST", "/api/conversations", {
       personalityId: finance.id,
     });
@@ -678,7 +678,7 @@ describe("personalities", () => {
     await api("POST", `/api/conversations/${conv.id}/messages`, { text: "Rent or buy?" });
     await reply(conv.id, 0);
     const turn = runner?.chatTurns[before];
-    expect(turn?.instructions).toContain("You are Finance");
+    expect(turn?.instructions).toContain("You are Chef");
     expect(turn?.instructions).toContain(
       "You have no tools in this chat besides your memory of the user.",
     );
@@ -760,7 +760,7 @@ describe("personalities", () => {
     await api("DELETE", `/api/personalities/${ops.id}`);
     expect((await api<P[]>("GET", "/api/personalities")).map((p) => p.name)).toEqual([
       "Sling",
-      "Finance",
+      "Chef",
     ]);
     const fresh = await raw("POST", "/api/conversations", { personalityId: ops.id });
     expect(fresh.status).toBe(400);
@@ -773,17 +773,17 @@ describe("personalities", () => {
   });
 
   it("moves the default, and new chats without a choice get it", async () => {
-    const finance = await byName("Finance");
+    const finance = await byName("Chef");
     await api("POST", `/api/personalities/${finance.id}/default`);
     const list = await api<P[]>("GET", "/api/personalities");
-    expect(list.filter((p) => p.isDefault).map((p) => p.name)).toEqual(["Finance"]);
+    expect(list.filter((p) => p.isDefault).map((p) => p.name)).toEqual(["Chef"]);
     const conv = await api<{ personalityId: string }>("POST", "/api/conversations");
     expect(conv.personalityId).toBe(finance.id);
 
     const order = await api<P[]>("PUT", "/api/personalities/order", {
       ids: [finance.id, (await byName("Sling")).id],
     });
-    expect(order.map((p) => p.name)).toEqual(["Finance", "Sling"]);
+    expect(order.map((p) => p.name)).toEqual(["Chef", "Sling"]);
     const bad = await raw("PUT", "/api/personalities/order", { ids: [finance.id] });
     expect(bad.status).toBe(400);
     await api("POST", `/api/personalities/${(await byName("Sling")).id}/default`);

@@ -1,3 +1,5 @@
+import type { AssistantChoice } from "./models.ts";
+
 /**
  * Personalities: named assistants, each with its own instructions, the
  * Sling tools it may use, a color, and an animated glyph. A chat keeps the
@@ -13,6 +15,7 @@ export const PERSONALITY_TOOLS = [
   "setup",
   "memory",
   "files",
+  "web",
 ] as const;
 export type PersonalityTool = (typeof PERSONALITY_TOOLS)[number];
 
@@ -47,6 +50,10 @@ export const PERSONALITY_TOOL_INFO: Record<
   files: {
     label: "Files on your machines",
     description: "Searches and reads the folders your machines share.",
+  },
+  web: {
+    label: "Web search",
+    description: "Searches the web and reads pages, and cites them.",
   },
 };
 
@@ -92,6 +99,8 @@ export interface PersonalityView {
   tools: PersonalityTool[];
   color: PersonalityColor;
   shape: GlyphShape;
+  /** The model a chat with it starts on. Null uses the workspace default. A chat can change it. */
+  assistant: AssistantChoice | null;
   /** Used where nothing picks a personality, such as chats a workflow starts. */
   isDefault: boolean;
   position: number;

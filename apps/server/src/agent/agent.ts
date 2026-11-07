@@ -11,7 +11,7 @@ import {
   type PersonalityTool,
   type ReplyTrace,
 } from "@sling/core";
-import { schema, type TokenUsage } from "@sling/db";
+import { type MessageMeta, schema, type TokenUsage } from "@sling/db";
 import { SLING_EVENTS } from "@sling/workflow";
 import { isStepCount, type LanguageModel, type ModelMessage, streamText } from "ai";
 import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
@@ -19,6 +19,7 @@ import type { AppContext } from "../context.ts";
 import { conversationPersonality } from "../personalities/service.ts";
 import { personalityTemplate } from "../personalities/templates.ts";
 import { workspaceSettings } from "../sandboxes/settings.ts";
+import { toSourceView } from "../sources/views.ts";
 import { currentSteps, type SettleReason } from "../tasks/service.ts";
 import { workspaceTimeZone } from "../timezone.ts";
 import { taskView, taskWhere, toConversationView } from "../views.ts";
@@ -148,6 +149,7 @@ export class Agent {
     taskId: string | null = null,
     usage: TokenUsage | null = null,
     trace: ReplyTrace | null = null,
+    extra: { meta?: MessageMeta | null; attachmentIds?: readonly string[] } = {},
   ) {
     const [row] = await this.#ctx.db
       .insert(schema.messages)
@@ -161,8 +163,18 @@ export class Agent {
         taskId,
         usage,
         trace,
+        meta: extra.meta ?? null,
       })
       .returning();
+    const attached =
+      row && extra.attachmentIds?.length
+        ? await this.#ctx.sources.attach(
+            { workspaceId: conv.workspaceId, userId: conv.ownerId },
+            conv.id,
+            row.id,
+            extra.attachmentIds,
+          )
+        : [];
     const [updated] = await this.#ctx.db
       .update(schema.conversations)
       .set({ updatedAt: new Date() })
@@ -170,7 +182,10 @@ export class Agent {
       .returning();
     if (row) {
       const view = toMessageView(row);
-      if (view) this.#ctx.hub.publish(conv.workspaceId, { type: "message.created", message: view });
+      if (view) {
+        view.attachments = attached.map(toSourceView);
+        this.#ctx.hub.publish(conv.workspaceId, { type: "message.created", message: view });
+      }
     }
     if (updated) {
       this.#ctx.hub.publish(conv.workspaceId, {
@@ -188,7 +203,7 @@ export class Agent {
   async addUserMessage(
     conv: typeof schema.conversations.$inferSelect,
     text: string,
-    opts: { once?: boolean } = {},
+    opts: { once?: boolean; meta?: MessageMeta | null; attachmentIds?: readonly string[] } = {},
   ) {
     if (opts.once) {
       const [last] = await this.#ctx.db
@@ -200,7 +215,10 @@ export class Agent {
       const content = last?.content as ModelMessage | undefined;
       if (last && typeof content?.content === "string" && content.content === text) return last;
     }
-    return this.addMessage(conv, "user", { role: "user", content: text });
+    return this.addMessage(conv, "user", { role: "user", content: text }, null, null, null, {
+      meta: opts.meta ?? null,
+      ...(opts.attachmentIds ? { attachmentIds: opts.attachmentIds } : {}),
+    });
   }
 
   #setStatus(workspaceId: string, conversationId: string, status: AgentStatus, error?: string) {

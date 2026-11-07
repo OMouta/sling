@@ -179,6 +179,8 @@ export const TOOLS_BY_GROUP: Record<PersonalityTool, readonly string[]> = {
   setup: [...SETUP_TOOLS, "create_workflow", "workflow_nodes", "save_rule", "save_check"],
   memory: ["remember", "forget", "recall"],
   files: ["search_files", "read_file"],
+  // The model's own web search, which the provider runs. Sling serves no tool for it.
+  web: [],
 };
 
 /** Tool names a personality with these groups may call. */

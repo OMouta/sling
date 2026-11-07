@@ -245,7 +245,10 @@ impl ChatParser {
                 "tool_use" => {
                     let name = block["name"].as_str().unwrap_or_default();
                     if let Some(tool) = name.strip_prefix("mcp__sling__") {
-                        out.push(chat_event::Kind::ToolUse(ChatToolUse { name: tool.into() }));
+                        out.push(chat_event::Kind::ToolUse(ChatToolUse {
+                            name: tool.into(),
+                            ..Default::default()
+                        }));
                     }
                 }
                 "text" if !self.streaming => {

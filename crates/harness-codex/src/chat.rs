@@ -243,6 +243,7 @@ impl ChatParser {
         {
             out.push(chat_event::Kind::ToolUse(ChatToolUse {
                 name: item["tool"].as_str().unwrap_or_default().to_string(),
+                ..Default::default()
             }));
         }
         for ev in self.inner.value(&v) {

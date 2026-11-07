@@ -29,6 +29,7 @@ import { Hub } from "./realtime/hub.ts";
 import { Rules } from "./rules/service.ts";
 import { RunnerGateway } from "./runners/gateway.ts";
 import { SandboxService } from "./sandboxes/service.ts";
+import { Sources } from "./sources/service.ts";
 import { TaskService } from "./tasks/service.ts";
 import { ConnectorRuntime } from "./workflows/connectors/runtime.ts";
 import { Engine } from "./workflows/engine.ts";
@@ -116,6 +117,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     checks: undefined as unknown as Checks,
     channels: undefined as unknown as Channels,
     oauth: undefined as unknown as OAuth,
+    sources: undefined as unknown as Sources,
   };
   ctx.runners = new RunnerGateway(ctx);
   ctx.tasks = new TaskService(ctx);
@@ -141,6 +143,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   ctx.channels = new Channels(ctx);
   for (const c of channelConnectors(ctx)) registry.registerConnector(c);
   ctx.oauth = new OAuth(ctx);
+  ctx.sources = new Sources(ctx);
   ctx.runners.handlers = ctx.tasks;
   ctx.tasks.onSettled = async (taskId, reason) => {
     // First, so a failing hook below can't keep a sandbox alive.
@@ -165,6 +168,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     await ctx.engine.start(boss, { concurrency: opts.runConcurrency ?? 10 });
     await ctx.deploys.start(boss);
     await ctx.checks.start(boss, { schedules: opts.jobs !== false });
+    await ctx.sources.start(boss);
 
     await registerRoutes(app, ctx);
     await app.listen({ host: config.host, port: config.port });

@@ -4,6 +4,7 @@ import type {
   ActionState,
   AgentModelView,
   ApprovalState,
+  AssistantChoice,
   ChannelView,
   ChatSettings,
   CheckConfig,
@@ -16,6 +17,7 @@ import type {
   DeployCheck,
   DeployCheckResult,
   DeployMethod,
+  FeedbackRating,
   FoundRepoView,
   GlyphShape,
   Harness,
@@ -30,6 +32,8 @@ import type {
   RoutingView,
   RuleKind,
   SandboxState,
+  SourceKind,
+  SourceState,
   StartRuleEvent,
   StartRuleMode,
   TaskState,
@@ -263,6 +267,8 @@ export const personalities = pgTable(
     revision: integer("revision").notNull().default(1),
     /** The ready-made personality it was added from. */
     templateKey: text("template_key"),
+    /** The model its chats start on. Null uses the workspace default. */
+    assistant: jsonb("assistant").$type<AssistantChoice>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     /** Archived instead of deleted, so the chats it answered keep working. */
@@ -294,6 +300,8 @@ export const conversations = pgTable(
       harness: Harness;
       runnerId: string;
       sessionId: string;
+      /** Who the session answered as. Another personality's turn starts a new one. */
+      personalityId?: string | null;
     }>(),
     /** Workflow that owns this conversation. Follow-ups go back through it. */
     workflowId: text("workflow_id"),
@@ -335,10 +343,19 @@ export const messages = pgTable(
     usage: jsonb("usage").$type<TokenUsage>(),
     /** For an assistant reply: its thinking and tool calls, for the chat to show. Never sent to a model. */
     trace: jsonb("trace").$type<ReplyTrace>(),
+    /** What a user message was sent with besides its text. */
+    meta: jsonb("meta").$type<MessageMeta>(),
     createdAt: createdAt(),
   },
   (t) => [index("messages_conversation_idx").on(t.conversationId, t.id)],
 );
+
+export interface MessageMeta {
+  /** Deep research for this turn. */
+  research?: boolean;
+  /** The @mentioned personality, who answers this message. */
+  personalityId?: string;
+}
 
 export interface DiffStats {
   filesChanged: number;
@@ -916,3 +933,111 @@ export const notificationAnswers = pgTable("notification_answers", {
   answer: text("answer").$type<"allow" | "deny">().notNull(),
   usedAt: ts("used_at").defaultNow().notNull(),
 });
+
+const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
+  dataType: () => "bytea",
+  toDriver: (v) => Buffer.from(v.buffer, v.byteOffset, v.byteLength),
+  fromDriver: (v) => new Uint8Array(v.buffer, v.byteOffset, v.byteLength),
+});
+
+/**
+ * Files and links a personality answers from, and files attached in a chat.
+ * A chat file has neither scope until its message is sent.
+ */
+export const sources = pgTable(
+  "sources",
+  {
+    id: text("id").primaryKey(),
+    ...owned(),
+    personalityId: text("personality_id").references(() => personalities.id, {
+      onDelete: "cascade",
+    }),
+    conversationId: text("conversation_id").references(() => conversations.id, {
+      onDelete: "cascade",
+    }),
+    messageId: text("message_id").references(() => messages.id, { onDelete: "set null" }),
+    kind: text("kind").$type<SourceKind>().notNull(),
+    name: text("name").notNull(),
+    mediaType: text("media_type").notNull(),
+    size: integer("size").notNull().default(0),
+    /** A link source's address. */
+    url: text("url"),
+    state: text("state").$type<SourceState>().notNull().default("processing"),
+    error: text("error"),
+    pages: integer("pages"),
+    chars: integer("chars").notNull().default(0),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("sources_personality_idx").on(t.personalityId),
+    index("sources_conversation_idx").on(t.conversationId),
+    index("sources_message_idx").on(t.messageId),
+  ],
+);
+
+/** A source's original bytes, apart so lists never load them. */
+export const sourceFiles = pgTable("source_files", {
+  sourceId: text("source_id")
+    .primaryKey()
+    .references(() => sources.id, { onDelete: "cascade" }),
+  data: bytea("data").notNull(),
+});
+
+/** A source's text, by page and then by paragraph, for full-text search. */
+export const sourceChunks = pgTable(
+  "source_chunks",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    sourceId: text("source_id")
+      .notNull()
+      .references(() => sources.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    ordinal: integer("ordinal").notNull(),
+    /** The PDF page it's on, from 1. Null for text without pages. */
+    page: integer("page"),
+    text: text("text").notNull(),
+    /** English stems and the words as written, as memories have. */
+    search: tsvector("search").generatedAlwaysAs(
+      (): SQL =>
+        sql`to_tsvector('english', ${sourceChunks.text}) || to_tsvector('simple', ${sourceChunks.text})`,
+    ),
+  },
+  (t) => [
+    index("source_chunks_source_idx").on(t.sourceId, t.ordinal),
+    index("source_chunks_search_idx").using("gin", t.search),
+  ],
+);
+
+/** Thumbs on a reply, by the user who gave them, against the personality's revision then. */
+export const messageFeedback = pgTable(
+  "message_feedback",
+  {
+    messageId: text("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    personalityId: text("personality_id").references(() => personalities.id, {
+      onDelete: "cascade",
+    }),
+    revision: integer("revision").notNull().default(1),
+    rating: text("rating").$type<FeedbackRating>().notNull(),
+    reason: text("reason").notNull().default(""),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.messageId, t.userId] }),
+    index("message_feedback_personality_idx").on(t.personalityId, t.createdAt),
+  ],
+);

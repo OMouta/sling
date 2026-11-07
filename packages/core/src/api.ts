@@ -5,6 +5,7 @@ import type { ChatSettings } from "./models.ts";
 import type { ActionKind, PermissionMode } from "./modes.ts";
 import type { PersonalityView, ReplyPersonality } from "./personalities.ts";
 import type { ConversationStartedBy, RuleOfferView, RuleView } from "./rules.ts";
+import type { FeedbackRating, ReplySource, SourceView } from "./sources.ts";
 import type { ActionState, ApprovalState, Delivery, TaskState } from "./states.ts";
 
 /**
@@ -379,6 +380,31 @@ export interface MessageView {
   createdAt: string;
   /** For an assistant reply: its thinking and tool calls, in order. */
   trace: ReplyTrace | null;
+  /** Files sent with a user message. */
+  attachments: SourceView[];
+  /** For a user message that @mentions a personality: who answers it. */
+  personalityId: string | null;
+  /** A user message sent with Deep research on. */
+  research: boolean;
+  /** The viewer's thumbs on an assistant reply. */
+  feedback: FeedbackRating | null;
+  /**
+   * Whether Retry (on a reply) or Edit (on a user message) may replace it:
+   * it's the latest of its kind, and nothing after it did anything outside
+   * the chat.
+   */
+  replaceable: boolean;
+}
+
+/** What a sent message carries besides its text. */
+export interface SendMessageInput {
+  text: string;
+  /** Files uploaded to /api/attachments for this message. */
+  attachmentIds?: string[];
+  /** Run this turn as Deep research. */
+  research?: boolean;
+  /** The @mentioned personality, who answers this message instead of the chat's. */
+  personalityId?: string;
 }
 
 /** One line of a change to Sling's setup: a value as it would be, and as it was when editing. */
@@ -481,6 +507,12 @@ export interface ReplyTrace {
   ms: number;
   /** The personality that wrote the reply, and its revision then. */
   personality?: ReplyPersonality;
+  /** The sources the reply cites, by number. */
+  sources?: ReplySource[];
+  /** Up to three messages the user might send next. */
+  followUps?: string[];
+  /** Written as Deep research. */
+  research?: boolean;
 }
 
 /** A reply still being written: its work so far, and the answer's text so far. */
@@ -949,6 +981,10 @@ export type ServerEvent =
   | { type: "personality.removed"; id: string }
   | { type: "deploy_target.updated"; target: DeployTargetView }
   | { type: "deploy_target.removed"; id: string }
+  | { type: "source.updated"; source: SourceView }
+  | { type: "source.removed"; id: string }
+  /** Messages Retry or Edit replaced. */
+  | { type: "message.removed"; conversationId: string; messageIds: string[] }
   | { type: "memory.updated"; memory: MemoryView }
   | { type: "memory.removed"; id: string }
   | { type: "rule.updated"; rule: RuleView }

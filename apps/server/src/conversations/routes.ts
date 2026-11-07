@@ -1,12 +1,18 @@
-import { type ConversationSummaryView, newId, PERMISSION_MODES, type TaskState } from "@sling/core";
-import { schema } from "@sling/db";
+import {
+  type ConversationSummaryView,
+  MESSAGE_MAX_FILES,
+  newId,
+  PERMISSION_MODES,
+  type TaskState,
+} from "@sling/core";
+import { type MessageMeta, schema } from "@sling/db";
 import { SLING_EVENTS } from "@sling/workflow";
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, sum } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { ChatSettingsPatch, mergeSettings } from "../agent/chat-settings.ts";
-import { textOf, toMessageView } from "../agent/history.ts";
+import { textOf } from "../agent/history.ts";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
@@ -18,6 +24,7 @@ import {
 } from "../personalities/service.ts";
 import { taskViews, toConversationView } from "../views.ts";
 import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
+import { messageViews } from "./messages.ts";
 
 const Id = z.object({ id: z.string() });
 
@@ -136,7 +143,7 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
     return {
       conversation: toConversationView(conv),
       personality: personality ? toPersonalityView(personality) : null,
-      messages: rows.map(toMessageView).filter((m) => m !== null),
+      messages: await messageViews(ctx, actor.workspaceId, actor.userId, rows),
       tasks: await taskViews(ctx, tasks),
       agentStatus: ctx.agent.status(conv.id),
       live: ctx.agent.live(conv.id),
@@ -241,11 +248,34 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
 
   r.post(
     "/api/conversations/:id/messages",
-    { schema: { params: Id, body: z.object({ text: z.string().trim().min(1).max(20_000) }) } },
+    {
+      schema: {
+        params: Id,
+        body: z.object({
+          text: z.string().trim().min(1).max(20_000),
+          attachmentIds: z.array(z.string().max(64)).max(MESSAGE_MAX_FILES).optional(),
+          research: z.boolean().optional(),
+          personalityId: z.string().max(64).optional(),
+        }),
+      },
+    },
     async (request, reply) => {
       const actor = actorOf(request);
       let conv = await owned(actor.workspaceId, request.params.id);
       if (!conv) return reply.code(404).send({ error: "not found" });
+      const { personalityId, research, attachmentIds } = request.body;
+      // A mention of the chat's own personality is just a message.
+      const mentioned =
+        personalityId && personalityId !== conv.personalityId
+          ? await usablePersonality(ctx.db, actor.workspaceId, personalityId)
+          : null;
+      if (personalityId && personalityId !== conv.personalityId && !mentioned) {
+        return reply.code(400).send({ error: "That personality doesn't exist anymore." });
+      }
+      const meta: MessageMeta = {
+        ...(research ? { research: true } : {}),
+        ...(mentioned ? { personalityId: mentioned.id } : {}),
+      };
       if (conv.title === "New conversation") {
         const title = request.body.text.replace(/\s+/g, " ").slice(0, 60);
         const [u] = await ctx.db
@@ -255,7 +285,10 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
           .returning();
         if (u) conv = u;
       }
-      const row = await ctx.agent.addUserMessage(conv, request.body.text);
+      const row = await ctx.agent.addUserMessage(conv, request.body.text, {
+        meta: Object.keys(meta).length ? meta : null,
+        ...(attachmentIds?.length ? { attachmentIds } : {}),
+      });
       if (!row) throw new Error("insert failed");
       const runs = await ctx.events.emit({
         type: SLING_EVENTS.chatMessage,
