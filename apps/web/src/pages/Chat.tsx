@@ -15,6 +15,7 @@ import { Glyph } from "../components/Glyph.tsx";
 import { Logo } from "../components/Logo.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
+import { StartedBy } from "../components/StartedBy.tsx";
 import { TaskCard } from "../components/TaskCard.tsx";
 import { Badge, Button, cx, Dot, ErrorText, Skeleton, type Tone } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
@@ -213,6 +214,7 @@ export function ChatPage() {
               <span className="max-w-32 truncate">{personality.name}</span>
             </span>
           )}
+          {conversation.startedBy && <StartedBy by={conversation.startedBy} />}
           {thinking && (
             <Badge tone="accent" dot>
               Thinking
