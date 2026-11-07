@@ -134,11 +134,17 @@ const INSERT_BATCH = 500;
 const s = schema.sources;
 const c = schema.sourceChunks;
 
-/** Any of the words, in their English stems or as written, as memory search does. */
-function anyWords(words: string[]): SQL {
-  const q = words.join(" | ");
+/** The words joined by `op`, in their English stems or as written, as memory search does. */
+function words(list: string[], op: "&" | "|"): SQL {
+  const q = list.join(` ${op} `);
   return sql`(to_tsquery('english', ${q}) || to_tsquery('simple', ${q}))`;
 }
+
+/**
+ * A search ranks at most this many matches, so a word in every chunk stays
+ * fast: ranking is what's slow, and finding matches stops at the cap.
+ */
+const SEARCH_CANDIDATES = 1_000;
 
 /** The sources a scope may search and read. */
 function inScope(scope: SourceScope): SQL | null {
@@ -564,18 +570,51 @@ export class Sources implements SourceService {
   // ------------------------------------------------------------- reading
 
   async search(scope: SourceScope, query: string, limit = SEARCH_MAX): Promise<SourceHit[]> {
-    const words = searchWords(query);
+    const list = searchWords(query);
     const where = inScope(scope);
-    if (words.length === 0 || !where) return [];
-    const tsq = anyWords(words);
-    const rows = await this.#db
-      .select({ sourceId: c.sourceId, page: c.page, text: c.text, name: s.name })
-      .from(c)
-      .innerJoin(s, eq(s.id, c.sourceId))
-      .where(and(eq(c.workspaceId, scope.workspaceId), where, sql`${c.search} @@ ${tsq}`))
-      .orderBy(sql`ts_rank(${c.search}, ${tsq}) desc`, asc(c.sourceId), asc(c.ordinal))
-      .limit(Math.min(limit, SEARCH_MAX));
-    return rows.map((r) => ({ ...r, link: this.link(r.sourceId, r.page) }));
+    if (list.length === 0 || !where) return [];
+    const max = Math.min(limit, SEARCH_MAX);
+    const ranked = async (tsq: SQL) => {
+      const candidates = this.#db
+        .select({
+          sourceId: c.sourceId,
+          page: c.page,
+          text: c.text,
+          ordinal: c.ordinal,
+          search: c.search,
+          name: s.name,
+        })
+        .from(c)
+        .innerJoin(s, eq(s.id, c.sourceId))
+        .where(and(eq(c.workspaceId, scope.workspaceId), where, sql`${c.search} @@ ${tsq}`))
+        .limit(SEARCH_CANDIDATES)
+        .as("c");
+      return this.#db
+        .select({
+          sourceId: candidates.sourceId,
+          ordinal: candidates.ordinal,
+          page: candidates.page,
+          text: candidates.text,
+          name: candidates.name,
+        })
+        .from(candidates)
+        .orderBy(
+          sql`ts_rank(${candidates.search}, ${tsq}) desc`,
+          asc(candidates.sourceId),
+          asc(candidates.ordinal),
+        )
+        .limit(max);
+    };
+    // Passages with every word come first; any of them fills in when those are few.
+    let rows = await ranked(words(list, "&"));
+    if (rows.length < max && list.length > 1) {
+      const seen = new Set(rows.map((r) => `${r.sourceId}:${r.ordinal}`));
+      const more = (await ranked(words(list, "|"))).filter(
+        (r) => !seen.has(`${r.sourceId}:${r.ordinal}`),
+      );
+      rows = [...rows, ...more].slice(0, max);
+    }
+    return rows.map(({ ordinal: _, ...r }) => ({ ...r, link: this.link(r.sourceId, r.page) }));
   }
 
   async read(
