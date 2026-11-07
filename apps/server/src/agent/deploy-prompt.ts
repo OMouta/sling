@@ -14,7 +14,7 @@ function approvalNote(mode: PermissionMode): string {
 export function deploysSection(mode: PermissionMode): string {
   return [
     'Deploys (run_check, deploy_task, and deliver "deploy"):',
-    "- A repo can have a deploy target that the user set up on the Deploys page: how it deploys, and the health checks that say whether the site works. list_machines shows each repo's target name.",
+    "- A repo can have a deploy target: a site check on the Checks page that also deploys, with how it deploys and the URLs that say whether the site works. list_machines shows each repo's target name. run_check runs any check by name, such as a backup command or an email reply that's due.",
     "- You name a target, never a URL. When the user says a site is down or broken, call run_check first and tell them what each check answered.",
     '- Deliver a fix with deliver "deploy" when the user wants it live, or when the target is down. It pushes, opens the PR, then merges it, deploys the merged commit, and checks the site. Otherwise deliver "pr".',
     `- ${approvalNote(mode)}`,

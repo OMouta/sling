@@ -38,7 +38,14 @@ export type Applied =
 
 export interface Proposal {
   tool: string;
-  subjectType: "deploy_target" | "installation" | "workflow" | "personality" | "workspace" | "rule";
+  subjectType:
+    | "deploy_target"
+    | "installation"
+    | "workflow"
+    | "personality"
+    | "workspace"
+    | "rule"
+    | "check";
   /** The thing changed. Empty for something new, until it's made. */
   subjectId: string;
   change: SetupChangeView;

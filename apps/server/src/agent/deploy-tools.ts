@@ -20,47 +20,83 @@ export async function deployTargetNames(
   return new Map(rows.map((r) => [r.remoteKey, r.name]));
 }
 
-/** Runs a target's checks now. The assistant names a target; it never gives a URL. */
+/**
+ * Runs a check now: a deploy target's site, or any other check, by name. The
+ * assistant names a check; it never gives a URL or a command of its own.
+ */
 export function runCheckTool(ctx: AppContext, scope: ToolScope) {
   return tool({
     description:
-      "Run a deploy target's health checks now. Returns what each check answered, whether the site is up, the target's last deploy, and how it deploys. Name the target as the user or list_machines does. You can't check a URL of your own.",
+      "Run one of the user's checks now, by its name: a deploy target's site, a command on a machine, or an email reply that's due. Returns what it saw and whether it's up. For a site that deploys, also the repo, how it deploys, and its last deploy. You can't check a URL or run a command of your own with it.",
     inputSchema: z.object({
-      target: z.string().min(1).max(200).describe("The deploy target's name or id."),
+      target: z
+        .string()
+        .min(1)
+        .max(200)
+        .describe("The check's name or id, such as a deploy target's name."),
     }),
     execute: async ({ target }) => {
-      const row = await ctx.deploys.find(scope.workspaceId, target);
-      if (!row) {
-        const names = (await ctx.deploys.rows(scope.workspaceId)).map((r) => r.name);
+      const found = await ctx.checks.find(scope.workspaceId, target);
+      if (!found) {
+        const names = (await ctx.checks.list(scope.workspaceId)).map((c) => c.name);
         return {
-          error: `No deploy target called ${target}. Targets: ${names.join(", ") || "none yet; the user adds them on the Deploys page"}.`,
+          error: `No check called ${target}. Checks: ${names.join(", ") || "none yet; the user adds them on the Checks page"}.`,
         };
       }
-      const view = await ctx.deploys.check(scope.workspaceId, row.id);
-      if (!view?.lastCheck) return { error: "The target went away while it was being checked." };
+      const view = await ctx.checks.run(scope.workspaceId, found.id);
+      const r = view?.lastResult;
+      if (!view || !r) return { error: "The check went away while it ran." };
+      const base = {
+        check: view.name,
+        kind: view.kind,
+        state: view.state,
+        message: r.message,
+        failedRunsInARow: view.failures,
+      };
+      if (r.detail.kind === "command") {
+        return {
+          ...base,
+          passed: r.passed,
+          machine: view.runnerName,
+          exitCode: r.detail.exitCode,
+          output: r.detail.output,
+          timedOut: r.detail.timedOut,
+          ...(r.detail.error ? { error: r.detail.error } : {}),
+        };
+      }
+      if (r.detail.kind === "reply") {
+        return { ...base, met: r.passed, reply: r.detail.match, deadline: view.deadline };
+      }
+      const config = view.config.kind === "site" ? view.config : null;
+      const d = view.deploy;
       return {
+        ...base,
         target: view.name,
-        repo: view.remoteKey,
-        method: view.method,
-        up: view.lastCheck.up,
-        failedChecksInARow: view.lastCheck.failures,
-        checks: view.lastCheck.results.map((r) => ({
-          url: r.url,
-          ok: r.ok,
-          status: r.status,
-          ms: r.ms,
-          error: r.error,
+        up: r.passed,
+        failedChecksInARow: view.failures,
+        checks: r.detail.checks.map((c) => ({
+          url: c.url,
+          ok: c.ok,
+          status: c.status,
+          ms: c.ms,
+          error: c.error,
         })),
-        hasVersionUrl: Boolean(view.versionUrl),
-        lastDeploy: view.lastDeploy
+        hasVersionUrl: Boolean(config?.versionUrl),
+        ...(d
           ? {
-              taskId: view.lastDeploy.taskId,
-              task: view.lastDeploy.taskTitle,
-              commit: view.lastDeploy.commitSha,
-              at: view.lastDeploy.at,
-              state: view.lastDeploy.state,
+              repo: d.remoteKey,
+              method: d.method,
+              lastDeploy: d.lastDeploy
+                ? {
+                    taskId: d.lastDeploy.taskId,
+                    task: d.lastDeploy.taskTitle,
+                    commit: d.lastDeploy.commitSha,
+                    at: d.lastDeploy.at,
+                    state: d.lastDeploy.state,
+                  }
+                : null,
             }
-          : null,
+          : {}),
       };
     },
   });

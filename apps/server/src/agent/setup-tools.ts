@@ -77,6 +77,7 @@ import { settingText } from "../workflows/summary.ts";
 import type { InstallationRow, WorkflowRow } from "../workflows/views.ts";
 import { modelCatalog } from "./catalog.ts";
 import { AssistantChoiceSchema, chatDefaults } from "./chat-settings.ts";
+import { saveCheckTool } from "./check-tools.ts";
 import {
   type Applied,
   type CallOptions,
@@ -105,6 +106,7 @@ export const SETUP_TOOLS = [
   "create_workflow",
   "workflow_nodes",
   "save_rule",
+  "save_check",
 ] as const;
 
 const ASKS =
@@ -1437,5 +1439,6 @@ export function setupTools(ctx: AppContext, scope: ToolScope) {
     change_settings: changeSettings(ctx, scope),
     ...workflowTools(ctx, scope),
     save_rule: saveRuleTool(ctx, scope),
+    save_check: saveCheckTool(ctx, scope),
   } satisfies Record<(typeof SETUP_TOOLS)[number], Tool>;
 }
