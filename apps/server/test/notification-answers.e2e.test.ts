@@ -716,6 +716,10 @@ describe("approvals that open Sling", () => {
       mode: "auto",
     });
     await until("the plain task", async () => (await task(plain.id)).state === "succeeded");
+    // Its "Done" push follows the state, so let it arrive before counting.
+    await until("the plain task's push", async () =>
+      pushesTo(phone).some((p) => p.title === "Done: Nothing to deliver"),
+    );
     await server.ctx.push.idle();
     const mark = received.length;
     const ids: Record<string, string> = {};
