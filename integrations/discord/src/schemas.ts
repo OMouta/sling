@@ -12,25 +12,19 @@ export const credentialsSchema = z.object({
 export type DiscordCredentials = z.infer<typeof credentialsSchema>;
 
 export const configSchema = z.object({
-  allowedUserIds: z
-    .array(snowflake)
-    .default([])
-    .meta({
-      title: "Who can message it",
-      picker: true,
-      allowOther: true,
-      placeholder: "Add a user ID",
-    }),
-  approverUserIds: z
-    .array(snowflake)
-    .default([])
-    .meta({
-      title: "Who can approve",
-      picker: true,
-      allowOther: true,
-      advanced: true,
-      placeholder: "Add a user ID",
-    }),
+  allowedUserIds: z.array(snowflake).default([]).meta({
+    title: "Who can message it",
+    picker: true,
+    allowOther: true,
+    placeholder: "Add a user ID",
+  }),
+  approverUserIds: z.array(snowflake).default([]).meta({
+    title: "Who can approve",
+    picker: true,
+    allowOther: true,
+    advanced: true,
+    placeholder: "Add a user ID",
+  }),
   defaultChannelId: z
     .string()
     .regex(/^(\d{15,22})?$/, "Discord IDs are 15 to 22 digits")
