@@ -1,12 +1,14 @@
 import { randomBytes } from "node:crypto";
-import type { CommandApprovalView, PermissionMode } from "@sling/core";
+import type { CommandApprovalView, PermissionMode, SetupChangeView } from "@sling/core";
 import { create, EnvelopeSchema, type ExecResult } from "@sling/runner-protocol";
 import type { AppContext } from "../context.ts";
 import { modeToProto } from "../runners/convert.ts";
 import type { RunnerSession } from "../runners/gateway.ts";
 
-/** How long a command or a send waits for the user to approve it. */
+/** How long a command, a send, or a setup change waits for the user to approve it. */
 export const APPROVAL_WAIT_MS = 5 * 60_000;
+/** Longest secret a setup change takes from its card. */
+export const MAX_SECRET_LENGTH = 4_096;
 /** Extra time past a command's own timeout before Sling stops waiting for the machine. */
 const ANSWER_GRACE_MS = 15_000;
 
@@ -33,6 +35,17 @@ export interface CommandResult {
 
 export type Decision = "approved" | "denied" | "expired";
 
+/** What the user typed into a change's card. Never log it, store it, or hand it to a model. */
+export type SecretValues = Record<string, string>;
+
+/** The user's answer to a setup change: approved ones carry the secrets the card asked for. */
+export type ChangeDecision =
+  | { decision: "approved"; secrets: SecretValues }
+  | { decision: "denied" | "expired" };
+
+/** Why the server didn't take an answer. */
+export type DecideResult = "ok" | "gone" | "bad_secrets" | "missing_secrets";
+
 interface Pending {
   runnerId: string;
   resolve: (r: CommandResult) => void;
@@ -42,7 +55,9 @@ interface Pending {
 interface Approval {
   workspaceId: string;
   conversationId: string;
-  settle: (d: Decision) => void;
+  /** For a change: the secret fields its card shows. Null for commands and sends, which take none. */
+  secrets: { key: string; required: boolean }[] | null;
+  settle: (d: Decision, secrets?: SecretValues) => void;
 }
 
 function toResult(r: ExecResult): CommandResult {
@@ -155,17 +170,59 @@ export class Commands {
       | { kind: "send" /** What would go out, as the user sees it. */; summary: string }
     ),
   ): Promise<Decision> {
-    const id = `cap_${randomBytes(12).toString("hex")}`;
-    const view = (state: CommandApprovalView["state"]): CommandApprovalView =>
+    const view = (id: string, state: CommandApprovalView["state"]): CommandApprovalView =>
       opts.kind === "send"
         ? { id, kind: "send", state, machine: "", summary: opts.summary }
         : { id, kind: "command", state, machine: opts.machine, summary: "" };
-    const decision = await new Promise<Decision>((resolve) => {
-      const settle = (d: Decision) => {
+    const { decision } = await this.#wait(opts, null, view);
+    return decision;
+  }
+
+  /**
+   * Waits for the user to apply or cancel a change to Sling's setup. The card
+   * shows the change and an input for each of its secret fields; an approval
+   * comes back with what was typed there, which never passes through the
+   * model or the trace.
+   */
+  async change(opts: {
+    workspaceId: string;
+    conversationId: string;
+    change: SetupChangeView;
+    signal?: AbortSignal;
+    onChange: (view: CommandApprovalView) => void;
+  }): Promise<ChangeDecision> {
+    const view = (id: string, state: CommandApprovalView["state"]): CommandApprovalView => ({
+      id,
+      kind: "change",
+      state,
+      machine: "",
+      summary: opts.change.title,
+      change: opts.change,
+    });
+    const secrets = opts.change.secrets.map((s) => ({ key: s.key, required: s.required }));
+    const { decision, secrets: typed } = await this.#wait(opts, secrets, view);
+    return decision === "approved"
+      ? { decision, secrets: typed ?? {} }
+      : { decision: decision === "denied" ? "denied" : "expired" };
+  }
+
+  async #wait(
+    opts: {
+      workspaceId: string;
+      conversationId: string;
+      signal?: AbortSignal;
+      onChange: (view: CommandApprovalView) => void;
+    },
+    secrets: Approval["secrets"],
+    view: (id: string, state: CommandApprovalView["state"]) => CommandApprovalView,
+  ): Promise<{ decision: Decision; secrets?: SecretValues }> {
+    const id = `cap_${randomBytes(12).toString("hex")}`;
+    const out = await new Promise<{ decision: Decision; secrets?: SecretValues }>((resolve) => {
+      const settle = (d: Decision, typed?: SecretValues) => {
         clearTimeout(timer);
         this.#approvals.delete(id);
         opts.signal?.removeEventListener("abort", onAbort);
-        resolve(d);
+        resolve(typed ? { decision: d, secrets: typed } : { decision: d });
       };
       const timer = setTimeout(() => settle("expired"), this.approvalWaitMs);
       const onAbort = () => settle("expired");
@@ -173,15 +230,16 @@ export class Commands {
       this.#approvals.set(id, {
         workspaceId: opts.workspaceId,
         conversationId: opts.conversationId,
+        secrets,
         settle,
       });
-      opts.onChange(view("pending"));
+      opts.onChange(view(id, "pending"));
     });
-    opts.onChange(view(decision));
-    return decision;
+    opts.onChange(view(id, out.decision));
+    return out;
   }
 
-  /** Conversations with a command or a send waiting for the user's answer. */
+  /** Conversations with a command, a send, or a change waiting for the user's answer. */
   waitingConversations(workspaceId: string): Set<string> {
     return new Set(
       [...this.#approvals.values()]
@@ -190,16 +248,41 @@ export class Commands {
     );
   }
 
-  /** The user's answer. False when there's no such approval waiting in this conversation. */
+  /**
+   * The user's answer. Only a change takes secrets, only the keys its card
+   * asked for, and approving it needs every required one. `gone` when there's
+   * no such approval waiting in this conversation.
+   */
   decide(
     workspaceId: string,
     conversationId: string,
     id: string,
     decision: "approve" | "deny",
-  ): boolean {
+    secrets?: Record<string, string>,
+  ): DecideResult {
     const a = this.#approvals.get(id);
-    if (!a || a.workspaceId !== workspaceId || a.conversationId !== conversationId) return false;
-    a.settle(decision === "approve" ? "approved" : "denied");
-    return true;
+    if (!a || a.workspaceId !== workspaceId || a.conversationId !== conversationId) return "gone";
+    if (decision === "deny") {
+      a.settle("denied");
+      return "ok";
+    }
+    if (!a.secrets) {
+      if (secrets && Object.keys(secrets).length > 0) return "bad_secrets";
+      a.settle("approved");
+      return "ok";
+    }
+    const asked = new Map(a.secrets.map((s) => [s.key, s.required]));
+    const typed: SecretValues = {};
+    for (const [k, v] of Object.entries(secrets ?? {})) {
+      if (!asked.has(k) || typeof v !== "string" || v.length > MAX_SECRET_LENGTH) {
+        return "bad_secrets";
+      }
+      if (v !== "") typed[k] = v;
+    }
+    for (const [k, required] of asked) {
+      if (required && !typed[k]?.trim()) return "missing_secrets";
+    }
+    a.settle("approved", typed);
+    return "ok";
   }
 }

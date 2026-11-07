@@ -109,11 +109,11 @@ export class TraceRecorder {
   }
 
   /**
-   * Changes a tool call while it runs, as when a command waits for approval.
-   * A tool can start before its call is recorded, so a change that comes
-   * first waits for it.
+   * Changes a tool call while it runs, as when a command waits for approval,
+   * or when a tool drops a value from its recorded input. A tool can start
+   * before its call is recorded, so a change that comes first waits for it.
    */
-  toolUpdate(id: string, patch: Pick<Partial<ToolStep>, "approval">) {
+  toolUpdate(id: string, patch: Pick<Partial<ToolStep>, "approval" | "input">) {
     const step = this.#tool(id);
     if (!step) {
       this.#early.set(id, { ...this.#early.get(id), ...patch });

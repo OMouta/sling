@@ -190,27 +190,39 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
     },
   );
 
-  // The user's answer to a command that wants to leave the sandbox.
+  // The user's answer to something the assistant waits on in the chat: a
+  // command that wants to leave the sandbox, a send, or a change to Sling's
+  // setup. A change's secrets come with the answer, straight from its card.
   r.post(
     "/api/conversations/:id/commands/:approvalId",
     {
       schema: {
         params: z.object({ id: z.string(), approvalId: z.string() }),
-        body: z.object({ decision: z.enum(["approve", "deny"]) }),
+        body: z.object({
+          decision: z.enum(["approve", "deny"]),
+          secrets: z.record(z.string().max(100), z.string()).optional(),
+        }),
       },
     },
     async (request, reply) => {
       const actor = actorOf(request);
       const conv = await owned(actor.workspaceId, request.params.id);
       if (!conv) return reply.code(404).send({ error: "not found" });
-      const ok = ctx.commands.decide(
+      const result = ctx.commands.decide(
         actor.workspaceId,
         conv.id,
         request.params.approvalId,
         request.body.decision,
+        request.body.secrets,
       );
-      if (!ok) {
+      if (result === "gone") {
         return reply.code(409).send({ error: "That isn't waiting for an answer anymore." });
+      }
+      if (result === "bad_secrets") {
+        return reply.code(400).send({ error: "That approval doesn't take those fields." });
+      }
+      if (result === "missing_secrets") {
+        return reply.code(400).send({ error: "Fill in every field first." });
       }
       return { ok: true };
     },
