@@ -1,7 +1,7 @@
 {
   "key": "site-down-alert",
   "name": "Site down alert",
-  "description": "Checks your deploy targets every minute and sends a push notification when one fails two checks in a row, and again when it's back up. Tapping the alert opens a new chat with the Incident personality and a draft that says what failed. Nothing starts until you send it.",
+  "description": "A notification on your phone when a site goes down, and when it's back.",
   "builtIn": false,
   "bindings": []
 }

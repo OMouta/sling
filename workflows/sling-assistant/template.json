@@ -1,7 +1,7 @@
 {
   "key": "sling-assistant",
   "name": "Sling Assistant",
-  "description": "The assistant you chat with in the web app. It runs commands on your machines, hands coding work to a coding agent there, and reports back when tasks finish.",
+  "description": "The assistant you chat with in the web app.",
   "builtIn": true,
   "bindings": []
 }

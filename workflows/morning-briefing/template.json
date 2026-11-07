@@ -1,7 +1,7 @@
 {
   "key": "morning-briefing",
   "name": "Morning briefing",
-  "description": "Every morning at 07:30 in your time zone, Sling reads today's calendar, starts that day's briefing chat, and has the assistant write your briefing there. A notification on your phone opens it.",
+  "description": "A briefing on today's calendar every morning at 07:30.",
   "builtIn": false,
   "bindings": [
     {

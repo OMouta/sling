@@ -1,7 +1,7 @@
 {
   "key": "approval-notifications-discord",
   "name": "Approval notifications in Discord",
-  "description": "Sends every new approval to Discord with Approve and Reject buttons. Only Discord users on the installation's approver list can press them. Messages go to the installation's default channel unless you set a user ID for a DM.",
+  "description": "Approve and reject from Discord, with buttons.",
   "builtIn": false,
   "bindings": [
     {

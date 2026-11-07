@@ -1,7 +1,7 @@
 {
   "key": "discord-assistant",
   "name": "Discord assistant",
-  "description": "Talk to the Sling assistant in Discord. It answers in the same DM or channel, delegates coding work to your machines, and reports back there when tasks finish. The conversations also show up in the web app.",
+  "description": "Chat with Sling in Discord, and hear back there when tasks finish.",
   "builtIn": false,
   "bindings": [{ "placeholder": "$discord", "connectorId": "discord", "label": "Discord bot" }]
 }

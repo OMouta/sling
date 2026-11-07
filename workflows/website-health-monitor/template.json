@@ -1,7 +1,7 @@
 {
   "key": "website-health-monitor",
   "name": "Website health monitor",
-  "description": "Checks a URL every five minutes and posts to Discord when it answers with an error or can't be reached. Set the URL in the HTTP node.",
+  "description": "Post to Discord when a site answers with an error.",
   "builtIn": false,
   "bindings": [
     {
