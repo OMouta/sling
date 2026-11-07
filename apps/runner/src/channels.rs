@@ -620,7 +620,23 @@ async fn send(mgr: &Arc<Manager>, r: &ChannelSend) -> Result<(), String> {
             MAX_SEND_BYTES / 1024
         ));
     }
-    let raw = r.conversation.trim();
+    // No one named: the one sender the channel allows, such as you.
+    let raw = match (r.conversation.trim(), e.allowed_senders.as_slice()) {
+        ("", [only]) => only.as_str(),
+        ("", []) => {
+            return Err(format!(
+                "This channel allows no senders yet, so there's no one to send to. Run `sling-runner channel allow {} <number>` on the machine.",
+                e.name
+            ));
+        }
+        ("", _) => {
+            return Err(format!(
+                "This channel allows {} senders. Say which one to send to.",
+                e.allowed_senders.len()
+            ));
+        }
+        (raw, _) => raw,
+    };
     if !mgr.channels.may_send(&mgr.paths, e, raw) {
         return Err(format!(
             "This machine sends {} messages only to the senders it allows, and to groups they wrote in. To send to {raw}, run `sling-runner channel allow {} {raw}` on it.",

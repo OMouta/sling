@@ -544,6 +544,14 @@ async fn sends_imessages_with_the_text_as_an_argument() {
         "the script file first, then the recipient and the text"
     );
 
+    // With no one named and two allowed, it asks which.
+    let r = send(&mgr, "im-send", "", "hi").await;
+    assert!(
+        !r.ok && r.message.contains("allows 2 senders"),
+        "{}",
+        r.message
+    );
+
     // Not an allowed sender, or a group none of them wrote in.
     let r = send(&mgr, "im-send", STRANGER, "hi").await;
     assert!(!r.ok);
@@ -766,7 +774,8 @@ async fn relays_signal_through_signal_cli() {
         ("signal", 1)
     );
 
-    let r = send(&mgr, "sig-relay", JO, "Lunch with Jo at 1").await;
+    // No one named: the one sender it allows.
+    let r = send(&mgr, "sig-relay", "", "Lunch with Jo at 1").await;
     assert!(r.ok, "{}", r.message);
     let r = send(&mgr, "sig-relay", JO, "UNREGISTERED").await;
     assert_eq!(
