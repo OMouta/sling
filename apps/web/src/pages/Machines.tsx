@@ -14,6 +14,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { CheckCheck, FolderGit2, Laptop, Plus, RefreshCw, Unplug } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { FolderSection } from "../components/MachineFolders.tsx";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
 import { ProviderIcon } from "../components/ProviderIcon.tsx";
@@ -630,6 +631,7 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
       </dl>
 
       <RepoSection runner={runner} access={access} />
+      <FolderSection runner={runner} />
       {dialog}
       {revoke.error ? (
         <div className="px-4 pb-3">
