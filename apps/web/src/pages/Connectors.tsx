@@ -12,6 +12,7 @@ import {
   Pencil,
   Plug,
   Plus,
+  Send,
   TrainFront,
   Trash2,
 } from "lucide-react";
@@ -32,6 +33,7 @@ type FormTarget = { connector: ConnectorView; installation?: InstallationView };
 const ICONS: [RegExp, LucideIcon][] = [
   [/calendar/i, CalendarDays],
   [/discord/i, MessagesSquare],
+  [/telegram/i, Send],
   [/mail/i, Mail],
   [/docker/i, Container],
   [/railway/i, TrainFront],

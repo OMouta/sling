@@ -63,6 +63,11 @@ const TOOLS: Record<string, [string, string, string]> = {
     "Sent a Discord message",
     "Couldn't send the Discord message",
   ],
+  telegram_send_message: [
+    "Sending a Telegram message",
+    "Sent a Telegram message",
+    "Couldn't send the Telegram message",
+  ],
   read_setup: ["Looking at your setup", "Looked at your setup", "Couldn't read your setup"],
   save_deploy_target: [
     "Setting up a deploy target",

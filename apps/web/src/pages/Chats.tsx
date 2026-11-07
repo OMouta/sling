@@ -17,7 +17,11 @@ import {
 import { ago } from "../lib/format.ts";
 import { chatsRoute } from "../router.tsx";
 
-const SOURCE_LABEL: Record<string, string> = { discord: "Discord", email: "Email" };
+const SOURCE_LABEL: Record<string, string> = {
+  discord: "Discord",
+  telegram: "Telegram",
+  email: "Email",
+};
 
 /** Every chat: search what was said, filter by what's going on, rename or delete. */
 export function ChatsPage() {

@@ -145,6 +145,7 @@ const TYPE_COLOR: Record<string, string> = {
   json: "#a855f7",
   email: "#14b8a6",
   "discord.message": "#6366f1",
+  "telegram.message": "#0ea5e9",
   conversation: "#06b6d4",
   task: "#eab308",
   approval: "#f97316",
