@@ -56,6 +56,10 @@ Add your site under **Deploys**: its repo, how it deploys (your host deploys on 
 
 Add your calendar under **Connectors**: iCloud, Fastmail, Nextcloud, or any CalDAV account, or the private iCal link of a Google or Outlook calendar. The assistant then answers "what's on tomorrow?" and adds events, and the **Morning briefing** template writes you a briefing each morning. It can also send email and Discord messages and run your workflows from chat. Reading never asks; anything that goes out asks you in the chat first, except in Full access.
 
+## Setting Sling up from chat
+
+The assistant can change Sling's own setup for you: "add a deploy target for my site", "connect my Fastmail", "make a workflow from the Site down alert template", "set my time zone to Lisbon". Each change shows in the chat with **Apply** and **Cancel**, except in Full access, and a password or token goes in a field on that card, never in the chat. See [docs/modes.md](docs/modes.md#changing-slings-setup).
+
 ## On your phone
 
 Open Sling on your phone and add it to the home screen. Under **Settings → Notifications**, turn on notifications for that device: approvals, finished tasks, and replies then reach you with Sling closed, and a tap opens the right page. Push needs an HTTPS address, which the Tailscale and Cloudflare Tunnel setups give you. See [docs/notifications.md](docs/notifications.md).

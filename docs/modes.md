@@ -28,6 +28,19 @@ With a personality that has Apps and workflows, the assistant can read your cale
 
 The question shows what would go out, such as `Email ana@example.com: Lunch moved`, with Deny and Allow. If nobody answers within 5 minutes, nothing is sent. See [personalities.md](personalities.md).
 
+## Changing Sling's setup
+
+With a personality that has Change Sling's setup, the assistant can add deploy targets, connect app accounts, add and change workflows, edit personalities, and change workspace settings. Reading the setup never asks. A change follows the conversation's mode:
+
+| Mode | A change to Sling's setup |
+|---|---|
+| Read-only | Refused |
+| Supervised | Shows the change in the chat and waits for Apply |
+| Auto | Shows the change in the chat and waits for Apply |
+| Full access | Applies at once, unless it needs a password or token |
+
+The card lists every value it would set, the old one next to the new one for an edit, with **Cancel** and **Apply**. A password, token, or deploy hook URL is typed into a field on the card and goes straight to the server with **Apply**, so even Full access shows the card for a change that needs one. If nobody answers within 5 minutes, nothing changes. See [personalities.md](personalities.md#what-it-can-use).
+
 ## Commands
 
 The assistant can run shell commands on your machines itself, to list a folder, read a file, or check a version, without starting a coding task. A command runs as you, in your home directory unless the assistant picks another one. By default it runs in the machine's read-only sandbox, which can read files but can't write them, use the network, open apps, send Apple Events, or signal other processes. That's `sandbox-exec` on macOS and bubblewrap on Linux.
