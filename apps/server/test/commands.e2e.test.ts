@@ -312,10 +312,12 @@ describe("commands on the user's machine", () => {
   });
 });
 
+// Full access runs these commands without asking, whether or not this
+// machine can sandbox them. In Auto, a machine without a sandbox asks first.
 describe("the conversation list", () => {
   it("leaves out empty conversations, and shows each one's latest message and status", async () => {
     const empty = await api<{ id: string }>("POST", "/api/conversations");
-    const id = await conversation("auto");
+    const id = await conversation("full-access");
     await ask(id, { command: "echo listed", cwd: work });
     const list = await api<ConversationSummaryView[]>("GET", "/api/conversations");
     expect(list.some((c) => c.id === empty.id)).toBe(false);
@@ -332,7 +334,7 @@ describe("the conversation list", () => {
   });
 
   it("finds conversations by what was said in them", async () => {
-    const id = await conversation("auto");
+    const id = await conversation("full-access");
     plan.push({ command: "true", cwd: work });
     await api("POST", `/api/conversations/${id}/messages`, { text: "Look for the zebra file" });
     await until("its reply", async () =>
