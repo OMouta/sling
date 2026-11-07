@@ -963,8 +963,12 @@ async fn merge_with_git(
                 args.push(tip.clone());
                 git(wt, &args.iter().map(String::as_str).collect::<Vec<_>>()).await?
             }
+            // A squash that conflicts needs an identity too, or git stops
+            // before it writes the conflicts.
             Method::Squash | Method::Rebase => {
-                git(wt, &["merge", "--quiet", "--squash", &tip]).await?
+                let mut args = with_ident(&["merge", "--quiet", "--squash"]);
+                args.push(tip.clone());
+                git(wt, &args.iter().map(String::as_str).collect::<Vec<_>>()).await?
             }
         };
         if !merged.ok() {
