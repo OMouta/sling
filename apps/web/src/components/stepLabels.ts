@@ -14,8 +14,8 @@ const input = (step: ToolStep) =>
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "es"}`;
 
 /**
- * What a memory or files step did, naming what it looked for or read. Null
- * for other tools.
+ * What a memory, files, or sources step did, naming what it looked for or
+ * read. Null for other tools.
  */
 export function memoryFileLabel(step: ToolStep): string | null {
   if (step.name === "recall") {
@@ -53,6 +53,28 @@ export function memoryFileLabel(step: ToolStep): string | null {
       return `Couldn't read ${where}${out?.error ? `: ${out.error}` : ""}`;
     }
     return `Read ${where}`;
+  }
+  if (step.name === "search_sources") {
+    const query = String(input(step).query ?? "");
+    const out = parse<{ results?: unknown[]; error?: string }>(step.output);
+    if (step.status === "running") return `Searching sources for “${query}”`;
+    if (step.status === "error" || out?.error) return "Couldn't search sources";
+    const n = out?.results?.length ?? 0;
+    return `Searched sources for “${query}”: ${n ? plural(n, "match") : "no matches"}`;
+  }
+  if (step.name === "read_source") {
+    const out = parse<{ name?: string; fromPage?: number; toPage?: number; error?: string }>(
+      step.output,
+    );
+    if (step.status === "running") return "Reading a source";
+    if (step.status === "error" || out?.error) return "Couldn't read the source";
+    const pages =
+      out?.fromPage && out.toPage
+        ? out.fromPage === out.toPage
+          ? `, page ${out.fromPage}`
+          : `, pages ${out.fromPage}–${out.toPage}`
+        : "";
+    return `Read ${out?.name ?? "a source"}${pages}`;
   }
   return null;
 }

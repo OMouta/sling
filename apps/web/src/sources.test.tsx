@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { memoryFileLabel } from "./components/stepLabels.ts";
 import { createAppRouter } from "./router.tsx";
 
 vi.mock("./lib/auth.ts", () => ({
@@ -378,5 +379,32 @@ describe("a sent message's files", () => {
     expect(within(full).getByRole("img").getAttribute("src")).toBe("/api/sources/src_img/file");
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "sign.jpg" })).toBeNull();
+  });
+});
+
+describe("source steps in a reply", () => {
+  it("say what was searched and which pages were read", () => {
+    const step = (name: string, input: unknown, output: unknown) =>
+      ({
+        kind: "tool",
+        id: "c1",
+        name,
+        input,
+        status: "done",
+        output: JSON.stringify(output),
+      }) as const;
+    expect(memoryFileLabel(step("search_sources", { query: "pets" }, { results: [{}, {}] }))).toBe(
+      "Searched sources for “pets”: 2 matches",
+    );
+    expect(
+      memoryFileLabel(
+        step("read_source", { sourceId: "s" }, { name: "lease.pdf", fromPage: 3, toPage: 3 }),
+      ),
+    ).toBe("Read lease.pdf, page 3");
+    expect(
+      memoryFileLabel(
+        step("read_source", { sourceId: "s" }, { name: "lease.pdf", fromPage: 1, toPage: 4 }),
+      ),
+    ).toBe("Read lease.pdf, pages 1–4");
   });
 });

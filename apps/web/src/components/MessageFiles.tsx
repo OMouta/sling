@@ -110,7 +110,7 @@ function Lightbox({ file, onClose }: { file: SourceView; onClose: () => void }) 
       <img
         src={fileUrl(file)}
         alt={file.name}
-        className="anim-pop relative max-h-full max-w-full rounded-lg object-contain shadow-popover"
+        className="anim-pop relative max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-2rem)] rounded-lg object-contain shadow-popover sm:max-h-[calc(100dvh-5rem)] sm:max-w-[calc(100vw-5rem)]"
       />
       <button
         type="button"
