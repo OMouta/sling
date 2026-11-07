@@ -1,7 +1,7 @@
 import type { MessageView } from "@sling/core";
 import { FileText } from "lucide-react";
 import { useState } from "react";
-import { siteName } from "../lib/research.ts";
+import { pagePath, siteName } from "../lib/research.ts";
 
 /** Sources past this many wait behind "Show all". */
 const SHOWN = 5;
@@ -35,9 +35,9 @@ export function ReplySources({ message }: { message: MessageView }) {
                 ) : (
                   <>
                     <span className="shrink-0 text-soft">{site}</span>
-                    {s.title !== site && (
-                      <span className="min-w-0 truncate text-subtle">{s.title}</span>
-                    )}
+                    <span className="min-w-0 truncate text-subtle">
+                      {s.title !== site ? s.title : pagePath(s.url)}
+                    </span>
                   </>
                 )}
               </a>

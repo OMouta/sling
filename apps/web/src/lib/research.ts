@@ -40,6 +40,17 @@ export function siteName(url: string | undefined): string {
   }
 }
 
+/** A page's path and query, to tell apart pages of one site that have no title. */
+export function pagePath(url: string): string {
+  try {
+    const u = new URL(url);
+    const path = decodeURI(u.pathname).replace(/\/+$/, "");
+    return `${path}${u.search}`;
+  } catch {
+    return "";
+  }
+}
+
 /** "12s", "4m 05s", "1h 02m". */
 export function elapsed(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));

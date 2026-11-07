@@ -126,6 +126,12 @@ const cited = message({
         sourceId: "src_1",
         page: 4,
       },
+      {
+        n: 4,
+        url: "https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/",
+        title: "blog.rust-lang.org",
+        kind: "web",
+      },
     ],
   },
 });
@@ -287,6 +293,8 @@ describe("web search in a chat", () => {
       "1eur-lex.europa.euRegulation (EU) 2024/1689",
       "2artificialintelligenceact.eu",
       "3lease.pdfpage 4",
+      // A page with no title of its own shows its path.
+      "4blog.rust-lang.org/2026/10/01/Rust-1.99.0",
     ]);
     expect(rows[2]?.getAttribute("href")).toBe("https://sling.test/api/sources/src_1/view?page=4");
   });
