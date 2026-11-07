@@ -3,8 +3,10 @@
 
 use sling_runner_protocol::{Capability, Inventory, Repo};
 
+use crate::channels;
 use crate::config::Config;
 use crate::exec::{self, Sandbox};
+use crate::files;
 use crate::git;
 use crate::harness;
 use crate::scan::{self, Found};
@@ -121,6 +123,9 @@ pub async fn build(cfg: &Config, found: &[Found], sandbox: &Sandbox) -> Inventor
         remote_repos: cfg.remote_repos,
         // Read-only machines refuse merges and deploys too.
         deploys: cfg.deploys && cfg.max_mode.writes(),
+        folders: files::folder_names(cfg),
+        files: files::enabled(cfg),
+        channels: channels::inventory(cfg),
     }
 }
 

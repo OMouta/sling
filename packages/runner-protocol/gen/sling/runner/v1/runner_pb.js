@@ -23,7 +23,7 @@ import { enumDesc, fileDesc, messageDesc, tsEnum } from "@bufbuild/protobuf/code
  * Describes the file sling/runner/v1/runner.proto.
  */
 export const file_sling_runner_v1_runner = /*@__PURE__*/
-  fileDesc("ChxzbGluZy9ydW5uZXIvdjEvcnVubmVyLnByb3RvEg9zbGluZy5ydW5uZXIudjEi9gkKCEVudmVsb3BlEicKBWhlbGxvGAEgASgLMhYuc2xpbmcucnVubmVyLnYxLkhlbGxvSAASLwoJaGVhcnRiZWF0GAIgASgLMhouc2xpbmcucnVubmVyLnYxLkhlYXJ0YmVhdEgAEi8KCWludmVudG9yeRgDIAEoCzIaLnNsaW5nLnJ1bm5lci52MS5JbnZlbnRvcnlIABIwCgp0YXNrX2V2ZW50GAQgASgLMhouc2xpbmcucnVubmVyLnYxLlRhc2tFdmVudEgAEj8KEnJlcG9fY2hhbmdlX3Jlc3VsdBgFIAEoCzIhLnNsaW5nLnJ1bm5lci52MS5SZXBvQ2hhbmdlUmVzdWx0SAASMAoKY2hhdF9ldmVudBgGIAEoCzIaLnNsaW5nLnJ1bm5lci52MS5DaGF0RXZlbnRIABIyCgtleGVjX3Jlc3VsdBgHIAEoCzIbLnNsaW5nLnJ1bm5lci52MS5FeGVjUmVzdWx0SAASPwoScmVwb19hY3Rpb25fb3V0cHV0GAggASgLMiEuc2xpbmcucnVubmVyLnYxLlJlcG9BY3Rpb25PdXRwdXRIABI/ChJyZXBvX2FjdGlvbl9yZXN1bHQYCSABKAsyIS5zbGluZy5ydW5uZXIudjEuUmVwb0FjdGlvblJlc3VsdEgAEi8KCWNoYWxsZW5nZRgUIAEoCzIaLnNsaW5nLnJ1bm5lci52MS5DaGFsbGVuZ2VIABIrCgd3ZWxjb21lGBUgASgLMhguc2xpbmcucnVubmVyLnYxLldlbGNvbWVIABI2Cg1oZWFydGJlYXRfYWNrGBYgASgLMh0uc2xpbmcucnVubmVyLnYxLkhlYXJ0YmVhdEFja0gAEjIKC3Rhc2tfYXNzaWduGBcgASgLMhsuc2xpbmcucnVubmVyLnYxLlRhc2tBc3NpZ25IABIyCgt0YXNrX2NhbmNlbBgYIAEoCzIbLnNsaW5nLnJ1bm5lci52MS5UYXNrQ2FuY2VsSAASOAoOYWN0aW9uX3JlcXVlc3QYGSABKAsyHi5zbGluZy5ydW5uZXIudjEuQWN0aW9uUmVxdWVzdEgAEi4KCWV2ZW50X2FjaxgaIAEoCzIZLnNsaW5nLnJ1bm5lci52MS5FdmVudEFja0gAEicKBWVycm9yGBsgASgLMhYuc2xpbmcucnVubmVyLnYxLkVycm9ySAASMgoLcmVwb19jaGFuZ2UYHCABKAsyGy5zbGluZy5ydW5uZXIudjEuUmVwb0NoYW5nZUgAEi4KCXJlcG9fc2NhbhgdIAEoCzIZLnNsaW5nLnJ1bm5lci52MS5SZXBvU2NhbkgAEi4KCWNoYXRfdHVybhgeIAEoCzIZLnNsaW5nLnJ1bm5lci52MS5DaGF0VHVybkgAEjIKC2NoYXRfY2FuY2VsGB8gASgLMhsuc2xpbmcucnVubmVyLnYxLkNoYXRDYW5jZWxIABI0CgxleGVjX3JlcXVlc3QYICABKAsyHC5zbGluZy5ydW5uZXIudjEuRXhlY1JlcXVlc3RIABIyCgtyZXBvX2FjdGlvbhghIAEoCzIbLnNsaW5nLnJ1bm5lci52MS5SZXBvQWN0aW9uSAASOQoPcmVwb19hY3Rpb25fYWNrGCIgASgLMh4uc2xpbmcucnVubmVyLnYxLlJlcG9BY3Rpb25BY2tIAEIGCgRib2R5IhoKCUNoYWxsZW5nZRINCgVub25jZRgBIAEoDCLlAQoFSGVsbG8SEQoJcnVubmVyX2lkGAEgASgJEhQKDHRpbWVzdGFtcF9tcxgCIAEoAxIRCglzaWduYXR1cmUYAyABKAwSFgoOcnVubmVyX3ZlcnNpb24YBCABKAkSCgoCb3MYBSABKAkSDAoEYXJjaBgGIAEoCRIQCghob3N0bmFtZRgHIAEoCRItCglpbnZlbnRvcnkYCCABKAsyGi5zbGluZy5ydW5uZXIudjEuSW52ZW50b3J5Ei0KCmhlbGRfdGFza3MYCSADKAsyGS5zbGluZy5ydW5uZXIudjEuSGVsZFRhc2siPgoISGVsZFRhc2sSDwoHdGFza19pZBgBIAEoCRIPCgdydW5uaW5nGAIgASgIEhAKCGxhc3Rfc2VxGAMgASgEIl4KB1dlbGNvbWUSFgoOc2VydmVyX3RpbWVfbXMYASABKAMSIgoaaGVhcnRiZWF0X2ludGVydmFsX3NlY29uZHMYAiABKA0SFwoPZm9yZ2V0X3Rhc2tfaWRzGAMgAygJIiIKCUhlYXJ0YmVhdBIVCg1ydW5uaW5nX3Rhc2tzGAEgASgNIg4KDEhlYXJ0YmVhdEFjayLNAQoFRXJyb3ISKQoEY29kZRgBIAEoDjIbLnNsaW5nLnJ1bm5lci52MS5FcnJvci5Db2RlEg8KB21lc3NhZ2UYAiABKAkihwEKBENvZGUSFAoQQ09ERV9VTlNQRUNJRklFRBAAEhYKEkNPREVfQkFEX1NJR05BVFVSRRABEhAKDENPREVfUkVWT0tFRBACEhcKE0NPREVfVU5LTk9XTl9SVU5ORVIQAxITCg9DT0RFX0NMT0NLX1NLRVcQBBIRCg1DT0RFX1BST1RPQ09MEAUinQIKCUludmVudG9yeRIxCgxjYXBhYmlsaXRpZXMYASADKAsyGy5zbGluZy5ydW5uZXIudjEuQ2FwYWJpbGl0eRIkCgVyZXBvcxgCIAMoCzIVLnNsaW5nLnJ1bm5lci52MS5SZXBvEjEKCG1heF9tb2RlGAMgASgOMh8uc2xpbmcucnVubmVyLnYxLlBlcm1pc3Npb25Nb2RlEhwKFG1heF9jb25jdXJyZW50X3Rhc2tzGAQgASgNEg4KBmxhYmVscxgFIAMoCRIvCgtmb3VuZF9yZXBvcxgGIAMoCzIaLnNsaW5nLnJ1bm5lci52MS5Gb3VuZFJlcG8SFAoMcmVtb3RlX3JlcG9zGAcgASgIEg8KB2RlcGxveXMYCCABKAgiUwoJRm91bmRSZXBvEgwKBHBhdGgYASABKAkSDAoEbmFtZRgCIAEoCRIWCg5kZWZhdWx0X2JyYW5jaBgDIAEoCRISCgpyZW1vdGVfdXJsGAQgASgJIncKCkNhcGFiaWxpdHkSDAoEbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgJEg0KBXJlYWR5GAMgASgIEg4KBmRldGFpbBgEIAEoCRIrCgZtb2RlbHMYBSADKAsyGy5zbGluZy5ydW5uZXIudjEuQWdlbnRNb2RlbCKOAQoKQWdlbnRNb2RlbBIKCgJpZBgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSDwoHZWZmb3J0cxgEIAMoCRIWCg5kZWZhdWx0X2VmZm9ydBgFIAEoCRIMCgRmYXN0GAYgASgIEhIKCmlzX2RlZmF1bHQYByABKAgiiQEKBFJlcG8SDAoEbmFtZRgBIAEoCRIWCg5kZWZhdWx0X2JyYW5jaBgCIAEoCRISCgpyZW1vdGVfdXJsGAMgASgJEg8KB25ldHdvcmsYBCABKAgSFgoOZGVwbG95X2NvbW1hbmQYBSABKAkSHgoWZGVwbG95X3RpbWVvdXRfc2Vjb25kcxgGIAEoDSLKAQoKVGFza0Fzc2lnbhIPCgd0YXNrX2lkGAEgASgJEgwKBHJlcG8YAiABKAkSDQoFdGl0bGUYAyABKAkSEQoJb2JqZWN0aXZlGAQgASgJEi0KBG1vZGUYBSABKA4yHy5zbGluZy5ydW5uZXIudjEuUGVybWlzc2lvbk1vZGUSDwoHaGFybmVzcxgGIAEoCRIOCgZicmFuY2gYByABKAkSDQoFbW9kZWwYCCABKAkSDgoGZWZmb3J0GAkgASgJEgwKBGZhc3QYCiABKAgirAEKClJlcG9DaGFuZ2USEgoKcmVxdWVzdF9pZBgBIAEoCRIqCgJvcBgCIAEoDjIeLnNsaW5nLnJ1bm5lci52MS5SZXBvQ2hhbmdlLk9wEgwKBHBhdGgYAyABKAkSDAoEbmFtZRgEIAEoCRINCgVwYXRocxgFIAMoCSIzCgJPcBISCg5PUF9VTlNQRUNJRklFRBAAEgoKBk9QX0FERBABEg0KCU9QX1JFTU9WRRACIkMKEFJlcG9DaGFuZ2VSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJvaxgCIAEoCBIPCgdtZXNzYWdlGAMgASgJIgoKCFJlcG9TY2FuIh0KClRhc2tDYW5jZWwSDwoHdGFza19pZBgBIAEoCSIoCghFdmVudEFjaxIPCgd0YXNrX2lkGAEgASgJEgsKA3NlcRgCIAEoBCLdBAoJVGFza0V2ZW50Eg8KB3Rhc2tfaWQYASABKAkSCwoDc2VxGAIgASgEEg0KBWF0X21zGAMgASgDEjEKCGFjY2VwdGVkGAogASgLMh0uc2xpbmcucnVubmVyLnYxLlRhc2tBY2NlcHRlZEgAEjEKCHJlamVjdGVkGAsgASgLMh0uc2xpbmcucnVubmVyLnYxLlRhc2tSZWplY3RlZEgAEi8KB3N0YXJ0ZWQYDCABKAsyHC5zbGluZy5ydW5uZXIudjEuVGFza1N0YXJ0ZWRIABI2Cg1hZ2VudF9tZXNzYWdlGA0gASgLMh0uc2xpbmcucnVubmVyLnYxLkFnZW50TWVzc2FnZUgAEi4KB2NvbW1hbmQYDiABKAsyGy5zbGluZy5ydW5uZXIudjEuQ29tbWFuZFJ1bkgAEjIKC2ZpbGVfY2hhbmdlGA8gASgLMhsuc2xpbmcucnVubmVyLnYxLkZpbGVDaGFuZ2VIABIrCgRwbGFuGBAgASgLMhsuc2xpbmcucnVubmVyLnYxLlBsYW5VcGRhdGVIABInCgNsb2cYESABKAsyGC5zbGluZy5ydW5uZXIudjEuTG9nTGluZUgAEicKBXVzYWdlGBIgASgLMhYuc2xpbmcucnVubmVyLnYxLlVzYWdlSAASMQoIZmluaXNoZWQYEyABKAsyHS5zbGluZy5ydW5uZXIudjEuVGFza0ZpbmlzaGVkSAASNgoNYWN0aW9uX3Jlc3VsdBgUIAEoCzIdLnNsaW5nLnJ1bm5lci52MS5BY3Rpb25SZXN1bHRIAEIGCgRraW5kIg4KDFRhc2tBY2NlcHRlZCLxAQoMVGFza1JlamVjdGVkEjQKBnJlYXNvbhgBIAEoDjIkLnNsaW5nLnJ1bm5lci52MS5UYXNrUmVqZWN0ZWQuUmVhc29uEg8KB21lc3NhZ2UYAiABKAkimQEKBlJlYXNvbhIWChJSRUFTT05fVU5TUEVDSUZJRUQQABIZChVSRUFTT05fTU9ERV9BQk9WRV9DQVAQARIXChNSRUFTT05fVU5LTk9XTl9SRVBPEAISHgoaUkVBU09OX0hBUk5FU1NfVU5BVkFJTEFCTEUQAxIPCgtSRUFTT05fQlVTWRAEEhIKDlJFQVNPTl9JTlZBTElEEAUicAoLVGFza1N0YXJ0ZWQSDgoGYnJhbmNoGAEgASgJEhAKCGJhc2Vfc2hhGAIgASgJEhUKDXdvcmt0cmVlX3BhdGgYAyABKAkSDwoHaGFybmVzcxgEIAEoCRIXCg9oYXJuZXNzX3ZlcnNpb24YBSABKAkiLQoMQWdlbnRNZXNzYWdlEg8KB2l0ZW1faWQYASABKAkSDAoEdGV4dBgCIAEoCSL3AQoKQ29tbWFuZFJ1bhIPCgdpdGVtX2lkGAEgASgJEg8KB2NvbW1hbmQYAiABKAkSMgoGc3RhdHVzGAMgASgOMiIuc2xpbmcucnVubmVyLnYxLkNvbW1hbmRSdW4uU3RhdHVzEhYKCWV4aXRfY29kZRgEIAEoBUgAiAEBEg4KBm91dHB1dBgFIAEoCSJdCgZTdGF0dXMSFgoSU1RBVFVTX1VOU1BFQ0lGSUVEEAASEgoOU1RBVFVTX1NUQVJURUQQARIUChBTVEFUVVNfQ09NUExFVEVEEAISEQoNU1RBVFVTX0ZBSUxFRBADQgwKCl9leGl0X2NvZGUi6AEKCkZpbGVDaGFuZ2USDwoHaXRlbV9pZBgBIAEoCRIzCgdjaGFuZ2VzGAIgAygLMiIuc2xpbmcucnVubmVyLnYxLkZpbGVDaGFuZ2UuQ2hhbmdlGkYKBkNoYW5nZRIMCgRwYXRoGAEgASgJEi4KBGtpbmQYAiABKA4yIC5zbGluZy5ydW5uZXIudjEuRmlsZUNoYW5nZS5LaW5kIkwKBEtpbmQSFAoQS0lORF9VTlNQRUNJRklFRBAAEgwKCEtJTkRfQUREEAESDwoLS0lORF9NT0RJRlkQAhIPCgtLSU5EX0RFTEVURRADImEKClBsYW5VcGRhdGUSLwoFc3RlcHMYASADKAsyIC5zbGluZy5ydW5uZXIudjEuUGxhblVwZGF0ZS5TdGVwGiIKBFN0ZXASDAoEdGV4dBgBIAEoCRIMCgRkb25lGAIgASgIIpgBCgdMb2dMaW5lEi8KBnN0cmVhbRgBIAEoDjIfLnNsaW5nLnJ1bm5lci52MS5Mb2dMaW5lLlN0cmVhbRIMCgR0ZXh0GAIgASgJIk4KBlN0cmVhbRIWChJTVFJFQU1fVU5TUEVDSUZJRUQQABIRCg1TVFJFQU1fUlVOTkVSEAESGQoVU1RSRUFNX0hBUk5FU1NfU1RERVJSEAIiUQoFVXNhZ2USFAoMaW5wdXRfdG9rZW5zGAEgASgEEhsKE2NhY2hlZF9pbnB1dF90b2tlbnMYAiABKAQSFQoNb3V0cHV0X3Rva2VucxgDIAEoBCJJCglEaWZmU3RhdHMSFQoNZmlsZXNfY2hhbmdlZBgBIAEoDRISCgppbnNlcnRpb25zGAIgASgNEhEKCWRlbGV0aW9ucxgDIAEoDSK5AgoMVGFza0ZpbmlzaGVkEjYKB291dGNvbWUYASABKA4yJS5zbGluZy5ydW5uZXIudjEuVGFza0ZpbmlzaGVkLk91dGNvbWUSDwoHc3VtbWFyeRgCIAEoCRINCgVlcnJvchgDIAEoCRIOCgZicmFuY2gYBCABKAkSEgoKY29tbWl0X3NoYRgFIAEoCRIuCgpkaWZmX3N0YXRzGAYgASgLMhouc2xpbmcucnVubmVyLnYxLkRpZmZTdGF0cyJ9CgdPdXRjb21lEhcKE09VVENPTUVfVU5TUEVDSUZJRUQQABIVChFPVVRDT01FX1NVQ0NFRURFRBABEhIKDk9VVENPTUVfRkFJTEVEEAISFQoRT1VUQ09NRV9DQU5DRUxMRUQQAxIXChNPVVRDT01FX0lOVEVSUlVQVEVEEAQiyAEKDUFjdGlvblJlcXVlc3QSEQoJYWN0aW9uX2lkGAEgASgJEg8KB3Rhc2tfaWQYAiABKAkSMQoEa2luZBgDIAEoDjIjLnNsaW5nLnJ1bm5lci52MS5BY3Rpb25SZXF1ZXN0LktpbmQSEAoIcHJfdGl0bGUYBCABKAkSDwoHcHJfYm9keRgFIAEoCSI9CgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABINCglLSU5EX1BVU0gQARIQCgxLSU5EX09QRU5fUFIQAiKOAgoMQWN0aW9uUmVzdWx0EhEKCWFjdGlvbl9pZBgBIAEoCRIxCgRraW5kGAIgASgOMiMuc2xpbmcucnVubmVyLnYxLkFjdGlvblJlcXVlc3QuS2luZBI2CgdvdXRjb21lGAMgASgOMiUuc2xpbmcucnVubmVyLnYxLkFjdGlvblJlc3VsdC5PdXRjb21lEg8KB21lc3NhZ2UYBCABKAkSCwoDdXJsGAUgASgJImIKB091dGNvbWUSFwoTT1VUQ09NRV9VTlNQRUNJRklFRBAAEhUKEU9VVENPTUVfU1VDQ0VFREVEEAESEgoOT1VUQ09NRV9GQUlMRUQQAhITCg9PVVRDT01FX1JFRlVTRUQQAyLMAQoIQ2hhdFR1cm4SDwoHdHVybl9pZBgBIAEoCRIPCgdoYXJuZXNzGAIgASgJEg0KBW1vZGVsGAMgASgJEg4KBmVmZm9ydBgEIAEoCRIMCgRmYXN0GAUgASgIEhQKDGluc3RydWN0aW9ucxgGIAEoCRIOCgZwcm9tcHQYByABKAkSEgoKc2Vzc2lvbl9pZBgIIAEoCRIRCgl0b29sc191cmwYCSABKAkSEwoLdG9vbHNfdG9rZW4YCiABKAkSDwoHaGlzdG9yeRgLIAEoCSIdCgpDaGF0Q2FuY2VsEg8KB3R1cm5faWQYASABKAki4QEKCUNoYXRFdmVudBIPCgd0dXJuX2lkGAEgASgJEisKBWRlbHRhGAIgASgLMhouc2xpbmcucnVubmVyLnYxLkNoYXREZWx0YUgAEjAKCHRvb2xfdXNlGAMgASgLMhwuc2xpbmcucnVubmVyLnYxLkNoYXRUb29sVXNlSAASKQoEZG9uZRgEIAEoCzIZLnNsaW5nLnJ1bm5lci52MS5DaGF0RG9uZUgAEjEKCHRoaW5raW5nGAUgASgLMh0uc2xpbmcucnVubmVyLnYxLkNoYXRUaGlua2luZ0gAQgYKBGtpbmQiHAoMQ2hhdFRoaW5raW5nEgwKBHRleHQYASABKAkiGQoJQ2hhdERlbHRhEgwKBHRleHQYASABKAkiGwoLQ2hhdFRvb2xVc2USDAoEbmFtZRgBIAEoCSJoCghDaGF0RG9uZRIMCgR0ZXh0GAEgASgJEhIKCnNlc3Npb25faWQYAiABKAkSDQoFZXJyb3IYAyABKAkSFAoMaW5wdXRfdG9rZW5zGAQgASgEEhUKDW91dHB1dF90b2tlbnMYBSABKAQimgEKC0V4ZWNSZXF1ZXN0EhIKCnJlcXVlc3RfaWQYASABKAkSDwoHY29tbWFuZBgCIAEoCRILCgNjd2QYAyABKAkSFwoPdGltZW91dF9zZWNvbmRzGAQgASgNEi0KBG1vZGUYBSABKA4yHy5zbGluZy5ydW5uZXIudjEuUGVybWlzc2lvbk1vZGUSEQoJc2FuZGJveGVkGAYgASgIIsABCgpFeGVjUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSFgoJZXhpdF9jb2RlGAIgASgFSACIAQESDgoGb3V0cHV0GAMgASgJEhEKCXRydW5jYXRlZBgEIAEoCBIRCgl0aW1lZF9vdXQYBSABKAgSDQoFZXJyb3IYBiABKAkSEwoLZHVyYXRpb25fbXMYByABKAQSEQoJc2FuZGJveGVkGAggASgIEgsKA2N3ZBgJIAEoCUIMCgpfZXhpdF9jb2RlIq0CCgpSZXBvQWN0aW9uEhIKCnJlcXVlc3RfaWQYASABKAkSLgoEa2luZBgCIAEoDjIgLnNsaW5nLnJ1bm5lci52MS5SZXBvQWN0aW9uLktpbmQSDwoHdGFza19pZBgDIAEoCRIMCgRyZXBvGAQgASgJEg4KBmJyYW5jaBgFIAEoCRIWCg5kZWZhdWx0X2JyYW5jaBgGIAEoCRIOCgZwcl91cmwYByABKAkSFAoMbWVyZ2VfbWV0aG9kGAggASgJEg0KBXRpdGxlGAkgASgJEgwKBGJvZHkYCiABKAkSEgoKY29tbWl0X3NoYRgLIAEoCSI9CgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIOCgpLSU5EX01FUkdFEAESDwoLS0lORF9ERVBMT1kQAiIjCg1SZXBvQWN0aW9uQWNrEhIKCnJlcXVlc3RfaWQYASABKAkiNQoQUmVwb0FjdGlvbk91dHB1dBISCgpyZXF1ZXN0X2lkGAEgASgJEg0KBWNodW5rGAIgASgJIs4CChBSZXBvQWN0aW9uUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSLgoEa2luZBgCIAEoDjIgLnNsaW5nLnJ1bm5lci52MS5SZXBvQWN0aW9uLktpbmQSOgoHb3V0Y29tZRgDIAEoDjIpLnNsaW5nLnJ1bm5lci52MS5SZXBvQWN0aW9uUmVzdWx0Lk91dGNvbWUSDwoHbWVzc2FnZRgEIAEoCRISCgpjb21taXRfc2hhGAUgASgJEgsKA3VybBgGIAEoCRIWCglleGl0X2NvZGUYByABKAVIAIgBASJiCgdPdXRjb21lEhcKE09VVENPTUVfVU5TUEVDSUZJRUQQABIVChFPVVRDT01FX1NVQ0NFRURFRBABEhIKDk9VVENPTUVfRkFJTEVEEAISEwoPT1VUQ09NRV9SRUZVU0VEEANCDAoKX2V4aXRfY29kZSqrAQoOUGVybWlzc2lvbk1vZGUSHwobUEVSTUlTU0lPTl9NT0RFX1VOU1BFQ0lGSUVEEAASHQoZUEVSTUlTU0lPTl9NT0RFX1JFQURfT05MWRABEh4KGlBFUk1JU1NJT05fTU9ERV9TVVBFUlZJU0VEEAISGAoUUEVSTUlTU0lPTl9NT0RFX0FVVE8QAxIfChtQRVJNSVNTSU9OX01PREVfRlVMTF9BQ0NFU1MQBGIGcHJvdG8z");
+  fileDesc("ChxzbGluZy9ydW5uZXIvdjEvcnVubmVyLnByb3RvEg9zbGluZy5ydW5uZXIudjEi0A0KCEVudmVsb3BlEicKBWhlbGxvGAEgASgLMhYuc2xpbmcucnVubmVyLnYxLkhlbGxvSAASLwoJaGVhcnRiZWF0GAIgASgLMhouc2xpbmcucnVubmVyLnYxLkhlYXJ0YmVhdEgAEi8KCWludmVudG9yeRgDIAEoCzIaLnNsaW5nLnJ1bm5lci52MS5JbnZlbnRvcnlIABIwCgp0YXNrX2V2ZW50GAQgASgLMhouc2xpbmcucnVubmVyLnYxLlRhc2tFdmVudEgAEj8KEnJlcG9fY2hhbmdlX3Jlc3VsdBgFIAEoCzIhLnNsaW5nLnJ1bm5lci52MS5SZXBvQ2hhbmdlUmVzdWx0SAASMAoKY2hhdF9ldmVudBgGIAEoCzIaLnNsaW5nLnJ1bm5lci52MS5DaGF0RXZlbnRIABIyCgtleGVjX3Jlc3VsdBgHIAEoCzIbLnNsaW5nLnJ1bm5lci52MS5FeGVjUmVzdWx0SAASPwoScmVwb19hY3Rpb25fb3V0cHV0GAggASgLMiEuc2xpbmcucnVubmVyLnYxLlJlcG9BY3Rpb25PdXRwdXRIABI/ChJyZXBvX2FjdGlvbl9yZXN1bHQYCSABKAsyIS5zbGluZy5ydW5uZXIudjEuUmVwb0FjdGlvblJlc3VsdEgAEj8KEmZpbGVfc2VhcmNoX3Jlc3VsdBgKIAEoCzIhLnNsaW5nLnJ1bm5lci52MS5GaWxlU2VhcmNoUmVzdWx0SAASOwoQZmlsZV9yZWFkX3Jlc3VsdBgLIAEoCzIfLnNsaW5nLnJ1bm5lci52MS5GaWxlUmVhZFJlc3VsdEgAEjoKD2NoYW5uZWxfbWVzc2FnZRgMIAEoCzIfLnNsaW5nLnJ1bm5lci52MS5DaGFubmVsTWVzc2FnZUgAEkEKE2NoYW5uZWxfc2VuZF9yZXN1bHQYDSABKAsyIi5zbGluZy5ydW5uZXIudjEuQ2hhbm5lbFNlbmRSZXN1bHRIABIvCgljaGFsbGVuZ2UYFCABKAsyGi5zbGluZy5ydW5uZXIudjEuQ2hhbGxlbmdlSAASKwoHd2VsY29tZRgVIAEoCzIYLnNsaW5nLnJ1bm5lci52MS5XZWxjb21lSAASNgoNaGVhcnRiZWF0X2FjaxgWIAEoCzIdLnNsaW5nLnJ1bm5lci52MS5IZWFydGJlYXRBY2tIABIyCgt0YXNrX2Fzc2lnbhgXIAEoCzIbLnNsaW5nLnJ1bm5lci52MS5UYXNrQXNzaWduSAASMgoLdGFza19jYW5jZWwYGCABKAsyGy5zbGluZy5ydW5uZXIudjEuVGFza0NhbmNlbEgAEjgKDmFjdGlvbl9yZXF1ZXN0GBkgASgLMh4uc2xpbmcucnVubmVyLnYxLkFjdGlvblJlcXVlc3RIABIuCglldmVudF9hY2sYGiABKAsyGS5zbGluZy5ydW5uZXIudjEuRXZlbnRBY2tIABInCgVlcnJvchgbIAEoCzIWLnNsaW5nLnJ1bm5lci52MS5FcnJvckgAEjIKC3JlcG9fY2hhbmdlGBwgASgLMhsuc2xpbmcucnVubmVyLnYxLlJlcG9DaGFuZ2VIABIuCglyZXBvX3NjYW4YHSABKAsyGS5zbGluZy5ydW5uZXIudjEuUmVwb1NjYW5IABIuCgljaGF0X3R1cm4YHiABKAsyGS5zbGluZy5ydW5uZXIudjEuQ2hhdFR1cm5IABIyCgtjaGF0X2NhbmNlbBgfIAEoCzIbLnNsaW5nLnJ1bm5lci52MS5DaGF0Q2FuY2VsSAASNAoMZXhlY19yZXF1ZXN0GCAgASgLMhwuc2xpbmcucnVubmVyLnYxLkV4ZWNSZXF1ZXN0SAASMgoLcmVwb19hY3Rpb24YISABKAsyGy5zbGluZy5ydW5uZXIudjEuUmVwb0FjdGlvbkgAEjkKD3JlcG9fYWN0aW9uX2FjaxgiIAEoCzIeLnNsaW5nLnJ1bm5lci52MS5SZXBvQWN0aW9uQWNrSAASMgoLZmlsZV9zZWFyY2gYIyABKAsyGy5zbGluZy5ydW5uZXIudjEuRmlsZVNlYXJjaEgAEi4KCWZpbGVfcmVhZBgkIAEoCzIZLnNsaW5nLnJ1bm5lci52MS5GaWxlUmVhZEgAEjQKDGNoYW5uZWxfc2VuZBglIAEoCzIcLnNsaW5nLnJ1bm5lci52MS5DaGFubmVsU2VuZEgAEkEKE2NoYW5uZWxfbWVzc2FnZV9hY2sYJiABKAsyIi5zbGluZy5ydW5uZXIudjEuQ2hhbm5lbE1lc3NhZ2VBY2tIAEIGCgRib2R5IhoKCUNoYWxsZW5nZRINCgVub25jZRgBIAEoDCLlAQoFSGVsbG8SEQoJcnVubmVyX2lkGAEgASgJEhQKDHRpbWVzdGFtcF9tcxgCIAEoAxIRCglzaWduYXR1cmUYAyABKAwSFgoOcnVubmVyX3ZlcnNpb24YBCABKAkSCgoCb3MYBSABKAkSDAoEYXJjaBgGIAEoCRIQCghob3N0bmFtZRgHIAEoCRItCglpbnZlbnRvcnkYCCABKAsyGi5zbGluZy5ydW5uZXIudjEuSW52ZW50b3J5Ei0KCmhlbGRfdGFza3MYCSADKAsyGS5zbGluZy5ydW5uZXIudjEuSGVsZFRhc2siPgoISGVsZFRhc2sSDwoHdGFza19pZBgBIAEoCRIPCgdydW5uaW5nGAIgASgIEhAKCGxhc3Rfc2VxGAMgASgEIl4KB1dlbGNvbWUSFgoOc2VydmVyX3RpbWVfbXMYASABKAMSIgoaaGVhcnRiZWF0X2ludGVydmFsX3NlY29uZHMYAiABKA0SFwoPZm9yZ2V0X3Rhc2tfaWRzGAMgAygJIiIKCUhlYXJ0YmVhdBIVCg1ydW5uaW5nX3Rhc2tzGAEgASgNIg4KDEhlYXJ0YmVhdEFjayLNAQoFRXJyb3ISKQoEY29kZRgBIAEoDjIbLnNsaW5nLnJ1bm5lci52MS5FcnJvci5Db2RlEg8KB21lc3NhZ2UYAiABKAkihwEKBENvZGUSFAoQQ09ERV9VTlNQRUNJRklFRBAAEhYKEkNPREVfQkFEX1NJR05BVFVSRRABEhAKDENPREVfUkVWT0tFRBACEhcKE0NPREVfVU5LTk9XTl9SVU5ORVIQAxITCg9DT0RFX0NMT0NLX1NLRVcQBBIRCg1DT0RFX1BST1RPQ09MEAUi6QIKCUludmVudG9yeRIxCgxjYXBhYmlsaXRpZXMYASADKAsyGy5zbGluZy5ydW5uZXIudjEuQ2FwYWJpbGl0eRIkCgVyZXBvcxgCIAMoCzIVLnNsaW5nLnJ1bm5lci52MS5SZXBvEjEKCG1heF9tb2RlGAMgASgOMh8uc2xpbmcucnVubmVyLnYxLlBlcm1pc3Npb25Nb2RlEhwKFG1heF9jb25jdXJyZW50X3Rhc2tzGAQgASgNEg4KBmxhYmVscxgFIAMoCRIvCgtmb3VuZF9yZXBvcxgGIAMoCzIaLnNsaW5nLnJ1bm5lci52MS5Gb3VuZFJlcG8SFAoMcmVtb3RlX3JlcG9zGAcgASgIEg8KB2RlcGxveXMYCCABKAgSDwoHZm9sZGVycxgJIAMoCRINCgVmaWxlcxgKIAEoCBIqCghjaGFubmVscxgLIAMoCzIYLnNsaW5nLnJ1bm5lci52MS5DaGFubmVsIl4KB0NoYW5uZWwSDAoEa2luZBgBIAEoCRIMCgRuYW1lGAIgASgJEhcKD2FsbG93ZWRfc2VuZGVycxgDIAEoDRINCgVyZWFkeRgEIAEoCBIPCgdtaXNzaW5nGAUgASgJIlMKCUZvdW5kUmVwbxIMCgRwYXRoGAEgASgJEgwKBG5hbWUYAiABKAkSFgoOZGVmYXVsdF9icmFuY2gYAyABKAkSEgoKcmVtb3RlX3VybBgEIAEoCSJ3CgpDYXBhYmlsaXR5EgwKBG5hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoCRINCgVyZWFkeRgDIAEoCBIOCgZkZXRhaWwYBCABKAkSKwoGbW9kZWxzGAUgAygLMhsuc2xpbmcucnVubmVyLnYxLkFnZW50TW9kZWwijgEKCkFnZW50TW9kZWwSCgoCaWQYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEhMKC2Rlc2NyaXB0aW9uGAMgASgJEg8KB2VmZm9ydHMYBCADKAkSFgoOZGVmYXVsdF9lZmZvcnQYBSABKAkSDAoEZmFzdBgGIAEoCBISCgppc19kZWZhdWx0GAcgASgIIokBCgRSZXBvEgwKBG5hbWUYASABKAkSFgoOZGVmYXVsdF9icmFuY2gYAiABKAkSEgoKcmVtb3RlX3VybBgDIAEoCRIPCgduZXR3b3JrGAQgASgIEhYKDmRlcGxveV9jb21tYW5kGAUgASgJEh4KFmRlcGxveV90aW1lb3V0X3NlY29uZHMYBiABKA0iygEKClRhc2tBc3NpZ24SDwoHdGFza19pZBgBIAEoCRIMCgRyZXBvGAIgASgJEg0KBXRpdGxlGAMgASgJEhEKCW9iamVjdGl2ZRgEIAEoCRItCgRtb2RlGAUgASgOMh8uc2xpbmcucnVubmVyLnYxLlBlcm1pc3Npb25Nb2RlEg8KB2hhcm5lc3MYBiABKAkSDgoGYnJhbmNoGAcgASgJEg0KBW1vZGVsGAggASgJEg4KBmVmZm9ydBgJIAEoCRIMCgRmYXN0GAogASgIIqwBCgpSZXBvQ2hhbmdlEhIKCnJlcXVlc3RfaWQYASABKAkSKgoCb3AYAiABKA4yHi5zbGluZy5ydW5uZXIudjEuUmVwb0NoYW5nZS5PcBIMCgRwYXRoGAMgASgJEgwKBG5hbWUYBCABKAkSDQoFcGF0aHMYBSADKAkiMwoCT3ASEgoOT1BfVU5TUEVDSUZJRUQQABIKCgZPUF9BREQQARINCglPUF9SRU1PVkUQAiJDChBSZXBvQ2hhbmdlUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSCgoCb2sYAiABKAgSDwoHbWVzc2FnZRgDIAEoCSIKCghSZXBvU2NhbiIdCgpUYXNrQ2FuY2VsEg8KB3Rhc2tfaWQYASABKAkiKAoIRXZlbnRBY2sSDwoHdGFza19pZBgBIAEoCRILCgNzZXEYAiABKAQi3QQKCVRhc2tFdmVudBIPCgd0YXNrX2lkGAEgASgJEgsKA3NlcRgCIAEoBBINCgVhdF9tcxgDIAEoAxIxCghhY2NlcHRlZBgKIAEoCzIdLnNsaW5nLnJ1bm5lci52MS5UYXNrQWNjZXB0ZWRIABIxCghyZWplY3RlZBgLIAEoCzIdLnNsaW5nLnJ1bm5lci52MS5UYXNrUmVqZWN0ZWRIABIvCgdzdGFydGVkGAwgASgLMhwuc2xpbmcucnVubmVyLnYxLlRhc2tTdGFydGVkSAASNgoNYWdlbnRfbWVzc2FnZRgNIAEoCzIdLnNsaW5nLnJ1bm5lci52MS5BZ2VudE1lc3NhZ2VIABIuCgdjb21tYW5kGA4gASgLMhsuc2xpbmcucnVubmVyLnYxLkNvbW1hbmRSdW5IABIyCgtmaWxlX2NoYW5nZRgPIAEoCzIbLnNsaW5nLnJ1bm5lci52MS5GaWxlQ2hhbmdlSAASKwoEcGxhbhgQIAEoCzIbLnNsaW5nLnJ1bm5lci52MS5QbGFuVXBkYXRlSAASJwoDbG9nGBEgASgLMhguc2xpbmcucnVubmVyLnYxLkxvZ0xpbmVIABInCgV1c2FnZRgSIAEoCzIWLnNsaW5nLnJ1bm5lci52MS5Vc2FnZUgAEjEKCGZpbmlzaGVkGBMgASgLMh0uc2xpbmcucnVubmVyLnYxLlRhc2tGaW5pc2hlZEgAEjYKDWFjdGlvbl9yZXN1bHQYFCABKAsyHS5zbGluZy5ydW5uZXIudjEuQWN0aW9uUmVzdWx0SABCBgoEa2luZCIOCgxUYXNrQWNjZXB0ZWQi8QEKDFRhc2tSZWplY3RlZBI0CgZyZWFzb24YASABKA4yJC5zbGluZy5ydW5uZXIudjEuVGFza1JlamVjdGVkLlJlYXNvbhIPCgdtZXNzYWdlGAIgASgJIpkBCgZSZWFzb24SFgoSUkVBU09OX1VOU1BFQ0lGSUVEEAASGQoVUkVBU09OX01PREVfQUJPVkVfQ0FQEAESFwoTUkVBU09OX1VOS05PV05fUkVQTxACEh4KGlJFQVNPTl9IQVJORVNTX1VOQVZBSUxBQkxFEAMSDwoLUkVBU09OX0JVU1kQBBISCg5SRUFTT05fSU5WQUxJRBAFInAKC1Rhc2tTdGFydGVkEg4KBmJyYW5jaBgBIAEoCRIQCghiYXNlX3NoYRgCIAEoCRIVCg13b3JrdHJlZV9wYXRoGAMgASgJEg8KB2hhcm5lc3MYBCABKAkSFwoPaGFybmVzc192ZXJzaW9uGAUgASgJIi0KDEFnZW50TWVzc2FnZRIPCgdpdGVtX2lkGAEgASgJEgwKBHRleHQYAiABKAki9wEKCkNvbW1hbmRSdW4SDwoHaXRlbV9pZBgBIAEoCRIPCgdjb21tYW5kGAIgASgJEjIKBnN0YXR1cxgDIAEoDjIiLnNsaW5nLnJ1bm5lci52MS5Db21tYW5kUnVuLlN0YXR1cxIWCglleGl0X2NvZGUYBCABKAVIAIgBARIOCgZvdXRwdXQYBSABKAkiXQoGU3RhdHVzEhYKElNUQVRVU19VTlNQRUNJRklFRBAAEhIKDlNUQVRVU19TVEFSVEVEEAESFAoQU1RBVFVTX0NPTVBMRVRFRBACEhEKDVNUQVRVU19GQUlMRUQQA0IMCgpfZXhpdF9jb2RlIugBCgpGaWxlQ2hhbmdlEg8KB2l0ZW1faWQYASABKAkSMwoHY2hhbmdlcxgCIAMoCzIiLnNsaW5nLnJ1bm5lci52MS5GaWxlQ2hhbmdlLkNoYW5nZRpGCgZDaGFuZ2USDAoEcGF0aBgBIAEoCRIuCgRraW5kGAIgASgOMiAuc2xpbmcucnVubmVyLnYxLkZpbGVDaGFuZ2UuS2luZCJMCgRLaW5kEhQKEEtJTkRfVU5TUEVDSUZJRUQQABIMCghLSU5EX0FERBABEg8KC0tJTkRfTU9ESUZZEAISDwoLS0lORF9ERUxFVEUQAyJhCgpQbGFuVXBkYXRlEi8KBXN0ZXBzGAEgAygLMiAuc2xpbmcucnVubmVyLnYxLlBsYW5VcGRhdGUuU3RlcBoiCgRTdGVwEgwKBHRleHQYASABKAkSDAoEZG9uZRgCIAEoCCKYAQoHTG9nTGluZRIvCgZzdHJlYW0YASABKA4yHy5zbGluZy5ydW5uZXIudjEuTG9nTGluZS5TdHJlYW0SDAoEdGV4dBgCIAEoCSJOCgZTdHJlYW0SFgoSU1RSRUFNX1VOU1BFQ0lGSUVEEAASEQoNU1RSRUFNX1JVTk5FUhABEhkKFVNUUkVBTV9IQVJORVNTX1NUREVSUhACIlEKBVVzYWdlEhQKDGlucHV0X3Rva2VucxgBIAEoBBIbChNjYWNoZWRfaW5wdXRfdG9rZW5zGAIgASgEEhUKDW91dHB1dF90b2tlbnMYAyABKAQiSQoJRGlmZlN0YXRzEhUKDWZpbGVzX2NoYW5nZWQYASABKA0SEgoKaW5zZXJ0aW9ucxgCIAEoDRIRCglkZWxldGlvbnMYAyABKA0iuQIKDFRhc2tGaW5pc2hlZBI2CgdvdXRjb21lGAEgASgOMiUuc2xpbmcucnVubmVyLnYxLlRhc2tGaW5pc2hlZC5PdXRjb21lEg8KB3N1bW1hcnkYAiABKAkSDQoFZXJyb3IYAyABKAkSDgoGYnJhbmNoGAQgASgJEhIKCmNvbW1pdF9zaGEYBSABKAkSLgoKZGlmZl9zdGF0cxgGIAEoCzIaLnNsaW5nLnJ1bm5lci52MS5EaWZmU3RhdHMifQoHT3V0Y29tZRIXChNPVVRDT01FX1VOU1BFQ0lGSUVEEAASFQoRT1VUQ09NRV9TVUNDRUVERUQQARISCg5PVVRDT01FX0ZBSUxFRBACEhUKEU9VVENPTUVfQ0FOQ0VMTEVEEAMSFwoTT1VUQ09NRV9JTlRFUlJVUFRFRBAEIsgBCg1BY3Rpb25SZXF1ZXN0EhEKCWFjdGlvbl9pZBgBIAEoCRIPCgd0YXNrX2lkGAIgASgJEjEKBGtpbmQYAyABKA4yIy5zbGluZy5ydW5uZXIudjEuQWN0aW9uUmVxdWVzdC5LaW5kEhAKCHByX3RpdGxlGAQgASgJEg8KB3ByX2JvZHkYBSABKAkiPQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASDQoJS0lORF9QVVNIEAESEAoMS0lORF9PUEVOX1BSEAIijgIKDEFjdGlvblJlc3VsdBIRCglhY3Rpb25faWQYASABKAkSMQoEa2luZBgCIAEoDjIjLnNsaW5nLnJ1bm5lci52MS5BY3Rpb25SZXF1ZXN0LktpbmQSNgoHb3V0Y29tZRgDIAEoDjIlLnNsaW5nLnJ1bm5lci52MS5BY3Rpb25SZXN1bHQuT3V0Y29tZRIPCgdtZXNzYWdlGAQgASgJEgsKA3VybBgFIAEoCSJiCgdPdXRjb21lEhcKE09VVENPTUVfVU5TUEVDSUZJRUQQABIVChFPVVRDT01FX1NVQ0NFRURFRBABEhIKDk9VVENPTUVfRkFJTEVEEAISEwoPT1VUQ09NRV9SRUZVU0VEEAMizAEKCENoYXRUdXJuEg8KB3R1cm5faWQYASABKAkSDwoHaGFybmVzcxgCIAEoCRINCgVtb2RlbBgDIAEoCRIOCgZlZmZvcnQYBCABKAkSDAoEZmFzdBgFIAEoCBIUCgxpbnN0cnVjdGlvbnMYBiABKAkSDgoGcHJvbXB0GAcgASgJEhIKCnNlc3Npb25faWQYCCABKAkSEQoJdG9vbHNfdXJsGAkgASgJEhMKC3Rvb2xzX3Rva2VuGAogASgJEg8KB2hpc3RvcnkYCyABKAkiHQoKQ2hhdENhbmNlbBIPCgd0dXJuX2lkGAEgASgJIuEBCglDaGF0RXZlbnQSDwoHdHVybl9pZBgBIAEoCRIrCgVkZWx0YRgCIAEoCzIaLnNsaW5nLnJ1bm5lci52MS5DaGF0RGVsdGFIABIwCgh0b29sX3VzZRgDIAEoCzIcLnNsaW5nLnJ1bm5lci52MS5DaGF0VG9vbFVzZUgAEikKBGRvbmUYBCABKAsyGS5zbGluZy5ydW5uZXIudjEuQ2hhdERvbmVIABIxCgh0aGlua2luZxgFIAEoCzIdLnNsaW5nLnJ1bm5lci52MS5DaGF0VGhpbmtpbmdIAEIGCgRraW5kIhwKDENoYXRUaGlua2luZxIMCgR0ZXh0GAEgASgJIhkKCUNoYXREZWx0YRIMCgR0ZXh0GAEgASgJIhsKC0NoYXRUb29sVXNlEgwKBG5hbWUYASABKAkiaAoIQ2hhdERvbmUSDAoEdGV4dBgBIAEoCRISCgpzZXNzaW9uX2lkGAIgASgJEg0KBWVycm9yGAMgASgJEhQKDGlucHV0X3Rva2VucxgEIAEoBBIVCg1vdXRwdXRfdG9rZW5zGAUgASgEIpoBCgtFeGVjUmVxdWVzdBISCgpyZXF1ZXN0X2lkGAEgASgJEg8KB2NvbW1hbmQYAiABKAkSCwoDY3dkGAMgASgJEhcKD3RpbWVvdXRfc2Vjb25kcxgEIAEoDRItCgRtb2RlGAUgASgOMh8uc2xpbmcucnVubmVyLnYxLlBlcm1pc3Npb25Nb2RlEhEKCXNhbmRib3hlZBgGIAEoCCLAAQoKRXhlY1Jlc3VsdBISCgpyZXF1ZXN0X2lkGAEgASgJEhYKCWV4aXRfY29kZRgCIAEoBUgAiAEBEg4KBm91dHB1dBgDIAEoCRIRCgl0cnVuY2F0ZWQYBCABKAgSEQoJdGltZWRfb3V0GAUgASgIEg0KBWVycm9yGAYgASgJEhMKC2R1cmF0aW9uX21zGAcgASgEEhEKCXNhbmRib3hlZBgIIAEoCBILCgNjd2QYCSABKAlCDAoKX2V4aXRfY29kZSKtAgoKUmVwb0FjdGlvbhISCgpyZXF1ZXN0X2lkGAEgASgJEi4KBGtpbmQYAiABKA4yIC5zbGluZy5ydW5uZXIudjEuUmVwb0FjdGlvbi5LaW5kEg8KB3Rhc2tfaWQYAyABKAkSDAoEcmVwbxgEIAEoCRIOCgZicmFuY2gYBSABKAkSFgoOZGVmYXVsdF9icmFuY2gYBiABKAkSDgoGcHJfdXJsGAcgASgJEhQKDG1lcmdlX21ldGhvZBgIIAEoCRINCgV0aXRsZRgJIAEoCRIMCgRib2R5GAogASgJEhIKCmNvbW1pdF9zaGEYCyABKAkiPQoES2luZBIUChBLSU5EX1VOU1BFQ0lGSUVEEAASDgoKS0lORF9NRVJHRRABEg8KC0tJTkRfREVQTE9ZEAIiIwoNUmVwb0FjdGlvbkFjaxISCgpyZXF1ZXN0X2lkGAEgASgJIjUKEFJlcG9BY3Rpb25PdXRwdXQSEgoKcmVxdWVzdF9pZBgBIAEoCRINCgVjaHVuaxgCIAEoCSLOAgoQUmVwb0FjdGlvblJlc3VsdBISCgpyZXF1ZXN0X2lkGAEgASgJEi4KBGtpbmQYAiABKA4yIC5zbGluZy5ydW5uZXIudjEuUmVwb0FjdGlvbi5LaW5kEjoKB291dGNvbWUYAyABKA4yKS5zbGluZy5ydW5uZXIudjEuUmVwb0FjdGlvblJlc3VsdC5PdXRjb21lEg8KB21lc3NhZ2UYBCABKAkSEgoKY29tbWl0X3NoYRgFIAEoCRILCgN1cmwYBiABKAkSFgoJZXhpdF9jb2RlGAcgASgFSACIAQEiYgoHT3V0Y29tZRIXChNPVVRDT01FX1VOU1BFQ0lGSUVEEAASFQoRT1VUQ09NRV9TVUNDRUVERUQQARISCg5PVVRDT01FX0ZBSUxFRBACEhMKD09VVENPTUVfUkVGVVNFRBADQgwKCl9leGl0X2NvZGUiVQoKRmlsZVNlYXJjaBISCgpyZXF1ZXN0X2lkGAEgASgJEg0KBXF1ZXJ5GAIgASgJEg8KB2ZvbGRlcnMYAyADKAkSEwoLbWF4X3Jlc3VsdHMYBCABKA0iwQEKEEZpbGVTZWFyY2hSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIzCgRoaXRzGAIgAygLMiUuc2xpbmcucnVubmVyLnYxLkZpbGVTZWFyY2hSZXN1bHQuSGl0EhEKCXRydW5jYXRlZBgDIAEoCBINCgVlcnJvchgEIAEoCRpCCgNIaXQSDgoGZm9sZGVyGAEgASgJEgwKBHBhdGgYAiABKAkSDAoEbGluZRgDIAEoDRIPCgdzbmlwcGV0GAQgASgJIk8KCEZpbGVSZWFkEhIKCnJlcXVlc3RfaWQYASABKAkSDgoGZm9sZGVyGAIgASgJEgwKBHBhdGgYAyABKAkSEQoJbWF4X2J5dGVzGAQgASgNImUKDkZpbGVSZWFkUmVzdWx0EhIKCnJlcXVlc3RfaWQYASABKAkSDwoHY29udGVudBgCIAEoCRIRCgl0cnVuY2F0ZWQYAyABKAgSDQoFZXJyb3IYBCABKAkSDAoEc2l6ZRgFIAEoBCJ4Cg5DaGFubmVsTWVzc2FnZRIPCgdjaGFubmVsGAEgASgJEhQKDGNvbnZlcnNhdGlvbhgCIAEoCRIOCgZzZW5kZXIYAyABKAkSDAoEdGV4dBgEIAEoCRINCgVhdF9tcxgFIAEoAxISCgptZXNzYWdlX2lkGAYgASgJIjgKEUNoYW5uZWxNZXNzYWdlQWNrEg8KB2NoYW5uZWwYASABKAkSEgoKbWVzc2FnZV9pZBgCIAEoCSJWCgtDaGFubmVsU2VuZBISCgpyZXF1ZXN0X2lkGAEgASgJEg8KB2NoYW5uZWwYAiABKAkSFAoMY29udmVyc2F0aW9uGAMgASgJEgwKBHRleHQYBCABKAkiRAoRQ2hhbm5lbFNlbmRSZXN1bHQSEgoKcmVxdWVzdF9pZBgBIAEoCRIKCgJvaxgCIAEoCBIPCgdtZXNzYWdlGAMgASgJKqsBCg5QZXJtaXNzaW9uTW9kZRIfChtQRVJNSVNTSU9OX01PREVfVU5TUEVDSUZJRUQQABIdChlQRVJNSVNTSU9OX01PREVfUkVBRF9PTkxZEAESHgoaUEVSTUlTU0lPTl9NT0RFX1NVUEVSVklTRUQQAhIYChRQRVJNSVNTSU9OX01PREVfQVVUTxADEh8KG1BFUk1JU1NJT05fTU9ERV9GVUxMX0FDQ0VTUxAEYgZwcm90bzM");
 
 /**
  * Describes the message sling.runner.v1.Envelope.
@@ -101,52 +101,59 @@ export const InventorySchema = /*@__PURE__*/
   messageDesc(file_sling_runner_v1_runner, 8);
 
 /**
+ * Describes the message sling.runner.v1.Channel.
+ * Use `create(ChannelSchema)` to create a new message.
+ */
+export const ChannelSchema = /*@__PURE__*/
+  messageDesc(file_sling_runner_v1_runner, 9);
+
+/**
  * Describes the message sling.runner.v1.FoundRepo.
  * Use `create(FoundRepoSchema)` to create a new message.
  */
 export const FoundRepoSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 9);
+  messageDesc(file_sling_runner_v1_runner, 10);
 
 /**
  * Describes the message sling.runner.v1.Capability.
  * Use `create(CapabilitySchema)` to create a new message.
  */
 export const CapabilitySchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 10);
+  messageDesc(file_sling_runner_v1_runner, 11);
 
 /**
  * Describes the message sling.runner.v1.AgentModel.
  * Use `create(AgentModelSchema)` to create a new message.
  */
 export const AgentModelSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 11);
+  messageDesc(file_sling_runner_v1_runner, 12);
 
 /**
  * Describes the message sling.runner.v1.Repo.
  * Use `create(RepoSchema)` to create a new message.
  */
 export const RepoSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 12);
+  messageDesc(file_sling_runner_v1_runner, 13);
 
 /**
  * Describes the message sling.runner.v1.TaskAssign.
  * Use `create(TaskAssignSchema)` to create a new message.
  */
 export const TaskAssignSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 13);
+  messageDesc(file_sling_runner_v1_runner, 14);
 
 /**
  * Describes the message sling.runner.v1.RepoChange.
  * Use `create(RepoChangeSchema)` to create a new message.
  */
 export const RepoChangeSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 14);
+  messageDesc(file_sling_runner_v1_runner, 15);
 
 /**
  * Describes the enum sling.runner.v1.RepoChange.Op.
  */
 export const RepoChange_OpSchema = /*@__PURE__*/
-  enumDesc(file_sling_runner_v1_runner, 14, 0);
+  enumDesc(file_sling_runner_v1_runner, 15, 0);
 
 /**
  * @generated from enum sling.runner.v1.RepoChange.Op
@@ -159,55 +166,55 @@ export const RepoChange_Op = /*@__PURE__*/
  * Use `create(RepoChangeResultSchema)` to create a new message.
  */
 export const RepoChangeResultSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 15);
+  messageDesc(file_sling_runner_v1_runner, 16);
 
 /**
  * Describes the message sling.runner.v1.RepoScan.
  * Use `create(RepoScanSchema)` to create a new message.
  */
 export const RepoScanSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 16);
+  messageDesc(file_sling_runner_v1_runner, 17);
 
 /**
  * Describes the message sling.runner.v1.TaskCancel.
  * Use `create(TaskCancelSchema)` to create a new message.
  */
 export const TaskCancelSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 17);
+  messageDesc(file_sling_runner_v1_runner, 18);
 
 /**
  * Describes the message sling.runner.v1.EventAck.
  * Use `create(EventAckSchema)` to create a new message.
  */
 export const EventAckSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 18);
+  messageDesc(file_sling_runner_v1_runner, 19);
 
 /**
  * Describes the message sling.runner.v1.TaskEvent.
  * Use `create(TaskEventSchema)` to create a new message.
  */
 export const TaskEventSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 19);
+  messageDesc(file_sling_runner_v1_runner, 20);
 
 /**
  * Describes the message sling.runner.v1.TaskAccepted.
  * Use `create(TaskAcceptedSchema)` to create a new message.
  */
 export const TaskAcceptedSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 20);
+  messageDesc(file_sling_runner_v1_runner, 21);
 
 /**
  * Describes the message sling.runner.v1.TaskRejected.
  * Use `create(TaskRejectedSchema)` to create a new message.
  */
 export const TaskRejectedSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 21);
+  messageDesc(file_sling_runner_v1_runner, 22);
 
 /**
  * Describes the enum sling.runner.v1.TaskRejected.Reason.
  */
 export const TaskRejected_ReasonSchema = /*@__PURE__*/
-  enumDesc(file_sling_runner_v1_runner, 21, 0);
+  enumDesc(file_sling_runner_v1_runner, 22, 0);
 
 /**
  * @generated from enum sling.runner.v1.TaskRejected.Reason
@@ -220,27 +227,27 @@ export const TaskRejected_Reason = /*@__PURE__*/
  * Use `create(TaskStartedSchema)` to create a new message.
  */
 export const TaskStartedSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 22);
+  messageDesc(file_sling_runner_v1_runner, 23);
 
 /**
  * Describes the message sling.runner.v1.AgentMessage.
  * Use `create(AgentMessageSchema)` to create a new message.
  */
 export const AgentMessageSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 23);
+  messageDesc(file_sling_runner_v1_runner, 24);
 
 /**
  * Describes the message sling.runner.v1.CommandRun.
  * Use `create(CommandRunSchema)` to create a new message.
  */
 export const CommandRunSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 24);
+  messageDesc(file_sling_runner_v1_runner, 25);
 
 /**
  * Describes the enum sling.runner.v1.CommandRun.Status.
  */
 export const CommandRun_StatusSchema = /*@__PURE__*/
-  enumDesc(file_sling_runner_v1_runner, 24, 0);
+  enumDesc(file_sling_runner_v1_runner, 25, 0);
 
 /**
  * @generated from enum sling.runner.v1.CommandRun.Status
@@ -253,20 +260,20 @@ export const CommandRun_Status = /*@__PURE__*/
  * Use `create(FileChangeSchema)` to create a new message.
  */
 export const FileChangeSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 25);
+  messageDesc(file_sling_runner_v1_runner, 26);
 
 /**
  * Describes the message sling.runner.v1.FileChange.Change.
  * Use `create(FileChange_ChangeSchema)` to create a new message.
  */
 export const FileChange_ChangeSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 25, 0);
+  messageDesc(file_sling_runner_v1_runner, 26, 0);
 
 /**
  * Describes the enum sling.runner.v1.FileChange.Kind.
  */
 export const FileChange_KindSchema = /*@__PURE__*/
-  enumDesc(file_sling_runner_v1_runner, 25, 0);
+  enumDesc(file_sling_runner_v1_runner, 26, 0);
 
 /**
  * @generated from enum sling.runner.v1.FileChange.Kind
@@ -279,27 +286,27 @@ export const FileChange_Kind = /*@__PURE__*/
  * Use `create(PlanUpdateSchema)` to create a new message.
  */
 export const PlanUpdateSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 26);
+  messageDesc(file_sling_runner_v1_runner, 27);
 
 /**
  * Describes the message sling.runner.v1.PlanUpdate.Step.
  * Use `create(PlanUpdate_StepSchema)` to create a new message.
  */
 export const PlanUpdate_StepSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 26, 0);
+  messageDesc(file_sling_runner_v1_runner, 27, 0);
 
 /**
  * Describes the message sling.runner.v1.LogLine.
  * Use `create(LogLineSchema)` to create a new message.
  */
 export const LogLineSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 27);
+  messageDesc(file_sling_runner_v1_runner, 28);
 
 /**
  * Describes the enum sling.runner.v1.LogLine.Stream.
  */
 export const LogLine_StreamSchema = /*@__PURE__*/
-  enumDesc(file_sling_runner_v1_runner, 27, 0);
+  enumDesc(file_sling_runner_v1_runner, 28, 0);
 
 /**
  * @generated from enum sling.runner.v1.LogLine.Stream
@@ -312,27 +319,27 @@ export const LogLine_Stream = /*@__PURE__*/
  * Use `create(UsageSchema)` to create a new message.
  */
 export const UsageSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 28);
+  messageDesc(file_sling_runner_v1_runner, 29);
 
 /**
  * Describes the message sling.runner.v1.DiffStats.
  * Use `create(DiffStatsSchema)` to create a new message.
  */
 export const DiffStatsSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 29);
+  messageDesc(file_sling_runner_v1_runner, 30);
 
 /**
  * Describes the message sling.runner.v1.TaskFinished.
  * Use `create(TaskFinishedSchema)` to create a new message.
  */
 export const TaskFinishedSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 30);
+  messageDesc(file_sling_runner_v1_runner, 31);
 
 /**
  * Describes the enum sling.runner.v1.TaskFinished.Outcome.
  */
 export const TaskFinished_OutcomeSchema = /*@__PURE__*/
-  enumDesc(file_sling_runner_v1_runner, 30, 0);
+  enumDesc(file_sling_runner_v1_runner, 31, 0);
 
 /**
  * @generated from enum sling.runner.v1.TaskFinished.Outcome
@@ -345,13 +352,13 @@ export const TaskFinished_Outcome = /*@__PURE__*/
  * Use `create(ActionRequestSchema)` to create a new message.
  */
 export const ActionRequestSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 31);
+  messageDesc(file_sling_runner_v1_runner, 32);
 
 /**
  * Describes the enum sling.runner.v1.ActionRequest.Kind.
  */
 export const ActionRequest_KindSchema = /*@__PURE__*/
-  enumDesc(file_sling_runner_v1_runner, 31, 0);
+  enumDesc(file_sling_runner_v1_runner, 32, 0);
 
 /**
  * @generated from enum sling.runner.v1.ActionRequest.Kind
@@ -364,13 +371,13 @@ export const ActionRequest_Kind = /*@__PURE__*/
  * Use `create(ActionResultSchema)` to create a new message.
  */
 export const ActionResultSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 32);
+  messageDesc(file_sling_runner_v1_runner, 33);
 
 /**
  * Describes the enum sling.runner.v1.ActionResult.Outcome.
  */
 export const ActionResult_OutcomeSchema = /*@__PURE__*/
-  enumDesc(file_sling_runner_v1_runner, 32, 0);
+  enumDesc(file_sling_runner_v1_runner, 33, 0);
 
 /**
  * @generated from enum sling.runner.v1.ActionResult.Outcome
@@ -383,76 +390,76 @@ export const ActionResult_Outcome = /*@__PURE__*/
  * Use `create(ChatTurnSchema)` to create a new message.
  */
 export const ChatTurnSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 33);
+  messageDesc(file_sling_runner_v1_runner, 34);
 
 /**
  * Describes the message sling.runner.v1.ChatCancel.
  * Use `create(ChatCancelSchema)` to create a new message.
  */
 export const ChatCancelSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 34);
+  messageDesc(file_sling_runner_v1_runner, 35);
 
 /**
  * Describes the message sling.runner.v1.ChatEvent.
  * Use `create(ChatEventSchema)` to create a new message.
  */
 export const ChatEventSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 35);
+  messageDesc(file_sling_runner_v1_runner, 36);
 
 /**
  * Describes the message sling.runner.v1.ChatThinking.
  * Use `create(ChatThinkingSchema)` to create a new message.
  */
 export const ChatThinkingSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 36);
+  messageDesc(file_sling_runner_v1_runner, 37);
 
 /**
  * Describes the message sling.runner.v1.ChatDelta.
  * Use `create(ChatDeltaSchema)` to create a new message.
  */
 export const ChatDeltaSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 37);
+  messageDesc(file_sling_runner_v1_runner, 38);
 
 /**
  * Describes the message sling.runner.v1.ChatToolUse.
  * Use `create(ChatToolUseSchema)` to create a new message.
  */
 export const ChatToolUseSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 38);
+  messageDesc(file_sling_runner_v1_runner, 39);
 
 /**
  * Describes the message sling.runner.v1.ChatDone.
  * Use `create(ChatDoneSchema)` to create a new message.
  */
 export const ChatDoneSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 39);
+  messageDesc(file_sling_runner_v1_runner, 40);
 
 /**
  * Describes the message sling.runner.v1.ExecRequest.
  * Use `create(ExecRequestSchema)` to create a new message.
  */
 export const ExecRequestSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 40);
+  messageDesc(file_sling_runner_v1_runner, 41);
 
 /**
  * Describes the message sling.runner.v1.ExecResult.
  * Use `create(ExecResultSchema)` to create a new message.
  */
 export const ExecResultSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 41);
+  messageDesc(file_sling_runner_v1_runner, 42);
 
 /**
  * Describes the message sling.runner.v1.RepoAction.
  * Use `create(RepoActionSchema)` to create a new message.
  */
 export const RepoActionSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 42);
+  messageDesc(file_sling_runner_v1_runner, 43);
 
 /**
  * Describes the enum sling.runner.v1.RepoAction.Kind.
  */
 export const RepoAction_KindSchema = /*@__PURE__*/
-  enumDesc(file_sling_runner_v1_runner, 42, 0);
+  enumDesc(file_sling_runner_v1_runner, 43, 0);
 
 /**
  * @generated from enum sling.runner.v1.RepoAction.Kind
@@ -465,33 +472,96 @@ export const RepoAction_Kind = /*@__PURE__*/
  * Use `create(RepoActionAckSchema)` to create a new message.
  */
 export const RepoActionAckSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 43);
+  messageDesc(file_sling_runner_v1_runner, 44);
 
 /**
  * Describes the message sling.runner.v1.RepoActionOutput.
  * Use `create(RepoActionOutputSchema)` to create a new message.
  */
 export const RepoActionOutputSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 44);
+  messageDesc(file_sling_runner_v1_runner, 45);
 
 /**
  * Describes the message sling.runner.v1.RepoActionResult.
  * Use `create(RepoActionResultSchema)` to create a new message.
  */
 export const RepoActionResultSchema = /*@__PURE__*/
-  messageDesc(file_sling_runner_v1_runner, 45);
+  messageDesc(file_sling_runner_v1_runner, 46);
 
 /**
  * Describes the enum sling.runner.v1.RepoActionResult.Outcome.
  */
 export const RepoActionResult_OutcomeSchema = /*@__PURE__*/
-  enumDesc(file_sling_runner_v1_runner, 45, 0);
+  enumDesc(file_sling_runner_v1_runner, 46, 0);
 
 /**
  * @generated from enum sling.runner.v1.RepoActionResult.Outcome
  */
 export const RepoActionResult_Outcome = /*@__PURE__*/
   tsEnum(RepoActionResult_OutcomeSchema);
+
+/**
+ * Describes the message sling.runner.v1.FileSearch.
+ * Use `create(FileSearchSchema)` to create a new message.
+ */
+export const FileSearchSchema = /*@__PURE__*/
+  messageDesc(file_sling_runner_v1_runner, 47);
+
+/**
+ * Describes the message sling.runner.v1.FileSearchResult.
+ * Use `create(FileSearchResultSchema)` to create a new message.
+ */
+export const FileSearchResultSchema = /*@__PURE__*/
+  messageDesc(file_sling_runner_v1_runner, 48);
+
+/**
+ * Describes the message sling.runner.v1.FileSearchResult.Hit.
+ * Use `create(FileSearchResult_HitSchema)` to create a new message.
+ */
+export const FileSearchResult_HitSchema = /*@__PURE__*/
+  messageDesc(file_sling_runner_v1_runner, 48, 0);
+
+/**
+ * Describes the message sling.runner.v1.FileRead.
+ * Use `create(FileReadSchema)` to create a new message.
+ */
+export const FileReadSchema = /*@__PURE__*/
+  messageDesc(file_sling_runner_v1_runner, 49);
+
+/**
+ * Describes the message sling.runner.v1.FileReadResult.
+ * Use `create(FileReadResultSchema)` to create a new message.
+ */
+export const FileReadResultSchema = /*@__PURE__*/
+  messageDesc(file_sling_runner_v1_runner, 50);
+
+/**
+ * Describes the message sling.runner.v1.ChannelMessage.
+ * Use `create(ChannelMessageSchema)` to create a new message.
+ */
+export const ChannelMessageSchema = /*@__PURE__*/
+  messageDesc(file_sling_runner_v1_runner, 51);
+
+/**
+ * Describes the message sling.runner.v1.ChannelMessageAck.
+ * Use `create(ChannelMessageAckSchema)` to create a new message.
+ */
+export const ChannelMessageAckSchema = /*@__PURE__*/
+  messageDesc(file_sling_runner_v1_runner, 52);
+
+/**
+ * Describes the message sling.runner.v1.ChannelSend.
+ * Use `create(ChannelSendSchema)` to create a new message.
+ */
+export const ChannelSendSchema = /*@__PURE__*/
+  messageDesc(file_sling_runner_v1_runner, 53);
+
+/**
+ * Describes the message sling.runner.v1.ChannelSendResult.
+ * Use `create(ChannelSendResultSchema)` to create a new message.
+ */
+export const ChannelSendResultSchema = /*@__PURE__*/
+  messageDesc(file_sling_runner_v1_runner, 54);
 
 /**
  * Describes the enum sling.runner.v1.PermissionMode.

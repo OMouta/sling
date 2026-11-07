@@ -90,6 +90,30 @@ export declare type Envelope = Message<"sling.runner.v1.Envelope"> & {
     case: "repoActionResult";
   } | {
     /**
+     * @generated from field: sling.runner.v1.FileSearchResult file_search_result = 10;
+     */
+    value: FileSearchResult;
+    case: "fileSearchResult";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.FileReadResult file_read_result = 11;
+     */
+    value: FileReadResult;
+    case: "fileReadResult";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ChannelMessage channel_message = 12;
+     */
+    value: ChannelMessage;
+    case: "channelMessage";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ChannelSendResult channel_send_result = 13;
+     */
+    value: ChannelSendResult;
+    case: "channelSendResult";
+  } | {
+    /**
      * Server to Runner.
      *
      * @generated from field: sling.runner.v1.Challenge challenge = 20;
@@ -180,6 +204,30 @@ export declare type Envelope = Message<"sling.runner.v1.Envelope"> & {
      */
     value: RepoActionAck;
     case: "repoActionAck";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.FileSearch file_search = 35;
+     */
+    value: FileSearch;
+    case: "fileSearch";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.FileRead file_read = 36;
+     */
+    value: FileRead;
+    case: "fileRead";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ChannelSend channel_send = 37;
+     */
+    value: ChannelSend;
+    case: "channelSend";
+  } | {
+    /**
+     * @generated from field: sling.runner.v1.ChannelMessageAck channel_message_ack = 38;
+     */
+    value: ChannelMessageAck;
+    case: "channelMessageAck";
   } | { case: undefined; value?: undefined };
 };
 
@@ -475,6 +523,29 @@ export declare type Inventory = Message<"sling.runner.v1.Inventory"> & {
    * @generated from field: bool deploys = 8;
    */
   deploys: boolean;
+
+  /**
+   * Names of the folders shared with `sling-runner folder add`. Only names:
+   * paths stay on the machine. The server cannot add one.
+   *
+   * @generated from field: repeated string folders = 9;
+   */
+  folders: string[];
+
+  /**
+   * Whether this machine answers FileSearch and FileRead. False after
+   * `sling-runner config set files off`, and from Runners that can't.
+   *
+   * @generated from field: bool files = 10;
+   */
+  files: boolean;
+
+  /**
+   * Messaging channels set up with `sling-runner channel add`.
+   *
+   * @generated from field: repeated sling.runner.v1.Channel channels = 11;
+   */
+  channels: Channel[];
 };
 
 /**
@@ -482,6 +553,57 @@ export declare type Inventory = Message<"sling.runner.v1.Inventory"> & {
  * Use `create(InventorySchema)` to create a new message.
  */
 export declare const InventorySchema: GenMessage<Inventory>;
+
+/**
+ * A messaging channel this machine relays, such as iMessage or Signal. Only
+ * the machine adds one or allows its senders.
+ *
+ * @generated from message sling.runner.v1.Channel
+ */
+export declare type Channel = Message<"sling.runner.v1.Channel"> & {
+  /**
+   * "imessage" or "signal".
+   *
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * Unique on this Runner.
+   *
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * How many senders `sling-runner channel allow` let through. With none,
+   * nothing is forwarded.
+   *
+   * @generated from field: uint32 allowed_senders = 3;
+   */
+  allowedSenders: number;
+
+  /**
+   * True when it can receive and send right now.
+   *
+   * @generated from field: bool ready = 4;
+   */
+  ready: boolean;
+
+  /**
+   * What it needs when it isn't ready, for example Full Disk Access. Empty
+   * when ready.
+   *
+   * @generated from field: string missing = 5;
+   */
+  missing: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.Channel.
+ * Use `create(ChannelSchema)` to create a new message.
+ */
+export declare const ChannelSchema: GenMessage<Channel>;
 
 /**
  * @generated from message sling.runner.v1.FoundRepo
@@ -2218,6 +2340,341 @@ export enum RepoActionResult_Outcome {
  * Describes the enum sling.runner.v1.RepoActionResult.Outcome.
  */
 export declare const RepoActionResult_OutcomeSchema: GenEnum<RepoActionResult_Outcome>;
+
+/**
+ * Server to Runner: search the text files in shared folders. The Runner skips
+ * hidden files, .git, node_modules, what .gitignore ignores, binary files,
+ * and files over 2 MB, and answers within about 2 seconds with what it found
+ * by then. It refuses when `files` is off or a folder wasn't shared.
+ *
+ * @generated from message sling.runner.v1.FileSearch
+ */
+export declare type FileSearch = Message<"sling.runner.v1.FileSearch"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * Matched case-insensitively.
+   *
+   * @generated from field: string query = 2;
+   */
+  query: string;
+
+  /**
+   * Folder names. Empty searches every shared folder.
+   *
+   * @generated from field: repeated string folders = 3;
+   */
+  folders: string[];
+
+  /**
+   * @generated from field: uint32 max_results = 4;
+   */
+  maxResults: number;
+};
+
+/**
+ * Describes the message sling.runner.v1.FileSearch.
+ * Use `create(FileSearchSchema)` to create a new message.
+ */
+export declare const FileSearchSchema: GenMessage<FileSearch>;
+
+/**
+ * @generated from message sling.runner.v1.FileSearchResult
+ */
+export declare type FileSearchResult = Message<"sling.runner.v1.FileSearchResult"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: repeated sling.runner.v1.FileSearchResult.Hit hits = 2;
+   */
+  hits: FileSearchResult_Hit[];
+
+  /**
+   * There were more hits than max_results, or time ran out.
+   *
+   * @generated from field: bool truncated = 3;
+   */
+  truncated: boolean;
+
+  /**
+   * Why it didn't search. Empty when it did.
+   *
+   * @generated from field: string error = 4;
+   */
+  error: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.FileSearchResult.
+ * Use `create(FileSearchResultSchema)` to create a new message.
+ */
+export declare const FileSearchResultSchema: GenMessage<FileSearchResult>;
+
+/**
+ * @generated from message sling.runner.v1.FileSearchResult.Hit
+ */
+export declare type FileSearchResult_Hit = Message<"sling.runner.v1.FileSearchResult.Hit"> & {
+  /**
+   * @generated from field: string folder = 1;
+   */
+  folder: string;
+
+  /**
+   * Relative to the folder, with forward slashes.
+   *
+   * @generated from field: string path = 2;
+   */
+  path: string;
+
+  /**
+   * 1 for the first line.
+   *
+   * @generated from field: uint32 line = 3;
+   */
+  line: number;
+
+  /**
+   * The matching line, at most 200 characters around the match.
+   *
+   * @generated from field: string snippet = 4;
+   */
+  snippet: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.FileSearchResult.Hit.
+ * Use `create(FileSearchResult_HitSchema)` to create a new message.
+ */
+export declare const FileSearchResult_HitSchema: GenMessage<FileSearchResult_Hit>;
+
+/**
+ * Server to Runner: read one text file in a shared folder. The Runner refuses
+ * a path that leaves the folder once `..` and symlinks are resolved, a folder
+ * that wasn't shared, a binary file, and anything when `files` is off.
+ *
+ * @generated from message sling.runner.v1.FileRead
+ */
+export declare type FileRead = Message<"sling.runner.v1.FileRead"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * @generated from field: string folder = 2;
+   */
+  folder: string;
+
+  /**
+   * Relative to the folder.
+   *
+   * @generated from field: string path = 3;
+   */
+  path: string;
+
+  /**
+   * @generated from field: uint32 max_bytes = 4;
+   */
+  maxBytes: number;
+};
+
+/**
+ * Describes the message sling.runner.v1.FileRead.
+ * Use `create(FileReadSchema)` to create a new message.
+ */
+export declare const FileReadSchema: GenMessage<FileRead>;
+
+/**
+ * @generated from message sling.runner.v1.FileReadResult
+ */
+export declare type FileReadResult = Message<"sling.runner.v1.FileReadResult"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * UTF-8. Cut at max_bytes, on a character boundary.
+   *
+   * @generated from field: string content = 2;
+   */
+  content: string;
+
+  /**
+   * @generated from field: bool truncated = 3;
+   */
+  truncated: boolean;
+
+  /**
+   * Why it didn't read. Empty when it did.
+   *
+   * @generated from field: string error = 4;
+   */
+  error: string;
+
+  /**
+   * The whole file's size in bytes.
+   *
+   * @generated from field: uint64 size = 5;
+   */
+  size: bigint;
+};
+
+/**
+ * Describes the message sling.runner.v1.FileReadResult.
+ * Use `create(FileReadResultSchema)` to create a new message.
+ */
+export declare const FileReadResultSchema: GenMessage<FileReadResult>;
+
+/**
+ * Runner to server: a message from an allowed sender on one of this machine's
+ * channels. The Runner keeps a cursor per channel on disk and sends again,
+ * after a reconnect, everything past it that the server hasn't acknowledged
+ * with ChannelMessageAck, so each message reaches the server at least once.
+ *
+ * @generated from message sling.runner.v1.ChannelMessage
+ */
+export declare type ChannelMessage = Message<"sling.runner.v1.ChannelMessage"> & {
+  /**
+   * The channel's name.
+   *
+   * @generated from field: string channel = 1;
+   */
+  channel: string;
+
+  /**
+   * The chat it came from, as ChannelSend takes it back: a phone number, an
+   * email address, or a group's ID.
+   *
+   * @generated from field: string conversation = 2;
+   */
+  conversation: string;
+
+  /**
+   * @generated from field: string sender = 3;
+   */
+  sender: string;
+
+  /**
+   * @generated from field: string text = 4;
+   */
+  text: string;
+
+  /**
+   * @generated from field: int64 at_ms = 5;
+   */
+  atMs: bigint;
+
+  /**
+   * Unique within the channel, such as chat.db's ROWID or Signal's timestamp.
+   *
+   * @generated from field: string message_id = 6;
+   */
+  messageId: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChannelMessage.
+ * Use `create(ChannelMessageSchema)` to create a new message.
+ */
+export declare const ChannelMessageSchema: GenMessage<ChannelMessage>;
+
+/**
+ * Server to Runner: the server has stored this message, so the cursor can
+ * move past it.
+ *
+ * @generated from message sling.runner.v1.ChannelMessageAck
+ */
+export declare type ChannelMessageAck = Message<"sling.runner.v1.ChannelMessageAck"> & {
+  /**
+   * @generated from field: string channel = 1;
+   */
+  channel: string;
+
+  /**
+   * @generated from field: string message_id = 2;
+   */
+  messageId: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChannelMessageAck.
+ * Use `create(ChannelMessageAckSchema)` to create a new message.
+ */
+export declare const ChannelMessageAckSchema: GenMessage<ChannelMessageAck>;
+
+/**
+ * Server to Runner: send a message on one of this machine's channels.
+ *
+ * @generated from message sling.runner.v1.ChannelSend
+ */
+export declare type ChannelSend = Message<"sling.runner.v1.ChannelSend"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * The channel's name.
+   *
+   * @generated from field: string channel = 2;
+   */
+  channel: string;
+
+  /**
+   * As a ChannelMessage named it.
+   *
+   * @generated from field: string conversation = 3;
+   */
+  conversation: string;
+
+  /**
+   * @generated from field: string text = 4;
+   */
+  text: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChannelSend.
+ * Use `create(ChannelSendSchema)` to create a new message.
+ */
+export declare const ChannelSendSchema: GenMessage<ChannelSend>;
+
+/**
+ * @generated from message sling.runner.v1.ChannelSendResult
+ */
+export declare type ChannelSendResult = Message<"sling.runner.v1.ChannelSendResult"> & {
+  /**
+   * @generated from field: string request_id = 1;
+   */
+  requestId: string;
+
+  /**
+   * The service took it. That's all iMessage and Signal say.
+   *
+   * @generated from field: bool ok = 2;
+   */
+  ok: boolean;
+
+  /**
+   * Why it failed. Empty when it worked.
+   *
+   * @generated from field: string message = 3;
+   */
+  message: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.ChannelSendResult.
+ * Use `create(ChannelSendResultSchema)` to create a new message.
+ */
+export declare const ChannelSendResultSchema: GenMessage<ChannelSendResult>;
 
 /**
  * @generated from enum sling.runner.v1.PermissionMode

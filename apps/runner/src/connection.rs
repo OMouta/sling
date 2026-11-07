@@ -194,6 +194,10 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                             Some(Body::ExecRequest(r)) => mgr.exec(r, chat_tx.clone()),
                             Some(Body::RepoAction(a)) => mgr.repo_action(a),
                             Some(Body::RepoActionAck(a)) => mgr.repo_action_ack(&a.request_id),
+                            Some(Body::FileSearch(r)) => mgr.file_search(r, reply_tx.clone()),
+                            Some(Body::FileRead(r)) => mgr.file_read(r, reply_tx.clone()),
+                            Some(Body::ChannelSend(r)) => mgr.channel_send(r, reply_tx.clone()),
+                            Some(Body::ChannelMessageAck(a)) => mgr.channel_message_ack(&a),
                             Some(Body::Error(e)) => {
                                 let fatal = matches!(e.code(), Code::Revoked | Code::UnknownRunner);
                                 if fatal {

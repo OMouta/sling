@@ -37,6 +37,10 @@ message Envelope {
     ExecResult exec_result = 7;
     RepoActionOutput repo_action_output = 8;
     RepoActionResult repo_action_result = 9;
+    FileSearchResult file_search_result = 10;
+    FileReadResult file_read_result = 11;
+    ChannelMessage channel_message = 12;
+    ChannelSendResult channel_send_result = 13;
 
     // Server to Runner.
     Challenge challenge = 20;
@@ -54,6 +58,10 @@ message Envelope {
     ExecRequest exec_request = 32;
     RepoAction repo_action = 33;
     RepoActionAck repo_action_ack = 34;
+    FileSearch file_search = 35;
+    FileRead file_read = 36;
+    ChannelSend channel_send = 37;
+    ChannelMessageAck channel_message_ack = 38;
   }
 }
 
@@ -136,6 +144,31 @@ message Inventory {
   // Whether this machine accepts RepoAction merges and deploys. Turned off
   // with `sling-runner config set deploys off`.
   bool deploys = 8;
+  // Names of the folders shared with `sling-runner folder add`. Only names:
+  // paths stay on the machine. The server cannot add one.
+  repeated string folders = 9;
+  // Whether this machine answers FileSearch and FileRead. False after
+  // `sling-runner config set files off`, and from Runners that can't.
+  bool files = 10;
+  // Messaging channels set up with `sling-runner channel add`.
+  repeated Channel channels = 11;
+}
+
+// A messaging channel this machine relays, such as iMessage or Signal. Only
+// the machine adds one or allows its senders.
+message Channel {
+  // "imessage" or "signal".
+  string kind = 1;
+  // Unique on this Runner.
+  string name = 2;
+  // How many senders `sling-runner channel allow` let through. With none,
+  // nothing is forwarded.
+  uint32 allowed_senders = 3;
+  // True when it can receive and send right now.
+  bool ready = 4;
+  // What it needs when it isn't ready, for example Full Disk Access. Empty
+  // when ready.
+  string missing = 5;
 }
 
 message FoundRepo {
@@ -589,4 +622,103 @@ message RepoActionResult {
   string url = 6;
   // DEPLOY: the command's exit code. Unset when it never ran or was killed.
   optional int32 exit_code = 7;
+}
+
+// ---------------------------------------------------------------- files
+
+// Server to Runner: search the text files in shared folders. The Runner skips
+// hidden files, .git, node_modules, what .gitignore ignores, binary files,
+// and files over 2 MB, and answers within about 2 seconds with what it found
+// by then. It refuses when `files` is off or a folder wasn't shared.
+message FileSearch {
+  string request_id = 1;
+  // Matched case-insensitively.
+  string query = 2;
+  // Folder names. Empty searches every shared folder.
+  repeated string folders = 3;
+  uint32 max_results = 4;
+}
+
+message FileSearchResult {
+  message Hit {
+    string folder = 1;
+    // Relative to the folder, with forward slashes.
+    string path = 2;
+    // 1 for the first line.
+    uint32 line = 3;
+    // The matching line, at most 200 characters around the match.
+    string snippet = 4;
+  }
+  string request_id = 1;
+  repeated Hit hits = 2;
+  // There were more hits than max_results, or time ran out.
+  bool truncated = 3;
+  // Why it didn't search. Empty when it did.
+  string error = 4;
+}
+
+// Server to Runner: read one text file in a shared folder. The Runner refuses
+// a path that leaves the folder once `..` and symlinks are resolved, a folder
+// that wasn't shared, a binary file, and anything when `files` is off.
+message FileRead {
+  string request_id = 1;
+  string folder = 2;
+  // Relative to the folder.
+  string path = 3;
+  uint32 max_bytes = 4;
+}
+
+message FileReadResult {
+  string request_id = 1;
+  // UTF-8. Cut at max_bytes, on a character boundary.
+  string content = 2;
+  bool truncated = 3;
+  // Why it didn't read. Empty when it did.
+  string error = 4;
+  // The whole file's size in bytes.
+  uint64 size = 5;
+}
+
+// ---------------------------------------------------------------- channels
+
+// Runner to server: a message from an allowed sender on one of this machine's
+// channels. The Runner keeps a cursor per channel on disk and sends again,
+// after a reconnect, everything past it that the server hasn't acknowledged
+// with ChannelMessageAck, so each message reaches the server at least once.
+message ChannelMessage {
+  // The channel's name.
+  string channel = 1;
+  // The chat it came from, as ChannelSend takes it back: a phone number, an
+  // email address, or a group's ID.
+  string conversation = 2;
+  string sender = 3;
+  string text = 4;
+  int64 at_ms = 5;
+  // Unique within the channel, such as chat.db's ROWID or Signal's timestamp.
+  string message_id = 6;
+}
+
+// Server to Runner: the server has stored this message, so the cursor can
+// move past it.
+message ChannelMessageAck {
+  string channel = 1;
+  string message_id = 2;
+}
+
+// Server to Runner: send a message on one of this machine's channels.
+message ChannelSend {
+  string request_id = 1;
+  // The channel's name.
+  string channel = 2;
+  // As a ChannelMessage named it.
+  string conversation = 3;
+  string text = 4;
+}
+
+message ChannelSendResult {
+  string request_id = 1;
+  // The service took it. That's all iMessage and Signal say.
+  bool ok = 2;
+  // Why it failed. Empty when it worked.
+  string message = 3;
 }
