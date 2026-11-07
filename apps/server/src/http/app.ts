@@ -12,6 +12,7 @@ import { agentToolRoutes } from "../agent/tool-routes.ts";
 import { checkRoutes } from "../checks/routes.ts";
 import type { Config } from "../config.ts";
 import type { AppContext } from "../context.ts";
+import { replaceRoutes } from "../conversations/replace-routes.ts";
 import { conversationRoutes } from "../conversations/routes.ts";
 import { deployRoutes } from "../deploys/routes.ts";
 import { extensionRoutes } from "../extensions/routes.ts";
@@ -103,6 +104,9 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   });
   await app.register(async (scope) => {
     await conversationRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await replaceRoutes(scope, ctx);
   });
   await app.register(async (scope) => {
     await personalityRoutes(scope, ctx);

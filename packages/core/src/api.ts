@@ -985,6 +985,8 @@ export type ServerEvent =
   | { type: "source.removed"; id: string }
   /** Messages Retry or Edit replaced. */
   | { type: "message.removed"; conversationId: string; messageIds: string[] }
+  /** A message changed in place, such as a user message edited before it runs again. */
+  | { type: "message.updated"; message: MessageView }
   | { type: "memory.updated"; memory: MemoryView }
   | { type: "memory.removed"; id: string }
   | { type: "rule.updated"; rule: RuleView }
