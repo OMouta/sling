@@ -129,16 +129,17 @@ export function ConnectorSetupDialog({
   const current = (key: string): unknown =>
     key in config ? config[key] : key in credentials ? credentials[key] : undefined;
   const rowValue = (r: Row) => (r.source === "credentials" ? credentials : config)[r.field.key];
-  const visible = (f: FormField): boolean => {
+  /** Whether the field applies at all, with what's picked so far. */
+  const applies = (f: FormField): boolean => {
     for (const [key, allowed] of Object.entries(f.meta.showWhen ?? {})) {
       const row = rows.find((r) => r.field.key === key);
       const v = current(key) ?? row?.field.default;
       if (!allowed.includes(v as Primitive)) return false;
     }
-    if (f.meta.hidden) return false;
-    if (f.meta.picker && !(found.options?.[f.key]?.length ?? 0)) return false;
-    return true;
+    return !f.meta.hidden;
   };
+  const visible = (f: FormField): boolean =>
+    applies(f) && !(f.meta.picker && !(found.options?.[f.key]?.length ?? 0));
   const filled = (r: Row) =>
     !isEmpty(rowValue(r)) || (r.source === "credentials" && credentialsStored);
   // An advanced field comes up front when the lookup couldn't fill it, or, for a
@@ -199,8 +200,17 @@ export function ConnectorSetupDialog({
 
   // ---------------------------------------------------------------- steps
   const shown = rows.filter((r) => visible(r.field));
+  // A picker the lookup hasn't filled yet still holds its step's place, so the
+  // steps don't change count, or Add turn into Continue, while you type.
+  const waiting = (r: Row) =>
+    Boolean(connector.hasSetup) &&
+    r.field.meta.picker &&
+    !r.field.meta.advanced &&
+    applies(r.field) &&
+    !visible(r.field);
+  const asks = (r: Row) => visible(r.field) && upFront(r);
   const groups = new Map<string, Row[]>();
-  for (const r of shown) {
+  for (const r of rows.filter((x) => visible(x.field) || waiting(x))) {
     const key = r.field.meta.step ?? DETAILS;
     groups.set(key, [...(groups.get(key) ?? []), r]);
   }
@@ -209,8 +219,12 @@ export function ConnectorSetupDialog({
   );
   // A step is asked only when it has something to ask; the rest of its fields
   // wait under the last step's More settings.
-  const asked = ordered.filter(([, rs]) => rs.some(upFront));
-  const tucked = ordered.filter(([, rs]) => !rs.some(upFront)).flatMap(([, rs]) => rs);
+  const included = ([, rs]: [string, Row[]]) => rs.some(asks) || rs.some(waiting);
+  const asked = ordered.filter(included);
+  const tucked = ordered
+    .filter((g) => !included(g))
+    .flatMap(([, rs]) => rs)
+    .filter((r) => visible(r.field));
   const stepGroups: [string, Row[]][] = asked.length > 0 ? asked : [[DETAILS, []]];
 
   const notes = found.notes ?? [];
@@ -247,11 +261,14 @@ export function ConnectorSetupDialog({
   );
 
   const steps: WizardStep[] = stepGroups.map(([heading, rs], i) => {
-    const front = rs.filter(upFront);
-    const more = [...rs.filter((r) => !upFront(r)), ...(i === stepGroups.length - 1 ? tucked : [])];
+    const front = rs.filter(asks);
+    const more = [
+      ...rs.filter((r) => visible(r.field) && !upFront(r)),
+      ...(i === stepGroups.length - 1 ? tucked : []),
+    ];
     const missing = front.some((r) => r.field.required && r.field.kind !== "boolean" && !filled(r));
     const wrong = front.some((r) => notesFor(r.field.key).some((n) => n.tone === "error"));
-    const looksUp = front.some((r) => r.field.meta.lookup);
+    const looksUp = front.some((r) => r.field.meta.lookup) || rs.some(waiting);
     // One field under a heading that asks for it needs no label of its own.
     const bare = front.length === 1 && heading !== DETAILS;
     return {
@@ -358,7 +375,9 @@ export function ConnectorSetupDialog({
   const review: ReviewRow[] | undefined = editing
     ? steps.flatMap((s, i) => {
         const rs = stepGroups[i]?.[1] ?? [];
-        const all = [...rs, ...(i === steps.length - 1 ? tucked : [])];
+        const all = [...rs, ...(i === steps.length - 1 ? tucked : [])].filter((r) =>
+          visible(r.field),
+        );
         return all.map((r) => ({ stepId: s.id, label: r.field.label, value: shownValue(r) }));
       })
     : undefined;
