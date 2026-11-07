@@ -39,6 +39,8 @@ With a personality that has Change Sling's setup, the assistant can add deploy t
 | Auto | Shows the change in the chat and waits for Apply |
 | Full access | Applies at once, unless it needs a password or token |
 
+A workflow the assistant writes shows its steps in plain words on the card, with the ones that send marked. See [workflows.md](workflows.md#from-a-chat).
+
 The card lists every value it would set, the old one next to the new one for an edit, with **Cancel** and **Apply**. A password, token, or deploy hook URL is typed into a field on the card and goes straight to the server with **Apply**, so even Full access shows the card for a change that needs one. If nobody answers within 5 minutes, nothing changes. See [personalities.md](personalities.md#what-it-can-use).
 
 ## Commands

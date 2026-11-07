@@ -48,7 +48,7 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 |---|---|
 | **Triggers** | |
 | Manual run | Starts from the **Run** button, the API, or another workflow |
-| Schedule | Cron schedule, in the time zone you set on the node, or the workspace's (**Settings → General**) when it's empty |
+| Schedule | Cron schedule, or once at a date and time, in the time zone you set on the node, or the workspace's (**Settings → General**) when it's empty. See [one-time schedules](#one-time-schedules) |
 | Webhook | `POST` to the URL shown once published. Anyone with the URL can start the workflow |
 | Chat message | A message sent in the web app |
 | Conversation update | A note Sling adds to a conversation this workflow owns, for example a task finishing |
@@ -80,6 +80,24 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | List calendar events, Add calendar event | Read a day or a range of your calendar, with recurring events expanded, or add an event. See [connectors/calendar.md](connectors/calendar.md) |
 | Check deploy targets | Runs every [deploy target](deploys.md)'s health checks, or one target's, and outputs the ones that went down or came back up |
 | Notify my devices | A push notification to the devices you turned on under **Settings → Notifications**. A tap opens the page you give. See [notifications.md](notifications.md) |
+
+### One-time schedules
+
+Put a local date and time in a **Schedule** node's **At**, such as `2026-11-09T17:00`, and leave **Cron** empty. The workflow runs once at that time, in the node's time zone or the workspace's, and then turns itself off. A time that has already passed can't be published or turned back on: set a new one first. If Sling is off at that time, the run starts when Sling is back.
+
+## From a chat
+
+Ask the assistant for something that repeats, such as "every Monday at 9, send me this week's calendar on Discord", or for something at a set time, such as "remind me at 17:00 to call the bank". It writes a workflow and shows it on a card in the chat:
+
+- the steps in the order they run, in plain words, such as "Every Monday at 09:00" and "Send to Discord #general"
+- **Sends** next to each step that reaches outside Sling
+- its name, and the accounts it uses
+
+Sling checks the workflow the same way **Publish** does before the card shows, so the assistant fixes anything wrong first. Nothing is made until you press **Apply**, unless the chat is in Full access. Then it's published and on, and **Open in editor** on the card opens it. The assistant usually adds a **Manual run** next to a schedule, so you can try the workflow with **Run** before its time comes.
+
+To change it, say so in the chat, such as "change it to Tuesdays". The card shows what changes, and **Apply** publishes a new version of the same workflow.
+
+**Make this a workflow**, in a chat's **…** menu, asks the assistant to turn what you did in that chat into a workflow. The chat's personality needs **Change Sling's setup**. See [personalities.md](personalities.md#what-it-can-use).
 
 ## Templates
 
