@@ -14,14 +14,14 @@ A typical run, from your phone:
 
 ## Deploy targets
 
-A deploy target is a repo Sling knows how to deploy and how to check. Add one under **Deploys**, with **Add target**:
+A deploy target is a repo Sling knows how to deploy and how to check. Add one under **Deploys**, with **Add target**. It asks one thing at a time:
 
-- **Name.** What you call it, such as Website or API. The assistant and the approvals use it.
-- **Repo.** Picked from the repos your machines and your sandbox list know, by remote. One target per repo.
-- **How it deploys.** One of the three below.
-- **Health checks.** One to five URLs. Each passes when it answers 200 to 399, or the exact status you set, and contains the text you set, if any.
-- **Version URL.** Optional. A page that shows the deployed commit, such as a `/version` route or a build-info file. With one, Sling waits until the site shows the merged commit, not just until it answers.
-- **Merge with.** Squash (the default), merge commit, or rebase.
+1. **Which repo is it?** Pick from the repos your machines and your sandbox list know. One target per repo. The name comes from the repo, such as Site; change it if you like. The assistant and the approvals use it.
+2. **How does it go live?** One of the three methods below.
+3. **Which machine deploys it?** or **Paste the deploy hook**, for the command and hook methods.
+4. **Which page shows it's up?** One to five URLs. Each passes when it answers 200 to 399.
+
+Sling checks the site as soon as the target is added and says what it answered. Under **More settings**: how the PR is merged (squash by default, a merge commit, or rebase), the exact status and text each page should have, a **Version URL** (a page that shows the deployed commit, such as a `/version` route, so Sling waits until the site shows the merged commit, not just until it answers), and the timing. **Edit** on a target opens a summary of all of it; each line opens its step.
 
 | Method | Use it when | After the merge, Sling |
 |---|---|---|
@@ -85,7 +85,7 @@ After the deploy, Sling checks every 10 seconds until every check passes and, wi
 
 Without a version URL, a passing check could still be the old version answering, and the task says so. If the checks don't pass within the time limit, the task says which ones failed and why, and the assistant offers a revert: a new task that reverts the merged commit, delivered as a deploy, which asks for approval like any other. Nothing rolls back on its own.
 
-Change the wait before the first check and the time limit under **Timing** in the target's dialog.
+Change the wait before the first check and the time limit under **More settings** on the target's last step.
 
 ## What the machine refuses
 

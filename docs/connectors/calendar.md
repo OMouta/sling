@@ -9,9 +9,9 @@ It runs inside the Sling server, like the email connector. Google's own API need
 
 ## Adding a calendar
 
-Pick **Account** for CalDAV or **iCal link** for read-only links.
+The first step asks how to connect: **Calendar account** for CalDAV, or **iCal link** for read-only links.
 
-**Account** asks for your email and an app password:
+**Calendar account** asks you to sign in with your email and an app password:
 
 - iCloud, Fastmail and Yahoo servers are known already, and the form links to where each makes app passwords.
 - For other domains, Sling looks up the domain's CalDAV server in DNS (`_caldavs._tcp`), the way calendar apps do. If there's none, a **Server** field shows up, such as `https://<your server>/remote.php/dav` for Nextcloud. A calendar's own URL works too, and then that's the only calendar.
@@ -32,7 +32,7 @@ These are read-only, from the calendar's private address:
 - **Google Calendar:** on the web, open **Settings**, pick the calendar under **Settings for my calendars**, then **Integrate calendar**, and copy **Secret address in iCal format**. Each calendar has its own address.
 - **Outlook:** open **Settings**, **Calendar**, **Shared calendars**, and under **Publish a calendar** pick the calendar and **Can view all details**. Copy the ICS link.
 
-Typing a Google or Outlook address under **Account** points you here. Anyone who has the address can read the calendar, which is why Sling stores it with the credentials. If one leaks, reset it in Google or Outlook and paste the new one.
+Typing a Google or Outlook address under **Calendar account** points you here. Anyone who has the address can read the calendar, which is why Sling stores it with the credentials. If one leaks, reset it in Google or Outlook and paste the new one.
 
 ## Time zones
 
