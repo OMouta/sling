@@ -59,6 +59,7 @@ import { ActionCheckLine } from "./ActionCheck.tsx";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
 import { CheckList, DeployPlanText } from "./DeployBits.tsx";
 import { ModeBadge } from "./ModeBadge.tsx";
+import { RuleQuestion } from "./RuleQuestion.tsx";
 import { SandboxFallbackCard } from "./SandboxFallbackCard.tsx";
 import { SandboxStateBadge } from "./StatusBadge.tsx";
 import {
@@ -182,14 +183,34 @@ export function TaskCard({
   });
   const target = wantsTarget ? targetForTask(task, targets.data, runners.data) : undefined;
   const targetName = target?.name ?? task.actions.find((a) => a.targetName)?.targetName;
+  // A push or PR waiting here offers Always allow, as Approvals does.
+  const asksStep = awaiting.length > 0 && !deployApproval;
   // Only a task with no machine yet can be waiting on a fallback approval.
   const approvals = useQuery({
     queryKey: ["approvals"],
     queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
-    enabled: task.runnerId === null,
+    enabled: task.runnerId === null || asksStep,
   });
+  const offers = asksStep
+    ? (approvals.data ?? []).flatMap((a) =>
+        a.taskId === task.id && a.ruleOffer ? [a.ruleOffer] : [],
+      )
+    : [];
+  const offered = offers.length > 0;
   const fallback = task.runnerId === null ? pendingFallbackFor(approvals.data, task.id) : undefined;
   if (fallback) return <SandboxFallbackCard approval={fallback} />;
+
+  const stepQuestion = `Approve ${awaiting.map((a) => ACTION_LABEL[a.kind]?.toLowerCase()).join(" and ")}?`;
+  const openTask = (
+    <Link
+      to="/tasks/$id"
+      params={{ id: task.id }}
+      className="mr-auto inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-text"
+    >
+      Open task
+      <ArrowRight aria-hidden="true" size={12} />
+    </Link>
+  );
 
   const agent = [
     `${HARNESS_LABELS[task.harness] ?? task.harness} task`,
@@ -333,26 +354,33 @@ export function TaskCard({
         </div>
       )}
 
-      {((awaiting.length > 0 && !deployApproval) ||
-        active ||
-        compact ||
-        (deployLater && target)) && (
+      {asksStep && offered && (
+        <RuleQuestion
+          offers={offers}
+          approvalId={null}
+          question={
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              {compact && openTask}
+              <span>{stepQuestion}</span>
+            </span>
+          }
+          approve="Approve"
+          deny="Reject"
+          onDecide={async (allow) => {
+            await api.post(`/api/tasks/${task.id}/approval`, {
+              decision: allow ? "approve" : "reject",
+            });
+            await qc.invalidateQueries({ queryKey: ["approvals"] });
+          }}
+          className="px-4 py-2.5"
+        />
+      )}
+      {((asksStep && !offered) || active || (compact && !offered) || (deployLater && target)) && (
         <CardFooter>
-          {compact && (
-            <Link
-              to="/tasks/$id"
-              params={{ id: task.id }}
-              className="mr-auto inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-text"
-            >
-              Open task
-              <ArrowRight aria-hidden="true" size={12} />
-            </Link>
-          )}
-          {awaiting.length > 0 && !deployApproval && (
+          {compact && openTask}
+          {asksStep && !offered && (
             <>
-              <span className={cx("text-[13px]", !compact && "mr-auto")}>
-                Approve {awaiting.map((a) => ACTION_LABEL[a.kind]?.toLowerCase()).join(" and ")}?
-              </span>
+              <span className={cx("text-[13px]", !compact && "mr-auto")}>{stepQuestion}</span>
               <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
                 Reject
               </Button>

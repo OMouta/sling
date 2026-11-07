@@ -138,12 +138,15 @@ let hasModel = false;
 let runners: RunnerView[] = [];
 /** Installations the dialog sees; a Docker one makes sandboxes an option. */
 let installed: { id: string; connectorId: string; name: string }[] = [];
+let approvals: unknown[] = [];
 
 function routes(path: string): unknown {
   if (path === "/api/status")
     return { needsSetup: false, signedIn, email: "a@b.c", version: "0.1.0", publicUrl };
   if (path === "/api/conversations") return [conversation];
-  if (path === "/api/approvals") return [];
+  if (path === "/api/approvals") return approvals;
+  if (path === "/api/rules") return [];
+  if (path === "/api/tasks/tsk_1/approval") return {};
   if (path === "/api/runners") return runners;
   if (path === "/api/sandbox-repos") return [];
   if (path === "/api/runners/enrollments") {
@@ -224,6 +227,7 @@ beforeEach(() => {
   hasModel = false;
   runners = [runner];
   installed = [];
+  approvals = [];
   vi.stubGlobal("WebSocket", FakeSocket);
   vi.stubGlobal(
     "fetch",
@@ -285,6 +289,46 @@ describe("web app", () => {
     expect(screen.getByText("Approve")).toBeTruthy();
     expect(screen.getByText(/Approve push branch and open pull request/)).toBeTruthy();
     await waitFor(() => expect(screen.getByText("devbox")).toBeTruthy());
+  });
+
+  it("offers Always allow on a task card's push and pull request, as Approvals does", async () => {
+    hasModel = true;
+    const offer = (action: "push" | "open_pr", summary: string, approvalId: string) => ({
+      summary,
+      rule: { kind: "allow", action, match: { repo: "github.com/ana/site" }, approvalId },
+      streak: 0,
+    });
+    approvals = [
+      { id: "apv_1", taskId: "tsk_1", ruleOffer: offer("push", "Push to ana/site", "apv_1") },
+      {
+        id: "apv_2",
+        taskId: "tsk_1",
+        ruleOffer: offer("open_pr", "Pull requests on ana/site", "apv_2"),
+      },
+      { id: "apv_9", taskId: "tsk_other", ruleOffer: offer("push", "Push elsewhere", "apv_9") },
+    ];
+    renderAt("/c/cnv_1");
+    fireEvent.click(await screen.findByRole("button", { name: "Always allow" }));
+    // It shows the rules for this task only, and saves nothing until confirmed.
+    expect(screen.getByText("New rules")).toBeTruthy();
+    expect(screen.getByText("Push to ana/site")).toBeTruthy();
+    expect(screen.getByText("Pull requests on ana/site")).toBeTruthy();
+    expect(screen.queryByText("Push elsewhere")).toBeNull();
+    const before = posts.length;
+    fireEvent.click(screen.getByRole("button", { name: "Always allow" }));
+    await waitFor(() =>
+      expect(posts.slice(before).filter((p) => p.method === "POST")).toHaveLength(3),
+    );
+    expect(
+      posts
+        .slice(before)
+        .filter((p) => p.method === "POST")
+        .map((p) => [p.path, JSON.parse(String(p.body))]),
+    ).toEqual([
+      ["/api/rules", offer("push", "", "apv_1").rule],
+      ["/api/rules", offer("open_pr", "", "apv_2").rule],
+      ["/api/tasks/tsk_1/approval", { decision: "approve" }],
+    ]);
   });
 
   it("lists machines with their repos", async () => {
