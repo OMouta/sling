@@ -23,6 +23,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.ts";
 import { BLOCK_HEADER } from "../src/memory/block.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
+import { withinBudget } from "./fixtures/budget.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -454,7 +455,7 @@ describe("memory", () => {
     console.log(
       `recall over 10,000 memories: p50 ${times[49]?.toFixed(1)} ms, p95 ${p95.toFixed(1)} ms; a word in 8,000 of them ${broadMs.toFixed(1)} ms`,
     );
-    expect(p95).toBeLessThan(30);
+    withinBudget(p95, 30);
     await server.ctx.db.delete(schema.memories);
   });
 });

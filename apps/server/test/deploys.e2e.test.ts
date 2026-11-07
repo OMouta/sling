@@ -51,6 +51,7 @@ import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
+import { withinBudget } from "./fixtures/budget.ts";
 import { FakeRunner } from "./fixtures/fake-runner.ts";
 import { type GitServer, serveGit } from "./fixtures/git-http.ts";
 import { createFakeProvider } from "./fixtures/providers.ts";
@@ -1496,7 +1497,7 @@ describe("budgets", () => {
     console.log(
       `approval to RepoAction: p50 ${samples[9]?.toFixed(1)} ms, p95 ${p95.toFixed(1)} ms, max ${samples.at(-1)?.toFixed(1)} ms`,
     );
-    expect(p95).toBeLessThan(100);
+    withinBudget(p95, 100);
   });
 
   it("calls a hook with under 50 ms of its own overhead", async () => {
@@ -1527,7 +1528,7 @@ describe("budgets", () => {
     }
     overheads.sort((a, b) => a - b);
     console.log(`hook step overhead: ${overheads.map((o) => o.toFixed(1)).join(", ")} ms`);
-    expect(overheads[Math.floor(overheads.length / 2)]).toBeLessThan(50);
+    withinBudget(overheads[Math.floor(overheads.length / 2)] ?? Infinity, 50);
   });
 
   it("notices a site that comes back within 12 s of it answering", async () => {

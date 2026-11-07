@@ -18,6 +18,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.ts";
 import { type RunningServer, type StartOptions, startServer } from "../src/server.ts";
 import { fireSchedule, SCHEDULE_QUEUE } from "../src/workflows/triggers.ts";
+import { withinBudget } from "./fixtures/budget.ts";
 import {
   calls,
   discordSent,
@@ -1625,7 +1626,7 @@ describe("data and AI nodes", () => {
       `engine overhead per node over ${samples.length} nodes: p50 ${p50.toFixed(2)} ms, p95 ${p95.toFixed(2)} ms`,
     );
     expect(samples.length).toBeGreaterThanOrEqual(202);
-    expect(p95).toBeLessThan(5);
+    withinBudget(p95, 5);
   });
 });
 

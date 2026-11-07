@@ -30,6 +30,7 @@ import type { Config } from "../src/config.ts";
 import { b64u, decryptPayload, encryptPayload, fromB64u } from "../src/push/crypto.ts";
 import { topicFor } from "../src/push/payloads.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
+import { withinBudget } from "./fixtures/budget.ts";
 import { FakeRunner } from "./fixtures/fake-runner.ts";
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -705,7 +706,7 @@ describe("budgets", () => {
     const p = (q: number) =>
       sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0;
     console.log(`push event to request: p50 ${p(0.5).toFixed(2)} ms, p95 ${p(0.95).toFixed(2)} ms`);
-    expect(p(0.95)).toBeLessThan(30);
+    withinBudget(p(0.95), 30);
 
     const payload = Buffer.from(
       JSON.stringify({
@@ -722,6 +723,6 @@ describe("budgets", () => {
     for (let i = 0; i < n; i++) encryptPayload(payload, ua, phone.auth);
     const each = (performance.now() - start) / n;
     console.log(`push encryption: ${(each * 1000).toFixed(1)} µs per message`);
-    expect(each).toBeLessThan(1);
+    withinBudget(each, 1);
   });
 });

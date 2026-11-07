@@ -35,6 +35,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.ts";
 import { DIGEST_MISMATCH } from "../src/extensions/service.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
+import { withinBudget } from "./fixtures/budget.ts";
 import { type BuiltExtension, buildExtension, generateSigningKey } from "./fixtures/extensions.ts";
 import { InProcessRuntime, testRuntime } from "./fixtures/in-process-runtime.ts";
 import { fakeConnector, testNodes } from "./fixtures/nodes.ts";
@@ -1773,7 +1774,7 @@ describe("startup", () => {
     const timings = s2.ctx.extensions.startTimings;
     console.log(`extension start with 10 installed: ${JSON.stringify(timings)}`);
     expect(timings?.extensions).toBe(10);
-    expect(timings?.totalMs).toBeLessThan(100);
+    withinBudget(timings?.totalMs ?? Infinity, 100);
     if (rt instanceof InProcessRuntime) {
       expect(rt.calls).toMatchObject({ describe: 0, activate: 10 });
     }

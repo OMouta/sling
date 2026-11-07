@@ -36,6 +36,7 @@ import type { Checks } from "../src/checks/service.ts";
 import type { RunOutcome } from "../src/checks/state.ts";
 import type { Config } from "../src/config.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
+import { withinBudget } from "./fixtures/budget.ts";
 import { FakeRunner } from "./fixtures/fake-runner.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -644,7 +645,7 @@ describe("the scheduler", () => {
       const perCheck = (performance.now() - started) / n;
       console.log(`scheduler overhead: ${perCheck.toFixed(2)} ms per check over ${n}`);
       expect(n).toBeGreaterThanOrEqual(40);
-      expect(perCheck).toBeLessThan(5);
+      withinBudget(perCheck, 5);
 
       // A check that's off is never due.
       await api("PATCH", `/api/checks/${ids[0]}`, { enabled: false });

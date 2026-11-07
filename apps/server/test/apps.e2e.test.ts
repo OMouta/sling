@@ -46,6 +46,7 @@ import { appTools, readableDate } from "../src/agent/app-tools.ts";
 import type { Config } from "../src/config.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
 import { fireSchedule, SCHEDULE_QUEUE } from "../src/workflows/triggers.ts";
+import { withinBudget } from "./fixtures/budget.ts";
 import { testRuntime } from "./fixtures/in-process-runtime.ts";
 
 vi.setConfig({ testTimeout: 90_000 });
@@ -1022,7 +1023,7 @@ describe("measured", () => {
     console.log(
       `tool layer per connector action: read median ${read.median.toFixed(2)} ms (p95 ${read.p95.toFixed(2)}), send in Full access median ${send.median.toFixed(2)} ms (p95 ${send.p95.toFixed(2)}); building the turn's ${Object.keys(tools).length} app tools ${buildMs.toFixed(1)} ms`,
     );
-    expect(read.median).toBeLessThan(5);
-    expect(send.median).toBeLessThan(5);
+    withinBudget(read.median, 5);
+    withinBudget(send.median, 5);
   });
 });

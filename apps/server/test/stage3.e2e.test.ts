@@ -38,6 +38,7 @@ import type { Config } from "../src/config.ts";
 import { loadRouterInput } from "../src/routing/inputs.ts";
 import { route } from "../src/routing/router.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
+import { withinBudget } from "./fixtures/budget.ts";
 import { FakeRunner } from "./fixtures/fake-runner.ts";
 import { calls, recordNode } from "./fixtures/nodes.ts";
 import {
@@ -427,7 +428,7 @@ describe("routing between machines", () => {
       times.push(performance.now() - started);
     }
     times.sort((a, b) => a - b);
-    expect(times[Math.floor(times.length * 0.95)]).toBeLessThan(20);
+    withinBudget(times[Math.floor(times.length * 0.95)] ?? Infinity, 20);
   });
 
   it("puts a named machine first, and keeps runnerId working", async () => {

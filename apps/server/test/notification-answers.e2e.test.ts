@@ -35,6 +35,7 @@ import type { Config } from "../src/config.ts";
 import { answerKey, answerToken } from "../src/push/answers.ts";
 import { b64u, decryptPayload } from "../src/push/crypto.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
+import { withinBudget } from "./fixtures/budget.ts";
 import { FakeRunner } from "./fixtures/fake-runner.ts";
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -828,6 +829,6 @@ describe("budget", () => {
     times.sort((a, b) => a - b);
     const p95 = times[Math.floor(times.length * 0.95)] ?? Infinity;
     console.log(`notification answer to resolved, p95 ${p95.toFixed(1)} ms`);
-    expect(p95).toBeLessThan(100);
+    withinBudget(p95, 100);
   });
 });
