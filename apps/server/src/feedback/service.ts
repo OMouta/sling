@@ -22,9 +22,13 @@ interface Viewer {
   userId: string;
 }
 
-/** The start of a message's text, on one line. */
+/** The start of a message's text, on one line, without Markdown's marks or code. */
 export function excerpt(content: unknown, chars = EXCERPT_CHARS): string {
   const flat = textOf((content as { content?: unknown })?.content)
+    .replace(/```[\s\S]*?(?:```|$)/g, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s*(?:#{1,6}|[-*+]|\d+[.)]|>)\s+/gm, "")
+    .replace(/\*\*|__|`|~~/g, "")
     .replace(/\s+/g, " ")
     .trim();
   return flat.length > chars ? `${flat.slice(0, chars - 1)}…` : flat;

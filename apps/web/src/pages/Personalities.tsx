@@ -36,6 +36,7 @@ import {
 import { type FormEvent, type ReactNode, useMemo, useRef, useState } from "react";
 import { Glyph } from "../components/Glyph.tsx";
 import { Page, Toolbar } from "../components/Page.tsx";
+import { PersonalityFeedback } from "../components/PersonalityFeedback.tsx";
 import {
   FromFileCard,
   PersonalityMenu,
@@ -835,6 +836,7 @@ export function PersonalityEditorPage() {
               {PERSONALITY_INSTRUCTIONS_MAX.toLocaleString()}
             </p>
           </section>
+          {existing && <PersonalityFeedback personality={existing} />}
         </div>
 
         <aside className="lg:sticky lg:top-6 lg:self-start">
