@@ -1,0 +1,13 @@
+{
+  "key": "signal-assistant",
+  "name": "Signal assistant",
+  "description": "Chat with Sling in Signal, and hear back there when tasks finish.",
+  "builtIn": false,
+  "bindings": [
+    {
+      "placeholder": "$signal",
+      "connectorId": "signal",
+      "label": "Signal"
+    }
+  ]
+}

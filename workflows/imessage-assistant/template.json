@@ -1,0 +1,13 @@
+{
+  "key": "imessage-assistant",
+  "name": "iMessage assistant",
+  "description": "Chat with Sling in iMessage, and hear back there when tasks finish.",
+  "builtIn": false,
+  "bindings": [
+    {
+      "placeholder": "$imessage",
+      "connectorId": "imessage",
+      "label": "iMessage"
+    }
+  ]
+}
