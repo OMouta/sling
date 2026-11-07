@@ -298,6 +298,44 @@ Sling ships a manifest and a service worker. The service worker caches built ass
 ### D81. Two more personality tool groups: apps and deploys
 `apps` covers the flagged connector actions and `run_workflow`. `deploys` covers `check_deploy_target`, `deploy_task`, and `deliver: "deploy"`. The server enforces both, as it does the others. The default personality gains both when it has every older group. The Incident template gets `deploys`, and Planner gets `apps`. No other personality gains a group it didn't have, since a personality's tools only ever narrow.
 
+## Stage 6
+
+### D82. Memory: facts the assistant saves on its own, with Undo, on a Memory page
+The assistant saves a lasting fact about you with `remember` and the chat shows "Remembered: …" with **Undo**. Every memory is on **Memory**, with the chat it came from, and can be edited or deleted. A memory is for every personality unless pinned to one. The prompt holds the most recently used memories that fit 6 KB, and `recall` searches the rest with Postgres full-text search. The server refuses text that looks like a secret, whatever the model asks. This rules out embeddings, a vector database, and memories stored anywhere but the workspace's Postgres. Asked 2026-11-07 ("saves on its own, tells you").
+
+### D83. Shared folders are chosen on the machine and searched there
+`sling-runner folder add` shares a folder, and the inventory reports its name only. Search and reads run on the machine with ripgrep's crates, text files only, and the Runner refuses any path that leaves the folder, including through a symlink. Nothing is uploaded or indexed in the control plane. This follows D17: the machine, not the control plane, decides what Sling may use. It rules out a central index and reading PDFs or Office files for now.
+
+### D84. The assistant writes workflow graphs, and you apply them on a card
+`create_workflow` takes a full `sling.workflow/v1` definition, which the server validates before the card shows. The card lists the steps in plain words and marks the ones that send. `change_workflow` can replace a graph. `workflow_nodes` serves the catalog, so it stays out of the fixed prompt. `core.schedule` gains a one-time `at`. This rules out workflows the assistant applies without a card outside Full access, and a separate reminders feature.
+
+### D85. Rules: standing answers that skip a question or start work, never for merges or deploys
+An allow rule matches an action, an optional installation, and pinned argument values that the node lists in `ruleFields`. It applies in Supervised and Auto, never in Read-only. A start rule opens a chat and runs a turn when a check changes, in at most Auto, at most once per rule and check every 30 minutes. Merges, deploys, commands outside the sandbox, setup changes, and saving a rule never match. A rule made from chat always shows a card, Full access included, because it outlives the chat. Five approvals in a row with no denial earn a suggestion on the card. This supersedes D76's "nothing starts on its own" for start rules. Asked 2026-11-07 ("rules can start work").
+
+### D86. Checks replace Deploys, and every action that changes something outside Sling checks itself
+A check is something Sling watches on a schedule: a site (with an optional deploy), a command in the read-only sandbox on a machine, or an email reply due by a deadline. A deploy target becomes a site check that also deploys, and the migration moves each target over. The scheduler runs due checks itself, and workflows react through `checks.changed`, which replaces polling with `deploys.check`. Actions check themselves through `verify` on their node: read the event back, fetch the message, watch for a bounce, wait for the PR's CI. A node without `verify` claims no check. This supersedes D76's "watching is a workflow" and finishes the PR CI checks deferred after Stage 5. Asked 2026-11-07 ("Checks replaces Deploys").
+
+### D87. Email search and reading from chat, over IMAP
+`email.search` and `email.read` are flagged for the assistant and never ask. They also back `reply` checks and the bounce check. This finishes "reading email from chat", left out of Stage 5.
+
+### D88. Google Calendar through your own OAuth client
+The calendar connector gains a `google` kind, with an OAuth client you create and paste in, PKCE, and an encrypted refresh token. The OAuth routes and token store are a server module the next OAuth connector reuses. This supersedes D77's "no Google OAuth", and rules out a Sling-owned OAuth client.
+
+### D89. Telegram is built in, with long polling
+A bot token, your chat picked after you message the bot, and long polling, so no public address is needed. Only allowed chats are answered. The **Telegram assistant** template works like **Discord assistant**. Asked 2026-11-07.
+
+### D90. Signal and iMessage run on a paired machine that allows the senders
+Neither has an API Sling can call, so the Runner does it: iMessage by reading `chat.db` and sending with `osascript` on a Mac, Signal through `signal-cli` as a linked device. Channels and their allowed senders are set only on the machine, which forwards nothing until a sender is allowed. Cursors on disk mean a message that arrived while the Runner was down is forwarded once. Asked 2026-11-07. This rules out WhatsApp for now.
+
+### D91. Voice is the browser's speech recognition in the composer
+A mic button, hold to talk or tap twice, fills the composer and never sends on its own. It shows only where the browser has speech recognition. This rules out transcription on Sling's server or your machines for now, and reading replies aloud.
+
+### D92. Some approvals can be answered from the notification
+Sends and push-and-PR steps get **Allow** and **Deny** on their push, answered by the service worker with a single-use token bound to the approval, the user, and its expiry. Merges, deploys, commands, setup changes, and rules still open Sling. This supersedes D79's "no buttons" for those approvals only.
+
+### D93. Two more personality tool groups: memory and files
+`memory` covers `remember`, `forget`, and `recall`, and every personality gets it, since it reads and writes only Sling's own data. `files` covers `search_files` and `read_file`, and only the default personality gets it. The setup group gains `create_workflow`, `workflow_nodes`, `save_rule`, and `save_check`, and `check_deploy_target` becomes `run_check`.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.
@@ -322,6 +360,14 @@ Sling ships a manifest and a service worker. The service worker caches built ass
   - The assistant gets at most 30 connector-action tools per turn, and `run_workflow` waits up to 60 seconds.
   - iCal feeds are cached for 5 minutes by ETag, and capped at 5 MB and 2,000 events per query.
   - The Morning briefing runs at 07:30 in the workspace's time zone and starts a new chat each day.
+- Stage 6:
+  - **Memory** sits in the sidebar after Personalities, and **Checks** takes Deploys' place.
+  - The memory block in the prompt is at most 6 KB, and a memory at most 500 characters.
+  - Site checks run every minute and command checks every 5 minutes. Reply checks look every 5 minutes until their deadline.
+  - An email send watches for a bounce for 10 minutes, and a PR's CI is awaited for up to 30 minutes.
+  - Five approvals in a row with no denial in 30 days earn a rule suggestion.
+  - A start rule opens at most one chat per check every 30 minutes.
+  - iMessage polls `chat.db` every 2 seconds. A send to an offline machine waits up to 5 minutes.
 
 ## To verify before building Stage 1
 
