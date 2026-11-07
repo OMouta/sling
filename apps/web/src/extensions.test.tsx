@@ -178,6 +178,20 @@ function route(method: string, path: string, body: unknown): unknown {
       );
       return view;
     }
+    case "POST /api/extension-catalogs/preview": {
+      const url = (body as { url: string }).url;
+      if (url.includes("acme")) throw new HttpError(409, "That catalog is already added.");
+      return {
+        url,
+        name: "Weather tools",
+        extensionCount: 8,
+        extensions: [
+          { id: "weather", name: "Weather", description: "Forecasts for a place." },
+          { id: "tides", name: "Tides", description: "" },
+        ],
+        publishers: ["Acme"],
+      };
+    }
     case "POST /api/extension-catalogs": {
       const created: CatalogView = {
         id: "cat_new",
@@ -780,17 +794,36 @@ describe("sources", () => {
     await waitFor(() => expect(list.queryByText("Acme extensions")).toBeNull());
   });
 
-  it("adds a catalog by URL", async () => {
+  it("adds a catalog after showing what it lists", async () => {
     renderAt("/extensions?tab=sources");
     await screen.findByRole("list", { name: "Catalogs" });
     fireEvent.click(screen.getByRole("button", { name: "Add catalog" }));
     const d = await dialog();
-    const add = d.getByRole("button", { name: "Add" }) as HTMLButtonElement;
-    expect(add.disabled).toBe(true);
-    fireEvent.change(d.getByLabelText(/^URL/), {
+    expect(d.getByRole("heading", { name: "Where's the catalog?" })).toBeTruthy();
+    const next = () => d.getByRole("button", { name: /^(Continue|Add)$/ }) as HTMLButtonElement;
+    expect(next().disabled).toBe(true);
+
+    // A problem shows under the field, and nothing is added.
+    fireEvent.change(d.getByLabelText("Catalog URL"), {
+      target: { value: "https://acme.test/catalog.json" },
+    });
+    fireEvent.click(next());
+    expect((await d.findByRole("alert")).textContent).toBe("That catalog is already added.");
+
+    fireEvent.change(d.getByLabelText("Catalog URL"), {
       target: { value: "https://weather.test/catalog.json" },
     });
-    fireEvent.click(add);
+    fireEvent.click(next());
+    expect(await d.findByRole("heading", { name: "Add Weather tools?" })).toBeTruthy();
+    expect(callsTo("POST", "/api/extension-catalogs")).toHaveLength(0);
+    expect(d.getByText("Lists 8 extensions, signed by Acme")).toBeTruthy();
+    const listed = within(d.getByRole("list", { name: "Extensions in it" }));
+    expect(listed.getAllByRole("listitem").map((li) => li.textContent)).toEqual([
+      "WeatherForecasts for a place.",
+      "Tides",
+      "and 6 more",
+    ]);
+    fireEvent.click(next());
     await waitFor(() => expect(callsTo("POST", "/api/extension-catalogs")).toHaveLength(1));
     expect(callsTo("POST", "/api/extension-catalogs")[0]?.body).toEqual({
       url: "https://weather.test/catalog.json",

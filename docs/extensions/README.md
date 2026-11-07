@@ -89,7 +89,7 @@ Only the workspace owner can install, update, or remove extensions. Extensions a
 
 The new connector appears under **Connectors**, and its nodes appear in the workflow editor. Add an installation the way you would for Discord or email.
 
-To add someone else's catalog, paste its URL under **Extensions → Sources**. To install a `.slx` file you have, use **Upload** on the **Installed** or **Discover** tab. An upload goes through the same checks, using the key in the package's signature.
+To add someone else's catalog, choose **Add catalog** under **Extensions → Sources** and paste its URL. Sling fetches it first and shows its name and the extensions it lists, and adds it only when you confirm. To install a `.slx` file you have, use **Upload** on the **Installed** or **Discover** tab. An upload goes through the same checks, using the key in the package's signature.
 
 ### Updates
 

@@ -1,4 +1,5 @@
 import type {
+  CatalogPreviewView,
   CatalogView,
   DiscoverEntryView,
   ExtensionDetailView,
@@ -100,6 +101,8 @@ export const extensionApi = {
   setEnabled: (id: string, enabled: boolean) =>
     api.patch<ExtensionView | null>(path(id), { enabled }),
   remove: (id: string) => api.del<unknown>(path(id)),
+  previewCatalog: (url: string) =>
+    api.post<CatalogPreviewView>("/api/extension-catalogs/preview", { url }),
   addCatalog: (url: string) => api.post<CatalogView>("/api/extension-catalogs", { url }),
   refreshCatalog: (id: string) =>
     api.post<CatalogView | null>(`/api/extension-catalogs/${encodeURIComponent(id)}/refresh`),

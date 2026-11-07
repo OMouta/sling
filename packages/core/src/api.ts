@@ -778,6 +778,18 @@ export interface CatalogView {
   extensionCount: number;
 }
 
+/** What a catalog URL holds, fetched before it's added. */
+export interface CatalogPreviewView {
+  /** The URL as Sling will store it. */
+  url: string;
+  name: string;
+  extensionCount: number;
+  /** Its first few extensions, in the catalog's order. */
+  extensions: { id: string; name: string; description: string }[];
+  /** Who signs its packages, by name. */
+  publishers: string[];
+}
+
 /** A device that gets push notifications. */
 export interface PushSubscriptionView {
   id: string;

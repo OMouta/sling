@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ExtensionKind, SDK_VERSION } from "@sling/connector-sdk";
 import type {
+  CatalogPreviewView,
   CatalogView,
   ConnectorView,
   DiscoverEntryView,
@@ -639,6 +640,21 @@ describe("install from a catalog", () => {
   let workflowId = "";
 
   it("adds a catalog and lists its extensions in discover", async () => {
+    // Looking first stores nothing.
+    const preview = await c.call<CatalogPreviewView>("POST", "/api/extension-catalogs/preview", {
+      url: `${local.base}/acme/catalog.json`,
+    });
+    expect(preview).toMatchObject({
+      url: `${local.base}/acme/catalog.json`,
+      name: "Acme extensions",
+      extensionCount: 1,
+      extensions: [{ id: "acme-chat" }],
+    });
+    expect(
+      (await c.call<CatalogView[]>("GET", "/api/extension-catalogs")).some(
+        (x) => x.name === "Acme extensions",
+      ),
+    ).toBe(false);
     const cat = await c.call<CatalogView>("POST", "/api/extension-catalogs", {
       url: `${local.base}/acme/catalog.json`,
     });
@@ -649,6 +665,13 @@ describe("install from a catalog", () => {
       url: `${local.base}/acme/catalog.json`,
     });
     expect(again.status).toBe(409);
+    expect(
+      (
+        await c.refused("POST", "/api/extension-catalogs/preview", {
+          url: `${local.base}/acme/catalog.json`,
+        })
+      ).status,
+    ).toBe(409);
 
     const entries = await c.call<DiscoverEntryView[]>("GET", "/api/extensions/discover");
     const entry = entries.find((e) => e.id === "acme-chat");
@@ -1697,6 +1720,7 @@ describe("owner only", () => {
         ["PATCH", "/api/extensions/acme-notes", { enabled: false }],
         ["DELETE", "/api/extensions/acme-notes", undefined],
         ["POST", "/api/extension-catalogs", { url: "https://example.com/catalog.json" }],
+        ["POST", "/api/extension-catalogs/preview", { url: "https://example.com/catalog.json" }],
         ["DELETE", `/api/extension-publishers/${acmeKey.keyId}`, undefined],
         [
           "POST",

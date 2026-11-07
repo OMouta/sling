@@ -1,22 +1,13 @@
-import type { CatalogView, ExtensionView, PublisherView } from "@sling/core";
+import type { CatalogPreviewView, CatalogView, ExtensionView, PublisherView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, KeyRound, Library, RefreshCw, Trash2 } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { useState } from "react";
 import { extensionApi, isCatalogView, useCatalogs, usePublishers } from "../../lib/extensionApi.ts";
 import { ago, plural } from "../../lib/format.ts";
 import { qk } from "../../lib/workflowApi.ts";
-import {
-  Button,
-  Card,
-  Dialog,
-  Empty,
-  ErrorText,
-  Field,
-  Input,
-  Section,
-  Skeleton,
-  useConfirm,
-} from "../ui.tsx";
+import { Button, Card, Empty, ErrorText, Input, Section, Skeleton, useConfirm } from "../ui.tsx";
+import { Wizard, type WizardStep } from "../Wizard.tsx";
+import { StepNote } from "../WizardBits.tsx";
 
 /** Where extensions come from, and whose signatures Sling accepts. */
 export function Sources({ installed }: { installed: ExtensionView[] }) {
@@ -154,11 +145,17 @@ function CatalogRow({ catalog: c }: { catalog: CatalogView }) {
   );
 }
 
+/**
+ * Adds a catalog in two steps: its URL, then what's in it, fetched before
+ * anything is stored, so you add it knowing what it lists.
+ */
 export function AddCatalogDialog({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [url, setUrl] = useState("");
+  const [found, setFound] = useState<CatalogPreviewView | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
   const add = useMutation({
-    mutationFn: () => extensionApi.addCatalog(url.trim()),
+    mutationFn: () => extensionApi.addCatalog(found?.url ?? url.trim()),
     onSuccess: (res) => {
       if (isCatalogView(res)) {
         qc.setQueryData<CatalogView[]>(qk.catalogs(), (list) =>
@@ -167,48 +164,101 @@ export function AddCatalogDialog({ onClose }: { onClose: () => void }) {
       }
       void qc.invalidateQueries({ queryKey: qk.catalogs() }, { cancelRefetch: false });
       void qc.invalidateQueries({ queryKey: qk.discover() });
-      onClose();
     },
   });
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (url.trim()) add.mutate();
-  };
-  return (
-    <Dialog
-      title="Add a catalog"
-      description="A catalog is a JSON file that lists extensions and where to download them."
-      onClose={onClose}
-      footer={
+  const more = found ? found.extensionCount - found.extensions.length : 0;
+
+  const steps: WizardStep[] = [
+    {
+      id: "url",
+      title: "Where's the catalog?",
+      blocked: !url.trim(),
+      onNext: async () => {
+        setProblem(null);
+        try {
+          const res = await extensionApi.previewCatalog(url.trim());
+          if (!res) return false;
+          setFound(res);
+          return true;
+        } catch (err) {
+          setProblem(err instanceof Error ? err.message : String(err));
+          return false;
+        }
+      },
+      content: (
         <>
-          <ErrorText error={add.error} />
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            type="submit"
-            form="add-catalog"
-            busy={add.isPending}
-            disabled={!url.trim()}
-          >
-            Add
-          </Button>
-        </>
-      }
-    >
-      <form id="add-catalog" onSubmit={submit}>
-        <Field label="URL" hint="Served over HTTPS. Sling fetches it now to check it.">
           <Input
             type="url"
             inputMode="url"
+            aria-label="Catalog URL"
             autoComplete="off"
             spellCheck={false}
             placeholder="https://example.com/extensions/catalog.json"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            aria-invalid={Boolean(problem) || undefined}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setProblem(null);
+            }}
           />
-        </Field>
-      </form>
-    </Dialog>
+          {problem ? (
+            <StepNote tone="error">{problem}</StepNote>
+          ) : (
+            <StepNote>The catalog's JSON file, served over HTTPS.</StepNote>
+          )}
+        </>
+      ),
+    },
+    {
+      id: "review",
+      title: found ? `Add ${found.name}?` : "Add it?",
+      content: found && (
+        <>
+          <p className="truncate font-mono text-[11.5px] text-subtle" title={found.url}>
+            {found.url}
+          </p>
+          <StepNote tone={found.extensionCount > 0 ? "ok" : "warn"}>
+            Lists {plural(found.extensionCount, "extension")}
+            {found.publishers.length > 0 && `, signed by ${found.publishers.join(", ")}`}
+          </StepNote>
+          {found.extensions.length > 0 && (
+            <ul
+              aria-label="Extensions in it"
+              className="divide-y divide-border overflow-hidden rounded-xl bg-surface-2 shadow-raised"
+            >
+              {found.extensions.map((x) => (
+                <li key={x.id} className="px-3.5 py-2.5">
+                  <p className="truncate text-[13px] font-medium">{x.name}</p>
+                  {x.description && (
+                    <p className="line-clamp-2 text-xs leading-4 text-muted">{x.description}</p>
+                  )}
+                </li>
+              ))}
+              {more > 0 && <li className="px-3.5 py-2.5 text-xs text-subtle">and {more} more</li>}
+            </ul>
+          )}
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <Wizard
+      title="Add a catalog"
+      steps={steps}
+      finishLabel="Add"
+      finishing={add.isPending}
+      error={add.error instanceof Error ? add.error.message : null}
+      onFinish={async () => {
+        try {
+          await add.mutateAsync();
+          return true;
+        } catch {
+          return false;
+        }
+      }}
+      onClose={onClose}
+    />
   );
 }
 

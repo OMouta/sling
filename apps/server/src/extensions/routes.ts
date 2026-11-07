@@ -180,6 +180,18 @@ export async function extensionRoutes(app: FastifyInstance, ctx: AppContext) {
   );
 
   r.post(
+    "/api/extension-catalogs/preview",
+    { schema: { body: z.object({ url: z.string().trim().min(1).max(2000) }) } },
+    async (request, reply) => {
+      try {
+        return await ext.previewCatalog(actorOf(request), request.body.url);
+      } catch (err) {
+        return fail(reply, err);
+      }
+    },
+  );
+
+  r.post(
     "/api/extension-catalogs/:id/refresh",
     { schema: { params: Id } },
     async (request, reply) => {

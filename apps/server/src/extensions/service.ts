@@ -17,6 +17,7 @@ import {
   satisfiesRange,
 } from "@sling/connector-sdk/host";
 import type {
+  CatalogPreviewView,
   CatalogView,
   ConnectorView,
   DiscoverEntryView,
@@ -1481,6 +1482,21 @@ export class ExtensionService {
     });
     await this.#serial(() => this.#applyRevocations(state, actor));
     return toCatalogView(state);
+  }
+
+  /** A catalog's name and what it lists, before adding it. Nothing is stored. */
+  async previewCatalog(actor: Actor, url: string): Promise<CatalogPreviewView> {
+    await this.requireOwner(actor);
+    const { url: href, document } = await this.catalogs.preview(url);
+    return {
+      url: href,
+      name: document.name,
+      extensionCount: document.extensions.length,
+      extensions: document.extensions
+        .slice(0, 6)
+        .map((e) => ({ id: e.id, name: e.name, description: e.description })),
+      publishers: document.publishers.map((p) => p.name),
+    };
   }
 
   async refreshCatalog(actor: Actor, id: string): Promise<CatalogView> {

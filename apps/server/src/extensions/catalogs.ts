@@ -271,7 +271,13 @@ export class CatalogStore {
     return this.#catalogs.get(id);
   }
 
-  async add(rawUrl: string, userId: string): Promise<CatalogState> {
+  /** Fetches a catalog that isn't added yet, so it can be shown before adding it. */
+  async preview(rawUrl: string): Promise<{ url: string; document: Catalog }> {
+    const { href, fetched } = await this.#fetchNew(rawUrl);
+    return { url: href, document: fetched.document };
+  }
+
+  async #fetchNew(rawUrl: string) {
     const url = checkSourceUrl(rawUrl.trim(), this.#allowLoopback);
     const href = url.toString();
     for (const c of this.#catalogs.values()) {
@@ -279,6 +285,11 @@ export class CatalogStore {
     }
     const fetched = await this.#fetch(url, null);
     if (!fetched.document) throw new ExtensionError("The catalog didn't send a document.", 502);
+    return { href, fetched: { ...fetched, document: fetched.document } };
+  }
+
+  async add(rawUrl: string, userId: string): Promise<CatalogState> {
+    const { href, fetched } = await this.#fetchNew(rawUrl);
     const [row] = await this.#ctx.db
       .insert(schema.extensionCatalogs)
       .values({
