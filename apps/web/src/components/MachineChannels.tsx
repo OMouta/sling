@@ -1,6 +1,7 @@
 import type { ChannelKind, ChannelView, RunnerView } from "@sling/core";
 import { type LucideIcon, MessageCircle, MessageSquareLock } from "lucide-react";
 import { plural } from "../lib/format.ts";
+import { CodeText } from "./CodeText.tsx";
 import { Badge, cx, Mono } from "./ui.tsx";
 
 export const CHANNEL_ICON: Record<ChannelKind, LucideIcon> = {
@@ -51,12 +52,11 @@ function ChannelRow({ channel: c, online }: { channel: ChannelView; online: bool
           className={cx(
             "text-[11px] leading-4",
             c.ready ? "text-subtle" : "text-warn",
-            !nobody && "truncate",
+            c.ready && !nobody && "truncate",
           )}
-          title={c.ready ? undefined : c.missing}
         >
           {!c.ready ? (
-            c.missing || "Not ready"
+            <CodeText text={c.missing || "Not ready"} />
           ) : nobody ? (
             <>
               Answers no one yet. On this machine, run{" "}

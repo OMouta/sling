@@ -7,6 +7,7 @@ import { ApiError, api } from "../lib/api.ts";
 import { defaultsFor, type FormField, formFields, type Primitive } from "../lib/schemaForm.ts";
 import { connectUrl, signInFor } from "../lib/signIn.ts";
 import { qk } from "../lib/workflowApi.ts";
+import { CodeText } from "./CodeText.tsx";
 import { SchemaField } from "./SchemaForm.tsx";
 import { Button, cx, Field, Input } from "./ui.tsx";
 import { type ReviewRow, Wizard, type WizardStep } from "./Wizard.tsx";
@@ -55,7 +56,7 @@ function Note({ note }: { note: SetupNoteView }) {
     <p className={cx("flex items-start gap-1.5 text-xs leading-4", className)}>
       <Icon aria-hidden="true" size={13} className="mt-px shrink-0" />
       <span className="min-w-0">
-        {note.text}
+        <CodeText text={note.text} />
         {note.link && (
           <>
             {" "}

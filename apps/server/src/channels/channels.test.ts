@@ -78,8 +78,9 @@ describe("channel triggers", () => {
     expect(await t.match(event({ installationId: "ins_2" }), { installationId: "ins_1" })).toBe(
       null,
     );
-    expect(await t.match(event({ type: "signal.message_received" }), { installationId: "ins_1" }))
-      .toBe(null);
+    expect(
+      await t.match(event({ type: "signal.message_received" }), { installationId: "ins_1" }),
+    ).toBe(null);
     expect(trigger(signal).event).toBe("signal.message_received");
   });
 

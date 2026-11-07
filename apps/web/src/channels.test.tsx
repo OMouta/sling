@@ -27,7 +27,8 @@ const mac: RunnerView = {
       name: "signal",
       allowedSenders: 2,
       ready: false,
-      missing: "signal-cli isn't linked to this account. Run `signal-cli link -n Sling`.",
+      missing:
+        "signal-cli isn't linked to this account. Run `signal-cli link -n Sling` and scan the code in Signal on your phone.",
     },
   ],
 };
@@ -156,6 +157,9 @@ describe("channels on Machines", () => {
     expect(rows[1]?.textContent).toContain("Signalwork");
     expect(rows[1]?.textContent).toContain("sling-runner channel allow work <number>");
     expect(rows[2]?.textContent).toContain("signal-cli isn't linked");
+    expect(within(rows[2] as HTMLElement).getByText("signal-cli link -n Sling").tagName).toBe(
+      "CODE",
+    );
     expect(within(rows[2] as HTMLElement).getByText("Not ready")).toBeTruthy();
   });
 
@@ -170,13 +174,14 @@ describe("channels on Machines", () => {
 describe("iMessage setup", () => {
   it("says what to run on the Mac, and waits for it", async () => {
     lookup = {
-      notes: [{ tone: "info", text: "On your Mac, run: sling-runner channel add imessage" }],
+      notes: [{ tone: "info", text: "On your Mac, run `sling-runner channel add imessage`" }],
       retryAfterMs: 5_000,
     };
     renderAt("/connectors");
     fireEvent.click(await screen.findByRole("button", { name: "Add iMessage" }));
     const dialog = within(await screen.findByRole("dialog", { name: "Add iMessage" }));
-    expect(await dialog.findByText(/sling-runner channel add imessage/)).toBeTruthy();
+    // The command shows as code, to copy.
+    expect((await dialog.findByText("sling-runner channel add imessage")).tagName).toBe("CODE");
     expect(dialog.getByText("Which Mac?")).toBeTruthy();
     await waitFor(() =>
       expect((dialog.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(

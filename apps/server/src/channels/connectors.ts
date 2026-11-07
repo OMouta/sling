@@ -69,7 +69,10 @@ function configSchemaFor(k: Kind) {
       .string()
       .min(1)
       .meta({ step, title: k.machine === "Mac" ? "Mac" : "Machine", picker: true, lookup: true }),
-    channel: z.string().min(1).meta({ step, title: "Channel", picker: true, advanced: true }),
+    channel: z
+      .string()
+      .min(1)
+      .meta({ step, title: "Channel", picker: true, advanced: true, lookup: true }),
   });
 }
 
@@ -106,7 +109,8 @@ async function machinesWith(ctx: AppContext, workspaceId: string, kind: ChannelK
 const senders = (n: number) => (n === 1 ? "1 sender allowed" : `${n} senders allowed`);
 
 function channelDetail(c: ChannelView): string {
-  if (!c.ready) return c.missing || "Not ready";
+  // The whole of what's missing shows as a note once it's picked.
+  if (!c.ready) return "Not ready";
   return c.allowedSenders === 0 ? "No senders allowed yet" : senders(c.allowedSenders);
 }
 
@@ -127,7 +131,7 @@ async function setup(
   const machines = await machinesWith(ctx, host.workspaceId, k.id);
   if (machines.length === 0) {
     return {
-      notes: [{ tone: "info", text: `On your ${k.machine}, run: ${k.add}` }],
+      notes: [{ tone: "info", text: `On your ${k.machine}, run \`${k.add}\`` }],
       retryAfterMs: RECHECK_MS,
     };
   }
@@ -141,11 +145,14 @@ async function setup(
   if (!picked) return out;
   const config: Partial<ChannelInstallationConfig> = {};
   if (lookup.config.runnerId !== picked.id) config.runnerId = picked.id;
-  options.channel = picked.channels.map((c) => ({
-    value: c.name,
-    label: c.name,
-    detail: channelDetail(c),
-  }));
+  // With one channel there's nothing to pick, so no picker shows.
+  if (picked.channels.length > 1) {
+    options.channel = picked.channels.map((c) => ({
+      value: c.name,
+      label: c.name,
+      detail: channelDetail(c),
+    }));
+  }
   const channel =
     picked.channels.find((c) => c.name === lookup.config.channel) ??
     (picked.channels.length === 1 ? picked.channels[0] : undefined);
@@ -157,6 +164,8 @@ async function setup(
     return out;
   }
   const notes: SetupNote[] = [];
+  // Under the channel when there's a choice of them, else under the machine.
+  const about = options.channel ? "channel" : "runnerId";
   if (!picked.online) {
     notes.push({
       field: "runnerId",
@@ -164,18 +173,16 @@ async function setup(
       text: `${picked.name} is offline. Messages wait there until it's back.`,
     });
   } else if (!channel.ready) {
-    notes.push({ field: "runnerId", tone: "warn", text: channel.missing || "Not ready yet." });
+    notes.push({ field: about, tone: "warn", text: channel.missing || "Not ready yet." });
     out.retryAfterMs = RECHECK_MS;
   }
   if (channel.allowedSenders === 0) {
     notes.push({
-      field: "runnerId",
+      field: about,
       tone: "warn",
-      text: `It answers no one yet. On ${picked.name}, run: sling-runner channel allow ${channel.name} <your number>`,
+      text: `It answers no one yet. On ${picked.name}, run \`sling-runner channel allow ${channel.name} <your number>\``,
     });
     out.retryAfterMs = RECHECK_MS;
-  } else if (channel.ready && picked.online) {
-    notes.push({ field: "runnerId", tone: "ok", text: senders(channel.allowedSenders) });
   }
   out.notes = notes;
   return out;
@@ -202,7 +209,7 @@ async function test(ctx: AppContext, k: Kind, run: { config: unknown }) {
   if (!channel) {
     return {
       ok: false as const,
-      error: `${machine.name} has no ${k.name} channel named ${config.data.channel}. Run ${k.add} there.`,
+      error: `${machine.name} has no ${k.name} channel named ${config.data.channel}. Run \`${k.add}\` there.`,
     };
   }
   if (machine.online && !channel.ready) {
@@ -215,7 +222,7 @@ async function test(ctx: AppContext, k: Kind, run: { config: unknown }) {
   if (!machine.online) notes.push("It's offline right now.");
   if (channel.allowedSenders === 0) {
     notes.push(
-      `No senders allowed yet: run sling-runner channel allow ${channel.name} <number> there.`,
+      `No senders allowed yet: run \`sling-runner channel allow ${channel.name} <number>\` there.`,
     );
   }
   return { ok: true as const, detail: notes.join(" ") };
