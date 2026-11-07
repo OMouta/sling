@@ -33,10 +33,7 @@ export function SetupPage() {
   }
 
   return (
-    <AuthFrame
-      title="Set up Sling"
-      subtitle="Create the account that owns this installation. It's the only account in this version."
-    >
+    <AuthFrame title="Set up Sling">
       <form onSubmit={submit} className="space-y-4">
         <Field label="Name">
           <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
@@ -44,7 +41,7 @@ export function SetupPage() {
         <Field label="Email">
           <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </Field>
-        <Field label="Password" hint="At least 10 characters. You can add a passkey and 2FA later.">
+        <Field label="Password" hint="At least 10 characters">
           <Input
             type="password"
             value={password}
@@ -63,15 +60,7 @@ export function SetupPage() {
   );
 }
 
-export function AuthFrame({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: React.ReactNode;
-}) {
+export function AuthFrame({ title, children }: { title: string; children: React.ReactNode }) {
   const status = useStatus();
   // Cookies, passkeys, and the server's origin check all belong to one address.
   const home = status.data?.publicUrl;
@@ -91,11 +80,11 @@ export function AuthFrame({
           <h1 className="mt-4 text-xl font-medium tracking-tight">
             {target ? "Open Sling at its address" : title}
           </h1>
-          <p className="mt-1.5 text-[13px] leading-5 text-pretty text-muted">
-            {target
-              ? `This page is ${window.location.host}, but Sling is set up for ${target.host}. Signing in only works there.`
-              : subtitle}
-          </p>
+          {target && (
+            <p className="mt-1.5 text-[13px] leading-5 text-pretty text-muted">
+              Sign-in only works at {target.host}.
+            </p>
+          )}
         </div>
         <Card className="p-5 [&_button]:h-9 [&_input]:h-9">
           {target ? (
@@ -107,14 +96,13 @@ export function AuthFrame({
                 Go to {target.host}
               </a>
               <p className="text-xs leading-4 text-subtle">
-                To use this address instead, run deploy/setup.sh again on the server.
+                To use this address, run deploy/setup.sh again.
               </p>
             </div>
           ) : (
             children
           )}
         </Card>
-        <p className="mt-6 text-center text-xs text-subtle">Self-hosted Sling</p>
       </div>
     </div>
   );

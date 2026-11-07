@@ -70,14 +70,7 @@ export function LoginPage() {
 
   if (step === "2fa") {
     return (
-      <AuthFrame
-        title={backup ? "Use a backup code" : "Two-factor code"}
-        subtitle={
-          backup
-            ? "Enter one of the backup codes you saved. Each works once."
-            : "Enter the 6-digit code from your authenticator app."
-        }
-      >
+      <AuthFrame title={backup ? "Use a backup code" : "Two-factor code"}>
         <form
           onSubmit={(e: FormEvent) => {
             e.preventDefault();
