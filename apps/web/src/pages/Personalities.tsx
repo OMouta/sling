@@ -43,6 +43,7 @@ import {
   useExportPersonality,
 } from "../components/PersonalityFile.tsx";
 import { PersonalityModel, sameChoice } from "../components/PersonalityModel.tsx";
+import { SourcesSection } from "../components/SourcesSection.tsx";
 import {
   Badge,
   Button,
@@ -836,6 +837,7 @@ export function PersonalityEditorPage() {
               {PERSONALITY_INSTRUCTIONS_MAX.toLocaleString()}
             </p>
           </section>
+          {existing && <SourcesSection personality={existing} />}
           {existing && <PersonalityFeedback personality={existing} />}
         </div>
 

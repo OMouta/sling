@@ -24,6 +24,7 @@ import { applyMemoryEvent } from "./memory.ts";
 import { modelsKey } from "./models.ts";
 import { applyPersonalityEvent } from "./personalities.ts";
 import { applyRuleEvent } from "./rules.ts";
+import { applySourceEvent } from "./sources.ts";
 import type { ConversationDetail, TaskDetail } from "./types.ts";
 import { qk } from "./workflowApi.ts";
 
@@ -299,6 +300,10 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
     case "memory.updated":
     case "memory.removed":
       applyMemoryEvent(qc, ev);
+      return;
+    case "source.updated":
+    case "source.removed":
+      applySourceEvent(qc, ev);
       return;
     case "runner.updated":
       qc.setQueryData<RunnerView[]>(["runners"], (list) => {

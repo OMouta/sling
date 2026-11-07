@@ -20,20 +20,18 @@ export function useDeepResearch() {
 /** Shown in the composer while Deep research is on for the next message. */
 export function ResearchChip({ onRemove }: { onRemove: () => void }) {
   return (
-    <div className="flex px-2.5 pt-2.5">
-      <span className="flex h-7 items-center gap-1.5 rounded-full bg-[var(--tag-purple-bg)] pr-1 pl-2.5 text-xs font-medium text-[var(--tag-purple-text)] shadow-[inset_0_0_0_1px_var(--tag-purple-border)]">
-        <FlaskConical aria-hidden="true" size={13} />
-        Deep research
-        <button
-          type="button"
-          aria-label="Turn off Deep research"
-          onClick={onRemove}
-          className="grid size-5 cursor-pointer place-items-center rounded-full transition-colors duration-150 hover:bg-[var(--tag-purple-border)]"
-        >
-          <X aria-hidden="true" size={12} />
-        </button>
-      </span>
-    </div>
+    <span className="flex h-7 items-center gap-1.5 rounded-full bg-[var(--tag-purple-bg)] pr-1 pl-2.5 text-xs font-medium text-[var(--tag-purple-text)] shadow-[inset_0_0_0_1px_var(--tag-purple-border)]">
+      <FlaskConical aria-hidden="true" size={13} />
+      Deep research
+      <button
+        type="button"
+        aria-label="Turn off Deep research"
+        onClick={onRemove}
+        className="grid size-5 cursor-pointer place-items-center rounded-full transition-colors duration-150 hover:bg-[var(--tag-purple-border)]"
+      >
+        <X aria-hidden="true" size={12} />
+      </button>
+    </span>
   );
 }
 

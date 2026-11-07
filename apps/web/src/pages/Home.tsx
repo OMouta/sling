@@ -11,9 +11,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { ArrowRight, Check, ChevronDown, Cpu, Laptop } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { AttachmentChips } from "../components/AttachmentChips.tsx";
 import { Composer } from "../components/Composer.tsx";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { ResearchChip, useDeepResearch } from "../components/DeepResearch.tsx";
+import { useFileDrop } from "../components/DropOverlay.tsx";
 import { Glyph } from "../components/Glyph.tsx";
 import { MentionList } from "../components/MentionList.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
@@ -36,6 +38,7 @@ import {
 } from "../lib/personalities.ts";
 import { canResearch } from "../lib/research.ts";
 import type { Settings } from "../lib/types.ts";
+import { useAttachments } from "../lib/useAttachments.ts";
 
 export function HomePage() {
   const qc = useQueryClient();
@@ -56,6 +59,7 @@ export function HomePage() {
   const dictation = useDictation(text, setText);
   const input = useRef<HTMLTextAreaElement>(null);
   const catalog = useModelCatalog();
+  const files = useAttachments();
   // "New chat" lands here; the composer takes the focus, keeping any draft.
   useEffect(() => {
     const focus = () => input.current?.focus({ preventScroll: true });
@@ -133,6 +137,7 @@ export function HomePage() {
 
   const start = useMutation({
     mutationFn: async (message: SendMessageInput) => {
+      const attachmentIds = await files.ids();
       const c = await api.post<ConversationView>(
         "/api/conversations",
         picked ? { personalityId: picked.id } : {},
@@ -143,11 +148,15 @@ export function HomePage() {
           ...(assistant ? { settings: { assistant } } : {}),
         });
       }
-      await api.post(`/api/conversations/${c.id}/messages`, message);
+      await api.post(`/api/conversations/${c.id}/messages`, {
+        ...message,
+        ...(attachmentIds.length ? { attachmentIds } : {}),
+      });
       return c;
     },
     onSuccess: (c) => {
       research.off();
+      files.clear();
       void qc.invalidateQueries({ queryKey: ["conversations"] });
       void navigate({ to: "/c/$id", params: { id: c.id } });
     },
@@ -158,6 +167,7 @@ export function HomePage() {
   // A machine's logged-in CLI is enough to chat; an API key is the other way.
   const hasModel = Boolean(catalog.data?.defaults.assistant) || Boolean(settings.data?.model);
   const ready = hasModel && hasMachine;
+  const dropOverlay = useFileDrop(files.add, ready);
   // The composer is disabled until Sling knows it can chat, so focus it then.
   useEffect(() => {
     if (ready) input.current?.focus({ preventScroll: true });
@@ -267,9 +277,19 @@ export function HomePage() {
             }
             busy={start.isPending}
             disabled={!ready}
+            canSend={Boolean(text.trim()) || files.sendable}
+            above={
+              <AttachmentChips
+                files={files}
+                leading={researchable && research.on && <ResearchChip onRemove={research.off} />}
+              />
+            }
+            plus={{
+              onAddFiles: files.pick,
+              ...(researchable ? { research: research.option } : {}),
+            }}
+            onFiles={files.add}
             error={start.error ?? dictation.error}
-            above={researchable && research.on && <ResearchChip onRemove={research.off} />}
-            {...(researchable ? { plus: { research: research.option } } : {})}
             overlay={<MentionList mention={mention} />}
             onKeyDown={mention.onKeyDown}
             controls={
@@ -315,6 +335,7 @@ export function HomePage() {
         </div>
       </div>
       {modeChange.dialog}
+      {dropOverlay}
 
       {recent.length > 0 && (
         <section

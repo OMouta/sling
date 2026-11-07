@@ -8,6 +8,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AttachmentChips } from "../components/AttachmentChips.tsx";
 import {
   type ActivityContext,
   ReplySteps,
@@ -23,6 +24,7 @@ import {
   ResearchSteps,
   useDeepResearch,
 } from "../components/DeepResearch.tsx";
+import { useFileDrop } from "../components/DropOverlay.tsx";
 import { FollowUps } from "../components/FollowUps.tsx";
 import { Glyph } from "../components/Glyph.tsx";
 import { Logo } from "../components/Logo.tsx";
@@ -44,6 +46,7 @@ import { usePersonalities } from "../lib/personalities.ts";
 import { seedLiveReply, useLiveReply } from "../lib/realtime.ts";
 import { canResearch } from "../lib/research.ts";
 import type { ConversationDetail, MessageView, TaskView } from "../lib/types.ts";
+import { useAttachments } from "../lib/useAttachments.ts";
 import { chatRoute } from "../router.tsx";
 
 type Item =
@@ -74,16 +77,26 @@ export function ChatPage() {
   }, [id, seed]);
 
   const research = useDeepResearch();
+  const files = useAttachments();
+  const dropOverlay = useFileDrop(files.add);
   const send = useMutation({
-    mutationFn: (message: string | SendMessageInput) =>
-      api.post(
-        `/api/conversations/${id}/messages`,
-        typeof message === "string" ? { text: message } : message,
-      ),
+    mutationFn: async (message: SendMessageInput) => {
+      const attachmentIds = await files.ids();
+      return api.post(`/api/conversations/${id}/messages`, {
+        ...message,
+        ...(attachmentIds.length ? { attachmentIds } : {}),
+      });
+    },
     onSuccess: () => {
       setText("");
       research.off();
+      files.clear();
     },
+  });
+  // A follow-up goes out on its own, leaving a draft and its files in the composer.
+  const followUp = useMutation({
+    mutationFn: (message: string) =>
+      api.post(`/api/conversations/${id}/messages`, { text: message }),
   });
   const setMode = useMutation({
     mutationFn: (mode: PermissionMode) => api.patch(`/api/conversations/${id}`, { mode }),
@@ -282,7 +295,7 @@ export function ChatPage() {
                   latest={!thinking && item.message.id === lastReplyId}
                   onSend={(t) => {
                     following.current = true;
-                    send.mutate({ text: t });
+                    followUp.mutate(t);
                   }}
                 />
               ),
@@ -330,9 +343,25 @@ export function ChatPage() {
               dictation={dictation}
               placeholder={`Message ${personality?.name ?? "Sling"}`}
               busy={send.isPending}
-              error={send.error ?? dictation.error ?? setMode.error ?? setSettings.error}
-              above={researchable && research.on && <ResearchChip onRemove={research.off} />}
-              {...(researchable ? { plus: { research: research.option } } : {})}
+              canSend={Boolean(text.trim()) || files.sendable}
+              above={
+                <AttachmentChips
+                  files={files}
+                  leading={researchable && research.on && <ResearchChip onRemove={research.off} />}
+                />
+              }
+              plus={{
+                onAddFiles: files.pick,
+                ...(researchable ? { research: research.option } : {}),
+              }}
+              onFiles={files.add}
+              error={
+                send.error ??
+                followUp.error ??
+                dictation.error ??
+                setMode.error ??
+                setSettings.error
+              }
               overlay={<MentionList mention={mention} />}
               onKeyDown={mention.onKeyDown}
               controls={
@@ -349,6 +378,7 @@ export function ChatPage() {
         </div>
       </div>
       {modeChange.dialog}
+      {dropOverlay}
     </Page>
   );
 }

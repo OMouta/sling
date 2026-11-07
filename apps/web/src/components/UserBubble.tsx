@@ -24,6 +24,8 @@ export function UserBubble({
 }) {
   const [editing, setEditing] = useState(false);
   if (editing) return <EditBox message={message} onDone={() => setEditing(false)} />;
+  // A message of files alone shows only its files.
+  if (!message.text) return null;
   return (
     <div className="group/user flex w-full items-center justify-end gap-1">
       {message.replaceable && (
