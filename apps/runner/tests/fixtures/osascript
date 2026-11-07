@@ -1,0 +1,17 @@
+#!/bin/sh
+# Stands in for macOS's osascript in tests, so nothing reaches Messages. Each
+# call's arguments go to calls/<n>.args next to this script, NUL-separated.
+# A target or text containing FAIL fails the way Messages does for a chat it
+# can't find.
+dir="$(dirname "$0")/calls"
+mkdir -p "$dir"
+n=$(ls "$dir" | wc -l | tr -d ' ')
+for a in "$@"; do printf '%s\0' "$a"; done > "$dir/$n.args.tmp"
+mv "$dir/$n.args.tmp" "$dir/$n.args"
+case "$*" in
+  *FAIL*)
+    echo "execution error: Messages got an error: Can’t get participant \"FAIL\" of account id \"x\". (-1728)" >&2
+    exit 1
+    ;;
+esac
+exit 0

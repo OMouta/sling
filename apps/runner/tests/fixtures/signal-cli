@@ -1,0 +1,48 @@
+#!/bin/bash
+# Stands in for signal-cli in tests, speaking its JSON-RPC on stdin and
+# stdout. Next to this script:
+#   accounts         the numbers `listAccounts` reports, one per line
+#   inbox/*.json     receive notifications to hand out, one per file, then removed
+#   requests.log     every request it got, one per line
+#   crash            while it exists, it exits at once like an unlinked account
+#   starts           a line per start
+here="$(dirname "$0")"
+if [ "$*" = "-o json listAccounts" ]; then
+  printf '['
+  sep=''
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    printf '%s{"number":"%s"}' "$sep" "$n"
+    sep=','
+  done < "$here/accounts"
+  printf ']\n'
+  exit 0
+fi
+echo start >> "$here/starts"
+if [ -e "$here/crash" ]; then
+  echo "User $2 is not registered." >&2
+  exit 1
+fi
+mkdir -p "$here/inbox"
+main=$$
+# Hands out the inbox, one line per write so it never splits an answer, and
+# stops with the main process.
+(
+  while kill -0 "$main" 2>/dev/null; do
+    for f in "$here"/inbox/*.json; do
+      [ -e "$f" ] || continue
+      printf '%s\n' "$(tr -d '\n' < "$f")"
+      rm -f "$f"
+    done
+    sleep 0.1
+  done
+) &
+while IFS= read -r line; do
+  echo "$line" >> "$here/requests.log"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
+  case "$line" in
+    *UNREGISTERED*) kind=UNREGISTERED_FAILURE ;;
+    *) kind=SUCCESS ;;
+  esac
+  echo "{\"jsonrpc\":\"2.0\",\"id\":$id,\"result\":{\"timestamp\":1,\"results\":[{\"recipientAddress\":{\"number\":\"+1\"},\"type\":\"$kind\"}]}}"
+done

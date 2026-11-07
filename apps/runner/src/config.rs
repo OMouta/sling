@@ -160,6 +160,14 @@ pub struct Config {
     /// sandbox unless `max_mode` is Full access.
     #[serde(default = "default_commands")]
     pub commands: bool,
+    /// Relay the messaging channels below for Sling. Off stops all of them.
+    #[serde(default = "default_channels")]
+    pub channels: bool,
+    /// Messaging channels such as iMessage and Signal, added with
+    /// `sling-runner channel add`. Only this machine adds one or allows its
+    /// senders.
+    #[serde(default, rename = "channel", skip_serializing_if = "Vec::is_empty")]
+    pub channel_entries: Vec<crate::channels::ChannelEntry>,
     /// Let Sling merge task branches and run repos' deploy commands here.
     #[serde(default = "default_deploys")]
     pub deploys: bool,
@@ -182,6 +190,10 @@ fn default_remote_repos() -> bool {
 }
 
 fn default_commands() -> bool {
+    true
+}
+
+fn default_channels() -> bool {
     true
 }
 
@@ -217,6 +229,8 @@ impl Default for Config {
             disposable: false,
             remote_repos: default_remote_repos(),
             commands: default_commands(),
+            channels: default_channels(),
+            channel_entries: Vec::new(),
             deploys: default_deploys(),
             files: default_files(),
             scan_roots: Vec::new(),

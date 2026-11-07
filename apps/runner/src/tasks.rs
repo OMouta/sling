@@ -64,6 +64,8 @@ pub struct Manager {
     pub(crate) sandbox: tokio::sync::Mutex<Option<crate::exec::Sandbox>>,
     /// Merges and deploys, and their results until Sling acknowledges them.
     pub(crate) repo_actions: crate::deploy::RepoActions,
+    /// Messaging channels' outboxes and workers.
+    pub(crate) channels: crate::channels::Channels,
 }
 
 impl Manager {
@@ -109,6 +111,7 @@ impl Manager {
             commands_running: AtomicUsize::new(0),
             sandbox: tokio::sync::Mutex::new(None),
             repo_actions: crate::deploy::RepoActions::default(),
+            channels: crate::channels::Channels::default(),
         }))
     }
 
@@ -306,6 +309,7 @@ impl Manager {
             s.lock().unwrap().reset_sent();
         }
         self.repo_actions.reset_sent();
+        self.channels.reset_sent();
     }
 
     pub fn ack(&self, task_id: &str, seq: u64) {

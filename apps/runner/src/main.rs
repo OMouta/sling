@@ -66,6 +66,11 @@ enum Command {
         #[command(subcommand)]
         command: files::FolderCommand,
     },
+    /// Relay iMessage or Signal, so you can message Sling there.
+    Channel {
+        #[command(subcommand)]
+        command: channels::cli::ChannelCommand,
+    },
     /// Show or change local settings.
     Config {
         #[command(subcommand)]
@@ -137,8 +142,9 @@ enum ConfigCommand {
     Show,
     /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, claude-bin, gh-bin,
     /// worktree-root, remote-repos (on or off), commands (on or off), deploys (on or off),
-    /// files (on or off), scan-roots (comma-separated directories; "" means your home),
-    /// server-url (Sling's new address, keeping the pairing).
+    /// files (on or off), channels (on or off),
+    /// scan-roots (comma-separated directories; "" means your home), server-url (Sling's new
+    /// address, keeping the pairing).
     Set {
         key: String,
         value: String,
@@ -280,6 +286,7 @@ async fn real_main(cli: Cli) -> Result<()> {
             }
         },
         Command::Folder { command } => files::run_command(&paths, command)?,
+        Command::Channel { command } => channels::cli::run(&paths, command).await?,
         Command::Config { command } => match command {
             ConfigCommand::Show => {
                 let cfg = Config::load(&paths)?;
@@ -311,6 +318,7 @@ async fn real_main(cli: Cli) -> Result<()> {
                     "commands" => cfg.commands = config::parse_on_off(&value)?,
                     "deploys" => cfg.deploys = config::parse_on_off(&value)?,
                     "files" => cfg.files = config::parse_on_off(&value)?,
+                    "channels" => cfg.channels = config::parse_on_off(&value)?,
                     "scan-roots" => cfg.scan_roots = config::parse_scan_roots(&value)?,
                     // Only from this machine: the control plane can't move a Runner elsewhere.
                     "server-url" => {
@@ -337,6 +345,7 @@ async fn real_main(cli: Cli) -> Result<()> {
             }
             let identity = identity::Identity::load(&paths)?;
             let mgr = tasks::Manager::new(paths.clone(), cfg)?;
+            mgr.start_channels();
             let gc_mgr = mgr.clone();
             tokio::spawn(async move {
                 loop {
@@ -418,6 +427,9 @@ async fn doctor(paths: &Paths) -> Result<()> {
             "ok   {:<18} {} (default branch {}; {identity})",
             "repo", r.name, r.default_branch
         );
+    }
+    for line in channels::doctor(&inv.channels) {
+        println!("{line}");
     }
     println!("     {:<18} {}", "max mode", cfg.max_mode.as_str());
     println!("     {:<18} {}", "labels", inv.labels.join(", "));

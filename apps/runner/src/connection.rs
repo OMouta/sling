@@ -273,6 +273,9 @@ async fn flush(mgr: &Arc<Manager>, sink: &mut Sink) -> Result<()> {
     for body in mgr.repo_actions.unsent() {
         send(sink, body).await?;
     }
+    for body in mgr.channels.unsent() {
+        send(sink, body).await?;
+    }
     Ok(())
 }
 
