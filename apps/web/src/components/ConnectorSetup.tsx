@@ -122,6 +122,8 @@ export function ConnectorSetupDialog({
   const [failed, setFailed] = useState<string | null>(null);
   const [saved, setSaved] = useState<InstallationView | null>(null);
   const [retry, setRetry] = useState(0);
+  // Set by "Add anyway", for the one finish it starts.
+  const force = useRef(false);
   // Once shown, a field stays put, even after a later lookup fills it.
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
   const credentialsStored = editing && installation.hasCredentials;
@@ -391,22 +393,27 @@ export function ConnectorSetupDialog({
       title={title ?? (editing ? `Edit ${installation.name}` : `Add ${connector.name}`)}
       steps={steps}
       finishLabel={action}
-      onFinish={() => finish(false)}
+      onFinish={() => {
+        const anyway = force.current;
+        force.current = false;
+        return finish(anyway);
+      }}
       finishing={save.isPending}
       error={problem}
       secondary={
-        failed ? (
-          <Button
-            busy={save.isPending}
-            onClick={() =>
-              void finish(true).then((ok) => {
-                if (ok && editing) onClose();
-              })
-            }
-          >
-            {action} anyway
-          </Button>
-        ) : null
+        failed
+          ? (run: () => void) => (
+              <Button
+                busy={save.isPending}
+                onClick={() => {
+                  force.current = true;
+                  run();
+                }}
+              >
+                {action} anyway
+              </Button>
+            )
+          : null
       }
       review={review}
       reviewTop={

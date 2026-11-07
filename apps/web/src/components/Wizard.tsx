@@ -52,8 +52,12 @@ export function Wizard({
   finishing?: boolean;
   /** Shown above the buttons, such as a failed connection check. */
   error?: ReactNode;
-  /** Another button next to the main one, such as "Add anyway". */
-  secondary?: ReactNode;
+  /**
+   * Another button next to the main one, such as "Add anyway". As a function it
+   * gets `finish`, which runs `onFinish` and moves on to the done screen like the
+   * main button does.
+   */
+  secondary?: ReactNode | ((finish: () => void) => ReactNode);
   /** What to show once it worked. Without it the dialog closes. */
   done?: ReactNode;
   /** Edit mode: start on a review of these rows, and save from there. */
@@ -89,6 +93,7 @@ export function Wizard({
       else onClose();
     }
   };
+  const second = typeof secondary === "function" ? secondary(() => void finish()) : secondary;
 
   const next = async () => {
     if (!step || step.blocked || step.busy || advancing) return;
@@ -119,7 +124,7 @@ export function Wizard({
       <>
         {error && <div className="mr-auto min-w-0 text-xs text-danger">{error}</div>}
         <Button onClick={onClose}>Cancel</Button>
-        {secondary}
+        {second}
         <Button variant="primary" busy={finishing} onClick={() => void finish()}>
           {finishLabel}
         </Button>
@@ -131,7 +136,7 @@ export function Wizard({
             Back
           </Button>
         )}
-        {secondary && last && !editing ? secondary : null}
+        {second && last && !editing ? second : null}
         <Button
           variant="primary"
           type="submit"

@@ -270,13 +270,7 @@ export function DeployTargetDialog({
     title: "Which page shows it's up?",
     blocked: has(...checkKeys, "versionUrl", "settleSeconds", "timeoutSeconds"),
     content: (
-      <ChecksFields
-        draft={draft}
-        errors={errors}
-        shown={shown}
-        setDraft={setDraft}
-        open={target !== null}
-      />
+      <ChecksFields draft={draft} shown={shown} setDraft={setDraft} open={target !== null} />
     ),
   };
 
@@ -648,13 +642,11 @@ function HookFields({
 
 function ChecksFields({
   draft,
-  errors,
   shown,
   setDraft,
   open,
 }: {
   draft: TargetDraft;
-  errors: DraftErrors;
   shown: (key: string, value: string) => string | undefined;
   setDraft: (fn: (d: TargetDraft) => TargetDraft) => void;
   open: boolean;

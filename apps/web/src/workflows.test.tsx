@@ -534,6 +534,8 @@ describe("connectors", () => {
       fireEvent.click(within(dialog).getByRole("button", { name: "Add anyway" }));
       await waitFor(() => expect(callsTo("POST", "/api/installations")).toHaveLength(2));
       expect(callsTo("POST", "/api/installations")[1]?.body).toMatchObject({ check: false });
+      // Added anyway, it ends like any other add.
+      expect(await within(dialog).findByText(/is connected$/)).toBeTruthy();
     } finally {
       installFails = null;
     }
