@@ -586,6 +586,7 @@ function saveAppAccount(ctx: AppContext, scope: ToolScope): Tool {
         credentials: typed.kept,
         config: typedConfig,
         log: connectorLog(ctx, connector.id),
+        workspaceId: scope.workspaceId,
       });
       const found = withoutSecrets(
         lookup.credentials as Record<string, unknown> | undefined,
@@ -665,7 +666,9 @@ function saveAppAccount(ctx: AppContext, scope: ToolScope): Tool {
         apply: async (typedSecrets) => {
           const full = connector.credentialsSchema.safeParse({ ...credentials, ...typedSecrets });
           if (!full.success) return { ok: false, error: `Credentials: ${issuesOf(full.error)}` };
-          const test = await testConnection(ctx, connector, full.data, conf.data);
+          const test = await testConnection(ctx, connector, full.data, conf.data, {
+            workspaceId: scope.workspaceId,
+          });
           if (!test.ok) {
             return {
               ok: false,

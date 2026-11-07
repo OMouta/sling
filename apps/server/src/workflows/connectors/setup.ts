@@ -1,6 +1,21 @@
 import type { AnyConnector, SetupResult } from "@sling/connector-sdk";
 import { z } from "zod";
 
+/**
+ * What the server adds to the context of a setup lookup and a connection
+ * test: the workspace they run for, so a built-in connector can offer its
+ * machines. Extension code never gets it.
+ */
+export interface HostContext {
+  workspaceId: string;
+}
+
+/** The workspace a lookup or test runs for, when the server said. */
+export function hostOf(ctx: object): HostContext | null {
+  const id = (ctx as Partial<HostContext>).workspaceId;
+  return typeof id === "string" && id ? { workspaceId: id } : null;
+}
+
 /** How long a setup lookup may take before the form gives up on it. */
 export const SETUP_TIMEOUT_MS = 15_000;
 
@@ -50,16 +65,19 @@ export async function runSetup(
     credentials: Record<string, unknown>;
     config: Record<string, unknown>;
     log: { info(m: string): void; warn(m: string): void; error(m: string): void };
+    workspaceId: string;
   },
 ): Promise<SetupResult> {
   if (!connector.setup) return {};
   try {
-    const out = await connector.setup({
+    const lookup = {
       credentials: input.credentials,
       config: input.config,
       log: input.log,
       signal: AbortSignal.timeout(SETUP_TIMEOUT_MS),
-    });
+      workspaceId: input.workspaceId,
+    };
+    const out = await connector.setup(lookup);
     return parseSetupResult(out);
   } catch (err) {
     const text = err instanceof Error ? err.message : String(err);

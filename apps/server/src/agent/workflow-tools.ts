@@ -20,6 +20,7 @@ import { type Tool, tool } from "ai";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
+import { withSignIn } from "../oauth/credentials.ts";
 import { readCredentials } from "../workflows/connectors/installations.ts";
 import { connectorLog } from "../workflows/connectors/manage.ts";
 import { runSetup } from "../workflows/connectors/setup.ts";
@@ -302,9 +303,10 @@ export async function stepsFor(
       if (!a || !connector?.setup) return;
       try {
         const lookup = runSetup(connector, {
-          credentials: await readCredentials(ctx, a),
+          credentials: await withSignIn(ctx, a, await readCredentials(ctx, a)),
           config: a.config,
           log: connectorLog(ctx, connector.id, a.id),
+          workspaceId,
         });
         const timeout = new Promise<null>((ok) => setTimeout(() => ok(null), NAMING_MS).unref());
         const found = await Promise.race([lookup, timeout]);

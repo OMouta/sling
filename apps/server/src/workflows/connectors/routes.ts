@@ -145,7 +145,10 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
       const config = connector.configSchema.parse(row.config);
       const stored = await withSignIn(ctx, row, await readCredentials(ctx, row));
       const credentials = connector.credentialsSchema.parse(stored);
-      return await testConnection(ctx, connector, credentials, config, row.id);
+      return await testConnection(ctx, connector, credentials, config, {
+        workspaceId: row.workspaceId,
+        installationId: row.id,
+      });
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -191,6 +194,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
         ),
         config: body.config,
         log: connectorLog(ctx, connector.id, body.installationId),
+        workspaceId: actor.workspaceId,
       });
       // Credentials are write-only: a lookup may suggest new ones, never echo a secret or a stored value.
       if (result.credentials) {

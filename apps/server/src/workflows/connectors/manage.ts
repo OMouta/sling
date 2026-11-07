@@ -74,15 +74,17 @@ export async function testConnection(
   connector: AnyConnector,
   credentials: unknown,
   config: unknown,
-  installationId?: string,
+  where: { workspaceId: string; installationId?: string },
 ): Promise<TestResult> {
   try {
-    return await connector.test({
+    const test = {
       credentials,
       config,
-      log: connectorLog(ctx, connector.id, installationId),
+      log: connectorLog(ctx, connector.id, where.installationId),
       signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
-    });
+      workspaceId: where.workspaceId,
+    };
+    return await connector.test(test);
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -144,6 +146,7 @@ export async function createInstallation(
         creds.data as Record<string, unknown>,
       ),
       config.data,
+      { workspaceId: actor.workspaceId },
     );
     if (!result.ok) throw new InstallationError(result.error, 422, "failed");
   }
@@ -232,7 +235,7 @@ export async function updateInstallation(
         creds ?? connector.credentialsSchema.parse(await readCredentials(ctx, row)),
       ),
       tested,
-      row.id,
+      { workspaceId: row.workspaceId, installationId: row.id },
     );
     if (!result.ok) throw new InstallationError(result.error, 422, "failed");
   }
