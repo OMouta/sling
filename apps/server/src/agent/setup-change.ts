@@ -38,12 +38,14 @@ export type Applied =
 
 export interface Proposal {
   tool: string;
-  subjectType: "deploy_target" | "installation" | "workflow" | "personality" | "workspace";
+  subjectType: "deploy_target" | "installation" | "workflow" | "personality" | "workspace" | "rule";
   /** The thing changed. Empty for something new, until it's made. */
   subjectId: string;
   change: SetupChangeView;
   /** Makes the change. `secrets` holds what the card asked for and the user typed. */
   apply: (secrets: SecretValues) => Promise<Applied>;
+  /** Shows the card in every mode, as for a rule, which outlives the chat that made it. */
+  always?: boolean;
 }
 
 export type ChangeDecision = "full_access" | "approved" | "denied" | "expired" | "refused";
@@ -211,7 +213,7 @@ export async function propose(
   const mode = await conversationMode(ctx, scope.conversationId);
   if (!mode) return { error: "conversation not found" };
   const policy = sendPolicy(mode);
-  if (policy === "refuse") {
+  if (policy === "refuse" && !p.always) {
     await record(ctx, scope, p, { decision: "refused", ok: false });
     return { error: REFUSED };
   }
@@ -219,7 +221,7 @@ export async function propose(
   let decision: ChangeDecision = "full_access";
   let secrets: SecretValues = {};
   let card: CommandApprovalView | undefined;
-  if (policy === "ask" || p.change.secrets.length > 0) {
+  if (policy !== "run" || p.change.secrets.length > 0 || p.always) {
     if (!trace) return { error: "Can't ask the user to approve this from here." };
     const answer = await ctx.commands.change({
       workspaceId: scope.workspaceId,

@@ -41,6 +41,7 @@ import {
   updatePersonality,
 } from "../personalities/service.ts";
 import { keyFromInput } from "../routing/router.ts";
+import { saveRuleTool } from "../rules/tool.ts";
 import {
   allowLocalCloneUrls,
   allowSandboxRepo,
@@ -103,6 +104,7 @@ export const SETUP_TOOLS = [
   "change_settings",
   "create_workflow",
   "workflow_nodes",
+  "save_rule",
 ] as const;
 
 const ASKS =
@@ -1434,5 +1436,6 @@ export function setupTools(ctx: AppContext, scope: ToolScope) {
     save_personality: savePersonality(ctx, scope),
     change_settings: changeSettings(ctx, scope),
     ...workflowTools(ctx, scope),
+    save_rule: saveRuleTool(ctx, scope),
   } satisfies Record<(typeof SETUP_TOOLS)[number], Tool>;
 }

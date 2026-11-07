@@ -150,9 +150,9 @@ describe("the assistant's prompt", () => {
       "change_workflow",
       "save_personality",
       "change_settings",
+      "save_rule",
       "create_workflow",
       "workflow_nodes",
-      "save_rule",
       "save_check",
     ]);
     expect([...allowedTools(["memory", "files"])]).toEqual([

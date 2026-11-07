@@ -1,4 +1,5 @@
 import { MODE_POLICY, type PermissionMode, type PersonalityTool } from "@sling/core";
+import { RULES_NOTE } from "../rules/tool.ts";
 import { deploysSection } from "./deploy-prompt.ts";
 import { allowedTools, isBuiltTool } from "./tools.ts";
 
@@ -213,6 +214,7 @@ export function assistantInstructions(
         changesNote(mode),
         "- Never ask for a password, app password, token, or deploy hook URL in the chat, and never pass one to a tool. The card asks the user for it, and you only hear whether it worked. If the user pastes one in the chat anyway, don't repeat it; the card still asks.",
         "- A failed connection test comes back as the tool's error. Say what it said, and offer to try again.",
+        RULES_NOTE,
       ].join("\n"),
     );
   }
