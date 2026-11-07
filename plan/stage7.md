@@ -4,7 +4,50 @@ Assistants that read what you give them and the web, and get better from your fe
 
 ## Status (2026-11-07)
 
-Planned. Nothing is built yet.
+W0 and WA to WD are built and on `main`. The contracts and the shared composer went in first. Four workstreams followed in their own worktrees and were cherry-picked onto `main` one at a time, each merge checked before the next. W0 left the new routes out rather than stubbing them, since each workstream built its own. Integration then ran against a preview with its own database and a real Runner.
+
+| "Done when" item | Verified by |
+|---|---|
+| 1. Web search | Parsers on recorded Claude Code 2.1.318 and Codex 0.166.0 streams, `web-search.e2e` (provider tools, stored steps and sources), DOM tests. **Live**: a search on Claude Code and one on Codex, each with pills and sources. Codex first cited with words; the rule now forbids that, and the next Codex turn cited `[1]`. The API keys' search only against a mock model |
+| 2. Sources | `sources.e2e` (each kind to ready, ranking, scope, removal, limits), unit tests for extraction, failures, and every refused address. **Live**: "What does the lease say about pets?" on a personality with a PDF ran `search_sources` and cited lease.pdf page 2, on the personality's own model |
+| 3. Files in chat | `sources.e2e` (parts to a mock model, a real Runner with `fake-claude` getting the image on stream-json stdin), DOM tests for chips, paste, drop, and the lightbox. **Live**: a sign image read on Claude Code and on Codex, and again on Claude Code with web search on in the same turn |
+| 4. Deep research | `web-search.e2e` (60 steps against 8), DOM tests. **Live**: a short research turn on Claude Code with 2 searches and 3 pages in 41 s. Questions first for a vague request, and a long run, not tried |
+| 5. A personality's model | `personalities.e2e` (precedence, a workflow's chat), DOM tests. **Live**: a personality on Haiku chosen in its editor ran its turn on Haiku with no chat setting |
+| 6. @mentions | `personalities.e2e` (instructions, tools, sessions, labeled history). **Live**: `@Writer` in a Chef chat answered as Writer, from Chef's earlier reply |
+| 7. Import and export | `personalities.e2e`, and in the preview a real export and import whose PDF source was read again to ready |
+| 8. Retry, edit, copy | `chat-actions.e2e` (each side effect blocking, stale messages refused, a CLI retry starting a new session), DOM tests, and both in the browser |
+| 9. Follow-ups | Parser tests on whole and streamed text, `chat-actions.e2e`. **Live**: two follow-ups shown and one tapped, the block never visible while streaming |
+| 10. Read aloud | DOM tests with a stand-in `speechSynthesis`. Not heard on a device |
+| 11. Feedback | `chat-actions.e2e` (per revision, ownership, the suggestion with a mock model and as a no-tools CLI turn), DOM tests. The suggestion dialog seen only with a stubbed answer |
+| 12. Checked in a browser | Each workstream at 1440×900 and 390×844 in dark and light, then the merged app: a cited reply with its steps, actions, and follow-ups, the composer with the research and file chips and the mention list, the editor's Model, Sources, and Feedback sections, and both live turns |
+
+Test counts on `main`: web 390, server unit 489, Rust 248, end to end 332 across 25 files. The full end-to-end run passed but for the engine-overhead timing budget, which misses only when every file runs at once and passed alone.
+
+Live: 15 real chat turns, all on Claude Code with Haiku 5.5 or Codex with GPT-6-Luna at low effort, none in fast mode: 2 recording the CLIs' web events, 4 in WA, 3 in WB, 2 in WC, 2 in WD, and 2 in integration.
+
+| Budget | Measured |
+|---|---|
+| A 100-page PDF from upload to ready | 1.2 s |
+| `search_sources` over 50 sources of 300 pages, p95 | 32.6 ms |
+| Extra prompt for a personality with 50 sources | Under 3 KB, asserted |
+| Image shrinking | A 3200×2400 PNG to a 2048×1536 JPEG of 75 KB |
+| Web bundle growth, gzipped | About 14 KB across the four workstreams |
+
+Found and fixed during integration:
+- **Existing Research and Travel personalities** still said they couldn't look anything up. Migration `0014` swaps those lines where they're unchanged.
+- **A sources-only personality on a CLI** was told it had no tools, and the CLI note didn't name `search_sources` or `read_source`.
+- **A follow-up tap** went through the composer's send, so it cleared a draft and sent any files waiting there.
+- **Deep research** was offered by the chat's personality even when the message mentioned another one.
+- **An import's missed sources** weren't shown anywhere. The new personality's Sources section says how many.
+- **Feedback** showed an empty section, and a Suggest changes button with nothing to suggest from.
+
+Not done or not verified yet:
+- Web search and images on an Anthropic or OpenAI key, against the real APIs.
+- A Runner too old for `web` or `images`: the server doesn't tell the model it couldn't search or see.
+- A long Deep research run, and the questions it asks first.
+- Read aloud on a device, and the suggestion dialog with a model's real answer.
+- Codex's page reads carry no title or text, so their steps show only the site.
+- Uploads never sent are cleared at server start or the uploader's next upload, not on a schedule.
 
 ## Goal
 
