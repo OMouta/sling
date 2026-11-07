@@ -143,7 +143,8 @@ describe("launch script", () => {
 
   it("exits with a known code when Docker is missing", async () => {
     await rm(join(dir, "docker"));
-    const result = await sh(launch(), BOOT_ENV);
+    // Only the stub's folder on PATH: CI runners have a real docker in /usr/bin.
+    const result = await sh(launch(), { ...BOOT_ENV, PATH: dir });
     expect(result.code).toBe(EXIT_NO_DOCKER);
     expect(result.stderr).toContain("Docker isn't installed");
   });
