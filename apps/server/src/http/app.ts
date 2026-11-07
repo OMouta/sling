@@ -18,6 +18,7 @@ import { extensionRoutes } from "../extensions/routes.ts";
 import { memoryRoutes } from "../memory/routes.ts";
 import { oauthRoutes } from "../oauth/routes.ts";
 import { personalityRoutes } from "../personalities/routes.ts";
+import { personalityTransferRoutes } from "../personalities/transfer.ts";
 import { pushRoutes } from "../push/routes.ts";
 import { hubRoutes } from "../realtime/hub.ts";
 import { authRoutes } from "../routes/auth.ts";
@@ -105,6 +106,9 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   });
   await app.register(async (scope) => {
     await personalityRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await personalityTransferRoutes(scope, ctx);
   });
   await app.register(async (scope) => {
     await workflowRoutes(scope, ctx);

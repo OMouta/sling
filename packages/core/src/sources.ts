@@ -5,7 +5,12 @@
  */
 
 import type { AssistantChoice } from "./models.ts";
-import type { GlyphShape, PersonalityColor, PersonalityTool } from "./personalities.ts";
+import type {
+  GlyphShape,
+  PersonalityColor,
+  PersonalityTool,
+  PersonalityView,
+} from "./personalities.ts";
 
 export const SOURCE_KINDS = ["file", "link", "image"] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
@@ -125,3 +130,10 @@ export interface PersonalityExport {
 export type PersonalityExportSource =
   | { kind: "file"; name: string; mediaType: string; data: string }
   | { kind: "link"; name: string; url: string };
+
+/** What importing a personality file answers. */
+export interface PersonalityImportView {
+  personality: PersonalityView;
+  /** Sources in the file that couldn't be added. */
+  sourcesFailed: number;
+}
