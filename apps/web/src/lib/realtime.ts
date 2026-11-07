@@ -18,6 +18,7 @@ import { useSyncExternalStore } from "react";
 import { byActivity, conversationsKey, previewText } from "./conversations.ts";
 import { applyDeployTargetEvent } from "./deploys.ts";
 import { applyExtension, forgetExtension } from "./extensionApi.ts";
+import { applyMemoryEvent } from "./memory.ts";
 import { modelsKey } from "./models.ts";
 import { applyPersonalityEvent } from "./personalities.ts";
 import { applyRuleEvent } from "./rules.ts";
@@ -255,6 +256,10 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
     case "personality.updated":
     case "personality.removed":
       applyPersonalityEvent(qc, ev);
+      return;
+    case "memory.updated":
+    case "memory.removed":
+      applyMemoryEvent(qc, ev);
       return;
     case "runner.updated":
       qc.setQueryData<RunnerView[]>(["runners"], (list) => {
