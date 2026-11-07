@@ -748,13 +748,11 @@ describe("an action from chat", () => {
       check: { state: "failed", message: "The post was taken down" },
     });
     expect((await postStep(conv)).step.check?.state).toBe("failed");
-    expect(pushes.slice(before).map((p) => p.payload)).toContainEqual(
-      expect.objectContaining({
-        title: "Check failed: Post second",
-        body: "The post was taken down",
-        url: `/c/${conv}`,
-      }),
+    // The push goes out after the step's event, so wait for it too.
+    const pushed = await until("the failure's push", async () =>
+      pushes.slice(before).find((p) => p.payload.title === "Check failed: Post second"),
     );
+    expect(pushed.payload).toMatchObject({ body: "The post was taken down", url: `/c/${conv}` });
     // The note goes to the conversation, and the assistant answers it.
     await until("the assistant hears", async () =>
       updates.find((u) => u.includes("The post was taken down")),
@@ -817,15 +815,23 @@ describe("a delivered PR", () => {
       return a?.check?.state === "failed" ? a : null;
     });
     expect(pr.check?.message).toBe("CI failed: test (1 of 2)");
-    expect(pushes.slice(before).map((p) => p.payload.title)).toContainEqual(
-      expect.stringMatching(/^Check failed: PR #\d+ for "Failing CI"$/),
+    // The push and the note follow the step's state, so wait for them too.
+    await until("the failure's push", async () =>
+      pushes
+        .slice(before)
+        .find((p) => /^Check failed: PR #\d+ for "Failing CI"$/.test(p.payload.title)),
     );
-    const notes = await server.ctx.db
-      .select({ content: schema.messages.content })
-      .from(schema.messages)
-      .where(
-        and(eq(schema.messages.conversationId, conversationId), eq(schema.messages.role, "system")),
-      );
-    expect(JSON.stringify(notes)).toContain("CI failed: test (1 of 2)");
+    await until("the note to the conversation", async () => {
+      const notes = await server.ctx.db
+        .select({ content: schema.messages.content })
+        .from(schema.messages)
+        .where(
+          and(
+            eq(schema.messages.conversationId, conversationId),
+            eq(schema.messages.role, "system"),
+          ),
+        );
+      return JSON.stringify(notes).includes("CI failed: test (1 of 2)") || null;
+    });
   });
 });
