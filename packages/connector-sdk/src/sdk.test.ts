@@ -122,6 +122,19 @@ describe("checkDescription", () => {
     expect(kindsOf(manifest(), desc)).toEqual(["connector"]);
   });
 
+  it("refuses a rule field the node's config doesn't have", () => {
+    const pins = (ruleFields: string[]) =>
+      defineExtension({
+        connectors: [
+          { ...connector, nodes: [{ ...send, assistant: { sends: true, ruleFields } }] },
+        ],
+      }).describe();
+    expect(checkDescription(manifest(), pins(["text"]))).toEqual([]);
+    expect(checkDescription(manifest(), pins(["txet"]))).toEqual([
+      'Node acme.send@1 lets a rule pin "txet", which its config doesn\'t have.',
+    ]);
+  });
+
   it("refuses names outside it, providers without permission, and unknown config hosts", () => {
     const other = { ...desc, connectors: [{ ...desc.connectors[0], id: "other" }] };
     expect(checkDescription(manifest(), other as typeof desc)[0]).toMatch(/must be named acme/);

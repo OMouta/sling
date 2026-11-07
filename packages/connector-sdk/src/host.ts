@@ -201,6 +201,12 @@ export function checkDescription(
       }
       if (!n.execInput && !n.trigger)
         problems.push(`Node ${key} has no exec input and no trigger.`);
+      const fields = (n.configSchema.properties ?? {}) as Record<string, unknown>;
+      for (const f of n.assistant?.ruleFields ?? []) {
+        if (!Object.hasOwn(fields, f)) {
+          problems.push(`Node ${key} lets a rule pin "${f}", which its config doesn't have.`);
+        }
+      }
     }
   }
   for (const field of manifest.permissions.network.configHosts) {
