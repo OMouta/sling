@@ -28,15 +28,13 @@ export function reachableFromFly(value: string): boolean {
   }
 }
 
+const MORE = { advanced: true } as const;
+
 export const credentialsSchema = z.object({
-  apiToken: z
-    .string()
-    .trim()
-    .min(1)
-    .meta({ title: "API token" })
-    .describe(
-      "A Fly.io token that can manage the app's Machines. Create one with fly tokens create deploy --app <app> and paste all of it, FlyV1 included",
-    ),
+  apiToken: z.string().trim().min(1).meta({
+    title: "API token",
+    description: "fly tokens create deploy --app <app>, FlyV1 included",
+  }),
 });
 
 export type FlyCredentials = z.infer<typeof credentialsSchema>;
@@ -46,23 +44,18 @@ export const configSchema = z.object({
     .string()
     .trim()
     .regex(/^[a-z0-9][a-z0-9-]{0,62}$/, "Use the app's name: lowercase letters, digits, and -")
-    .meta({ title: "App" })
-    .describe(
-      "The Fly app sandboxes run in. Create an empty one for Sling with fly apps create, and use it for nothing else",
-    ),
+    .meta({ title: "App", placeholder: "an empty app, just for sandboxes" }),
+  image: z
+    .string()
+    .trim()
+    .min(1)
+    .meta({ title: "Image", placeholder: "registry.fly.io/<app>:latest" }),
   region: z
     .string()
     .trim()
     .regex(/^([a-z]{3})?$/, "Use a three-letter region code, such as iad or fra")
     .optional()
-    .describe("Region code, such as iad or fra. Empty lets Fly pick"),
-  image: z
-    .string()
-    .trim()
-    .min(1)
-    .describe(
-      "Sandbox image, on a registry Fly can pull from: a public one, or registry.fly.io/<app>:<tag> after fly deploy --build-only --push",
-    ),
+    .meta({ ...MORE, title: "Region", placeholder: "Fly picks one" }),
   controlPlaneUrl: z
     .string()
     .trim()
@@ -71,39 +64,37 @@ export const configSchema = z.object({
       "Use Sling's https:// URL, or an http:// .internal or .flycast address on Fly's private network",
     )
     .optional()
-    .meta({ title: "Control plane URL" })
-    .describe(
-      "Sling's URL as sandboxes reach it. Empty uses SLING_PUBLIC_URL. A Sling running on Fly in the same organization can use its .internal or .flycast address",
-    ),
+    .meta({
+      ...MORE,
+      title: "Sling's address for sandboxes",
+      placeholder: "This server's address",
+    }),
   cpuKind: z
-    .enum(["shared", "performance"])
+    .union([
+      z.literal("shared").meta({ title: "Shared" }),
+      z.literal("performance").meta({ title: "Performance" }),
+    ])
     .default("shared")
-    .meta({ title: "CPU kind" })
-    .describe("shared for burstable CPUs, performance for dedicated ones"),
+    .meta({ ...MORE, title: "CPU kind", widget: "segmented" }),
   cpus: z
     .number()
     .int()
     .min(1)
     .max(16)
     .optional()
-    .meta({ title: "CPUs" })
-    .describe("CPUs per sandbox. Empty uses your workspace's sandbox default, or 2"),
+    .meta({ ...MORE, title: "CPUs per sandbox" }),
   memoryMb: z
     .number()
     .int()
     .min(256)
     .optional()
-    .meta({ title: "Memory in MB" })
-    .describe(
-      "Memory per sandbox, rounded up to a multiple of 256. Empty uses your workspace's sandbox default, or 4096",
-    ),
+    .meta({ ...MORE, title: "Memory per sandbox, in MB" }),
   apiUrl: z
     .string()
     .trim()
     .default(DEFAULT_API_URL)
     .refine(isHttpUrl, "Use an https:// URL")
-    .meta({ title: "Machines API URL" })
-    .describe("The Fly Machines API. Change it only to point at a test server"),
+    .meta({ ...MORE, title: "Machines API URL" }),
 });
 
 export type FlyConfig = z.infer<typeof configSchema>;

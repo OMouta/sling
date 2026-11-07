@@ -2,7 +2,7 @@
   "format": "sling.extension/v1",
   "id": "fly-machines",
   "name": "Fly Machines",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Runs coding tasks in sandboxes on Fly Machines, in a Fly app of your own.",
   "publisher": "Sling",
   "sdk": "^1.0.0",

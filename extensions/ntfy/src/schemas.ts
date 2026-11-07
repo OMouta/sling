@@ -18,42 +18,44 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
+const MORE = { advanced: true } as const;
+
 export const credentialsSchema = z.object({
   accessToken: z
     .string()
     .trim()
     .optional()
-    .meta({ title: "Access token" })
-    .describe(
-      "An ntfy access token (tk_...), for reserved topics or a server that requires login. Leave it empty for public topics on ntfy.sh",
-    ),
+    .meta({
+      ...MORE,
+      title: "Access token",
+      description: "For reserved topics or your own server",
+    }),
 });
 
 export type NtfyCredentials = z.infer<typeof credentialsSchema>;
 
 export const configSchema = z.object({
-  server: z
-    .string()
-    .trim()
-    .default(DEFAULT_SERVER)
-    .refine(isHttpUrl, "Use the server's https:// URL, for example https://ntfy.sh")
-    .meta({ title: "Server" })
-    .describe("The ntfy server. https://ntfy.sh, or your own server's URL"),
-  topics: z
-    .array(z.string().trim().regex(TOPIC, TOPIC_HELP))
-    .max(20)
-    .default([])
-    .meta({ title: "Topics to watch" })
-    .describe(
-      "A message published to one of these topics can start a workflow through the ntfy message trigger. On ntfy.sh anyone who knows a topic's name can read and write it, so use long, hard-to-guess names",
-    ),
   defaultTopic: z
     .string()
     .trim()
     .regex(/^([-_A-Za-z0-9]{1,64})?$/, TOPIC_HELP)
     .optional()
-    .meta({ title: "Default topic" })
-    .describe("The topic Publish to ntfy uses when the node doesn't name one"),
+    .meta({ title: "Topic", lookup: true, order: 0 }),
+  server: z
+    .string()
+    .trim()
+    .default(DEFAULT_SERVER)
+    .refine(isHttpUrl, "Use the server's https:// URL, for example https://ntfy.sh")
+    .meta({ ...MORE, title: "Server", lookup: true }),
+  topics: z
+    .array(z.string().trim().regex(TOPIC, TOPIC_HELP))
+    .max(20)
+    .default([])
+    .meta({
+      ...MORE,
+      title: "Topics that start workflows",
+      description: "Anyone who knows a topic's name can post to it",
+    }),
 });
 
 export type NtfyConfig = z.infer<typeof configSchema>;

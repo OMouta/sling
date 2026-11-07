@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { NodeContext } from "@sling/connector-sdk";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import extension, { connector } from "./index.ts";
+import extension, { connector, ntfySetup } from "./index.ts";
 import { publish } from "./publish.ts";
 
 interface Seen {
@@ -191,13 +191,35 @@ describe("the extension", () => {
     expect(c?.hasSource).toBe(true);
     expect(c?.secretFields).toEqual(["accessToken"]);
     expect(Object.keys(c?.configSchema.properties as object)).toEqual([
+      "defaultTopic",
       "server",
       "topics",
-      "defaultTopic",
     ]);
     expect(c?.nodes.map((n) => [n.type, n.idempotent, n.trigger])).toEqual([
       ["ntfy.publish", false, null],
       ["ntfy.message_received", true, { event: "ntfy.message" }],
     ]);
+    expect(c?.hasSetup).toBe(true);
+  });
+});
+
+describe("the setup lookup", () => {
+  it("suggests a long random topic first", () => {
+    const out = ntfySetup({});
+    expect(out.config?.defaultTopic).toMatch(/^sling-[a-z0-9]{12}$/);
+    expect(ntfySetup({}).config?.defaultTopic).not.toBe(out.config?.defaultTopic);
+    expect(out.notes).toBeUndefined();
+  });
+
+  it("links to the topic, so the phone can subscribe", () => {
+    expect(ntfySetup({ defaultTopic: "sling-abc" }).notes).toEqual([
+      expect.objectContaining({
+        field: "defaultTopic",
+        link: { label: "Open it", url: "https://ntfy.sh/sling-abc" },
+      }),
+    ]);
+    const own = ntfySetup({ defaultTopic: "alerts", server: "https://ntfy.example.com/" });
+    expect(own.name).toBe("ntfy.example.com");
+    expect(own.notes?.[0]?.link?.url).toBe("https://ntfy.example.com/alerts");
   });
 });

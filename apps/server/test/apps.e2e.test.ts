@@ -781,7 +781,7 @@ describe("an extension's node", () => {
     const preview = await api<ExtensionPreview>("POST", "/api/extensions/preview", {
       catalogId: "included",
       extensionId: "ntfy",
-      version: "1.1.0",
+      version: "1.2.0",
     });
     expect(preview.problems).toEqual([]);
     expect(preview.contents.nodes.find((n) => n.type === "ntfy.publish")?.assistant).toEqual({

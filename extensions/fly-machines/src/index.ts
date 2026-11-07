@@ -43,10 +43,12 @@ export function createFlyConnector(options: { now?: () => number } = {}) {
   return defineConnector<FlyCredentials, FlyConfig>({
     id: CONNECTOR_ID,
     name: "Fly Machines",
-    description:
-      "Runs coding tasks in fresh Fly Machines in your own Fly app, when no machine can take them or you ask for a sandbox.",
-    setupHelp:
-      "Create an empty Fly app for Sling (fly apps create), and a token for it (fly tokens create deploy --app <app>). Push the sandbox image to a registry Fly can pull from, such as registry.fly.io/<app>. The control plane URL must be Sling's public HTTPS address, or its .internal or .flycast address if Sling runs on Fly in the same organization.",
+    description: "Run coding tasks in fresh Fly Machines in your own Fly app.",
+    setupHelp: [
+      "1. Make an empty app for sandboxes: `fly apps create`",
+      "2. Make a token for it: `fly tokens create deploy --app <app>`",
+      "3. Push the sandbox image where Fly can pull it, such as `registry.fly.io/<app>`",
+    ].join("\n"),
     credentialsSchema,
     secretFields: ["apiToken"],
     configSchema,
