@@ -18,6 +18,8 @@ import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import { personalityTemplate } from "../personalities/templates.ts";
 import { workspaceSettings } from "../sandboxes/settings.ts";
+import { SOURCE_TOOLS } from "../sources/tools.ts";
+import { type TurnImage, turnFiles } from "../sources/turn.ts";
 import { toSourceView } from "../sources/views.ts";
 import { currentSteps, type SettleReason } from "../tasks/service.ts";
 import { workspaceTimeZone } from "../timezone.ts";
@@ -297,7 +299,7 @@ export class Agent {
         conversationId: conv.id,
         trace,
       };
-      const [chat, agents, apps, timeZone, memory] = await Promise.all([
+      const [chat, agents, apps, timeZone, memory, files] = await Promise.all([
         turnChat(ctx, conv, turn),
         personality.tools.includes("coding")
           ? codingAgentsNote(ctx, conv.workspaceId)
@@ -310,6 +312,7 @@ export class Agent {
               row?.id ?? null,
             )
           : Promise.resolve(""),
+        turnFiles(ctx, conv, row?.id ?? null, rows),
       ]);
       const appNames = Object.keys(apps);
       const web = searchesWeb(personality.tools, chat.assistant);
@@ -318,11 +321,13 @@ export class Agent {
       trace.research = research;
       const allowed = allowedTools(personality.tools);
       for (const name of appNames) allowed.add(name);
+      if (files.tools) for (const name of SOURCE_TOOLS) allowed.add(name);
       // A scripted test model stands in for the workspace default, but not for a
       // CLI the conversation or its personality picked.
       const cli = chat.assistant && isCliProvider(chat.assistant.provider);
       if (cli && chat.assistant && (!this.#model || chat.picked)) {
-        const reply = await this.#cliTurn(conv, chat.assistant, rows, {
+        const forCli = await files.forCli();
+        const reply = await this.#cliTurn(conv, chat.assistant, forCli.rows, {
           instructions: assistantInstructions(personality, conv.mode, new Date(), {
             cli: true,
             agents,
@@ -330,9 +335,11 @@ export class Agent {
             apps: appNames,
             memory,
             web,
+            sources: files.section,
           }),
           tools: [...allowed],
           appTools: apps,
+          images: forCli.images,
           trace,
           web,
           research,
@@ -355,8 +362,9 @@ export class Agent {
           memory,
           web,
           research,
+          sources: files.section,
         }),
-        messages: toModelMessages(rows),
+        messages: toModelMessages(await files.forApi()),
         tools: {
           ...agentTools(ctx, scope, allowed),
           ...apps,
@@ -448,6 +456,7 @@ export class Agent {
       tools: string[];
       /** The turn's tools for the user's apps, built for this conversation. */
       appTools: Record<string, unknown>;
+      images?: TurnImage[];
       trace: TraceRecorder;
       /** The session to resume, when it answered as this turn's personality. */
       session: (typeof schema.conversations.$inferSelect)["agentSession"];
@@ -480,6 +489,7 @@ export class Agent {
       prompt,
       history,
       session: turn.session,
+      ...(turn.images?.length ? { images: turn.images } : {}),
       ...(signal ? { signal } : {}),
       onDelta: (text) => trace.text(text),
       trace,

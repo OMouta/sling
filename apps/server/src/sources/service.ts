@@ -14,7 +14,7 @@ import type { AppContext } from "../context.ts";
 import { searchWords } from "../memory/words.ts";
 import { chunkPages } from "./chunks.ts";
 import { ExtractError, extract } from "./extract.ts";
-import { fetchLink, LinkError } from "./fetch-link.ts";
+import { type FetchOptions, fetchLink, LinkError } from "./fetch-link.ts";
 import { detect, detectFetched } from "./kinds.ts";
 import { type SourceRow, toSourceView } from "./views.ts";
 
@@ -115,6 +115,8 @@ export interface SourceService {
   texts(ids: readonly string[]): Promise<Map<string, string>>;
   /** The original bytes. */
   file(workspaceId: string, id: string): Promise<{ row: SourceRow; data: Uint8Array } | null>;
+  /** The original bytes of several sources, by id. */
+  bytes(ids: readonly string[]): Promise<Map<string, Uint8Array>>;
   /** What a citation of this source links to. */
   link(id: string, page?: number | null): string;
 }
@@ -170,6 +172,8 @@ export class Sources implements SourceService {
   readonly #ctx: AppContext;
   #boss: PgBoss | null = null;
   readonly #inflight = new Set<Promise<unknown>>();
+  /** How links are fetched. Tests point it at a local server. */
+  linkOptions: FetchOptions = {};
 
   constructor(ctx: AppContext) {
     this.#ctx = ctx;
@@ -250,7 +254,7 @@ export class Sources implements SourceService {
       let mediaType = row.mediaType;
       let charset: string | undefined;
       if (row.kind === "link" && row.url) {
-        const fetched = await fetchLink(row.url);
+        const fetched = await fetchLink(row.url, this.linkOptions);
         bytes = fetched.bytes;
         const type = detectFetched(bytes, fetched.contentType);
         if (!type) throw new ExtractError("Sling can't read this kind of page.");
@@ -649,6 +653,15 @@ export class Sources implements SourceService {
       .from(schema.sourceFiles)
       .where(eq(schema.sourceFiles.sourceId, id));
     return f ? { row, data: f.data } : null;
+  }
+
+  async bytes(ids: readonly string[]): Promise<Map<string, Uint8Array>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.#db
+      .select()
+      .from(schema.sourceFiles)
+      .where(inArray(schema.sourceFiles.sourceId, [...ids]));
+    return new Map(rows.map((r) => [r.sourceId, r.data]));
   }
 
   link(id: string, page?: number | null): string {

@@ -56,7 +56,8 @@ export function toMessageView(row: MessageRow): MessageView | null {
   // shows in that reply's trace. The last message of a turn always has a trace.
   if (row.role === "assistant" && !row.trace && hasToolCall(msg.content)) return null;
   const text = textOf(msg.content).trim();
-  if (!text) return null;
+  // A user message can be files alone.
+  if (!text && row.role !== "user") return null;
   return {
     id: row.id,
     conversationId: row.conversationId,

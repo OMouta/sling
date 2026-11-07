@@ -109,6 +109,8 @@ export class CliChat {
     web?: boolean;
     /** How long the turn may run. Ten minutes when absent. */
     timeoutMs?: number;
+    /** Images sent with the message this turn answers. */
+    images?: readonly { name: string; mediaType: string; data: Uint8Array }[];
   }): Promise<CliTurnResult> {
     const timeoutMs = opts.timeoutMs ?? TURN_TIMEOUT_MS;
     const harness = opts.choice.provider;
@@ -182,6 +184,7 @@ export class CliChat {
               toolsToken: token,
               history: resume ? "" : opts.history,
               web: opts.web ?? false,
+              images: opts.images?.map((i) => ({ ...i })) ?? [],
             },
           },
         }),

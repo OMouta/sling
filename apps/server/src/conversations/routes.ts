@@ -45,6 +45,17 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
     return conv ?? null;
   }
 
+  /** A chat that starts with files and no text is named after its first file. */
+  async function firstFileName(ids: readonly string[] | undefined): Promise<string> {
+    if (!ids?.length) return "Files";
+    const [f] = await ctx.db
+      .select({ name: schema.sources.name })
+      .from(schema.sources)
+      .where(inArray(schema.sources.id, [...ids]))
+      .limit(1);
+    return f?.name ?? "Files";
+  }
+
   // Conversations with at least one message, newest first, each with what
   // a list needs to show it. `q` searches titles and message text.
   r.get(
@@ -252,7 +263,8 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
       schema: {
         params: Id,
         body: z.object({
-          text: z.string().trim().min(1).max(20_000),
+          // Files can go on their own, such as a photo with nothing to add.
+          text: z.string().trim().max(20_000),
           attachmentIds: z.array(z.string().max(64)).max(MESSAGE_MAX_FILES).optional(),
           research: z.boolean().optional(),
           personalityId: z.string().max(64).optional(),
@@ -264,6 +276,11 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
       let conv = await owned(actor.workspaceId, request.params.id);
       if (!conv) return reply.code(404).send({ error: "not found" });
       const { personalityId, research, attachmentIds } = request.body;
+      if (!request.body.text && !attachmentIds?.length) {
+        return reply.code(400).send({ error: "Write a message first." });
+      }
+      const files = await ctx.sources.checkAttachments(actor, attachmentIds ?? []);
+      if (files) return reply.code(400).send({ error: files });
       // A mention of the chat's own personality is just a message.
       const mentioned =
         personalityId && personalityId !== conv.personalityId
@@ -277,7 +294,9 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         ...(mentioned ? { personalityId: mentioned.id } : {}),
       };
       if (conv.title === "New conversation") {
-        const title = request.body.text.replace(/\s+/g, " ").slice(0, 60);
+        const title = (request.body.text || (await firstFileName(attachmentIds)))
+          .replace(/\s+/g, " ")
+          .slice(0, 60);
         const [u] = await ctx.db
           .update(schema.conversations)
           .set({ title })

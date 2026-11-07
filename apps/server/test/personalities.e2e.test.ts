@@ -492,6 +492,11 @@ class StandInSources implements SourceService {
   read: SourceService["read"] = (...args) => this.#base.read(...args);
   file = (ws: string, id: string) => this.#base.file(ws, id);
   link = (id: string, page?: number | null) => this.#base.link(id, page);
+  checkAttachments: SourceService["checkAttachments"] = (...args) =>
+    this.#base.checkAttachments(...args);
+  settled: SourceService["settled"] = (...args) => this.#base.settled(...args);
+  texts: SourceService["texts"] = (...args) => this.#base.texts(...args);
+  bytes: SourceService["bytes"] = (...args) => this.#base.bytes(...args);
 
   async #insert(actor: SourceActor, personalityId: string, values: Partial<SourceRow>) {
     const [row] = await server.ctx.db

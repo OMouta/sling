@@ -17,6 +17,7 @@ import type { AppContext } from "../context.ts";
 import { fileTools } from "../files/tools.ts";
 import { memoryTools } from "../memory/tools.ts";
 import { ENVIRONMENTS } from "../routing/router.ts";
+import { sourceTools } from "../sources/tools.ts";
 import { type CreatedTask, TaskInputError, TaskRoutingError } from "../tasks/service.ts";
 import { runnerViews, taskPlace, taskView } from "../views.ts";
 import { APPROVAL_WAIT_MS, type CommandResult } from "./commands.ts";
@@ -551,5 +552,6 @@ function allTools(ctx: AppContext, scope: ToolScope, canDeploy: boolean) {
     ...setupTools(ctx, scope),
     ...memoryTools(ctx, scope),
     ...fileTools(ctx, scope),
+    ...sourceTools(ctx, scope),
   };
 }

@@ -113,6 +113,8 @@ export function assistantInstructions(
     web?: boolean;
     /** Deep research rules for this turn. */
     research?: boolean;
+    /** The part on the personality's sources and the chat's documents. */
+    sources?: string;
   } = {},
 ): string {
   const commands = personality.tools.includes("commands");
@@ -234,6 +236,7 @@ export function assistantInstructions(
   if (files) out.push(filesSection());
   if (searches) out.push(WEB_SECTION);
   if (searches && opts.research) out.push(RESEARCH_SECTION);
+  if (opts.sources) out.push(opts.sources);
 
   if (setup) {
     out.push(
