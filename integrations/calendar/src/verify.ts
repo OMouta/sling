@@ -4,7 +4,8 @@
  */
 import type { NodeContext, NodeVerifyArgs, VerifyResult } from "@sling/connector-sdk";
 import { calendarsOf, type DavCalendar, getEvent } from "./caldav.ts";
-import { accountOf, type Parsed, parseInstallation } from "./calendar.ts";
+import { accountOf, type Parsed, parseInstallation, readBackGoogleEvent } from "./calendar.ts";
+import { whenText as occurrenceText } from "./google.ts";
 import { CONNECTOR_ID } from "./schemas.ts";
 
 interface AddedEvent {
@@ -54,6 +55,7 @@ async function onCalDav(
 export async function verifyEvent(
   ctx: NodeContext,
   args: NodeVerifyArgs<{ installationId: string }>,
+  zone: string,
 ): Promise<VerifyResult> {
   const event = args.outputs.event as AddedEvent | undefined;
   const uid = typeof event?.uid === "string" ? event.uid : "";
@@ -66,5 +68,18 @@ export async function verifyEvent(
   }
   const p = parseInstallation(installation);
   if (p.config.kind === "caldav") return onCalDav(p, { ...event, uid }, ctx.signal);
+  if (p.config.kind === "google") {
+    const back = await readBackGoogleEvent(
+      installation,
+      { uid, calendar: String(event.calendar ?? "") },
+      zone,
+      ctx.signal,
+    );
+    if (!back.found) return { state: "failed", message: `It isn't in ${back.calendar} on Google` };
+    return {
+      state: "passed",
+      message: `In ${back.calendar}, ${occurrenceText(back.occurrence, zone)}`,
+    };
+  }
   return { state: "unchecked", message: `${p.name} can't be read back` };
 }

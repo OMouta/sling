@@ -1,7 +1,8 @@
 import { type ConnectorDefinition, defineConnector, type TestResult } from "@sling/connector-sdk";
 import { discover } from "./caldav.ts";
-import { accountOf, parseInstallation } from "./calendar.ts";
+import { accountOf, googleTokenOf, parseInstallation } from "./calendar.ts";
 import { FeedCache, type FeedCacheOptions } from "./feeds.ts";
+import { GOOGLE_API, GOOGLE_SCOPES, googleCalendars } from "./google.ts";
 import { errorMessage } from "./http.ts";
 import { createEvent, createListEvents } from "./nodes.ts";
 import {
@@ -26,8 +27,11 @@ async function testInstallation(
   signal: AbortSignal,
 ): Promise<TestResult> {
   const p = parseInstallation({ name: "This installation", credentials, config });
-  if (p.config.kind === "caldav") {
-    const calendars = await discover(accountOf(p), signal);
+  if (p.config.kind === "caldav" || p.config.kind === "google") {
+    const calendars =
+      p.config.kind === "google"
+        ? await googleCalendars(googleTokenOf(p), signal)
+        : await discover(accountOf(p), signal);
     if (calendars.length === 0) {
       return { ok: false, error: "The login worked, but the account has no calendars for events." };
     }
@@ -73,18 +77,31 @@ export interface CalendarConnectorOptions {
   feeds?: FeedCacheOptions;
   /** How the setup lookup reaches DNS and the server. Tests replace it. */
   setup?: SetupDeps;
+  /** Google Calendar's API. Tests point it at a stand-in. */
+  googleApiUrl?: string;
 }
+
+/**
+ * How a Google calendar signs in, read by Sling's server: OAuth with the
+ * person's own client, for installations of kind `google`.
+ */
+export const GOOGLE_SIGN_IN = {
+  provider: "google",
+  scopes: GOOGLE_SCOPES,
+  when: { kind: "google" },
+} as const;
 
 export function createCalendarConnector(
   options: CalendarConnectorOptions = {},
-): ConnectorDefinition<CalendarCredentials, CalendarConfig> {
+): ConnectorDefinition<CalendarCredentials, CalendarConfig> & { oauth: typeof GOOGLE_SIGN_IN } {
   const feeds = new FeedCache(options.feeds);
-  return defineConnector<CalendarCredentials, CalendarConfig>({
+  if (options.googleApiUrl) GOOGLE_API.url = options.googleApiUrl;
+  const definition = defineConnector<CalendarCredentials, CalendarConfig>({
     id: CONNECTOR_ID,
     name: "Calendar",
     description: "Read and add events in your calendar.",
     credentialsSchema,
-    secretFields: ["password", "feedUrls"],
+    secretFields: ["password", "feedUrls", "clientSecret", "accessToken"],
     configSchema,
 
     async test({ credentials, config, signal }): Promise<TestResult> {
@@ -100,6 +117,7 @@ export function createCalendarConnector(
 
     nodes: [createListEvents(feeds), createEvent],
   });
+  return Object.assign(definition, { oauth: GOOGLE_SIGN_IN });
 }
 
 export const connector = createCalendarConnector();

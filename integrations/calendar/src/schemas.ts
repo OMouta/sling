@@ -4,7 +4,8 @@ export const CONNECTOR_ID = "calendar";
 export const MAX_FEEDS = 5;
 
 const ACCOUNT = { showWhen: { kind: "caldav" }, step: "Sign in" } as const;
-const PICKED = { showWhen: { kind: "caldav" }, step: "Your calendars" } as const;
+const GOOGLE = { showWhen: { kind: "google" }, step: "Your Google OAuth client" } as const;
+const PICKED = { showWhen: { kind: ["caldav", "google"] }, step: "Your calendars" } as const;
 const LINKS = { showWhen: { kind: "ics" }, step: "Your iCal links" } as const;
 
 /**
@@ -21,6 +22,27 @@ export const credentialsSchema = z.object({
     .max(MAX_FEEDS)
     .optional()
     .meta({ ...LINKS, title: "iCal links", placeholder: "Paste a link", lookup: true, order: 1 }),
+  clientId: z
+    .string()
+    .optional()
+    .meta({
+      ...GOOGLE,
+      title: "Client ID",
+      placeholder: "…apps.googleusercontent.com",
+      lookup: true,
+      order: 1,
+    }),
+  clientSecret: z
+    .string()
+    .optional()
+    .meta({ ...GOOGLE, title: "Client secret", order: 2 }),
+  /** Filled in by Sling's server once the account is connected: a live Google access token. */
+  accessToken: z.string().optional().meta({ hidden: true }),
+  /** Filled in by Sling's server: the redirect URI to add, and why there's no token yet. */
+  signIn: z
+    .object({ redirectUrl: z.string(), problem: z.string().nullable() })
+    .optional()
+    .meta({ hidden: true }),
 });
 
 export type CalendarCredentials = z.infer<typeof credentialsSchema>;
@@ -33,9 +55,13 @@ export const configSchema = z
           title: "Calendar account",
           description: "Reads and adds events. iCloud, Fastmail, Nextcloud and most others.",
         }),
+        z.literal("google").meta({
+          title: "Google Calendar",
+          description: "Reads and adds events, through your own Google Cloud OAuth client.",
+        }),
         z.literal("ics").meta({
           title: "iCal link",
-          description: "Reads only. Google Calendar and Outlook.",
+          description: "Reads only, from a private link. Outlook and others.",
         }),
       ])
       .default("caldav")

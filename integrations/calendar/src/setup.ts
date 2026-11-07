@@ -7,6 +7,7 @@ import { resolveSrv, resolveTxt } from "node:dns/promises";
 import type { SetupNote, SetupResult } from "@sling/connector-sdk";
 import { discover } from "./caldav.ts";
 import type { FeedCache } from "./feeds.ts";
+import { GOOGLE_CALENDAR_API_PAGE, GOOGLE_CLOUD_CREDENTIALS, googleCalendars } from "./google.ts";
 import { errorMessage } from "./http.ts";
 import type { CalendarConfig, CalendarCredentials } from "./schemas.ts";
 
@@ -38,7 +39,7 @@ const FASTMAIL: Provider = {
 const GOOGLE: Provider = {
   name: "Google Calendar",
   icalOnly: {
-    text: "Google Calendar works through its secret iCal link. Pick iCal link above.",
+    text: "Google Calendar doesn't take app passwords. Pick Google Calendar above, or iCal link to only read it.",
     url: "https://calendar.google.com/calendar/r/settings",
   },
 };
@@ -129,6 +130,7 @@ export async function calendarSetup(
   signal: AbortSignal,
   deps: SetupDeps = defaults,
 ): Promise<SetupResult<CalendarCredentials, CalendarConfig>> {
+  if (config.kind === "google") return googleSetup(credentials, config, signal);
   if ((config.kind ?? "caldav") === "ics") {
     const urls = (credentials.feedUrls ?? []).filter((u) => u.trim());
     if (urls.length === 0) return {};
@@ -237,4 +239,70 @@ export async function calendarSetup(
     notes.push({ field: "password", tone: "error", text: errorMessage(err) });
   }
   return out;
+}
+
+const CLIENT_ID = /^[\w-]+\.apps\.googleusercontent\.com$/;
+
+/**
+ * Google: the redirect URI to add to the OAuth client, until it's connected;
+ * then the account's calendars, to pick from.
+ */
+async function googleSetup(
+  credentials: Partial<CalendarCredentials>,
+  config: Partial<CalendarConfig>,
+  signal: AbortSignal,
+): Promise<SetupResult<CalendarCredentials, CalendarConfig>> {
+  const token = credentials.accessToken ?? "";
+  if (!token) {
+    const notes: SetupNote[] = [];
+    const redirect = credentials.signIn?.redirectUrl;
+    notes.push({
+      field: "clientId",
+      tone: "info",
+      text: redirect
+        ? `Make an OAuth client ID for a web application, with ${redirect} as its redirect URI.`
+        : "Make an OAuth client ID for a web application.",
+      link: { label: "Google Cloud", url: GOOGLE_CLOUD_CREDENTIALS },
+    });
+    const clientId = (credentials.clientId ?? "").trim();
+    if (clientId && !CLIENT_ID.test(clientId)) {
+      notes.push({
+        field: "clientId",
+        tone: "error",
+        text: "A Google client ID ends in .apps.googleusercontent.com.",
+      });
+    }
+    notes.push({
+      field: "clientSecret",
+      tone: "info",
+      text: "Turn on the Google Calendar API in the same project.",
+      link: { label: "Calendar API", url: GOOGLE_CALENDAR_API_PAGE },
+    });
+    return { name: "Google Calendar", notes };
+  }
+  try {
+    const calendars = await googleCalendars(token, signal);
+    const own = calendars.find((c) => c.primary);
+    const options = calendars.map((c) => ({
+      value: c.name,
+      label: c.name,
+      ...(c.primary
+        ? { detail: "Yours" }
+        : c.accessRole === "reader"
+          ? { detail: "Read-only" }
+          : {}),
+    }));
+    const writable = options.filter((o) => {
+      const c = calendars.find((x) => x.name === o.value);
+      return c?.accessRole === "owner" || c?.accessRole === "writer";
+    });
+    return {
+      name: own ? `Google Calendar (${own.name})` : "Google Calendar",
+      options: { calendars: options, defaultCalendar: writable },
+      ...(!config.defaultCalendar && own ? { config: { defaultCalendar: own.name } } : {}),
+      notes: own ? [{ field: "clientId", tone: "ok", text: `Connected as ${own.name}` }] : [],
+    };
+  } catch (err) {
+    return { notes: [{ field: "clientId", tone: "error", text: errorMessage(err) }] };
+  }
 }

@@ -69,7 +69,7 @@ export const listConfigSchema = z.object({
 export type ListConfig = z.infer<typeof listConfigSchema>;
 
 export const createConfigSchema = z.object({
-  installationId: z.string().min(1).describe("CalDAV installation to add the event to"),
+  installationId: z.string().min(1).describe("Calendar installation to add the event to"),
   calendar: z
     .string()
     .default("")
@@ -162,7 +162,7 @@ export const createEvent: NodeSpec<CreateConfig> = {
   version: 1,
   title: "Add calendar event",
   description:
-    "Adds an event to a CalDAV calendar. Running it again with the same run and node adds nothing, so a retry never duplicates the event.",
+    "Adds an event to a CalDAV or Google calendar. Running it again with the same run and node adds nothing, so a retry never duplicates the event.",
   category: "action",
   connector: CONNECTOR_ID,
   configSchema: createConfigSchema,
@@ -175,7 +175,8 @@ export const createEvent: NodeSpec<CreateConfig> = {
   ],
   execInput: true,
   execOutputs: [{ name: "next" }],
-  // The UID comes from the idempotency key and the PUT never overwrites, so a repeat is safe.
+  // The UID comes from the idempotency key, and neither a CalDAV PUT nor a Google insert
+  // overwrites, so a repeat is safe.
   idempotent: true,
   retry: { maxAttempts: 3, backoffMs: 2_000 },
   assistant: {
@@ -210,6 +211,6 @@ export const createEvent: NodeSpec<CreateConfig> = {
   },
 
   // A calendar shows a new event at once, so a short limit is enough for a slow server.
-  verify: verifyEvent,
+  verify: async (ctx, args) => verifyEvent(ctx, args, await zoneOf(ctx)),
   verifyForSeconds: 120,
 };

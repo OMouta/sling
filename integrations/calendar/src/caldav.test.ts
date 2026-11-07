@@ -316,18 +316,22 @@ describe("reading an added event back", () => {
     const run = await createEvent.run?.(ctx("chat:call_verify"), { config, inputs: {} });
     if (!run || !("exec" in run)) throw new Error("no run");
     const outputs = run.outputs ?? {};
-    expect(await verifyEvent(ctx("chat:call_verify"), { config, inputs: {}, outputs })).toEqual({
+    expect(
+      await verifyEvent(ctx("chat:call_verify"), { config, inputs: {}, outputs }, "UTC"),
+    ).toEqual({
       state: "passed",
       message: "In Home, Mon 9 Nov 10:00",
     });
     // An event that isn't there, such as one a server dropped, fails the check.
     const gone = { event: { ...(outputs.event as object), uid: "sling-not-there" } };
-    expect(await verifyEvent(ctx("chat:x"), { config, inputs: {}, outputs: gone })).toEqual({
+    expect(await verifyEvent(ctx("chat:x"), { config, inputs: {}, outputs: gone }, "UTC")).toEqual({
       state: "failed",
       message: "The event isn't in Home",
     });
     // Nothing to look for claims nothing.
-    expect(await verifyEvent(ctx("chat:x"), { config, inputs: {}, outputs: {} })).toMatchObject({
+    expect(
+      await verifyEvent(ctx("chat:x"), { config, inputs: {}, outputs: {} }, "UTC"),
+    ).toMatchObject({
       state: "unchecked",
     });
   });

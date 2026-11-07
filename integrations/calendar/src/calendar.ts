@@ -15,6 +15,16 @@ import {
 } from "./caldav.ts";
 import type { FeedCache } from "./feeds.ts";
 import { agendaText, type CalendarEvent, toEvent } from "./format.ts";
+import {
+  findCalendar,
+  type GoogleCalendar,
+  getGoogleEvent,
+  googleCalendars,
+  googleEventId,
+  googleEvents,
+  insertGoogleEvent,
+  occurrenceOf,
+} from "./google.ts";
 import { collectOccurrences, type Occurrence, parseCalendars, sortOccurrences } from "./ical.ts";
 import {
   type CalendarConfig,
@@ -68,6 +78,17 @@ export function accountOf(p: Parsed): CalDavAccount {
     );
   }
   return { serverUrl: p.config.serverUrl.trim(), username: p.config.username.trim(), password };
+}
+
+/** The live Google access token Sling's server handed over, or why there isn't one. */
+export function googleTokenOf(p: Parsed): string {
+  const token = p.credentials.accessToken ?? "";
+  if (token) return token;
+  const problem = p.credentials.signIn?.problem;
+  throw new NodeError(
+    problem ?? `${p.name} isn't connected to Google yet. Connect it on the Connectors page.`,
+    { code: "not_connected" },
+  );
 }
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -185,7 +206,15 @@ export async function readEvents(inst: CalendarInstallation, q: ReadQuery): Prom
   };
   const found: Occurrence[] = [];
 
-  if (p.config.kind === "caldav") {
+  if (p.config.kind === "google") {
+    const token = googleTokenOf(p);
+    const all = await googleCalendars(token, q.signal);
+    const calendars = pick(pick(all, p.config.calendars, p.name), q.calendars, p.name);
+    const lists = await Promise.all(
+      calendars.map((c) => googleEvents(token, c, win, MAX_EVENTS + 1, q.signal)),
+    );
+    for (const list of lists) found.push(...list);
+  } else if (p.config.kind === "caldav") {
     const account = accountOf(p);
     const calendars = await includedCalendars(p, account, q.calendars, q.signal);
     const answers = await Promise.all(
@@ -292,7 +321,8 @@ export function uidFor(idempotencyKey: string): string {
 
 export interface Added {
   created: boolean;
-  event: CalendarEvent & { uid: string };
+  /** `uid` finds the event again: its iCalendar UID, or its ID on Google. `link` opens it on Google. */
+  event: CalendarEvent & { uid: string; link?: string };
 }
 
 /** Builds the iCalendar text for a new event. Times are written in UTC, which every client reads. */
@@ -328,13 +358,69 @@ export function eventIcs(e: {
   return `${vcal.toString().replace(/\r?\n/g, "\r\n")}\r\n`;
 }
 
-/** Adds an event to a CalDAV calendar. Asking twice with the same key adds it once. */
+/** When a new event happens, from what was asked. All-day end dates are the day after the last. */
+export interface EventTimes {
+  allDay: boolean;
+  startDate: string;
+  endDate: string;
+  startMs: number;
+  endMs: number;
+}
+
+export function eventTimes(input: NewEvent, zone: string): EventTimes {
+  if (input.allDay) {
+    const first = parseDay(input.start, "start");
+    const last = input.end.trim() ? parseDay(input.end, "end") : first;
+    if (last < first)
+      throw new NodeError("The event ends before it starts.", { code: "invalid_time" });
+    return { allDay: true, startDate: first, endDate: addDays(last, 1), startMs: 0, endMs: 0 };
+  }
+  if (DATE.test(input.start.trim())) {
+    throw new NodeError(
+      "start needs a time, such as 2026-11-06T14:00. For a whole day, set allDay.",
+      { code: "invalid_time" },
+    );
+  }
+  const startMs = parseWhen(input.start, zone, "start");
+  const endMs = input.end.trim()
+    ? parseWhen(input.end, zone, "end")
+    : startMs + input.durationMinutes * 60_000;
+  if (endMs <= startMs)
+    throw new NodeError("The event ends before it starts.", { code: "invalid_time" });
+  const d = new Date(startMs);
+  const startDate = dateOf({
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+  });
+  return { allDay: false, startDate, endDate: startDate, startMs, endMs };
+}
+
+/** The added event as `calendar.create_event` outputs it. */
+function shownEvent(
+  e: { title: string; location: string; description: string; calendar: string },
+  t: EventTimes,
+  zone: string,
+): CalendarEvent {
+  return {
+    title: e.title,
+    start: t.allDay ? t.startDate : isoIn(t.startMs, zone),
+    end: t.allDay ? addDays(t.endDate, -1) : isoIn(t.endMs, zone),
+    allDay: t.allDay,
+    location: e.location,
+    description: e.description,
+    calendar: e.calendar,
+  };
+}
+
+/** Adds an event to a CalDAV or Google calendar. Asking twice with the same key adds it once. */
 export async function addEvent(
   inst: CalendarInstallation,
   input: NewEvent,
   ctx: { idempotencyKey: string; timeZone: string; signal: AbortSignal; now?: number },
 ): Promise<Added> {
   const p = parseInstallation(inst);
+  if (p.config.kind === "google") return addGoogleEvent(p, input, ctx);
   if (p.config.kind !== "caldav") {
     throw new NodeError(
       `${p.name} reads iCal links, which can't take new events. Use a CalDAV installation.`,
@@ -366,63 +452,90 @@ export async function addEvent(
   }
 
   const uid = uidFor(ctx.idempotencyKey);
-  let event: CalendarEvent;
-  let ics: string;
+  const t = eventTimes(input, ctx.timeZone);
   const base = {
     uid,
     title,
     location: input.location.trim(),
     description: input.description.trim(),
   };
-  const now = ctx.now ?? Date.now();
-  if (input.allDay) {
-    const first = parseDay(input.start, "start");
-    const last = input.end.trim() ? parseDay(input.end, "end") : first;
-    if (last < first)
-      throw new NodeError("The event ends before it starts.", { code: "invalid_time" });
-    const endDate = addDays(last, 1);
-    ics = eventIcs({ ...base, allDay: true, startMs: 0, endMs: 0, startDate: first, endDate, now });
-    event = {
-      title,
-      start: first,
-      end: last,
-      allDay: true,
-      location: base.location,
-      description: base.description,
-      calendar: calendar.name,
-    };
-  } else {
-    if (DATE.test(input.start.trim())) {
-      throw new NodeError(
-        "start needs a time, such as 2026-11-06T14:00. For a whole day, set allDay.",
-        {
-          code: "invalid_time",
-        },
-      );
-    }
-    const startMs = parseWhen(input.start, ctx.timeZone, "start");
-    const endMs = input.end.trim()
-      ? parseWhen(input.end, ctx.timeZone, "end")
-      : startMs + input.durationMinutes * 60_000;
-    if (endMs <= startMs)
-      throw new NodeError("The event ends before it starts.", { code: "invalid_time" });
-    const d = new Date(startMs);
-    const startDate = dateOf({
-      year: d.getUTCFullYear(),
-      month: d.getUTCMonth() + 1,
-      day: d.getUTCDate(),
-    });
-    ics = eventIcs({ ...base, allDay: false, startMs, endMs, startDate, endDate: startDate, now });
-    event = {
-      title,
-      start: isoIn(startMs, ctx.timeZone),
-      end: isoIn(endMs, ctx.timeZone),
-      allDay: false,
-      location: base.location,
-      description: base.description,
-      calendar: calendar.name,
-    };
-  }
+  const ics = eventIcs({ ...base, ...t, now: ctx.now ?? Date.now() });
+  const event = shownEvent({ ...base, calendar: calendar.name }, t, ctx.timeZone);
   const outcome = await putEvent(account, calendar, `${uid}.ics`, ics, ctx.signal);
   return { created: outcome === "created", event: { ...event, uid } };
+}
+
+/** The calendar a new Google event goes to: the one asked for, the default, or the account's own. */
+async function googleTarget(
+  p: Parsed,
+  token: string,
+  wanted: string,
+  signal: AbortSignal,
+): Promise<GoogleCalendar> {
+  const all = await googleCalendars(token, signal);
+  const name = wanted.trim() || p.config.defaultCalendar.trim() || "primary";
+  const calendar = findCalendar(all, name);
+  if (!calendar) {
+    throw new NodeError(
+      `No calendar called ${name} in ${p.name}. Calendars: ${all.map((c) => c.name).join(", ") || "none"}.`,
+      { code: "no_calendar" },
+    );
+  }
+  return calendar;
+}
+
+/** Adds an event through Google's API, with an ID from the idempotency key, so a repeat adds nothing. */
+async function addGoogleEvent(
+  p: Parsed,
+  input: NewEvent,
+  ctx: { idempotencyKey: string; timeZone: string; signal: AbortSignal },
+): Promise<Added> {
+  const title = input.title.trim();
+  if (!title) throw new NodeError("The event needs a title.", { code: "invalid_config" });
+  const token = googleTokenOf(p);
+  const t = eventTimes(input, ctx.timeZone);
+  const calendar = await googleTarget(p, token, input.calendar, ctx.signal);
+  if (calendar.accessRole !== "owner" && calendar.accessRole !== "writer") {
+    throw new NodeError(`${calendar.name} is read-only for this account. Pick another calendar.`, {
+      code: "read_only_calendar",
+    });
+  }
+  const base = { title, location: input.location.trim(), description: input.description.trim() };
+  const id = googleEventId(ctx.idempotencyKey);
+  const done = await insertGoogleEvent(
+    token,
+    calendar,
+    { id, ...base, ...t, timeZone: ctx.timeZone },
+    ctx.signal,
+  );
+  return {
+    created: done.created,
+    event: {
+      ...shownEvent({ ...base, calendar: calendar.name }, t, ctx.timeZone),
+      uid: id,
+      ...(done.event.htmlLink ? { link: done.event.htmlLink } : {}),
+    },
+  };
+}
+
+/** What reading a Google event back found. */
+export type ReadBack =
+  | { found: true; calendar: string; occurrence: Occurrence }
+  | { found: false; calendar: string };
+
+/** Reads an added event back from Google by its ID, from the calendar it went to. */
+export async function readBackGoogleEvent(
+  inst: CalendarInstallation,
+  event: { uid: string; calendar: string },
+  zone: string,
+  signal: AbortSignal,
+): Promise<ReadBack> {
+  const p = parseInstallation(inst);
+  const token = googleTokenOf(p);
+  const calendar = await googleTarget(p, token, event.calendar, signal);
+  const found = await getGoogleEvent(token, calendar, event.uid, signal);
+  const occurrence = found ? occurrenceOf(found, calendar.name, zone) : null;
+  return occurrence
+    ? { found: true, calendar: calendar.name, occurrence }
+    : { found: false, calendar: calendar.name };
 }
