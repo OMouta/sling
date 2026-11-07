@@ -19,6 +19,7 @@ import {
   ArrowUp,
   Brain,
   Copy,
+  Download,
   Drama,
   Ellipsis,
   FolderSearch,
@@ -35,6 +36,11 @@ import {
 import { type FormEvent, type ReactNode, useMemo, useRef, useState } from "react";
 import { Glyph } from "../components/Glyph.tsx";
 import { Page, Toolbar } from "../components/Page.tsx";
+import {
+  FromFileCard,
+  PersonalityMenu,
+  useExportPersonality,
+} from "../components/PersonalityFile.tsx";
 import { PersonalityModel, sameChoice } from "../components/PersonalityModel.tsx";
 import {
   Badge,
@@ -405,13 +411,14 @@ function StartPicker({
   };
   return (
     <div role="radiogroup" aria-label="Start from" className="space-y-4">
-      <div className="grid">
+      <div className="grid gap-2 sm:grid-cols-2">
         {card(
           BLANK,
           "Blank",
           "Your own instructions, from scratch.",
           <Plus aria-hidden="true" size={16} className="text-icon" />,
         )}
+        <FromFileCard />
       </div>
       {[...groups].map(([group, items]) => (
         <div key={group} className="space-y-2">
@@ -490,7 +497,9 @@ function PersonalityCard({
     mutationFn: () => api.del(`/api/personalities/${p.id}`),
     onSettled: refresh,
   });
-  const error = makeDefault.error ?? move.error ?? duplicate.error ?? remove.error;
+  const exportFile = useExportPersonality();
+  const error =
+    makeDefault.error ?? move.error ?? duplicate.error ?? remove.error ?? exportFile.error;
 
   return (
     <Card className="group relative transition-shadow duration-150 hover:shadow-card-hover">
@@ -558,6 +567,9 @@ function PersonalityCard({
           )}
           <MenuItem icon={Copy} onSelect={() => duplicate.mutate()}>
             Duplicate
+          </MenuItem>
+          <MenuItem icon={Download} onSelect={() => exportFile.mutate(p)}>
+            Export
           </MenuItem>
           {index > 0 && (
             <MenuItem icon={ArrowUp} onSelect={() => move.mutate(-1)}>
@@ -716,6 +728,7 @@ export function PersonalityEditorPage() {
       controls={
         <div className="flex items-center gap-2">
           <ErrorText error={save.error} />
+          {existing && <PersonalityMenu personality={existing} />}
           {!isNew && dirty && (
             <Button onClick={() => state && setDraft(state.base)} disabled={save.isPending}>
               Discard
