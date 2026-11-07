@@ -116,7 +116,7 @@ export function PersonalitiesPage() {
       }
     >
       {personalities.isPending && (
-        <div className="grid gap-3 px-5 pt-1 pb-6 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 px-5 pt-1 pb-6 sm:grid-cols-2 xl:grid-cols-3">
           {[0, 1].map((i) => (
             <Skeleton key={i} className="h-[124px] rounded-xl" />
           ))}
@@ -129,7 +129,7 @@ export function PersonalitiesPage() {
         <Empty fill icon={Drama} title="No personalities" />
       )}
       {list.length > 0 && (
-        <div className="grid gap-3 px-5 pt-1 pb-6 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 px-5 pt-1 pb-6 sm:grid-cols-2 xl:grid-cols-3">
           {list.map((p, i) => (
             <PersonalityCard key={p.id} personality={p} list={list} index={i} />
           ))}
@@ -326,7 +326,7 @@ function PersonalityCard({
           <span className="mt-0.5 line-clamp-2 block text-xs leading-4 text-muted">
             {p.description || "No description"}
           </span>
-          <span className="mt-2.5 flex items-center gap-1.5 text-xs text-subtle">
+          <span className="mt-2.5 flex min-w-0 items-center gap-1.5 text-xs text-subtle">
             {p.tools.map((t) => {
               const Icon = TOOL_ICONS[t];
               return <Icon key={t} aria-hidden="true" size={12} className="shrink-0" />;

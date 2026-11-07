@@ -154,13 +154,6 @@ export function TasksPage() {
           fill
           icon={ListChecks}
           title={all.length === 0 ? "No tasks yet" : "No tasks match"}
-          action={
-            all.length === 0 && (
-              <Button variant="primary" icon={Plus} onClick={() => void navigate({ to: "/" })}>
-                Start one from chat
-              </Button>
-            )
-          }
         />
       ) : (
         <Table className="border-t border-border">

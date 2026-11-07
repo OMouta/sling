@@ -254,6 +254,10 @@ describe("workflow editor", () => {
     expect(screen.getByText("v1 active")).toBeTruthy();
     expect(screen.getByText("Unpublished changes")).toBeTruthy();
     expect(screen.getByText("Runs when")).toBeTruthy();
+    // New mail starts this one, so there's nothing to run by hand.
+    const run = screen.getByRole("button", { name: "Run" }) as HTMLButtonElement;
+    expect(run.disabled).toBe(true);
+    expect(run.title).toMatch(/Manual run trigger/);
     // No settings panel until something is selected.
     expect(screen.queryByRole("complementary", { name: "Step settings" })).toBeNull();
     // Exec and data ports are distinct handles.

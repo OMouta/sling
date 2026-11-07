@@ -196,16 +196,7 @@ export function MachinesPage() {
       {/* Wait for the list, so a machine already paired doesn't look new. */}
       {pairing && machines && <PairDialog onClose={() => setPairing(false)} known={machines} />}
       {machines?.length === 0 ? (
-        <Empty
-          fill
-          icon={Laptop}
-          title="No machines yet"
-          action={
-            <Button variant="primary" icon={Plus} onClick={() => setPairing(true)}>
-              Add machine
-            </Button>
-          }
-        />
+        <Empty fill icon={Laptop} title="No machines yet" />
       ) : (
         <div className="space-y-4 px-5 pt-1 pb-6">
           {runners.isPending && <Skeleton className="h-[320px] w-full rounded-xl" />}

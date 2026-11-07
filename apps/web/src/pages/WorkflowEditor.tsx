@@ -247,11 +247,14 @@ function EditorSession({
                 size="sm"
                 variant="primary"
                 icon={Play}
-                disabled={live.activeVersion === null}
+                // Only a Manual run trigger can be started by hand; the server refuses the rest.
+                disabled={live.activeVersion === null || !hasManualTrigger}
                 title={
                   live.activeVersion === null
                     ? "Publish a version first"
-                    : `Runs version ${live.activeVersion}`
+                    : !hasManualTrigger
+                      ? "Add a Manual run trigger and publish to run it by hand"
+                      : `Runs version ${live.activeVersion}`
                 }
                 onClick={() => setRunning(true)}
               >
