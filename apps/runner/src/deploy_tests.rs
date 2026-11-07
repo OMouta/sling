@@ -879,12 +879,14 @@ async fn a_failing_deploy_reports_its_exit_code_and_last_output() {
 async fn a_deploy_past_its_limit_is_stopped_with_everything_it_started() {
     let env = setup();
     let pid_file = env.root().join("child.pid");
+    // The limit counts the login shell's startup, which takes over a second
+    // on some CI runners, so it leaves room for the command to print.
     env.edit_config(with_command(
         &format!(
             "sleep 30 & echo $! > {}; echo waiting; wait",
             pid_file.display()
         ),
-        Some(1),
+        Some(3),
     ));
     let head = env.remote_head();
     let started = Instant::now();
@@ -900,7 +902,7 @@ async fn a_deploy_past_its_limit_is_stopped_with_everything_it_started() {
         "{}",
         r.message
     );
-    assert!(r.message.contains("1s limit"), "{}", r.message);
+    assert!(r.message.contains("3s limit"), "{}", r.message);
     assert_eq!(r.exit_code, None);
     assert!(output.contains("waiting"), "{output}");
     let pid: i32 = std::fs::read_to_string(&pid_file)
