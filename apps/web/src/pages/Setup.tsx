@@ -17,9 +17,11 @@ export function SetupPage() {
   const [busy, setBusy] = useState(false);
 
   if (status.data && !status.data.needsSetup) return <Navigate to="/" />;
+  const ready = name.trim() !== "" && email.includes("@") && password.length >= 10;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (!ready) return;
     setBusy(true);
     setError(null);
     const res = await authClient.signUp.email({ name, email, password });
@@ -34,25 +36,34 @@ export function SetupPage() {
 
   return (
     <AuthFrame title="Set up Sling">
-      <form onSubmit={submit} className="space-y-4">
+      {/* Create account waits for every field, so the browser never has to complain. */}
+      <form onSubmit={submit} noValidate className="space-y-4">
         <Field label="Name">
-          <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoComplete="name"
+            autoFocus
+          />
         </Field>
         <Field label="Email">
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+          />
         </Field>
         <Field label="Password" hint="At least 10 characters">
           <Input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            minLength={10}
-            required
             autoComplete="new-password"
           />
         </Field>
         <ErrorText error={error} />
-        <Button type="submit" variant="primary" className="w-full" busy={busy}>
+        <Button type="submit" variant="primary" className="w-full" busy={busy} disabled={!ready}>
           Create account
         </Button>
       </form>
