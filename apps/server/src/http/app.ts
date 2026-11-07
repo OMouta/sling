@@ -16,6 +16,7 @@ import { replaceRoutes } from "../conversations/replace-routes.ts";
 import { conversationRoutes } from "../conversations/routes.ts";
 import { deployRoutes } from "../deploys/routes.ts";
 import { extensionRoutes } from "../extensions/routes.ts";
+import { feedbackRoutes } from "../feedback/routes.ts";
 import { memoryRoutes } from "../memory/routes.ts";
 import { oauthRoutes } from "../oauth/routes.ts";
 import { personalityRoutes } from "../personalities/routes.ts";
@@ -107,6 +108,9 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   });
   await app.register(async (scope) => {
     await replaceRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await feedbackRoutes(scope, ctx);
   });
   await app.register(async (scope) => {
     await personalityRoutes(scope, ctx);
