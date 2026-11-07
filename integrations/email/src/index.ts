@@ -116,6 +116,9 @@ export function createEmailConnector(
           ],
         };
       }
+      if (found.unsupported) {
+        return { notes: [{ field: "fromAddress", tone: "error", text: found.unsupported }] };
+      }
       const login = found.login === "local" ? from.address.split("@")[0] : from.address;
       return {
         name: from.address,

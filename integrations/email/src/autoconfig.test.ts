@@ -112,6 +112,12 @@ describe("findServers", () => {
     expect(d.asked).toHaveLength(1);
   });
 
+  it("says Microsoft mailboxes can't be added", async () => {
+    expect((await findServers("outlook.com", signal(), deps({})))?.unsupported).toMatch(
+      /no longer accepts passwords/,
+    );
+  });
+
   it("follows the MX records to Google Workspace and Microsoft 365", async () => {
     const d = deps(
       {},
@@ -165,6 +171,13 @@ describe("the setup lookup", () => {
         link: expect.objectContaining({ label: "Make one" }),
       }),
     );
+  });
+
+  it("stops at a mailbox that refuses passwords", async () => {
+    const out = await setup({ fromAddress: "ana@hotmail.com" });
+    expect(out).toEqual({
+      notes: [{ field: "fromAddress", tone: "error", text: expect.stringContaining("Microsoft") }],
+    });
   });
 
   it("shows the server fields when it can't find them", async () => {

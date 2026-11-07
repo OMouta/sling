@@ -23,6 +23,8 @@ export interface MailServers {
   login: "address" | "local";
   /** Where to make an app password, for providers that need one. */
   appPassword?: { label: string; url: string };
+  /** Why the connector can't log in here, for providers that refuse passwords. */
+  unsupported?: string;
 }
 
 const tls = (host: string, port: number): Server => ({ host, port, secure: true });
@@ -38,21 +40,21 @@ const GMAIL: MailServers = {
     url: "https://myaccount.google.com/apppasswords",
   },
 };
+const MICROSOFT =
+  "Microsoft no longer accepts passwords over IMAP and SMTP, so this mailbox can't be added.";
 const OUTLOOK: MailServers = {
   provider: "Outlook",
   imap: tls("outlook.office365.com", 993),
   smtp: starttls("smtp-mail.outlook.com", 587),
   login: "address",
-  appPassword: {
-    label: "Use an app password if you sign in with two-step verification.",
-    url: "https://account.live.com/proofs/AppPassword",
-  },
+  unsupported: MICROSOFT,
 };
 const MICROSOFT_365: MailServers = {
   provider: "Microsoft 365",
   imap: tls("outlook.office365.com", 993),
   smtp: starttls("smtp.office365.com", 587),
   login: "address",
+  unsupported: MICROSOFT,
 };
 const ICLOUD: MailServers = {
   provider: "iCloud Mail",
