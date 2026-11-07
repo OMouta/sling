@@ -1,4 +1,10 @@
-import type { AssistantChoice, ChatSettings, PermissionMode, PersonalityView } from "@sling/core";
+import type {
+  AssistantChoice,
+  ChatSettings,
+  PermissionMode,
+  PersonalityView,
+  SendMessageInput,
+} from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -11,6 +17,12 @@ import {
 import { ChatMarkdown } from "../components/ChatMarkdown.tsx";
 import { Composer } from "../components/Composer.tsx";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
+import {
+  ResearchChip,
+  ResearchLine,
+  ResearchSteps,
+  useDeepResearch,
+} from "../components/DeepResearch.tsx";
 import { FollowUps } from "../components/FollowUps.tsx";
 import { Glyph } from "../components/Glyph.tsx";
 import { Logo } from "../components/Logo.tsx";
@@ -27,6 +39,7 @@ import { useDictation } from "../lib/dictation.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
 import { usePersonalities } from "../lib/personalities.ts";
 import { seedLiveReply, useLiveReply } from "../lib/realtime.ts";
+import { canResearch } from "../lib/research.ts";
 import type { ConversationDetail, MessageView, TaskView } from "../lib/types.ts";
 import { chatRoute } from "../router.tsx";
 
@@ -57,10 +70,17 @@ export function ChatPage() {
     if (seed) seedLiveReply(id, seed);
   }, [id, seed]);
 
+  const research = useDeepResearch();
   const send = useMutation({
-    mutationFn: (message: string) =>
-      api.post(`/api/conversations/${id}/messages`, { text: message }),
-    onSuccess: () => setText(""),
+    mutationFn: (message: string | SendMessageInput) =>
+      api.post(
+        `/api/conversations/${id}/messages`,
+        typeof message === "string" ? { text: message } : message,
+      ),
+    onSuccess: () => {
+      setText("");
+      research.off();
+    },
   });
   const setMode = useMutation({
     mutationFn: (mode: PermissionMode) => api.patch(`/api/conversations/${id}`, { mode }),
@@ -173,6 +193,9 @@ export function ChatPage() {
 
   const assistant: AssistantChoice | null =
     conversation.settings?.assistant ?? catalog.data?.defaults.assistant ?? null;
+  const researchable = canResearch(personality, assistant);
+  const researching =
+    thinking && detail.data.messages.findLast((m) => m.role === "user")?.research === true;
   const activity: ActivityContext = {
     conversationId: conversation.id,
     conversationMode: conversation.mode,
@@ -250,7 +273,10 @@ export function ChatPage() {
             {thinking && (
               <AssistantRow personality={personality} active>
                 <ReplySteps steps={liveSteps} live ctx={activity} />
-                {!live?.text && !busyStep && (
+                {researching && !live?.text && (
+                  <ResearchLine steps={liveSteps} startedAt={live?.startedAt ?? openedAt} />
+                )}
+                {!researching && !live?.text && !busyStep && (
                   <WorkingLine startedAt={live?.startedAt ?? openedAt} />
                 )}
                 {live?.text ? (
@@ -273,13 +299,18 @@ export function ChatPage() {
               onSubmit={() => {
                 following.current = true;
                 dictation.cancel();
-                send.mutate(text.trim());
+                send.mutate({
+                  text: text.trim(),
+                  ...(researchable && research.on ? { research: true } : {}),
+                });
               }}
               inputRef={input}
               dictation={dictation}
               placeholder={`Message ${personality?.name ?? "Sling"}`}
               busy={send.isPending}
               error={send.error ?? dictation.error ?? setMode.error ?? setSettings.error}
+              above={researchable && research.on && <ResearchChip onRemove={research.off} />}
+              {...(researchable ? { plus: { research: research.option } } : {})}
               controls={
                 <ChatControls
                   catalog={catalog.data}
@@ -406,7 +437,12 @@ function Message({
   }
   return (
     <AssistantRow personality={personality}>
-      {message.trace && <ReplySteps steps={message.trace.steps} ctx={activity} />}
+      {message.trace &&
+        (message.trace.research ? (
+          <ResearchSteps trace={message.trace} ctx={activity} />
+        ) : (
+          <ReplySteps steps={message.trace.steps} ctx={activity} />
+        ))}
       <div className="prose-chat text-sm leading-6">
         <ChatMarkdown>{message.text}</ChatMarkdown>
       </div>

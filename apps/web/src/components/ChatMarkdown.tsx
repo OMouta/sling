@@ -1,5 +1,13 @@
+import type { ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { siteName } from "../lib/research.ts";
+
+/** A citation's link text is only its number, as in `[2](https://…)`. */
+function citation(children: ReactNode): boolean {
+  const only = Array.isArray(children) && children.length === 1 ? children[0] : children;
+  return typeof only === "string" && /^\d{1,3}$/.test(only);
+}
 
 const components: Components = {
   // Wide tables scroll inside the reply instead of widening the page.
@@ -8,7 +16,22 @@ const components: Components = {
       <table {...props} />
     </div>
   ),
-  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+  a: ({ node: _node, children, ...props }) =>
+    citation(children) ? (
+      <a
+        {...props}
+        target="_blank"
+        rel="noreferrer"
+        className="citation"
+        title={siteName(props.href)}
+      >
+        {children}
+      </a>
+    ) : (
+      <a {...props} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    ),
 };
 
 /**

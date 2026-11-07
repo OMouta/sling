@@ -4,6 +4,7 @@ import type {
   PermissionMode,
   PersonalityView,
   RunnerView,
+  SendMessageInput,
   TaskView,
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,6 +13,7 @@ import { ArrowRight, Check, ChevronDown, Cpu, Laptop } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Composer } from "../components/Composer.tsx";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
+import { ResearchChip, useDeepResearch } from "../components/DeepResearch.tsx";
 import { Glyph } from "../components/Glyph.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
@@ -30,6 +32,7 @@ import {
   rememberPersonality,
   usePersonalities,
 } from "../lib/personalities.ts";
+import { canResearch } from "../lib/research.ts";
 import type { Settings } from "../lib/types.ts";
 
 export function HomePage() {
@@ -111,9 +114,11 @@ export function HomePage() {
   useArrowKeys(prev, next);
   const switches = Boolean(picked) && list.length > 1;
   const hasTools = (picked?.tools.length ?? 1) > 0;
+  const research = useDeepResearch();
+  const researchable = canResearch(picked, assistant ?? catalog.data?.defaults.assistant);
 
   const start = useMutation({
-    mutationFn: async (message: string) => {
+    mutationFn: async (message: SendMessageInput) => {
       const c = await api.post<ConversationView>(
         "/api/conversations",
         picked ? { personalityId: picked.id } : {},
@@ -124,10 +129,11 @@ export function HomePage() {
           ...(assistant ? { settings: { assistant } } : {}),
         });
       }
-      await api.post(`/api/conversations/${c.id}/messages`, { text: message });
+      await api.post(`/api/conversations/${c.id}/messages`, message);
       return c;
     },
     onSuccess: (c) => {
+      research.off();
       void qc.invalidateQueries({ queryKey: ["conversations"] });
       void navigate({ to: "/c/$id", params: { id: c.id } });
     },
@@ -232,7 +238,10 @@ export function HomePage() {
             setText={setText}
             onSubmit={() => {
               dictation.cancel();
-              start.mutate(text.trim());
+              start.mutate({
+                text: text.trim(),
+                ...(researchable && research.on ? { research: true } : {}),
+              });
             }}
             inputRef={input}
             dictation={dictation}
@@ -244,6 +253,8 @@ export function HomePage() {
             busy={start.isPending}
             disabled={!ready}
             error={start.error ?? dictation.error}
+            above={researchable && research.on && <ResearchChip onRemove={research.off} />}
+            {...(researchable ? { plus: { research: research.option } } : {})}
             controls={
               <ChatControls
                 catalog={catalog.data}

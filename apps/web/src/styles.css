@@ -384,6 +384,38 @@
   text-underline-offset: 2px;
 }
 
+/* A numbered citation in a reply, and its number in the sources under it. */
+.citation,
+.prose-chat a.citation {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 9999px;
+  background: var(--surface-3);
+  color: var(--soft);
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  transition:
+    background-color 150ms,
+    color 150ms;
+}
+.prose-chat a.citation {
+  margin: 0 1px;
+  vertical-align: 1px;
+}
+.prose-chat a.citation:hover,
+.group:hover .citation {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
 /* Workflow canvas. React Flow's base.css handles layout; this is the look. */
 .sling-canvas .react-flow {
   --xy-background-color: var(--bg);

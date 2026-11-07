@@ -35,6 +35,7 @@ import { RuleQuestion } from "./RuleQuestion.tsx";
 import { memoryFileLabel } from "./stepLabels.ts";
 import { TaskCard } from "./TaskCard.tsx";
 import { Button, cx, ErrorText, Input, Spinner } from "./ui.tsx";
+import { WebStep } from "./WebSteps.tsx";
 import { OpenInEditor, WorkflowSteps } from "./WorkflowSteps.tsx";
 
 /** What each of Sling's tools is doing, has done, and failed to do. */
@@ -96,6 +97,8 @@ const TOOLS: Record<string, [string, string, string]> = {
     "Couldn't look up workflow steps",
   ],
   save_rule: ["Saving a rule", "Saved a rule", "Couldn't save the rule"],
+  web_search: ["Searching the web", "Searched the web", "Couldn't search the web"],
+  web_fetch: ["Reading a page", "Read a page", "Couldn't open the page"],
 };
 
 /** A call that failed, or finished with an error for the assistant, such as a refused workflow. */
@@ -185,6 +188,8 @@ export function ReplySteps({
               <TaskStep step={s} ctx={ctx} />
             ) : s.name === "remember" ? (
               <RememberStep step={s} />
+            ) : s.name === "web_search" || s.name === "web_fetch" ? (
+              <WebStep step={s} />
             ) : (
               <ToolRow step={s} />
             )}
