@@ -250,7 +250,8 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
         />
       </div>
 
-      <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pt-3 pb-2">
+      {/* Fades out above Settings instead of cutting a chat in half; the padding keeps the last one clear. */}
+      <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pt-3 pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%-28px),transparent)]">
         <div className="space-y-px">
           <Link
             to="/"
