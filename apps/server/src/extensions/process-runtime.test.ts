@@ -981,8 +981,13 @@ export default defineExtension({
         }),
         node("crashy.loop", async () => { for (;;) {} }),
         node("crashy.oom", async () => {
+          // It yields between allocations, so it still answers heartbeats on a
+          // slow machine: it must run out of memory, not be killed for hanging.
           const hoard = [];
-          for (;;) hoard.push(new Array(100000).fill({ x: hoard.length }));
+          for (;;) {
+            hoard.push(new Array(1000000).fill(hoard.length));
+            await new Promise((r) => setTimeout(r, 0));
+          }
         }),
       ],
     }),
