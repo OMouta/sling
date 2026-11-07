@@ -210,9 +210,7 @@ async fn the_environment_is_replaced_not_inherited() {
 mod chat {
     use super::BIN;
     use sling_harness_claude_code::Run;
-    use sling_harness_claude_code::chat::{
-        ChatOptions, ChatOutcome, INSTRUCTIONS_FILE, MCP_CONFIG_FILE, McpServer,
-    };
+    use sling_harness_claude_code::chat::{ChatOptions, ChatOutcome, McpServer};
     use sling_runner_protocol::chat_event::Kind;
     use tokio::sync::mpsc;
 
@@ -268,6 +266,7 @@ mod chat {
 
         #[cfg(unix)]
         {
+            use sling_harness_claude_code::chat::{INSTRUCTIONS_FILE, MCP_CONFIG_FILE};
             use std::os::unix::fs::PermissionsExt;
             for f in [MCP_CONFIG_FILE, INSTRUCTIONS_FILE] {
                 let mode = std::fs::metadata(dir.path().join(f))
