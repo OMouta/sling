@@ -130,10 +130,11 @@ export function HomePage() {
   });
   const hasTools = (picked?.tools.length ?? 1) > 0;
   const research = useDeepResearch();
-  const researchable = canResearch(
-    picked,
-    assistant ?? picked?.assistant ?? catalog.data?.defaults.assistant,
-  );
+  const chosen = assistant ?? picked?.assistant ?? catalog.data?.defaults.assistant;
+  // A mention's turn runs as that personality, on its own model when it has one.
+  const researchable = mention.mentioned
+    ? canResearch(mention.mentioned, mention.mentioned.assistant ?? chosen)
+    : canResearch(picked, chosen);
 
   const start = useMutation({
     mutationFn: async (message: SendMessageInput) => {

@@ -218,7 +218,10 @@ export function ChatPage() {
     personality?.assistant ??
     catalog.data?.defaults.assistant ??
     null;
-  const researchable = canResearch(personality, assistant);
+  // A mention's turn runs as that personality, on its own model when it has one.
+  const researchable = mention.mentioned
+    ? canResearch(mention.mentioned, mention.mentioned.assistant ?? assistant)
+    : canResearch(personality, assistant);
   const researching =
     thinking && detail.data.messages.findLast((m) => m.role === "user")?.research === true;
   const activity: ActivityContext = {
