@@ -112,12 +112,7 @@ export function PersonalitiesPage() {
               </Button>
             </>
           }
-        >
-          <p className="min-w-0 text-xs leading-4 text-muted max-lg:hidden">
-            Who answers in a chat: its instructions, what it may use, and how it looks. A chat keeps
-            the personality it started with.
-          </p>
-        </Toolbar>
+        />
       }
     >
       {personalities.isPending && (
@@ -131,9 +126,7 @@ export function PersonalitiesPage() {
         <ErrorText error={personalities.error} />
       </div>
       {personalities.isSuccess && list.length === 0 && (
-        <Empty fill icon={Drama} title="No personalities">
-          Make one to start chatting.
-        </Empty>
+        <Empty fill icon={Drama} title="No personalities" />
       )}
       {list.length > 0 && (
         <div className="grid gap-3 px-5 pt-1 pb-6 sm:grid-cols-2 xl:grid-cols-3">
@@ -166,7 +159,6 @@ function TemplateGallery({ list, onClose }: { list: PersonalityView[]; onClose: 
     <Dialog
       wide
       title="Add from templates"
-      description="Each one starts with its own instructions, tools, and look. Change any of it after."
       onClose={onClose}
       footer={
         <Button onClick={onClose} data-autofocus>
@@ -386,7 +378,7 @@ function PersonalityCard({
                 onSelect={async () => {
                   const ok = await confirm({
                     title: `Delete ${p.name}?`,
-                    body: "New chats can't pick it anymore. Chats that already use it keep it.",
+                    body: "Chats that use it keep it.",
                     action: "Delete",
                     danger: true,
                   });
@@ -554,7 +546,7 @@ export function PersonalityEditorPage() {
                 autoFocus={isNew}
               />
             </Field>
-            <Field label="Description" hint="One line, shown under the name when you pick it.">
+            <Field label="Description">
               <Input
                 value={draft.description}
                 maxLength={PERSONALITY_DESCRIPTION_MAX}
@@ -575,10 +567,7 @@ export function PersonalityEditorPage() {
           </section>
 
           <section className="space-y-3">
-            <SectionHead
-              title="What it can use"
-              description="Sling's tools, on your machines and in your apps. The permission mode still limits what they do."
-            />
+            <SectionHead title="What it can use" />
             <Card className="divide-y divide-border">
               {PERSONALITY_TOOLS.map((t) => {
                 const Icon = TOOL_ICONS[t];
@@ -611,10 +600,7 @@ export function PersonalityEditorPage() {
           </section>
 
           <section className="space-y-3">
-            <SectionHead
-              title="Instructions"
-              description="Who it is and how it answers. Sling adds the rules for its tools, the permission mode, and today's date."
-            />
+            <SectionHead title="Instructions" />
             <Textarea
               aria-label="Instructions"
               value={draft.instructions}
@@ -641,13 +627,8 @@ export function PersonalityEditorPage() {
   );
 }
 
-function SectionHead({ title, description }: { title: string; description?: string }) {
-  return (
-    <div>
-      <h2 className="text-sm font-medium">{title}</h2>
-      {description && <p className="mt-0.5 text-xs leading-4 text-muted">{description}</p>}
-    </div>
-  );
+function SectionHead({ title }: { title: string }) {
+  return <h2 className="text-sm font-medium">{title}</h2>;
 }
 
 function ColorPicker({
@@ -777,11 +758,7 @@ function Preview({ draft }: { draft: Draft }) {
           <span className="text-xs text-muted">While it works</span>
         </div>
         <div className="flex items-center gap-2.5 text-xs text-muted">
-          {draft.tools.length === 0 ? (
-            <span>Talks only. It can't see your machines.</span>
-          ) : (
-            <span>{toolsLine(draft.tools)}</span>
-          )}
+          <span>{toolsLine(draft.tools)}</span>
         </div>
       </div>
     </Card>

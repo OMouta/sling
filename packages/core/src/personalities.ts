@@ -14,20 +14,19 @@ export const PERSONALITY_TOOL_INFO: Record<
 > = {
   commands: {
     label: "Commands on your machines",
-    description: "Sees your machines and repos, and runs shell commands there.",
+    description: "Runs shell commands on your machines.",
   },
   coding: {
     label: "Coding tasks",
-    description: "Hands work in a repo to Codex or Claude Code, and follows the task.",
+    description: "Hands repo work to Codex or Claude Code.",
   },
   apps: {
     label: "Apps and workflows",
-    description:
-      "Reads your calendar, runs your workflows, and sends through your connectors, asking first.",
+    description: "Calendar, workflows and connectors. Asks before sending.",
   },
   deploys: {
     label: "Deploys",
-    description: "Checks your deploy targets and deploys finished fixes, asking first.",
+    description: "Deploys finished fixes. Asks first.",
   },
 };
 
