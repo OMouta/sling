@@ -42,3 +42,49 @@ fn chat_turn_that_calls_a_sling_tool() {
     assert_eq!((o.input_tokens, o.output_tokens), (40, 14));
     assert!(o.failure.is_none() && !o.session_missing);
 }
+
+#[test]
+fn chat_turn_that_searches_the_web() {
+    let path = format!(
+        "{}/tests/transcripts/chat-web.jsonl",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let mut p = ChatParser::default();
+    let events: Vec<Kind> = text.lines().flat_map(|l| p.line(l)).collect();
+    let uses: Vec<(&str, &str, bool)> = events
+        .iter()
+        .filter_map(|e| match e {
+            Kind::ToolUse(t) => Some((t.name.as_str(), t.input_json.as_str(), t.builtin)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        uses,
+        [(
+            "web_search",
+            r#"{"query":"current stable Rust version official"}"#,
+            true
+        )],
+        "the empty started item isn't a step"
+    );
+    let results: Vec<serde_json::Value> = events
+        .iter()
+        .filter_map(|e| match e {
+            Kind::ToolResult(r) => Some(serde_json::from_str(&r.output).unwrap()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["results"].as_array().unwrap().len(), 4);
+    assert_eq!(
+        results[0]["results"][2],
+        serde_json::json!({ "title": "Rust Versions | Rust Changelogs", "url": "https://releases.rs/" })
+    );
+    let o = p.outcome(Some(0), &[]);
+    assert_eq!(
+        o.text,
+        "1.99.1 ([official Rust website](https://rust-lang.org/))"
+    );
+    assert_eq!(o.session_id, "01a1b761-0cb1-7081-95eb-ead27e815e43");
+}

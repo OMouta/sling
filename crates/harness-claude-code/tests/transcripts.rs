@@ -219,3 +219,34 @@ fn chat_resume_of_a_session_that_isnt_here() {
     assert!(o.session_missing);
     assert!(o.failure.unwrap().starts_with("No conversation found"));
 }
+
+#[test]
+fn chat_turn_that_searches_and_opens_a_page() {
+    use sling_runner_protocol::chat_event::Kind as Chat;
+    let (events, o) = chat("chat-web");
+    let steps: Vec<String> = events
+        .iter()
+        .filter_map(|e| match e {
+            Chat::ToolUse(t) => Some(format!("{} {} {}", t.name, t.input_json, t.builtin)),
+            Chat::ToolResult(r) => {
+                let out: serde_json::Value = serde_json::from_str(&r.output).unwrap();
+                Some(match out["results"].as_array() {
+                    Some(links) => format!("{} links, first {}", links.len(), links[0]["url"]),
+                    None => format!("text {}", out["text"]),
+                })
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        steps,
+        [
+            r#"web_search {"query":"Rust stable release latest version"} true"#,
+            r#"7 links, first "https://www.linuxcompatible.org/story/rust-1920-released""#,
+            r#"web_fetch {"url":"https://blog.rust-lang.org/releases/"} true"#,
+            r#"text "**Rust 1.99.1, October 15, 2026**""#,
+        ]
+    );
+    assert!(o.text.starts_with("**Rust 1.99.1**"));
+    assert!(o.failure.is_none());
+}

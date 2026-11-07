@@ -178,6 +178,7 @@ mod chat {
             effort: Some("low".into()),
             fast: false,
             resume,
+            web: false,
         }
     }
 

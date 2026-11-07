@@ -103,6 +103,8 @@ pub struct ChatSpec {
     pub mcp_command: PathBuf,
     pub tools_url: String,
     pub tools_token: String,
+    /// The agent's own web search and page reading.
+    pub web: bool,
 }
 
 impl ChatSpec {
@@ -310,6 +312,7 @@ impl Harness for Codex {
                 effort: spec.effort.clone(),
                 fast: spec.fast,
                 resume: spec.resume.clone(),
+                web: spec.web,
             };
             let (run, reader) = codex::Run::start_chat(&opts, tx).await?;
             Ok(Box::new(CodexChat { run, reader }) as Box<dyn ChatRun>)
@@ -479,6 +482,7 @@ impl Harness for ClaudeCode {
                 effort: spec.effort.clone(),
                 fast: spec.fast,
                 resume: spec.resume.clone(),
+                web: spec.web,
             };
             let (run, reader) = claude::Run::start_chat(&opts, tx).await?;
             Ok(Box::new(ClaudeChat { run, reader }) as Box<dyn ChatRun>)

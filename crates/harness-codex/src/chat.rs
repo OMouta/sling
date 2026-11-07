@@ -1,15 +1,17 @@
 //! Chat turns: one `codex exec` turn for Sling's assistant, in an empty
 //! directory outside any repo. Codex runs read-only, without your
-//! `config.toml`, with its shell, image, browser, sub-agent and web search
-//! tools turned off, and with Sling's MCP server added. Sling's tools run
-//! without approval.
+//! `config.toml`, with its shell, image, browser, and sub-agent tools turned
+//! off, web search too unless the turn has it, and with Sling's MCP server
+//! added. Sling's tools run without approval.
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 
 use anyhow::{Result, ensure};
-use serde_json::Value;
-use sling_runner_protocol::{ChatDelta, ChatThinking, ChatToolUse, chat_event, task_event::Kind};
+use serde_json::{Value, json};
+use sling_runner_protocol::{
+    ChatDelta, ChatThinking, ChatToolResult, ChatToolUse, chat_event, task_event::Kind,
+};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -73,6 +75,8 @@ pub struct ChatOptions {
     pub fast: bool,
     /// Session to resume.
     pub resume: Option<String>,
+    /// Codex's own live web search, which also opens pages.
+    pub web: bool,
 }
 
 /// Session IDs are UUIDs. Anything else is refused, so an ID can never pass
@@ -135,7 +139,10 @@ pub fn chat_args(o: &ChatOptions) -> Vec<String> {
     for feature in DISABLED_FEATURES {
         set(&format!("features.{feature}"), "false".into());
     }
-    set("web_search", toml_string("disabled"));
+    set(
+        "web_search",
+        toml_string(if o.web { "live" } else { "disabled" }),
+    );
     // Codex's models default to no summary, so the chat would show no thinking.
     set("model_reasoning_summary", toml_string("auto"));
     if let Some(effort) = &o.effort {
@@ -246,6 +253,9 @@ impl ChatParser {
                 ..Default::default()
             }));
         }
+        if v["type"] == "item.completed" && item["type"] == "web_search" {
+            self.web_search(item, &mut out);
+        }
         for ev in self.inner.value(&v) {
             match ev {
                 Event::ThreadStarted(id) => self.session_id = id,
@@ -266,6 +276,51 @@ impl ChatParser {
             }
         }
         out
+    }
+
+    /// A finished web search item as a step and its result, under the names
+    /// and shapes every agent's web steps share. Codex reports a search's
+    /// links on some versions, and never a page's text.
+    fn web_search(&mut self, item: &Value, out: &mut Vec<chat_event::Kind>) {
+        let action = &item["action"];
+        let (name, input, output) = match (action["type"].as_str(), action["url"].as_str()) {
+            (Some("search"), _) => {
+                let query = action["query"].as_str().or(item["query"].as_str());
+                let results: Vec<Value> = item["results"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|r| {
+                        let url = r["url"].as_str()?;
+                        Some(
+                            json!({ "title": r["title"].as_str().unwrap_or_default(), "url": url }),
+                        )
+                    })
+                    .collect();
+                (
+                    "web_search",
+                    json!({ "query": query }),
+                    json!({ "results": results }),
+                )
+            }
+            (_, Some(url)) => ("web_fetch", json!({ "url": url }), json!({ "text": "" })),
+            _ => return,
+        };
+        let id = item["id"].as_str().unwrap_or_default().to_string();
+        if !self.tools_seen.insert(id.clone()) {
+            return;
+        }
+        out.push(chat_event::Kind::ToolUse(ChatToolUse {
+            name: name.into(),
+            id: id.clone(),
+            input_json: input.to_string(),
+            builtin: true,
+        }));
+        out.push(chat_event::Kind::ToolResult(ChatToolResult {
+            id,
+            output: output.to_string(),
+            error: false,
+        }));
     }
 
     pub fn outcome(self, exit_code: Option<i32>, stderr: &[String]) -> ChatOutcome {
@@ -388,6 +443,7 @@ mod tests {
             effort: None,
             fast: false,
             resume: None,
+            web: false,
         }
     }
 
@@ -450,6 +506,52 @@ mod tests {
         assert!(!args.iter().any(|a| a == "resume" || a == "-m"));
         assert_eq!(args.last().unwrap(), "-");
         assert_eq!(chat_stdin(&o), "hi");
+    }
+
+    #[test]
+    fn a_web_turn_turns_live_search_on() {
+        let mut o = opts();
+        o.web = true;
+        let args = chat_args(&o);
+        assert!(has(&args, ["-c", "web_search=\"live\""]));
+        assert!(!has(&args, ["-c", "web_search=\"disabled\""]));
+        assert!(has(&args, ["-c", "features.shell_tool=false"]));
+    }
+
+    #[test]
+    fn web_search_items_become_steps() {
+        let mut p = ChatParser::default();
+        let mut events = Vec::new();
+        for line in [
+            r#"{"type":"item.started","item":{"id":"ws_1","type":"web_search","query":"","action":{"type":"other"}}}"#,
+            r#"{"type":"item.completed","item":{"id":"ws_1","type":"web_search","query":"eu ai act","action":{"type":"search","query":"eu ai act"}}}"#,
+            r#"{"type":"item.completed","item":{"id":"ws_2","type":"web_search","query":"","action":{"type":"open_page","url":"https://eur-lex.europa.eu/x"}}}"#,
+            r#"{"type":"item.completed","item":{"id":"ws_3","type":"web_search","query":"","action":{"type":"find_in_page","url":"https://eur-lex.europa.eu/x","pattern":"Article 5"}}}"#,
+            r#"{"type":"item.completed","item":{"id":"ws_4","type":"web_search","query":"","action":{"type":"other"}}}"#,
+        ] {
+            events.extend(p.line(line));
+        }
+        let steps: Vec<String> = events
+            .iter()
+            .map(|e| match e {
+                chat_event::Kind::ToolUse(t) => {
+                    format!("use {} {} {} {}", t.id, t.name, t.input_json, t.builtin)
+                }
+                chat_event::Kind::ToolResult(r) => format!("result {} {}", r.id, r.output),
+                other => format!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            steps,
+            [
+                r#"use ws_1 web_search {"query":"eu ai act"} true"#,
+                r#"result ws_1 {"results":[]}"#,
+                r#"use ws_2 web_fetch {"url":"https://eur-lex.europa.eu/x"} true"#,
+                r#"result ws_2 {"text":""}"#,
+                r#"use ws_3 web_fetch {"url":"https://eur-lex.europa.eu/x"} true"#,
+                r#"result ws_3 {"text":""}"#,
+            ]
+        );
     }
 
     #[test]

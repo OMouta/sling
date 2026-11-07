@@ -1,14 +1,17 @@
 //! Chat turns: one `claude -p` turn for Sling's assistant. Claude Code gets
 //! no built-in tools, only the MCP server in the turn's config, and may call
-//! that server's tools without asking. Anything else is denied, never
-//! prompted for.
+//! that server's tools without asking. A turn with web search also gets
+//! `WebSearch` and `WebFetch`, which only read. Anything else is denied,
+//! never prompted for.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
-use sling_runner_protocol::{ChatDelta, ChatThinking, ChatToolUse, chat_event, task_event::Kind};
+use sling_runner_protocol::{
+    ChatDelta, ChatThinking, ChatToolResult, ChatToolUse, chat_event, task_event::Kind,
+};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc;
 
@@ -54,7 +57,12 @@ pub struct ChatOptions {
     pub fast: bool,
     /// Session to resume.
     pub resume: Option<String>,
+    /// Claude Code's own web search and page reading.
+    pub web: bool,
 }
+
+/// Claude Code's built-in tools a web turn gets.
+pub const WEB_TOOLS: [&str; 2] = ["WebSearch", "WebFetch"];
 
 /// Session IDs are UUIDs. Anything else is refused, so an ID can never pass
 /// as a flag.
@@ -71,15 +79,21 @@ fn file_arg(dir: &Path, name: &str) -> String {
 }
 
 pub fn chat_args(o: &ChatOptions) -> Vec<String> {
+    let tools = if o.web {
+        WEB_TOOLS.join(",")
+    } else {
+        String::new()
+    };
     let mut args: Vec<String> = [
         "-p",
         "--output-format",
         "stream-json",
         "--verbose",
         "--include-partial-messages",
-        // No built-in tools at all: no files, no shell, no web.
+        // No built-in tools at all: no files, no shell, and no web unless the
+        // turn has it.
         "--tools",
-        "",
+        &tools,
         "--strict-mcp-config",
         "--mcp-config",
     ]
@@ -88,6 +102,8 @@ pub fn chat_args(o: &ChatOptions) -> Vec<String> {
     args.push(file_arg(&o.dir, MCP_CONFIG_FILE));
     args.extend(
         [
+            // A message starting with `/` is text, not a command or skill.
+            "--disable-slash-commands",
             // Sling's tools run without a prompt, which print mode can't
             // answer. Everything else is denied, whatever the user's own
             // settings say.
@@ -95,11 +111,12 @@ pub fn chat_args(o: &ChatOptions) -> Vec<String> {
             "dontAsk",
             "--allowedTools",
             "mcp__sling",
-            // A message starting with `/` is text, not a command or skill.
-            "--disable-slash-commands",
         ]
         .map(String::from),
     );
+    if o.web {
+        args.extend(WEB_TOOLS.map(String::from));
+    }
     if !o.instructions.trim().is_empty() {
         args.push("--system-prompt-file".into());
         args.push(file_arg(&o.dir, INSTRUCTIONS_FILE));
@@ -192,6 +209,8 @@ pub struct ChatParser {
     /// Thinking sent so far, and whether the next piece starts a new block.
     thought: String,
     new_thought: bool,
+    /// Built-in web tools called and not yet answered, by tool use ID.
+    web_calls: HashSet<String>,
     input_tokens: u64,
     output_tokens: u64,
 }
@@ -206,6 +225,7 @@ impl ChatParser {
         match v["type"].as_str().unwrap_or_default() {
             "stream_event" if top_level => self.stream_event(&v["event"], &mut out),
             "assistant" if top_level => self.assistant(&v, &mut out),
+            "user" if top_level => self.tool_results(&v, &mut out),
             _ => {}
         }
         for ev in self.inner.value(&v) {
@@ -249,6 +269,8 @@ impl ChatParser {
                             name: tool.into(),
                             ..Default::default()
                         }));
+                    } else if let Some(tool) = self.web_call(block) {
+                        out.push(chat_event::Kind::ToolUse(tool));
                     }
                 }
                 "text" if !self.streaming => {
@@ -261,6 +283,54 @@ impl ChatParser {
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// A `WebSearch` or `WebFetch` call, under the names and inputs every
+    /// agent's web steps share.
+    fn web_call(&mut self, block: &Value) -> Option<ChatToolUse> {
+        let input = &block["input"];
+        let (name, input) = match block["name"].as_str()? {
+            "WebSearch" => ("web_search", json!({ "query": input["query"] })),
+            "WebFetch" => ("web_fetch", json!({ "url": input["url"] })),
+            _ => return None,
+        };
+        let id = block["id"].as_str().unwrap_or_default().to_string();
+        if !self.web_calls.insert(id.clone()) {
+            return None;
+        }
+        Some(ChatToolUse {
+            name: name.into(),
+            id,
+            input_json: input.to_string(),
+            builtin: true,
+        })
+    }
+
+    /// Results of the web calls, which come back in a user message.
+    fn tool_results(&mut self, v: &Value, out: &mut Vec<chat_event::Kind>) {
+        let Some(content) = v["message"]["content"].as_array() else {
+            return;
+        };
+        for block in content {
+            let id = block["tool_use_id"].as_str().unwrap_or_default();
+            if block["type"] != "tool_result" || !self.web_calls.remove(id) {
+                continue;
+            }
+            let text = result_text(&block["content"]);
+            let error = block["is_error"].as_bool().unwrap_or(false);
+            let output = if error {
+                text
+            } else if let Some(results) = search_links(&text) {
+                json!({ "results": results }).to_string()
+            } else {
+                json!({ "text": text }).to_string()
+            };
+            out.push(chat_event::Kind::ToolResult(ChatToolResult {
+                id: id.into(),
+                output,
+                error,
+            }));
         }
     }
 
@@ -322,6 +392,41 @@ impl ChatParser {
             session_missing,
         }
     }
+}
+
+/// A tool result's content: a string, or text blocks.
+fn result_text(content: &Value) -> String {
+    match content {
+        Value::String(s) => s.clone(),
+        Value::Array(blocks) => blocks
+            .iter()
+            .filter_map(|b| b["text"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    }
+}
+
+/// The links in a `WebSearch` result, whose text has them as a JSON array
+/// after `Links: `, as `{ title, url }`.
+fn search_links(text: &str) -> Option<Vec<Value>> {
+    if !text.starts_with("Web search results for query:") {
+        return None;
+    }
+    let start = text.find("Links: ")? + "Links: ".len();
+    let links = serde_json::Deserializer::from_str(&text[start..])
+        .into_iter::<Vec<Value>>()
+        .next()?
+        .ok()?;
+    Some(
+        links
+            .iter()
+            .filter_map(|l| {
+                let url = l["url"].as_str()?;
+                Some(json!({ "title": l["title"].as_str().unwrap_or_default(), "url": url }))
+            })
+            .collect(),
+    )
 }
 
 pub struct ChatReader {
@@ -429,6 +534,7 @@ mod tests {
             effort: None,
             fast: false,
             resume: None,
+            web: false,
         }
     }
 
@@ -495,6 +601,111 @@ mod tests {
         );
         assert!(!args.contains(&"--system-prompt-file".to_string()));
         assert!(!args.iter().any(|a| a.starts_with("--append-system-prompt")));
+    }
+
+    #[test]
+    fn a_web_turn_gets_only_the_web_tools_too() {
+        let mut o = opts();
+        o.web = true;
+        let args = chat_args(&o);
+        assert!(
+            args.windows(2)
+                .any(|w| w == ["--tools", "WebSearch,WebFetch"])
+        );
+        let allowed = args.iter().position(|a| a == "--allowedTools").unwrap();
+        assert_eq!(
+            &args[allowed..allowed + 5],
+            [
+                "--allowedTools",
+                "mcp__sling",
+                "WebSearch",
+                "WebFetch",
+                "--system-prompt-file"
+            ],
+            "the list ends at the next flag"
+        );
+        o.web = false;
+        let args = chat_args(&o);
+        assert!(!args.iter().any(|a| a.contains("WebSearch")));
+    }
+
+    #[test]
+    fn web_calls_and_their_results() {
+        let mut p = ChatParser::default();
+        let mut events = Vec::new();
+        for line in [
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"WebSearch","input":{"query":"rust release","mode":"standard"}}]},"parent_tool_use_id":null}"#,
+            // Repeated whole messages don't repeat the step.
+            r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"WebSearch","input":{"query":"rust release"}}]},"parent_tool_use_id":null}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"tool_use_id":"t1","type":"tool_result","content":"Web search results for query: \"rust release\"\n\nLinks: [{\"title\":\"Rust 1.99\",\"url\":\"https://blog.rust-lang.org/\"},{\"title\":\"x\"}]\n\nRust 1.99 is out. [See](https://x.test)"}]},"parent_tool_use_id":null}"#,
+            r#"{"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","id":"t2","name":"WebFetch","input":{"url":"https://blog.rust-lang.org/","prompt":"Which version?"}}]},"parent_tool_use_id":null}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"tool_use_id":"t2","type":"tool_result","is_error":true,"content":[{"type":"text","text":"Request failed with status code 404"}]}]},"parent_tool_use_id":null}"#,
+            // A sub-agent's calls and results of other tools aren't steps.
+            r#"{"type":"assistant","message":{"id":"m3","content":[{"type":"tool_use","id":"t3","name":"WebSearch","input":{"query":"sub"}}]},"parent_tool_use_id":"t9"}"#,
+            r#"{"type":"user","message":{"role":"user","content":[{"tool_use_id":"t8","type":"tool_result","content":"other"}]},"parent_tool_use_id":null}"#,
+        ] {
+            events.extend(p.line(line));
+        }
+        let uses: Vec<(&str, &str, &str, bool)> = events
+            .iter()
+            .filter_map(|e| match e {
+                chat_event::Kind::ToolUse(t) => Some((
+                    t.name.as_str(),
+                    t.id.as_str(),
+                    t.input_json.as_str(),
+                    t.builtin,
+                )),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            uses,
+            [
+                ("web_search", "t1", r#"{"query":"rust release"}"#, true),
+                (
+                    "web_fetch",
+                    "t2",
+                    r#"{"url":"https://blog.rust-lang.org/"}"#,
+                    true
+                ),
+            ]
+        );
+        let results: Vec<&ChatToolResult> = events
+            .iter()
+            .filter_map(|e| match e {
+                chat_event::Kind::ToolResult(r) => Some(r),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].id, "t1");
+        assert_eq!(
+            serde_json::from_str::<Value>(&results[0].output).unwrap(),
+            json!({ "results": [{ "title": "Rust 1.99", "url": "https://blog.rust-lang.org/" }] })
+        );
+        assert!(!results[0].error);
+        assert_eq!(
+            (
+                results[1].id.as_str(),
+                results[1].output.as_str(),
+                results[1].error
+            ),
+            ("t2", "Request failed with status code 404", true)
+        );
+    }
+
+    #[test]
+    fn a_fetch_result_is_its_text() {
+        let mut p = ChatParser::default();
+        p.line(r#"{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","id":"t1","name":"WebFetch","input":{"url":"https://a.test/"}}]},"parent_tool_use_id":null}"#);
+        let events = p.line(r#"{"type":"user","message":{"content":[{"tool_use_id":"t1","type":"tool_result","content":"Links: [] is not a search"}]},"parent_tool_use_id":null}"#);
+        let chat_event::Kind::ToolResult(r) = &events[0] else {
+            panic!("{events:?}");
+        };
+        assert_eq!(
+            serde_json::from_str::<Value>(&r.output).unwrap(),
+            json!({ "text": "Links: [] is not a search" })
+        );
     }
 
     #[test]
