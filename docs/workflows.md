@@ -54,6 +54,7 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | Conversation update | A note Sling adds to a conversation this workflow owns, for example a task finishing |
 | Task settled | Any coding task finishing, waiting for approval, or finishing delivery |
 | Approval requested | A new pending approval |
+| Check changed | One of your [checks](checks.md) goes down, comes back up, or a reply check is met or missed. Filter by check name, kind, or change. Outputs the check, its state, the reason, and the page an alert should open |
 | Discord message received | A message from an allowed user. See [connectors/discord.md](connectors/discord.md) |
 | Email received | New mail in a watched folder. See [connectors/email.md](connectors/email.md) |
 | **Logic and data** | |
@@ -78,7 +79,7 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | Send Discord message | Channel or DM, optionally with Approve and Reject buttons |
 | Send email | Plain text over SMTP |
 | List calendar events, Add calendar event | Read a day or a range of your calendar, with recurring events expanded, or add an event. See [connectors/calendar.md](connectors/calendar.md) |
-| Check deploy targets | Runs every [deploy target](deploys.md)'s health checks, or one target's, and outputs the ones that went down or came back up |
+| Check deploy targets | Runs the site check of every deploy target, or of one, and outputs the ones that changed since it last ran. For older workflows; new ones start from Check changed |
 | Notify my devices | A push notification to the devices you turned on under **Settings → Notifications**. A tap opens the page you give. See [notifications.md](notifications.md) |
 
 ### One-time schedules
@@ -110,7 +111,7 @@ To change it, say so in the chat, such as "change it to Tuesdays". The card show
 | Important email to Discord | Summarizes mail from senders on a list and posts the summary and action items. Edit the list in the **If** node |
 | Approval notifications in Discord | Posts every new approval with Approve and Reject buttons |
 | Website health monitor | Checks a URL every five minutes and posts when it errors or can't be reached |
-| Site down alert | Checks every deploy target each minute, and pushes "Website is down" or "back up" to your devices. Tapping the alert opens a chat with the Incident personality and a draft that says what failed |
+| Site down alert | When a site check goes down or comes back up, pushes "Website is down" or "back up" to your devices. Tapping the alert opens a chat with the Incident personality and a draft that says what failed. While it's on, the checks don't push a second alert |
 | Morning briefing | At 07:30 in your time zone, reads today's calendar and has the assistant write the day's briefing in a new chat, then pushes it to your devices |
 
 Templates live in `workflows/` in the repo, as the same JSON the editor exports. Extensions can add more: a template from an extension shows which one it came from, and works the same way.

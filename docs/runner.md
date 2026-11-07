@@ -229,7 +229,7 @@ sling-runner repo unset site deploy-command      # or deploy-timeout, back to 90
 sling-runner repo list                           # shows each repo's command
 ```
 
-Sling picks which machine deploys, but never what runs there. The Runner reports each repo's command and time limit to Sling, with anything that looks like a token masked, so the deploy target dialog can show it. A command is at most 4 KB. Put anything longer in a script and run that.
+Sling picks which machine deploys, but never what runs there. The Runner reports each repo's command and time limit to Sling, with anything that looks like a token masked, so the check's dialog can show it. A command is at most 4 KB. Put anything longer in a script and run that.
 
 ### How a merge runs
 

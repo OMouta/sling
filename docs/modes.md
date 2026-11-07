@@ -13,7 +13,7 @@ In Supervised and Auto, Claude Code refuses to start rather than run commands un
 
 New conversations start in the workspace default (**Settings**, Auto out of the box). You can switch any conversation from its header. A switch applies to tasks started after it, and running tasks keep the mode they started with. Every task records its mode in the audit log.
 
-Merge and deploy happen only when a task is delivered as a deploy, to a repo with a [deploy target](deploys.md). Auto then pushes and opens the PR on its own and asks once, "Approve deployment?", after the PR exists. Supervised asks for push and PR first, then for the deployment. Full access merges and deploys without asking, and a Read-only conversation can't deploy at all.
+Merge and deploy happen only when a task is delivered as a deploy, to a repo with a [site check that deploys it](checks.md#sites-that-deploy). Auto then pushes and opens the PR on its own and asks once, "Approve deployment?", after the PR exists. Supervised asks for push and PR first, then for the deployment. Full access merges and deploys without asking, and a Read-only conversation can't deploy at all.
 
 ## Sending from chat
 
@@ -79,7 +79,7 @@ The assistant never picks the mode. It isn't a tool parameter, and the server re
 - Read-only tasks can't push at all.
 - Commands run outside the read-only sandbox only when `max-mode` is Full access and the conversation isn't Read-only. `commands off` refuses them all.
 - Codex never commits or pushes. The Runner does, after the gate.
-- Merges and deploys are refused with `sling-runner config set deploys off`, or when `max-mode` is Read-only. A merge takes only a Sling task branch, never forces, and a deploy runs only the command set on that machine, only on a commit that's already on the remote's default branch. See [deploys.md](deploys.md#what-the-machine-refuses).
+- Merges and deploys are refused with `sling-runner config set deploys off`, or when `max-mode` is Read-only. A merge takes only a Sling task branch, never forces, and a deploy runs only the command set on that machine, only on a commit that's already on the remote's default branch. See [checks.md](checks.md#what-the-machine-refuses).
 
 ## Network
 

@@ -50,7 +50,7 @@ To use Discord or email, add them under **Connectors**, then install a template 
 
 ## Deploys
 
-Add your site under **Deploys**: its repo, how it deploys (your host deploys on merge, a command on one of your machines, or a deploy hook), and a URL that says it works. Then "the site is down, fix it" goes all the way: the assistant checks the site, a coding agent fixes it, and once the PR is open Sling asks "Approve deployment?" in the chat and on your phone. After you approve, it merges, deploys, and checks the site until it passes, and tells you what it saw. The machine's own config decides what a deploy command runs, and it only deploys merged commits. [docs/deploys.md](docs/deploys.md) has the details.
+Add your site under **Checks**: a URL that says it works, and, if Sling should deploy it, its repo and how it deploys (your host deploys on merge, a command on one of your machines, or a deploy hook). Sling checks it every minute and sends a push when it goes down. Then "the site is down, fix it" goes all the way: the assistant checks the site, a coding agent fixes it, and once the PR is open Sling asks "Approve deployment?" in the chat and on your phone. After you approve, it merges, deploys, and checks the site until it passes, and tells you what it saw. The machine's own config decides what a deploy command runs, and it only deploys merged commits. Checks also watch a command on one of your machines, such as whether last night's backup is there, and an email you're waiting for by a deadline, and a delivered PR shows its CI. [docs/checks.md](docs/checks.md) has the details.
 
 ## Your calendar and apps
 
@@ -88,7 +88,7 @@ Each conversation has a mode, and each machine can cap the mode it accepts. Deta
 - [Reach Sling from your phone, at home or away](docs/remote-access.md)
 - [Permission modes and what enforces them](docs/modes.md)
 - [Personalities: who answers, and what it may use](docs/personalities.md)
-- [Deploys: merge, deploy, and check a fix](docs/deploys.md)
+- [Checks: watch sites, commands, and replies, and deploy a fix](docs/checks.md)
 - [Notifications and the phone app](docs/notifications.md)
 - [Workflows, nodes, and templates](docs/workflows.md)
 - [Routing and sandboxes](docs/sandboxes.md), and [the sandbox image](docs/sandbox-image.md)
