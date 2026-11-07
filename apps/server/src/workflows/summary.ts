@@ -306,6 +306,12 @@ const TYPES: Record<string, (a: Args) => Described> = {
   "telegram.message_received": (a) => ({
     text: `When someone messages ${account(a) ?? "the bot"} on Telegram`,
   }),
+  "imessage.message_received": (a) => ({
+    text: `When someone messages ${account(a) ?? "your Mac"} on iMessage`,
+  }),
+  "signal.message_received": (a) => ({
+    text: `When someone messages ${account(a) ?? "your machine"} on Signal`,
+  }),
   "email.received": (a) => {
     const box = account(a);
     const folder = plain(a.config.folder);
@@ -438,6 +444,8 @@ const TYPES: Record<string, (a: Args) => Described> = {
     };
   },
   "telegram.send_message": () => ({ text: "Send a Telegram message" }),
+  "imessage.send_message": () => ({ text: "Send an iMessage" }),
+  "signal.send_message": () => ({ text: "Send a Signal message" }),
   "discord.send_message": (a) => {
     const target = discordTarget(a);
     const text = target
