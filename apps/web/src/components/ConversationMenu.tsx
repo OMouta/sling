@@ -1,15 +1,20 @@
 import type { ConversationSummaryView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Ellipsis, Pencil, Trash2 } from "lucide-react";
+import { Ellipsis, Pencil, Trash2, Workflow } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { api } from "../lib/api.ts";
 import { conversationsKey } from "../lib/conversations.ts";
+import { usePersonalities } from "../lib/personalities.ts";
 import { Button, cx, Dialog, ErrorText, Input, Menu, MenuItem, useConfirm } from "./ui.tsx";
 
+/** What Make this a workflow sends, as your message. */
+export const MAKE_WORKFLOW = "Turn what we did in this chat into a workflow";
+
 /**
- * Rename and delete for conversations. Returns the "…" menu for a row, and
- * the dialogs it opens, which the caller renders once.
+ * Rename and delete for conversations, and making one a workflow. Returns
+ * the "…" menu for a row, and the dialogs it opens, which the caller
+ * renders once.
  */
 export function useConversationMenu() {
   const qc = useQueryClient();
@@ -17,6 +22,23 @@ export function useConversationMenu() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [renaming, setRenaming] = useState<ConversationSummaryView | null>(null);
   const { confirm, dialog: confirmDialog } = useConfirm();
+
+  const personalities = usePersonalities();
+  // Only a web chat with something in it, whose personality can change Sling's setup.
+  const canWrite = (c: ConversationSummaryView) => {
+    const list = personalities.data ?? [];
+    const p = c.personalityId
+      ? list.find((x) => x.id === c.personalityId)
+      : list.find((x) => x.isDefault);
+    return c.source === "app" && c.lastMessageAt !== null && Boolean(p?.tools.includes("setup"));
+  };
+  const makeWorkflow = useMutation({
+    mutationFn: (c: ConversationSummaryView) =>
+      api.post(`/api/conversations/${c.id}/messages`, { text: MAKE_WORKFLOW }),
+    onSuccess: (_, c) => {
+      if (pathname !== `/c/${c.id}`) void navigate({ to: "/c/$id", params: { id: c.id } });
+    },
+  });
 
   const remove = useMutation({
     mutationFn: (c: ConversationSummaryView) => api.del(`/api/conversations/${c.id}`),
@@ -52,6 +74,11 @@ export function useConversationMenu() {
         </button>
       )}
     >
+      {canWrite(c) && (
+        <MenuItem icon={Workflow} onSelect={() => makeWorkflow.mutate(c)}>
+          Make this a workflow
+        </MenuItem>
+      )}
       <MenuItem icon={Pencil} onSelect={() => setRenaming(c)}>
         Rename
       </MenuItem>

@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   SquareTerminal,
+  Workflow,
   Wrench,
   X,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import { useNow } from "../lib/useNow.ts";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
 import { TaskCard } from "./TaskCard.tsx";
 import { Button, cx, ErrorText, Input, Spinner } from "./ui.tsx";
+import { OpenInEditor, WorkflowSteps } from "./WorkflowSteps.tsx";
 
 /** What each of Sling's tools is doing, has done, and failed to do. */
 const TOOLS: Record<string, [string, string, string]> = {
@@ -69,7 +71,19 @@ const TOOLS: Record<string, [string, string, string]> = {
     "Couldn't save the personality",
   ],
   change_settings: ["Changing settings", "Changed settings", "Couldn't change settings"],
+  create_workflow: ["Writing a workflow", "Created a workflow", "Couldn't create the workflow"],
+  workflow_nodes: [
+    "Looking up workflow steps",
+    "Looked up workflow steps",
+    "Couldn't look up workflow steps",
+  ],
 };
+
+/** A call that failed, or finished with an error for the assistant, such as a refused workflow. */
+function failedStep(step: ToolStep): boolean {
+  if (step.status !== "done") return step.status === "error";
+  return Boolean(parse<{ error?: unknown }>(step.output)?.error);
+}
 
 export function toolLabel(step: ToolStep): string {
   const [running, done, failed] = TOOLS[step.name] ?? [
@@ -77,7 +91,7 @@ export function toolLabel(step: ToolStep): string {
     `Ran ${step.name}`,
     `${step.name} failed`,
   ];
-  return step.status === "running" ? running : step.status === "error" ? failed : done;
+  return step.status === "running" ? running : failedStep(step) ? failed : done;
 }
 
 /** What the chat needs to show steps that point at other things. */
@@ -587,6 +601,8 @@ function ChangeStep({
   const error = res?.error ?? (step.status === "error" ? step.output : null);
   const failed = approval.state === "approved" && !applying && Boolean(error);
   const subject = change.title.replace(/\?$/, "");
+  const editorId =
+    approval.state === "approved" && !applying && !failed ? change.workflow?.workflowId : null;
   const line = waiting
     ? change.title
     : applying
@@ -602,47 +618,68 @@ function ChangeStep({
         waiting && "shadow-[inset_0_0_0_1px_var(--tag-amber-border)]",
       )}
     >
-      <Disclosure
-        open={open}
-        onToggle={() => setOpen((o) => !o)}
-        disabled={waiting || applying || change.rows.length === 0}
-        className="px-2.5 py-1.5 hover:bg-hover"
-        label={line}
-      >
-        {applying ? (
-          <Spinner className="size-3.5" />
-        ) : waiting ? (
-          <ShieldAlert aria-hidden="true" size={14} className="shrink-0 text-warn" />
-        ) : failed ? (
-          <X aria-hidden="true" size={14} className="shrink-0 text-danger" />
-        ) : (
-          <SlidersHorizontal aria-hidden="true" size={14} className="shrink-0 text-subtle" />
-        )}
-        <span
-          className={cx(
-            "min-w-0 flex-1 truncate text-[13px]",
-            stopped ? "text-muted" : "text-soft",
-            failed && "text-danger",
-            applying && "text-shimmer",
-          )}
+      <div className={cx("flex items-center", editorId && "gap-1 pr-1")}>
+        <Disclosure
+          open={open}
+          onToggle={() => setOpen((o) => !o)}
+          disabled={waiting || applying || change.rows.length === 0}
+          className={cx("py-1.5 pl-2.5 hover:bg-hover", !editorId && "pr-2.5")}
+          label={line}
         >
-          {line}
-        </span>
-        {stopped && (
-          <span className="shrink-0 text-[11.5px] text-subtle">
-            {approval.state === "denied" ? "cancelled" : "expired"}
+          {applying ? (
+            <Spinner className="size-3.5" />
+          ) : waiting ? (
+            <ShieldAlert aria-hidden="true" size={14} className="shrink-0 text-warn" />
+          ) : failed ? (
+            <X aria-hidden="true" size={14} className="shrink-0 text-danger" />
+          ) : change.workflow ? (
+            <Workflow aria-hidden="true" size={14} className="shrink-0 text-subtle" />
+          ) : (
+            <SlidersHorizontal aria-hidden="true" size={14} className="shrink-0 text-subtle" />
+          )}
+          <span
+            className={cx(
+              "min-w-0 flex-1 truncate text-[13px]",
+              stopped ? "text-muted" : "text-soft",
+              failed && "text-danger",
+              applying && "text-shimmer",
+            )}
+          >
+            {line}
           </span>
-        )}
-      </Disclosure>
+          {stopped && (
+            <span className="shrink-0 text-[11.5px] text-subtle">
+              {approval.state === "denied" ? "cancelled" : "expired"}
+            </span>
+          )}
+        </Disclosure>
+        {editorId && <OpenInEditor workflowId={editorId} />}
+      </div>
       {waiting ? (
         <ChangeApproval approvalId={approval.id} change={change} ctx={ctx} />
       ) : (
-        open && <ChangeRows rows={change.rows} />
+        open && <ChangeDetails change={change} />
       )}
       {failed && error && (
         <p className="border-t border-border px-2.5 py-1.5 text-xs text-danger">{error}</p>
       )}
     </div>
+  );
+}
+
+/**
+ * What a change sets, and a workflow's steps when it writes one: a new
+ * workflow leads with its steps, and an edit with what changes.
+ */
+function ChangeDetails({ change, children }: { change: SetupChangeView; children?: ReactNode }) {
+  const steps = change.workflow ? <WorkflowSteps steps={change.workflow.steps} /> : null;
+  const edit = change.rows.some((r) => r.before !== undefined);
+  return (
+    <>
+      {!edit && steps}
+      <ChangeRows rows={change.rows}>{children}</ChangeRows>
+      {edit && steps}
+    </>
   );
 }
 
@@ -712,7 +749,7 @@ function ChangeApproval({
   };
   return (
     <form onSubmit={submit}>
-      <ChangeRows rows={change.rows}>
+      <ChangeDetails change={change}>
         {change.secrets.length > 0 && (
           <div className="col-span-2 grid grid-cols-subgrid items-center gap-y-1.5 border-t border-border px-2.5 py-2">
             {change.secrets.map((f) => (
@@ -748,7 +785,7 @@ function ChangeApproval({
             ))}
           </div>
         )}
-      </ChangeRows>
+      </ChangeDetails>
       <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-border bg-surface px-2.5 py-2">
         <div className="mr-auto min-w-0">
           <ErrorText error={decide.error} />
@@ -850,7 +887,7 @@ function ToolRow({ step }: { step: ToolStep }) {
       >
         {step.status === "running" ? (
           <Spinner className="size-3.5" />
-        ) : step.status === "error" ? (
+        ) : failedStep(step) ? (
           <X aria-hidden="true" size={14} className="shrink-0 text-danger" />
         ) : (
           <Check aria-hidden="true" size={14} className="shrink-0 text-subtle" />
@@ -858,7 +895,7 @@ function ToolRow({ step }: { step: ToolStep }) {
         <span
           className={cx(
             "truncate",
-            step.status === "error" && "text-danger",
+            failedStep(step) && "text-danger",
             step.status === "running" && "text-shimmer",
           )}
         >
