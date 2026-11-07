@@ -1505,7 +1505,8 @@ export const lockedMac: RunnerView = {
   repos: studioMac.repos.map((r) => ({ ...r, id: "rpo_5" })),
 };
 
-const checkedAt = "2026-11-06T18:57:00.000Z";
+// A few minutes ago, so "checked … ago" holds whenever the tests run.
+const checkedAt = new Date(Date.now() - 3 * 60_000).toISOString();
 
 export const websiteTarget: DeployTargetView = {
   id: "dpt_site",
