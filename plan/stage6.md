@@ -107,7 +107,7 @@ A rule is a standing answer you gave once. Rules live on **Approvals**, under a 
 | `installationId` | Optional. One account |
 | `match` | Pinned argument values, such as `{ to: "*@acme.com" }` or `{ calendar: "Work" }`, or `{ repo: "host/owner/name" }` for task steps |
 
-- **What may be pinned.** A node's `assistant` spec gains `ruleFields` (SDK 1.2.0), the arguments a rule may pin, such as `to` for email and `channelId` for Discord. A string field matches exactly, or with one leading `*` as a suffix match. Fields that aren't pinned are free.
+- **What may be pinned.** A node's `assistant` spec gains `ruleFields` (SDK 1.3.0), the config fields a rule may pin, such as `to` for email, `channelId` and `userId` for Discord, and `calendar` for an event. Only nodes that send keep them. A string field matches exactly, or with one leading `*` as a suffix match. Fields that aren't pinned are free.
 - **Where they apply.** Supervised and Auto, in chats and in turns a workflow starts. Read-only still refuses, and Full access never asks anyway.
 - **What never matches:** merge, deploy, commands outside the sandbox, setup changes, and saving a rule.
 - **Earned.** Each card offers **Always allow**, which shows the rule it would make before you confirm. After five approvals in a row of the same action and installation with no denial in 30 days, the card says "You've allowed this 5 times" above the same button.
@@ -140,10 +140,10 @@ A rule is a standing answer you gave once. Rules live on **Approvals**, under a 
 | `command` | A command you set exits 0, and its output contains the text when one is set. It runs in the Runner's read-only sandbox on the machine you pick | Every 5 minutes by default |
 | `reply` | An email matching from, subject, or thread arrives before the deadline | Every 5 minutes until met or missed |
 
-- **State.** `site` and `command` are `up` or `down`: down after two failures in a row, up after one pass. `reply` is `waiting`, then `met` or `missed`, and then stops.
-- **Deploys live on a site check.** A deploy target becomes a site check that also deploys: the repo, the method, the machine or hook, and the merge method move with it. The migration makes one site check per target with the target's checks, version URL, and last check, and keeps the target's ID on it so tasks and actions still find it. Verify after a deploy runs that check.
+- **State.** `unknown` until the first run. `site` and `command` are then `up` or `down`: down after two failures in a row, up after one pass. `reply` is `waiting`, then `met` or `missed`, and then stops. A check can be turned off, and the scheduler skips it.
+- **Deploys live on a site check.** A deploy target becomes a site check that also deploys: the repo, the method, the machine or hook, and the merge method move with it. The migration makes one site check per target with the target's checks, version URL, and last check (its first history entry), and points the target at it with `check_id`. The target keeps its row and ID, so tasks and actions still find it, and its deploy settings; its old `checks`, `version_url`, and `last_check` stay as copies until the deploy code reads the check. Verify after a deploy runs that check.
 - **Scheduler.** One pg-boss job every 30 seconds runs the checks that are due, at most eight at once. Each result is saved, and the last 100 results per check are kept.
-- **On a change.** A push, as the Site down alert sends today, and the realtime event `check.changed`. The workflow trigger `checks.changed` replaces polling with `deploys.check`, and the template moves to it. Start rules listen to the same event.
+- **On a change.** A push, as the Site down alert sends today, and the realtime event `check.changed`. The workflow trigger `checks.changed` replaces polling with `deploys.check`, and the template moves to it. Start rules hear of it from the checks service, through `rules.checkChanged`.
 - **From chat.** `save_check` makes or changes a check, as a setup change. `check_deploy_target` becomes `run_check`, which runs one now.
 - **Command checks.** The command is set by you or on a setup card, never run outside the sandbox, and refused on a machine with `commands off`.
 
@@ -160,7 +160,7 @@ An action that changes something outside Sling checks that it happened. The resu
 | A task's PR | Waits up to 30 minutes for the PR's CI, through `gh pr checks` on the machine or GitHub's API for a sandbox. The deploy approval shows the result |
 | A deploy | Verify, as today |
 
-- **The SDK.** A node may export `verify(ctx, output)`, returning `{ state, message, retryAfterSeconds? }` (SDK 1.2.0). Sling runs it right after the node, and again later while it says `waiting`, as a pg-boss job, up to the node's limit.
+- **The SDK.** A node may export `verify(ctx, { config, inputs, outputs })`, returning `{ state, message, retryAfterSeconds? }` with state `passed`, `failed`, `waiting`, or `unchecked`, and set its limit with `verifyForSeconds` (10 minutes by default) (SDK 1.3.0). Sling runs it right after the node, and again later while it says `waiting`, as a pg-boss job, up to the node's limit. `ctx.attempt` counts the calls.
 - **On failure.** The conversation gets an update ("The email to jo@silva.pt bounced: mailbox not found"), the assistant tells you, and a push goes out.
 - **Nodes with no `verify`** show nothing. The step never claims a check it didn't do.
 
@@ -228,31 +228,35 @@ Neither has an API Sling can call, so a paired machine does it. The machine deci
 | `save_check`, `run_check` | setup, deploys | `save_check` in setup, `run_check` in deploys |
 | `email_search`, `email_read`, `telegram_send_message`, … | apps | Flagged nodes, as today |
 
-`check_deploy_target` is renamed `run_check`, and still takes a deploy target's name.
+`check_deploy_target` is renamed `run_check`, and still takes a deploy target's name (done in W0).
 
 ## Data model additions
 
-Migration `0012_assistant_memory` (the W0 agent may split it):
+Migration `0012_assistant_memory`, in one file:
 
 | Change | Holds |
 |---|---|
-| `memories` (new) | The fields above, plus workspace and user. A generated `tsvector` column with a GIN index |
-| `rules` (new) | Kind (`allow` or `start`), the fields above, created from (approval ID or chat), uses, last used, revoked at |
-| `checks` (new) | Kind, name, config (jsonb), schedule seconds or deadline, machine, state, failures in a row, last result, notify. Unique on (workspace, name) |
-| `check_results` (new) | Check, time, passed, results (jsonb). The last 100 per check |
-| `deploy_targets` | Gains `check_id`. The migration makes a site check for each target and moves its checks, version URL, and last check |
-| `action_checks` (new) | What an action's check said: the tool call or action, state, message, attempts, next run |
-| `oauth_tokens` (new) | Installation, provider, refresh token (encrypted), access token (encrypted), expiry, scopes |
-| `notification_answers` (new) | Approval ID, used at, so a token works once |
+| `memories` (new) | The fields above, plus workspace and owner. `source` is a kind (`chat` or `manual`), `conversation_id`, and `message_id`. A generated `search` tsvector of the English stems and the words as written, with a GIN index |
+| `rules` (new) | Kind (`allow` or `start`), a one-line summary, the fields above (`on` is the column `on_event`), created from (`approval_id`, `conversation_id`), uses, last used, revoked at |
+| `checks` (new) | Kind, name, config (jsonb, carrying its kind), enabled, interval seconds, deadline, machine, email installation, state (from `unknown`), state since, failures in a row, last result, last run, next run, notify. Unique on (workspace, name) |
+| `check_results` (new) | Check, time, passed, the check's state after it, a one-line message, ms, detail (jsonb). The last 100 per check |
+| `deploy_targets` | Gains `check_id`, unique. The migration makes a site check for each target and copies its checks, version URL, and last check |
+| `action_checks` (new) | What an action's check said: the tool call (conversation, message, call ID) or the task step, what checks it (node type and version, installation, redacted payload), state, message, attempts, checked at, next run, give up at |
+| `oauth_tokens` (new) | Installation (unique), provider, refresh token (encrypted), access token (encrypted), key version, expiry, scopes |
+| `oauth_flows` (new) | A consent in progress: the state's hash, user, installation, provider, the PKCE verifier (encrypted), the session's hash, expiry |
+| `notification_answers` (new) | Approval ID, workspace, user, the answer, used at, so a token works once |
+| `runners` | Gains `folders`, `files`, and `channels` from the inventory |
+| `conversations` | Gains `started_by`: the start rule, the check, and what it did |
 | `channel_cursors` | Not in Postgres. The Runner keeps them on disk |
-| `personalities` | Every personality gains `memory`; the default gains `files` (data only) |
+| `personalities` | Every personality gains `memory`; the default gains `files` (data only). The templates carry them too |
 | `audit_events` | New verbs: `memory.*`, `rule.created`, `rule.revoked`, `rule.used`, `check.*`, `files.read`, `channel.*`, `oauth.connected` |
 
 ## Protocol
 
-- **`Inventory`** gains `folders` (names), `files` (false after `files off`), and `channels` (kind, name, allowed-sender count, ready, and what's missing when it isn't).
-- **Server to Runner:** `FileSearch { request_id, query, folders[], max_results }`, `FileRead { request_id, folder, path, max_bytes }`, `ChannelSend { request_id, channel, conversation, text }`.
-- **Runner to server:** `FileSearchResult { request_id, hits[], truncated, error }`, `FileReadResult { request_id, content, truncated, error }`, `ChannelMessage { channel, conversation, sender, text, at, message_id }`, `ChannelSendResult { request_id, ok, message }`, and `ChannelMessageAck`-style acknowledgment so the cursor moves only after the server has it.
+- **`Inventory`** gains `folders` (names), `files` (false after `files off`, and from Runners that can't), and `channels`, each a `Channel { kind, name, allowed_senders, ready, missing }`.
+- **Server to Runner:** `FileSearch { request_id, query, folders[], max_results }`, `FileRead { request_id, folder, path, max_bytes }`, `ChannelSend { request_id, channel, conversation, text }`, and `ChannelMessageAck { channel, message_id }` once the server has stored a message, so the cursor moves only then.
+- **Runner to server:** `FileSearchResult { request_id, hits[], truncated, error }` with each hit `{ folder, path, line, snippet }`, `FileReadResult { request_id, content, truncated, error, size }`, `ChannelMessage { channel, conversation, sender, text, at_ms, message_id }`, and `ChannelSendResult { request_id, ok, message }`.
+- Until WA and WF land, the Runner reports no folders or channels and answers each FileSearch, FileRead, and ChannelSend with an error.
 
 ## API
 
@@ -263,21 +267,21 @@ PATCH  /api/memories/:id
 DELETE /api/memories/:id
 GET    /api/rules
 POST   /api/rules                          from the card's Always allow, and the Rules tab
-DELETE /api/rules/:id                      revokes
+DELETE /api/rules/:id                      revokes, and answers with the revoked rule
 GET    /api/checks                         with state, last result, and deploy target
 POST   /api/checks
 PATCH  /api/checks/:id
 DELETE /api/checks/:id
 POST   /api/checks/:id/run
 GET    /api/checks/:id/results
-GET    /api/oauth/google/start?installationId=
-GET    /api/oauth/google/callback
-POST   /api/approvals/:id/notification-answer   { token, answer }
+GET    /api/oauth/:provider/start?installationId=      google only, for now
+GET    /api/oauth/:provider/callback
+POST   /api/approvals/:id/notification-answer   { token, answer: allow | deny } -> { outcome }
 ```
 
 - `/api/deploy-targets` keeps working, backed by checks, until the web app no longer calls it.
-- **Realtime.** `memory.updated`, `rule.updated`, `check.changed`, and `tool_step.check` for an action's check.
-- **Views.** `MemoryView`, `RuleView`, `CheckView`, `CheckResultView`, `ActionCheckView` on `ToolStep.check`, `MachineView.folders` and `.channels`, and `ConversationView.startedBy` for a rule.
+- **Realtime.** `memory.updated` and `memory.removed`, `rule.updated`, `check.changed` (anything about a check) and `check.removed`, and `tool_step.check { conversationId, messageId, stepId, check }` for an action's check after its reply was saved.
+- **Views.** `MemoryView`, `RuleView` (`AllowRuleView` or `StartRuleView`), `CheckView` with its deploy section, `CheckResultView`, `ActionCheckView` on `ToolStep.check` and a PR's `ActionView.check`, `ToolStep.memory` for the Remembered line, `RunnerView.folders`, `.files`, and `.channels`, `ConversationView.startedBy` for a rule, `ruleOffer` on send approvals and push and PR approvals, `SetupChangeView.workflow` for the workflow card, and `PushPayload.answer` for notification buttons. Request types (`MemoryInput`, `RuleInput`, `CheckInput`, `NotificationAnswerInput`) are in `@sling/core`, and their Zod schemas next to each server service.
 
 ## Workstreams
 
@@ -288,8 +292,8 @@ The contracts land on `main` first. Seven workstreams then run in parallel, each
 - **`@sling/core`:** the views, events, and tool group additions above, and stub routes in the web router and nav (Memory, Checks in place of Deploys) that the workstreams fill in.
 - **Protocol:** the messages above, then `buf generate`, with the Rust side compiling and the new messages unhandled.
 - **`packages/db`:** the migration and schema.
-- **`@sling/connector-sdk` 1.2.0:** `ruleFields` on `assistant`, and `verify` on node definitions, carried through `describe()` and extensions, with the API report updated.
-- **Server:** empty service slots on `AppContext` (`memory`, `files`, `rules`, `checks`, `channels`, `oauth`) with interfaces, and `TOOLS_BY_GROUP` entries.
+- **`@sling/connector-sdk` 1.3.0** (1.2.0 was the setup lookup): `ruleFields` on `assistant`, and `verify` and `verifyForSeconds` on node definitions, carried through `describe()` and extensions, with the API report updated. Email, Discord, and calendar sends name their `ruleFields`.
+- **Server:** empty service slots on `AppContext` (`memory`, `files`, `rules`, `checks`, `channels`, `oauth`) with interfaces, routes for the API above that call them, `TOOLS_BY_GROUP` entries, and `run_check` in place of `check_deploy_target`.
 
 ### WA. Memory and files
 
@@ -306,7 +310,7 @@ The contracts land on `main` first. Seven workstreams then run in parallel, each
 
 ### WC. Rules
 
-- **Server:** `apps/server/src/rules/`, matching in the chat send approvals and in task step approvals, the earned suggestion, start rules on `check.changed` with the 30-minute limit, `save_rule`, and the audit.
+- **Server:** `apps/server/src/rules/`, matching in the chat send approvals and in task step approvals, the earned suggestion, start rules in `rules.checkChanged` with the 30-minute limit, `save_rule`, and the audit.
 - **Web:** **Always allow** on the approval card with the rule it makes, the suggestion line, and **Approvals → Rules**, with revoke.
 - **Tests:** matching (exact, suffix, free fields), each mode, what never matches, a start rule running a turn with a mock model, and a rule from a Full access chat still asking.
 
