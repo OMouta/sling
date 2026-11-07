@@ -1175,6 +1175,74 @@ describe("connectors", () => {
   });
 });
 
+describe("connector setup", () => {
+  it("fills in from what's typed, and never hands a secret back", async () => {
+    const out = await c.call<{
+      name: string;
+      credentials?: Record<string, unknown>;
+      config: Record<string, unknown>;
+      notes: { field: string; tone: string }[];
+    }>("POST", "/api/connectors/fake/setup", { credentials: { token: "good-token-123" } });
+    expect(out).toMatchObject({
+      name: "Fake for good",
+      config: { label: "from setup" },
+      notes: [{ field: "token", tone: "ok" }],
+    });
+    expect(out.credentials).toEqual({ host: "fake.example.com" });
+    expect(JSON.stringify(out)).not.toContain("good-token-123");
+
+    const missing = await c.raw("POST", "/api/connectors/nope/setup", {});
+    expect(missing.status).toBe(404);
+  });
+
+  it("checks the connection before adding, and names it after the connector", async () => {
+    const before = await c.call<unknown[]>("GET", "/api/installations");
+    const bad = await c.raw("POST", "/api/installations", {
+      connectorId: "fake",
+      credentials: { token: "wrong" },
+      check: true,
+    });
+    expect(bad.status).toBe(422);
+    expect(await bad.json()).toEqual({ error: "bad token", check: "failed" });
+    expect(await c.call<unknown[]>("GET", "/api/installations")).toHaveLength(before.length);
+
+    const add = () =>
+      c.call<{ id: string; name: string }>("POST", "/api/installations", {
+        connectorId: "fake",
+        credentials: { token: "good-token-123" },
+        check: true,
+      });
+    const first = await add();
+    const second = await add();
+    const names = (await c.call<{ name: string }[]>("GET", "/api/installations")).map(
+      (i) => i.name,
+    );
+    expect(names).toContain(first.name);
+    expect(second.name).not.toBe(first.name);
+    expect(second.name).toMatch(/^Fake \d+$/);
+
+    // Editing: the stored token fills what isn't typed again, and nothing stored comes back.
+    const edit = await c.call<{ credentials?: unknown; notes: { tone: string }[] }>(
+      "POST",
+      "/api/connectors/fake/setup",
+      { installationId: second.id },
+    );
+    expect(edit.notes).toEqual([expect.objectContaining({ tone: "ok" })]);
+    expect(edit.credentials).toBeUndefined();
+
+    // A failed check on new credentials keeps the old ones.
+    const patch = await c.raw("PATCH", `/api/installations/${second.id}`, {
+      credentials: { token: "wrong" },
+      check: true,
+    });
+    expect(patch.status).toBe(422);
+    expect(
+      await c.call<{ ok: boolean }>("POST", `/api/installations/${second.id}/test`),
+    ).toMatchObject({ ok: true });
+    for (const i of [first, second]) await c.call("DELETE", `/api/installations/${i.id}`);
+  });
+});
+
 describe("assistant", () => {
   it("answers web chat through Sling Assistant, and says so when nothing handles chat", async () => {
     const list = await c.call<{ id: string; templateKey: string | null; enabled: boolean }[]>(

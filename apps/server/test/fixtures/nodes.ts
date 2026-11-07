@@ -287,13 +287,29 @@ export const fakeConnector: AnyConnector = defineConnector({
   id: "fake",
   name: "Fake",
   description: "A connector for tests.",
-  credentialsSchema: z.object({ token: z.string().min(1).describe("Token.") }),
+  credentialsSchema: z.object({
+    token: z.string().min(1).describe("Token."),
+    host: z.string().optional().describe("Host."),
+  }),
   secretFields: ["token"],
   configSchema: z.object({ label: z.string().default("x").describe("Label.") }),
   test: async ({ credentials }) =>
     credentials.token === "good-token-123"
       ? { ok: true, detail: "fine" }
       : { ok: false, error: "bad token" },
+  // Echoes the token back, so a test can see the server never passes a secret on.
+  setup: async ({ credentials }) => ({
+    name: `Fake for ${String(credentials.token ?? "nobody").slice(0, 4)}`,
+    credentials: { token: String(credentials.token ?? ""), host: "fake.example.com" },
+    config: { label: "from setup" },
+    notes: [
+      {
+        field: "token",
+        tone: credentials.token === "good-token-123" ? ("ok" as const) : ("warn" as const),
+        text: "checked",
+      },
+    ],
+  }),
   nodes: [fakeEvent, echoSecret] as AnyNodeSpec[],
   source: {
     start: async (ctx) => {

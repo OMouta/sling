@@ -550,7 +550,7 @@ describe("the examples that ship with Sling", () => {
     console.log(`preview of the included ntfy: ${Math.round(performance.now() - started)} ms`);
     expect(preview).toMatchObject({ source: "included", problems: [] });
     expect(preview.permissions.map((p) => p.key)).toEqual(["host:ntfy.sh", "configHost:server"]);
-    const alerts = await fromCatalog("included", "task-alerts");
+    const alerts = await fromCatalog("included", "task-alerts", "1.0.1");
     expect(alerts.missing.extensions).toMatchObject([{ id: "ntfy", catalogId: "included" }]);
     expect(alerts.problems.length).toBeGreaterThan(0);
   });
@@ -567,8 +567,22 @@ describe("the examples that ship with Sling", () => {
       );
       await install(preview);
     }
-    const alerts = await install(await fromCatalog("included", "task-alerts"));
+    const alerts = await install(await fromCatalog("included", "task-alerts", "1.0.1"));
     expect(alerts).toMatchObject({ kinds: ["workflows"], source: "included" });
+
+    // The setup form's lookup runs in the extension's own process: a topic first, then a link to it.
+    const suggested = await api<{ config?: { defaultTopic?: string } }>(
+      "POST",
+      "/api/connectors/ntfy/setup",
+      {},
+    );
+    expect(suggested.config?.defaultTopic).toMatch(/^sling-[a-z0-9]{12}$/);
+    const linked = await api<{ notes?: { link?: { url: string } }[] }>(
+      "POST",
+      "/api/connectors/ntfy/setup",
+      { config: { server: ntfyServer, defaultTopic: topicOut } },
+    );
+    expect(linked.notes?.[0]?.link?.url).toBe(`${ntfyServer.replace(/\/+$/, "")}/${topicOut}`);
 
     const inst = await api<InstallationView>("POST", "/api/installations", {
       connectorId: "ntfy",

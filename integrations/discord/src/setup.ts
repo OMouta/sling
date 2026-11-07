@@ -10,8 +10,8 @@ import type { DiscordConfig, DiscordCredentials } from "./schemas.ts";
 
 export const PORTAL_URL = "https://discord.com/developers/applications";
 
-/** View Channels, Send Messages and Embed Links: what posting and approvals need. */
-export const INVITE_PERMISSIONS = String((1 << 10) | (1 << 11) | (1 << 14));
+/** View Channels, Send Messages and Read Message History: what posting and approvals need. */
+export const INVITE_PERMISSIONS = String((1 << 10) | (1 << 11) | (1 << 16));
 
 const GATEWAY_MESSAGE_CONTENT = 1 << 19;
 const GATEWAY_MESSAGE_CONTENT_LIMITED = 1 << 18;

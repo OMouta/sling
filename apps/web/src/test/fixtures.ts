@@ -971,7 +971,7 @@ const connectNtfy: PermissionLine = {
 };
 const connectServer: PermissionLine = {
   key: "configHost:server",
-  text: `Connect to the host in each installation's "server" setting`,
+  text: `Connect to the address in its "server" setting`,
   risk: "normal",
 };
 const connectAcme: PermissionLine = {
