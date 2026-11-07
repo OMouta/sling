@@ -1,5 +1,7 @@
 import { SLING_EVENTS } from "@sling/workflow";
 import { z } from "zod";
+import { isTimeZone } from "../../timezone.ts";
+import { oneTimeAt, parseLocal } from "../one-time.ts";
 import { defineNode } from "../types.ts";
 
 const next = [{ name: "next" }];
@@ -56,18 +58,45 @@ export const manualTrigger = defineNode({
   },
 });
 
+/** A schedule has a cron expression or a one-time `at`, never both. */
+function checkSchedule(config: Record<string, unknown>) {
+  const cron = typeof config.cron === "string" ? config.cron.trim() : "";
+  const at = oneTimeAt(config);
+  const tz = typeof config.timezone === "string" ? config.timezone.trim() : "";
+  const issues: { field: string; message: string }[] = [];
+  if (cron && at)
+    issues.push({ field: "at", message: "Set a cron expression or a time, not both" });
+  else if (at && !parseLocal(at))
+    issues.push({
+      field: "at",
+      message: "Use a local date and time, for example 2026-11-09T17:00",
+    });
+  else if (!at && !CRON.test(cron))
+    issues.push({ field: "cron", message: "Use five cron fields, for example */5 * * * *" });
+  if (tz && !isTimeZone(tz))
+    issues.push({ field: "timezone", message: `${tz} isn't a time zone, such as Europe/Lisbon` });
+  return issues;
+}
+
 export const scheduleTrigger = defineNode({
   type: "core.schedule",
   version: 1,
   title: "Schedule",
-  description: "Starts the workflow on a cron schedule.",
+  description:
+    "Starts the workflow on a cron schedule, or once at a time you set, after which the workflow turns itself off.",
   category: "trigger",
   configSchema: z.object({
     cron: z
       .string()
-      .min(1)
+      .default("")
       .describe(
-        "Cron expression: minute, hour, day of month, month, day of week. For example */5 * * * * runs every five minutes.",
+        "Cron expression: minute, hour, day of month, month, day of week. For example */5 * * * * runs every five minutes. Leave empty when it runs once.",
+      ),
+    at: z
+      .string()
+      .default("")
+      .describe(
+        "Runs once, at this local date and time, such as 2026-11-09T17:00, and then turns the workflow off. Leave empty to use the cron expression.",
       ),
     timezone: z
       .string()
@@ -76,10 +105,7 @@ export const scheduleTrigger = defineNode({
         "Time zone the schedule follows, such as Europe/Lisbon. Leave empty to follow the workspace's time zone from Settings.",
       ),
   }),
-  checkConfig: (config) =>
-    typeof config.cron === "string" && CRON.test(config.cron.trim())
-      ? []
-      : [{ field: "cron", message: "Use five cron fields, for example */5 * * * *" }],
+  checkConfig: checkSchedule,
   inputs: [],
   outputs: [
     { name: "firedAt", type: "string", description: "When the schedule fired, as an ISO time." },

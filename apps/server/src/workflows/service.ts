@@ -15,7 +15,9 @@ import {
 import { and, asc, desc, eq, isNull, max, sql } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
+import { workspaceTimeZone } from "../timezone.ts";
 import { workspaceOwner } from "./connectors/installations.ts";
+import { passedSchedules } from "./one-time.ts";
 import {
   applyBindings,
   loadTemplates,
@@ -310,7 +312,7 @@ export class WorkflowService {
     return row;
   }
 
-  validateDraft(wf: WorkflowRow): ValidationIssue[] {
+  async validateDraft(wf: WorkflowRow): Promise<ValidationIssue[]> {
     const parsed = WorkflowDefinitionSchema.safeParse(wf.draft);
     if (!parsed.success) {
       return parsed.error.issues.map((i) => ({
@@ -318,12 +320,20 @@ export class WorkflowService {
         message: `${i.path.join(".") || "definition"}: ${i.message}`,
       }));
     }
-    return validate(parsed.data, this.#ctx.registry);
+    return this.issues(wf.workspaceId, parsed.data);
+  }
+
+  /** What stops a definition from publishing: the validator's issues, and one-time schedules already past. */
+  async issues(workspaceId: string, definition: WorkflowDefinition): Promise<ValidationIssue[]> {
+    const issues = validate(definition, this.#ctx.registry);
+    if (!definition.nodes.some((n) => n.type === "core.schedule")) return issues;
+    const passed = passedSchedules(definition, await workspaceTimeZone(this.#ctx, workspaceId));
+    return [...issues, ...passed.map(({ when: _when, ...issue }) => issue)];
   }
 
   /** Validates the draft and, if it passes, makes it the next version and re-subscribes triggers. */
   async publish(actor: Actor, wf: WorkflowRow, note: string): Promise<PublishResult> {
-    const issues = this.validateDraft(wf);
+    const issues = await this.validateDraft(wf);
     if (issues.length > 0) return { ok: false, version: null, issues };
     const definition = WorkflowDefinitionSchema.parse(wf.draft);
     const number = await this.#ctx.db.transaction(async (tx) => {
@@ -378,6 +388,19 @@ export class WorkflowService {
     if (enabled && !wf.activeVersionId) {
       throw new WorkflowInputError("Publish a version before enabling the workflow.", 409);
     }
+    if (enabled && !wf.enabled && wf.activeVersionId) {
+      const active = await this.#ctx.engine.version(wf.activeVersionId);
+      const passed = active
+        ? passedSchedules(active.definition, await workspaceTimeZone(this.#ctx, wf.workspaceId))
+        : [];
+      if (passed[0]) {
+        throw new WorkflowInputError(
+          `It was set to run once, ${passed[0].when}, which has passed. Set a new time first.`,
+          409,
+          passed.map(({ when: _when, ...issue }) => issue),
+        );
+      }
+    }
     const [row] = await this.#ctx.db
       .update(schema.workflows)
       .set({ enabled })
@@ -396,6 +419,26 @@ export class WorkflowService {
     }
     if (row) await this.#published(row);
     return row ?? null;
+  }
+
+  /** Turns off a workflow whose one-time schedule has fired. */
+  async ranOnce(wf: WorkflowRow): Promise<void> {
+    const [row] = await this.#ctx.db
+      .update(schema.workflows)
+      .set({ enabled: false })
+      .where(and(eq(schema.workflows.id, wf.id), eq(schema.workflows.enabled, true)))
+      .returning();
+    if (!row) return;
+    await syncTriggers(this.#ctx, wf.id);
+    await audit(this.#ctx, {
+      workspaceId: wf.workspaceId,
+      actorType: "system",
+      verb: "workflow.disabled",
+      subjectType: "workflow",
+      subjectId: wf.id,
+      details: { reason: "ran_once" },
+    });
+    await this.#published(row);
   }
 
   async update(

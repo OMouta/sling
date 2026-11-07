@@ -7,6 +7,7 @@ import type { PgBoss } from "pg-boss";
 import type { AppContext } from "../context.ts";
 import { deriveKey, sha256Hex } from "../crypto.ts";
 import { workspaceTimeZone } from "../timezone.ts";
+import { oneTimeAt, oneTimeInstant } from "./one-time.ts";
 
 export const SCHEDULE_QUEUE = "workflow-schedule";
 
@@ -81,7 +82,10 @@ export async function syncTriggers(ctx: AppContext, workflowId: string): Promise
   const boss = ctx.boss;
   if (boss) {
     for (const o of old) {
-      if (o.event === SLING_EVENTS.schedule) await boss.unschedule(SCHEDULE_QUEUE, o.id);
+      // A one-time job left behind finds its trigger gone, and does nothing.
+      if (o.event === SLING_EVENTS.schedule && !oneTimeAt(o.config)) {
+        await boss.unschedule(SCHEDULE_QUEUE, o.id);
+      }
     }
     let workspaceZone: string | null = null;
     for (const r of rows) {
@@ -108,6 +112,19 @@ async function schedule(
   r: { id: string; workflowId: string; nodeId: string; config?: Record<string, unknown> | null },
   tz: string,
 ) {
+  if (oneTimeAt(r.config)) {
+    // A job that starts then. Moving it to another zone sends another, and the stale one does nothing.
+    const at = oneTimeInstant(r.config ?? {}, tz);
+    if (!at) {
+      ctx.log.warn(
+        { workflowId: r.workflowId, nodeId: r.nodeId },
+        "couldn't read a one-time schedule",
+      );
+      return;
+    }
+    await ctx.boss?.send(SCHEDULE_QUEUE, { triggerId: r.id }, { startAfter: at });
+    return;
+  }
   const cron = String(r.config?.cron ?? "");
   try {
     await ctx.boss?.schedule(SCHEDULE_QUEUE, cron, { triggerId: r.id }, { key: r.id, tz });
@@ -148,7 +165,11 @@ export async function startScheduleWorker(ctx: AppContext, boss: PgBoss): Promis
   });
 }
 
-/** Starts a run for a schedule trigger. A schedule left behind by a removed trigger is dropped. */
+/**
+ * Starts a run for a schedule trigger. A schedule left behind by a removed
+ * trigger is dropped. A one-time schedule runs once, then turns its
+ * workflow off.
+ */
 export async function fireSchedule(ctx: AppContext, triggerId: string, jobId: string) {
   const [row] = await ctx.db
     .select({ trigger: schema.workflowTriggers, workflow: schema.workflows })
@@ -164,15 +185,26 @@ export async function fireSchedule(ctx: AppContext, triggerId: string, jobId: st
     await ctx.boss?.unschedule(SCHEDULE_QUEUE, triggerId);
     return null;
   }
-  return ctx.engine.startRun({
+  const once = oneTimeAt(row.trigger.config);
+  if (once) {
+    // A job from before the workspace changed zones may come early. The one sent for the new zone runs.
+    const at = oneTimeInstant(
+      row.trigger.config,
+      await workspaceTimeZone(ctx, row.workflow.workspaceId),
+    );
+    if (!at || at.getTime() > Date.now() + 1_000) return null;
+  }
+  const run = await ctx.engine.startRun({
     workflowId: row.workflow.id,
     workspaceId: row.workflow.workspaceId,
     ownerId: row.workflow.ownerId,
     versionId: row.trigger.versionId,
     triggerNodeId: row.trigger.nodeId,
     outputs: { firedAt: new Date().toISOString() },
-    dedupeKey: `schedule:${jobId}`,
+    dedupeKey: once ? `once:${triggerId}` : `schedule:${jobId}`,
   });
+  if (once) await ctx.workflows.ranOnce(row.workflow);
+  return run;
 }
 
 /** Finds the enabled webhook trigger for a token. */

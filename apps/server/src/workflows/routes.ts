@@ -129,7 +129,7 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
   r.post("/api/workflows/:id/validate", { schema: { params: Id } }, async (request, reply) => {
     const wf = await load(request, actorOf(request).workspaceId, reply);
     if (!wf) return reply;
-    return { issues: wfs.validateDraft(wf) };
+    return { issues: await wfs.validateDraft(wf) };
   });
 
   r.post(
