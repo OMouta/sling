@@ -384,7 +384,7 @@ function ChatApproval({
   approvalId: string;
   ctx: ActivityContext;
   question: ReactNode;
-  detail: string;
+  detail?: string;
   approve: string;
 }) {
   const decide = useMutation({
@@ -395,7 +395,7 @@ function ChatApproval({
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-surface px-2.5 py-2">
       <p className="mr-auto min-w-0 text-[13px] text-soft">
         {question}
-        <span className="block text-xs text-muted">{detail}</span>
+        {detail && <span className="block text-xs text-muted">{detail}</span>}
       </p>
       <div className="flex gap-2">
         <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("deny")}>
@@ -481,13 +481,7 @@ function SendStep({
       </Disclosure>
       {waiting && <SendValues input={step.input} />}
       {waiting && (
-        <ChatApproval
-          approvalId={approval.id}
-          ctx={ctx}
-          approve="Allow"
-          question="Allow this?"
-          detail="Nothing leaves Sling until you allow it."
-        />
+        <ChatApproval approvalId={approval.id} ctx={ctx} approve="Allow" question="Allow this?" />
       )}
       {approval.state === "denied" && (
         <p className="border-t border-border px-2.5 py-1.5 text-xs text-muted">

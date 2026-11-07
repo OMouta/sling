@@ -60,8 +60,8 @@ export function useConversationMenu() {
         danger
         onSelect={async () => {
           const ok = await confirm({
-            title: "Delete this chat?",
-            body: `"${c.title}" leaves your chats. Tasks it started keep running and stay under Tasks.`,
+            title: `Delete "${c.title}"?`,
+            body: "Tasks it started keep running.",
             action: "Delete",
             danger: true,
           });

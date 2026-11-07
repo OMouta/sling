@@ -212,8 +212,7 @@ export function HomePage() {
                     to="/machines"
                     search={{ pair: true }}
                   >
-                    The computer that has your repos and a coding agent logged in, Codex or Claude
-                    Code. Sling chats and codes through it, on your own subscription.
+                    The computer with your repos and Codex or Claude Code.
                   </Step>
                   <Step
                     done={hasModel}
@@ -222,7 +221,7 @@ export function HomePage() {
                     title="Log in to a coding agent"
                     to="/machines"
                   >
-                    Run codex login or claude auth login on that machine. No API key needed.
+                    Run codex login or claude auth login on it.
                   </Step>
                 </Card>
               )}

@@ -137,7 +137,7 @@ export function SidebarChats({ onNew }: { onNew: () => void }) {
         <p className="px-2 py-1.5 text-xs text-subtle">No chats yet.</p>
       )}
       {term && matches.length === 0 && (
-        <p className="px-2 py-1.5 text-xs text-subtle">No chat named like that.</p>
+        <p className="px-2 py-1.5 text-xs text-subtle">No matching chats.</p>
       )}
       {(matches.length > SHOWN || all.length > 0) && (
         <Link

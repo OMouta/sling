@@ -98,13 +98,9 @@ export function ChatsPage() {
         ) : rows.length === 0 ? (
           <Card>
             {q || filter !== "all" ? (
-              <Empty icon={SearchX} title="No chats match" className="py-12">
-                {q ? `Nothing said in your chats matches "${q}".` : "Try another filter."}
-              </Empty>
+              <Empty icon={SearchX} title="No chats match" className="py-12" />
             ) : (
-              <Empty icon={MessagesSquare} title="No chats yet" className="py-12">
-                Chats you start show up here.
-              </Empty>
+              <Empty icon={MessagesSquare} title="No chats yet" className="py-12" />
             )}
           </Card>
         ) : (

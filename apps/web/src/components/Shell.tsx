@@ -323,7 +323,7 @@ function StatusCard({
           {connection === "open" ? "Live" : "Reconnecting"}
         </span>
       </div>
-      {budget > 0 ? (
+      {budget > 0 && (
         <>
           <div className="mt-2.5 flex gap-[3px]" aria-hidden="true">
             {Array.from({ length: 20 }, (_, i) => (
@@ -341,12 +341,6 @@ function StatusCard({
             {used.toLocaleString()} of {budget.toLocaleString()} sandbox minutes this month
           </p>
         </>
-      ) : (
-        <p className="mt-1 text-[11px] leading-4 text-subtle">
-          {machines === 0
-            ? "Pair the computer that has your repos."
-            : "Tasks go to the first machine that fits."}
-        </p>
       )}
       {machines === 0 && (
         <Link

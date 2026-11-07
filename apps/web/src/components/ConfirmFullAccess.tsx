@@ -36,8 +36,7 @@ export function useModeChange(apply: (mode: PermissionMode) => void) {
       }
     >
       <p className="text-[13px] leading-5 text-soft">
-        The coding agent runs without its sandbox, and nothing asks before pushing, opening pull
-        requests, merging, or deploying. Use it only for repos and machines you trust.
+        The agent runs without its sandbox, and nothing asks before a push, PR, merge or deploy.
       </p>
     </Dialog>
   ) : null;
