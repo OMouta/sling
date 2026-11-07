@@ -14,13 +14,14 @@ What Sling protects, what it trusts, and where the known gaps are.
 - The power to merge into your default branches and deploy to production: a machine's deploy command, a deploy hook URL, or the GitHub token sandboxes use
 - Your calendar: a CalDAV app password, or a private iCal link, which reads the calendar like a password
 - Your devices' push subscriptions, which let whoever holds them put notifications on your lock screen
+- Your messages: a Mac relaying iMessage can read every iMessage on it, and a linked signal-cli receives every Signal message of its account
 
 ## Trust boundaries
 
 | Component | Trusted for | Not trusted for |
 |---|---|---|
 | Your browser session | Everything in your workspace | |
-| Control plane | Deciding what to run and when, including asking a machine to merge a task's branch and run its deploy command | Widening a Runner's limits, choosing what a deploy command runs, merging a branch that isn't a Sling task branch, or deploying a commit that isn't merged |
+| Control plane | Deciding what to run and when, including asking a machine to merge a task's branch and run its deploy command, and to send on its channels | Widening a Runner's limits, choosing what a deploy command runs, merging a branch that isn't a Sling task branch, deploying a commit that isn't merged, hearing from a sender a machine doesn't allow, or sending to anyone else |
 | Runner | Enforcing local limits | |
 | Master agent (LLM) | Choosing tools within the limits, running read-only commands in a machine's sandbox, reading your calendar, running your checks, and reading Sling's setup | Picking the mode, reaching other workspaces, running commands outside the sandbox, sending anything, changing Sling's setup, or deploying, without your approval (outside Full access). Seeing a password or token you type on a setup card, ever |
 | Chat turns on a Runner | Running one assistant turn on the machine's own Codex or Claude Code login | Calling tools outside that turn's conversation, or reaching any server but the paired one |
@@ -36,8 +37,9 @@ What Sling protects, what it trusts, and where the known gaps are.
 | Push services (Apple, Google, Mozilla, Microsoft) | Carrying notifications to your devices | Reading them: each one is encrypted for its device |
 | Discord users on the allowed list | Chatting with the assistant, as you would | Approving anything, unless also on the approver list |
 | Discord users on the approver list | Approving and rejecting pending approvals | Anything else |
+| iMessage and Signal senders a machine allows | Chatting with the assistant, as you would | Approving anything |
 | Webhook callers | Starting the one workflow whose URL they hold | |
-| Repo content, task output, emails, Discord messages, calendar events, HTTP responses, health check answers, logs | Nothing. Treated as data | Instructions of any kind |
+| Repo content, task output, emails, Discord, iMessage, and Signal messages, calendar events, HTTP responses, health check answers, logs | Nothing. Treated as data | Instructions of any kind |
 
 ## Controls
 
@@ -56,6 +58,8 @@ What Sling protects, what it trusts, and where the known gaps are.
 **Secrets in task output.** The Runner masks values of its own secret-looking environment variables and common token shapes (GitHub, OpenAI-style, Slack, AWS key IDs) before events leave the machine. This is best effort.
 
 **Discord.** Messages from users outside an installation's allowed list are dropped before any workflow sees them. Approval buttons are accepted only from user IDs on the approver list, only for pending approvals in the same workspace. Accepted and refused clicks are both audited with the Discord user ID. Clicks arrive over the bot's authenticated gateway connection, so there's no public interactions endpoint.
+
+**Channels on your machines.** iMessage and Signal are relayed by a machine, and only the machine adds a channel or allows a sender, with `sling-runner channel`. The Runner forwards nothing from anyone else, and nothing at all until a sender is allowed. It sends only to the allowed senders and to groups they wrote in, whatever the control plane asks. It reads the Messages database read-only, and sends with `osascript` from a fixed script, with the recipient and text passed as arguments, so a message can't change what the script does. signal-cli runs as a child of the Runner with the account given on the machine. A channel's place is kept on the machine, and a message leaves its outbox only once the server says it stored it. The server matches a message to installations by the machine it came from, so one machine can't start another's workflows. `config set channels off` stops them all.
 
 **Webhooks.** Each `core.webhook` trigger gets a token derived with HMAC from the server secret, and only its hash is stored. A disabled workflow's webhook answers 404.
 
@@ -114,7 +118,11 @@ What Sling protects, what it trusts, and where the known gaps are.
 - **Discord approvers hold an approval key.** Anyone who takes over an approver's Discord account can approve pushes and PRs. Keep the approver list short, and turn on 2FA in Discord.
 - **`http.request` can reach your internal network.** It doesn't block private or loopback addresses, so a workflow that builds a URL from email or Discord content could be steered at internal services. Don't build URLs from untrusted text.
 - **Webhook URLs are bearer secrets.** Anyone holding one can start that workflow with any body. Rotating a URL means changing the trigger node's ID.
-- **Node runs keep content.** Email bodies, Discord messages, and model replies are stored in node-run inputs and outputs for 30 days, truncated at 64 KB each.
+- **Node runs keep content.** Email bodies, Discord, iMessage, and Signal messages, and model replies are stored in node-run inputs and outputs for 30 days, truncated at 64 KB each.
+- **Full Disk Access reaches everything the Runner starts.** macOS grants it to the process that asked and the processes it starts. On a Mac where the Runner has it for iMessage, its agents and the assistant's commands can read your mail, messages, and other protected files too, sandbox or not. If that matters, run a copy of `sling-runner` from its own path, with its own `SLING_RUNNER_HOME`, that only relays iMessage, and give Full Disk Access to that copy alone.
+- **The control plane can message your allowed senders.** Whoever controls it can send iMessage or Signal messages, as the account on your machine, to the senders you allowed and to groups they wrote in. It can't reach anyone else.
+- **Groups see the replies.** An allowed sender's message in a group is answered in that group, so the others in it see what the assistant says.
+- **A linked signal-cli receives everything.** Every message to the Signal account reaches the machine. Only allowed senders' messages leave it. Give Sling an account of its own.
 - **Lost Discord messages.** If the server can't take a Discord message when it arrives, it's logged and dropped. Discord doesn't replay it.
 - **Redaction is pattern-based.** A secret that doesn't look like one gets through.
 - **One account.** No roles yet, though every record carries a workspace and owner.

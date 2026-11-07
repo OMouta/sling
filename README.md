@@ -92,7 +92,7 @@ Each conversation has a mode, and each machine can cap the mode it accepts. Deta
 - [Notifications and the phone app](docs/notifications.md)
 - [Workflows, nodes, and templates](docs/workflows.md)
 - [Routing and sandboxes](docs/sandboxes.md), and [the sandbox image](docs/sandbox-image.md)
-- Connectors: [Discord](docs/connectors/discord.md), [Telegram](docs/connectors/telegram.md), [Email](docs/connectors/email.md), [Calendar](docs/connectors/calendar.md), [Docker](docs/connectors/docker.md), [Railway](docs/connectors/railway.md)
+- Connectors: [Discord](docs/connectors/discord.md), [Telegram](docs/connectors/telegram.md), [Email](docs/connectors/email.md), [Calendar](docs/connectors/calendar.md), [iMessage](docs/connectors/imessage.md), [Signal](docs/connectors/signal.md), [Docker](docs/connectors/docker.md), [Railway](docs/connectors/railway.md)
 - [Extensions](docs/extensions/README.md): installing them, and writing [connectors](docs/extensions/connectors.md), [sandbox providers](docs/extensions/providers.md), and [workflow packages](docs/extensions/workflow-packages.md), with [signing and catalogs](docs/extensions/signing.md) and [the CLI](docs/extensions/cli.md)
 - [Threat model](docs/threat-model.md)
 - [Development](docs/development.md)

@@ -56,6 +56,7 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | Approval requested | A new pending approval |
 | Check changed | One of your [checks](checks.md) goes down, comes back up, or a reply check is met or missed. Filter by check name, kind, or change. Outputs the check, its state, the reason, and the page an alert should open |
 | Discord message received | A message from an allowed user. See [connectors/discord.md](connectors/discord.md) |
+| iMessage received, Signal message received | A message from a sender your machine allows. See [connectors/imessage.md](connectors/imessage.md) and [connectors/signal.md](connectors/signal.md) |
 | Email received | New mail in a watched folder. See [connectors/email.md](connectors/email.md) |
 | **Logic and data** | |
 | If, Switch | Branch on a JSONata condition |
@@ -77,6 +78,7 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | **Actions** | |
 | HTTP request | Calls a URL. GET and HEAD retry on network errors, 429, and 5xx |
 | Send Discord message | Channel or DM, optionally with Approve and Reject buttons |
+| Send iMessage, Send Signal message | From your machine, to a sender it allows or a group they wrote in |
 | Send email | Plain text over SMTP |
 | List calendar events, Add calendar event | Read a day or a range of your calendar, with recurring events expanded, or add an event. See [connectors/calendar.md](connectors/calendar.md) |
 | Check deploy targets | Runs the site check of every deploy target, or of one, and outputs the ones that changed since it last ran. For older workflows; new ones start from Check changed |
@@ -108,6 +110,7 @@ To change it, say so in the chat, such as "change it to Tuesdays". The card show
 |---|---|
 | Sling Assistant | The web chat. Installed and enabled on first start. Disable it and chat answers that no workflow handles messages |
 | Discord assistant | The same assistant in Discord DMs. Replies, and task updates, go back to the DM they came from |
+| iMessage assistant, Signal assistant | The same assistant in iMessage or Signal, through your machine. Replies, and task updates, go back to the chat they came from |
 | Important email to Discord | Summarizes mail from senders on a list and posts the summary and action items. Edit the list in the **If** node |
 | Approval notifications in Discord | Posts every new approval with Approve and Reject buttons |
 | Website health monitor | Checks a URL every five minutes and posts when it errors or can't be reached |
@@ -125,3 +128,4 @@ Discord, email, and your calendar are set up under **Connectors**, as are connec
 - [Discord](connectors/discord.md)
 - [Email](connectors/email.md)
 - [Calendar](connectors/calendar.md)
+- [iMessage](connectors/imessage.md) and [Signal](connectors/signal.md), relayed by one of your machines

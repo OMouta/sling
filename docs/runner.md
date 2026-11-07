@@ -97,13 +97,14 @@ sling-runner config set remote-repos off         # on | off
 sling-runner config set commands off             # on | off
 sling-runner config set deploys off              # on | off
 sling-runner config set files off                # on | off
+sling-runner config set channels off             # on | off
 sling-runner config set scan-roots ~/code,~/work # "" means your home directory
 sling-runner config set server-url https://sling.tail1234.ts.net
 ```
 
 `server-url` is for when Sling moves to a new address, for example onto a tunnel. The machine keeps its pairing and connects to the new address after you restart the Runner. Only you can change it, here on the machine. To pair with a different Sling, use `sling-runner pair` instead.
 
-`max-mode` is the highest permission mode this machine accepts. A task above it is refused here, whatever the control plane says. Below Full access, the assistant's commands also stay in the read-only sandbox, and at Read-only the machine doesn't merge or deploy. `commands` decides whether the assistant may run commands here at all. See [Commands](#commands). `deploys` decides whether Sling may merge and deploy here. See [Merges and deploys](#merges-and-deploys). `files` decides whether the assistant may search and read the shared folders. See [Folders](#folders).
+`max-mode` is the highest permission mode this machine accepts. A task above it is refused here, whatever the control plane says. Below Full access, the assistant's commands also stay in the read-only sandbox, and at Read-only the machine doesn't merge or deploy. `commands` decides whether the assistant may run commands here at all. See [Commands](#commands). `deploys` decides whether Sling may merge and deploy here. See [Merges and deploys](#merges-and-deploys). `files` decides whether the assistant may search and read the shared folders. See [Folders](#folders). `channels` turns every messaging channel here on or off. See [Channels](#channels).
 
 ## Labels
 
@@ -290,6 +291,31 @@ The Runner reads this from disk for every merge and deploy, so it takes effect a
 
 The Runner keeps each merge's and deploy's result in memory until Sling acknowledges it, and sends it again after a reconnect. Sling may send the same request again, for example after a reconnect. A request that's running or finished never runs twice. The Runner answers with the result it has. If the Runner itself restarts, results it hadn't delivered are lost, and Sling marks the step "interrupted, outcome unknown".
 
+## Channels
+
+A machine can relay messaging apps that have no API Sling can call, so you can message Sling there: iMessage on a Mac, and Signal through signal-cli. Only the machine adds a channel or chooses whose messages it forwards. Sling can't.
+
+```sh
+sling-runner channel add imessage                          # macOS only
+sling-runner channel add signal --account +351900000000    # signal-cli linked to that account
+sling-runner channel allow imessage +351912345678          # a number with its country code, or an email
+sling-runner channel disallow imessage +351912345678
+sling-runner channel list
+sling-runner channel remove imessage
+```
+
+`--name` gives a channel another name, for a second Signal account. Setup, and what each one needs, is in [iMessage](connectors/imessage.md) and [Signal](connectors/signal.md).
+
+What the Runner holds to whatever Sling asks:
+
+- A channel forwards only messages from the senders you allowed, and nothing while there are none. Messages from before `channel add` never go.
+- It sends only to the senders you allowed, and to groups they wrote in.
+- iMessage reads the Messages database read-only. It sends through `osascript`, with the recipient and the text passed as arguments to a fixed script, never written into it.
+
+Each channel keeps its place in `~/.local/share/sling/channels/`. A message stays there until Sling says it stored it, so one that arrives while the Runner or Sling is down goes to Sling once, after they're back. With `sling-runner config set channels off`, every channel stops, and what arrives meanwhile is skipped rather than answered later.
+
+**Machines** and `sling-runner doctor` show each channel, how many senders it allows, and what it still needs, such as Full Disk Access or linking signal-cli.
+
 ## Running it
 
 | Command | What it does |
@@ -298,7 +324,7 @@ The Runner keeps each merge's and deploy's result in memory until Sling acknowle
 | `sling-runner service install` | launchd on macOS, a systemd user unit on Linux, a logon task on Windows. |
 | `sling-runner service status` / `uninstall` | |
 | `sling-runner gc` | Remove worktrees of finished tasks older than 7 days. Also runs daily on its own. |
-| `sling-runner doctor` | Check git, the agents, and gh, show which repos match across machines, count the found repos Sling can offer, and say whether this machine merges and deploys. |
+| `sling-runner doctor` | Check git, the agents, and gh, show which repos match across machines, count the found repos Sling can offer, say whether this machine merges and deploys, and check each channel. |
 | `sling-runner sandbox` | The entrypoint of the sandbox image. You don't run it yourself; see below. |
 
 On Linux, `loginctl enable-linger $USER` keeps the service running while you're logged out. On Windows the logon task only runs while you're logged in.
@@ -313,6 +339,7 @@ On Linux, `loginctl enable-linger $USER` keeps the service running while you're 
 | `~/.local/share/sling/worktrees/` | One git worktree per task |
 | `~/.local/share/sling/chat/` | One empty directory per running chat turn, deleted when the turn ends |
 | `~/.local/share/sling/actions/` | Temporary worktrees for merges and deploys, deleted when each one ends |
+| `~/.local/share/sling/channels/` | Each channel's place, and Signal messages Sling hasn't stored yet |
 | `~/.local/share/sling/runner.log` | Log when running as a service |
 
 On Windows these live under `%APPDATA%\Sling` and `%LOCALAPPDATA%\Sling`. `SLING_RUNNER_HOME` puts everything in one directory, which lets you run two Runners on one machine.
