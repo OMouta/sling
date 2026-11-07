@@ -49,6 +49,12 @@ const TOOLS: Record<string, [string, string, string]> = {
   check_deploy_target: ["Checking the site", "Checked the site", "Couldn't check the site"],
   deploy_task: ["Starting a deploy", "Started a deploy", "Couldn't start the deploy"],
   run_workflow: ["Running a workflow", "Ran a workflow", "Couldn't run the workflow"],
+  imessage_send_message: ["Sending an iMessage", "Sent an iMessage", "Couldn't send the iMessage"],
+  signal_send_message: [
+    "Sending a Signal message",
+    "Sent a Signal message",
+    "Couldn't send the Signal message",
+  ],
   calendar_list_events: [
     "Reading your calendar",
     "Read your calendar",

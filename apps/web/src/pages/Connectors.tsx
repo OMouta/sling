@@ -9,6 +9,8 @@ import {
   LogIn,
   type LucideIcon,
   Mail,
+  MessageCircle,
+  MessageSquareLock,
   MessagesSquare,
   Pencil,
   Plug,
@@ -40,6 +42,8 @@ type TestResult = { ok: true; detail?: string } | { ok: false; error: string };
 type FormTarget = { connector: ConnectorView; installation?: InstallationView };
 
 const ICONS: [RegExp, LucideIcon][] = [
+  [/^imessage$/, MessageCircle],
+  [/^signal$/, MessageSquareLock],
   [/calendar/i, CalendarDays],
   [/discord/i, MessagesSquare],
   [/telegram/i, Send],

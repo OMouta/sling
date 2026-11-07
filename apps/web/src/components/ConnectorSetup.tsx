@@ -284,12 +284,14 @@ export function ConnectorSetupDialog({
     const missing = front.some((r) => required(r) && r.field.kind !== "boolean" && !filled(r));
     const wrong = front.some((r) => notesFor(r.field.key).some((n) => n.tone === "error"));
     const looksUp = front.some((r) => r.field.meta.lookup) || rs.some(waiting);
+    // A required picker the lookup hasn't offered choices for yet holds the step.
+    const unoffered = rs.some((r) => waiting(r) && r.field.required);
     // One field under a heading that asks for it needs no label of its own.
     const bare = front.length === 1 && heading !== DETAILS;
     return {
       id: heading,
       title: heading === DETAILS ? `Connect ${connector.name}` : heading,
-      blocked: missing || wrong,
+      blocked: missing || wrong || unoffered,
       busy: looksUp && lookingUp,
       content: (
         <>
