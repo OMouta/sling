@@ -7,7 +7,11 @@ import { cx, Dot, Mono } from "./ui.tsx";
 const list = new Intl.ListFormat("en", { style: "long", type: "conjunction" });
 
 /** How a target deploys, in one line. */
-export function MethodLine({ target: t }: { target: DeployTargetView }) {
+export function MethodLine({
+  target: t,
+}: {
+  target: Pick<DeployTargetView, "method" | "command" | "runnerName" | "hook">;
+}) {
   switch (t.method) {
     case "merge":
       return <>Host deploys on merge</>;

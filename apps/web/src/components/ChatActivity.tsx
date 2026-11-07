@@ -28,6 +28,7 @@ import { api } from "../lib/api.ts";
 import { duration, readableLocalDate } from "../lib/format.ts";
 import { useMadeRule } from "../lib/rules.ts";
 import { useNow } from "../lib/useNow.ts";
+import { ActionCheckLine } from "./ActionCheck.tsx";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
 import { RememberStep } from "./MemoryStep.tsx";
 import { RuleQuestion } from "./RuleQuestion.tsx";
@@ -551,6 +552,7 @@ function SendStep({
           Nobody answered, so nothing went out.
         </p>
       )}
+      {step.check && <ActionCheckLine check={step.check} variant="row" />}
       {open && result && (
         <pre className="max-h-80 overflow-auto border-t border-border px-3 py-2 font-mono text-[11.5px] leading-[17px] whitespace-pre-wrap break-words text-soft">
           {result}
@@ -926,6 +928,7 @@ function ToolRow({ step }: { step: ToolStep }) {
           {toolLabel(step)}
         </span>
       </Disclosure>
+      {step.check && <ActionCheckLine check={step.check} className="mt-1 pl-[22px]" />}
       {open && (
         <div className="mt-1.5 ml-[7px] space-y-1.5 border-l border-border pl-4">
           {input && <TraceBlock label="Input" text={input} />}

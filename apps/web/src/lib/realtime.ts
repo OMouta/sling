@@ -15,6 +15,7 @@ import type {
 import type { WorkflowDetailView } from "@sling/workflow";
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
+import { applyCheckEvent, applyToolStepCheck } from "./checks.ts";
 import { byActivity, conversationsKey, previewText } from "./conversations.ts";
 import { applyDeployTargetEvent } from "./deploys.ts";
 import { applyExtension, forgetExtension } from "./extensionApi.ts";
@@ -376,6 +377,13 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       return;
     case "rule.updated":
       applyRuleEvent(qc, ev);
+      return;
+    case "check.changed":
+    case "check.removed":
+      applyCheckEvent(qc, ev);
+      return;
+    case "tool_step.check":
+      applyToolStepCheck(qc, ev);
       return;
     case "settings.updated":
       for (const queryKey of [["settings"], qk.sandboxSettings(), qk.sandboxRepos(), modelsKey]) {

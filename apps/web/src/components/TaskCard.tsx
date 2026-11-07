@@ -55,6 +55,7 @@ import {
 } from "../lib/taskEnvironment.ts";
 import type { TaskDetail } from "../lib/types.ts";
 import { useNow } from "../lib/useNow.ts";
+import { ActionCheckLine } from "./ActionCheck.tsx";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
 import { CheckList, DeployPlanText } from "./DeployBits.tsx";
 import { ModeBadge } from "./ModeBadge.tsx";
@@ -169,6 +170,8 @@ export function TaskCard({
   });
   // Only a deploy approval or a delivered PR needs to know the repo's target.
   const deployApproval = awaitsDeployApproval(task);
+  // The PR's CI, so the deploy approval says whether it passed.
+  const prCheck = task.actions.find((a) => a.kind === "open_pr")?.check;
   const deployLater = canDeployLater(task) && !deploy.isSuccess;
   const wantsTarget = deployApproval || deployLater;
   const targets = useDeployTargets(wantsTarget);
@@ -311,6 +314,7 @@ export function TaskCard({
                 />
               </p>
             )}
+            {prCheck && <ActionCheckLine check={prCheck} className="mt-1" />}
           </div>
           <div className="flex shrink-0 gap-2">
             <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
@@ -604,6 +608,7 @@ function StepRow({ action: a, prUrl }: { action: ActionView; prUrl: string | nul
         </a>
       )}
       {showMessage && <span className="w-full pl-6 text-xs text-muted">{a.message}</span>}
+      {a.check && <ActionCheckLine check={a.check} className="w-full pl-6" />}
       {a.kind === "deploy" && a.output && (
         <details className="w-full pl-6">
           <summary className="w-fit cursor-pointer text-xs font-medium text-muted select-none marker:text-subtle hover:text-soft">

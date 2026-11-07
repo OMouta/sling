@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 import type {
   ApprovalView,
+  CheckResultDetail,
+  CheckResultView,
+  CheckView,
   DeployTargetView,
+  InstallationView,
+  MessageView,
   RunnerView,
   SandboxRepoView,
   ServerEvent,
@@ -13,7 +18,6 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router.tsx";
 import {
-  sandboxRepos as allowedRepos,
   apiTarget,
   deliveredPrTask,
   deployApprovals,
@@ -51,6 +55,12 @@ interface Call {
 
 let calls: Call[] = [];
 let targets: DeployTargetView[] = [];
+const checkedAt = () => new Date().toISOString();
+let checks: CheckView[] = [];
+let messages: MessageView[] = [];
+let installations: InstallationView[] = [];
+/** Each check's runs, newest first. */
+let history = new Map<string, CheckResultView[]>();
 let runners: RunnerView[] = [];
 let sandboxRepos: SandboxRepoView[] = [];
 let tasks: TaskView[] = [];
@@ -59,6 +69,120 @@ let approvals: ApprovalView[] = [];
 let deployAnswer: TaskView | HttpError | null = null;
 let clipboard: string[] = [];
 
+function result(
+  checkId: string,
+  passed: boolean,
+  detail: CheckResultDetail,
+  message = "",
+): CheckResultView {
+  return {
+    id: `ckr_${Math.random().toString(36).slice(2)}`,
+    checkId,
+    at: new Date().toISOString(),
+    passed,
+    state: passed ? "up" : "down",
+    message,
+    ms: 100,
+    detail,
+  };
+}
+
+/** The site check a deploy target is the deploy part of. */
+function fromTarget(t: DeployTargetView): CheckView {
+  const id = t.id.replace(/^dpt_/, "chk_");
+  const last = t.lastCheck;
+  return {
+    id,
+    name: t.name,
+    kind: "site",
+    config: { kind: "site", checks: t.checks, versionUrl: t.versionUrl },
+    enabled: true,
+    intervalSeconds: 60,
+    deadline: null,
+    runnerId: null,
+    runnerName: null,
+    installationId: null,
+    installationName: null,
+    state: !last ? "unknown" : last.up ? "up" : last.failures >= 2 ? "down" : "up",
+    stateSince: last?.at ?? null,
+    failures: last?.failures ?? 0,
+    lastResult: last
+      ? {
+          ...result(id, last.up, { kind: "site", checks: last.results, versionSeen: null }),
+          at: last.at,
+          message: last.up ? "Answered 200 in 121 ms" : "Expected 200 to 399, got 502",
+        }
+      : null,
+    nextRunAt: new Date(Date.now() + 60_000).toISOString(),
+    notify: true,
+    deploy: {
+      id: t.id,
+      remoteKey: t.remoteKey,
+      method: t.method,
+      mergeMethod: t.mergeMethod,
+      runnerId: t.runnerId,
+      runnerName: t.runnerName,
+      command: t.command,
+      hook: t.hook,
+      settleSeconds: t.settleSeconds,
+      timeoutSeconds: t.timeoutSeconds,
+      lastDeploy: t.lastDeploy,
+    },
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+  };
+}
+
+const backupCheck = (): CheckView => ({
+  ...fromTarget(websiteTarget),
+  id: "chk_backup",
+  name: "Backup",
+  kind: "command",
+  config: {
+    kind: "command",
+    command: "test -f ~/Backups/today",
+    contains: null,
+    timeoutSeconds: 60,
+  },
+  intervalSeconds: 300,
+  runnerId: "rnr_3",
+  runnerName: "Studio Mac",
+  state: "up",
+  lastResult: result(
+    "chk_backup",
+    true,
+    { kind: "command", exitCode: 0, output: "", timedOut: false, error: null },
+    "Exited 0 in 40 ms",
+  ),
+  deploy: null,
+});
+
+const replyCheck = (): CheckView => ({
+  ...fromTarget(websiteTarget),
+  id: "chk_jo",
+  name: "Jo replied",
+  kind: "reply",
+  config: { kind: "reply", from: "jo@silva.pt", subject: "invoice", inReplyTo: null, folder: null },
+  intervalSeconds: 300,
+  deadline: "2099-11-13T17:00:00.000Z",
+  installationId: "ins_mail",
+  installationName: "Mail",
+  state: "waiting",
+  lastResult: {
+    ...result("chk_jo", false, { kind: "reply", match: null, error: null }, "No reply yet"),
+    state: "waiting",
+  },
+  deploy: null,
+});
+
+const shell = (ready: boolean) => ({ name: "shell", version: "1", ready, detail: "" });
+
+const mailInstallation = {
+  id: "ins_mail",
+  connectorId: "email",
+  name: "Mail",
+} as unknown as InstallationView;
+
 function route(method: string, path: string, body: unknown): unknown {
   const key = `${method} ${path}`;
   switch (key) {
@@ -66,6 +190,23 @@ function route(method: string, path: string, body: unknown): unknown {
       return { needsSetup: false, signedIn: true, email: "a@b.c", version: "0.1.0" };
     case "GET /api/deploy-targets":
       return targets;
+    case "GET /api/checks":
+      return checks;
+    case "GET /api/installations":
+      return installations;
+    case "POST /api/checks": {
+      const b = body as CheckView;
+      const created: CheckView = {
+        ...fromTarget(websiteTarget),
+        ...b,
+        id: "chk_new",
+        state: "unknown",
+        lastResult: null,
+        deploy: null,
+      };
+      checks = [...checks, created];
+      return created;
+    }
     case "GET /api/runners":
       return runners;
     case "GET /api/sandbox-repos":
@@ -88,7 +229,7 @@ function route(method: string, path: string, body: unknown): unknown {
           createdAt: "2026-11-06T17:00:00.000Z",
           updatedAt: "2026-11-06T18:00:00.000Z",
         },
-        messages: [],
+        messages,
         tasks: tasks.filter((t) => t.conversationId === "cnv_1"),
         agentStatus: "idle",
         usage: { inputTokens: 0, outputTokens: 0 },
@@ -98,6 +239,49 @@ function route(method: string, path: string, body: unknown): unknown {
       const created = { ...websiteTarget, ...b, id: "dpt_new", lastCheck: null, lastDeploy: null };
       targets = [...targets, created];
       return created;
+    }
+  }
+  const check = /^\/api\/checks\/([^/]+)(\/run|\/results)?$/.exec(path);
+  if (check) {
+    const [, id, sub] = check;
+    const found = checks.find((c) => c.id === id);
+    if (!found) throw new HttpError(404, "No such check");
+    if (method === "GET" && sub === "/results") return history.get(found.id) ?? [];
+    if (method === "POST" && sub === "/run") {
+      const pages = found.config.kind === "site" ? found.config.checks : [];
+      const r = result(
+        found.id,
+        false,
+        {
+          kind: "site",
+          checks: pages.map((c) => ({
+            url: c.url,
+            ok: false,
+            status: 503,
+            ms: 250,
+            error: "Expected 200 to 399, got 503",
+          })),
+          versionSeen: null,
+        },
+        `${pages[0]?.url}: 503 (Expected 200 to 399, got 503)`,
+      );
+      const next: CheckView = { ...found, state: "down", failures: 2, lastResult: r };
+      history.set(found.id, [
+        r,
+        ...(history.get(found.id) ?? (found.lastResult ? [found.lastResult] : [])),
+      ]);
+      checks = checks.map((c) => (c.id === id ? next : c));
+      return next;
+    }
+    if (method === "PATCH") {
+      const b = body as Partial<CheckView> & { deploy?: unknown };
+      const next = { ...found, ...b, deploy: b.deploy === null ? null : found.deploy } as CheckView;
+      checks = checks.map((c) => (c.id === id ? next : c));
+      return next;
+    }
+    if (method === "DELETE") {
+      checks = checks.filter((c) => c.id !== id);
+      return undefined;
     }
   }
   const target = /^\/api\/deploy-targets\/([^/]+)(\/check)?$/.exec(path);
@@ -170,6 +354,10 @@ function emit(ev: ServerEvent) {
 beforeEach(() => {
   calls = [];
   targets = [websiteTarget, docsTarget, apiTarget];
+  checks = [...targets.map(fromTarget), backupCheck(), replyCheck()];
+  installations = [];
+  history = new Map();
+  messages = [];
   runners = [studioMac, devbox];
   sandboxRepos = [];
   tasks = [];
@@ -224,7 +412,7 @@ function callsTo(method: string, path: string) {
   return calls.filter((c) => c.method === method && c.path === path);
 }
 
-async function targetCard(name: string) {
+async function checkCard(name: string) {
   return within(await screen.findByRole("article", { name }));
 }
 
@@ -244,9 +432,9 @@ async function openMenu(name: string, item: string) {
 }
 
 async function openAddDialog() {
-  renderAt("/deploys");
-  fireEvent.click((await screen.findAllByRole("button", { name: "Add target" }))[0] as HTMLElement);
-  return within(await screen.findByRole("dialog", { name: "Add a deploy target" }));
+  renderAt("/checks");
+  fireEvent.click((await screen.findAllByRole("button", { name: "Add check" }))[0] as HTMLElement);
+  return within(await screen.findByRole("dialog", { name: "Add a check" }));
 }
 
 type Scope = ReturnType<typeof within>;
@@ -263,6 +451,12 @@ function fillCheck(d: Scope, url: string) {
   fireEvent.change(d.getByLabelText("URL to check"), { target: { value: url } });
 }
 
+function pickKind(d: Scope, name: RegExp) {
+  fireEvent.click(d.getByRole("radio", { name }));
+}
+
+const KIND_CARD = { site: /^A site/, command: /^A command on a machine/, reply: /^An email reply/ };
+
 const METHOD_CARD = {
   merge: /^When it's merged/,
   command: /^A command on one of your machines/,
@@ -272,7 +466,7 @@ const METHOD_CARD = {
 describe("checks in place of deploys", () => {
   it("sends old links to Checks, which the sidebar lists where Deploys was, after Memory", async () => {
     const { router } = renderAt("/deploys");
-    await targetCard("Website");
+    await checkCard("Website");
     expect(router.state.location.pathname).toBe("/checks");
     const nav = screen.getAllByRole("link").map((l) => l.textContent);
     expect(nav).toContain("Checks");
@@ -287,149 +481,199 @@ describe("checks in place of deploys", () => {
   });
 });
 
-describe("deploys page", () => {
-  it("lists each target with its method, status, last deploy, and checks", async () => {
-    renderAt("/deploys");
-    const site = await targetCard("Website");
-    expect(site.getByText("github.com/a/site")).toBeTruthy();
-    expect(fact(site, "Method")).toBe("Runs fly deploy on Studio Mac");
+describe("checks page", () => {
+  it("lists every check: sites with how they deploy, commands, and replies", async () => {
+    renderAt("/checks");
+    const site = await checkCard("Website");
+    expect(site.getByText("example.com, example.com/health")).toBeTruthy();
+    expect(fact(site, "Deploys")).toBe("Runs fly deploy on Studio Mac");
     expect(site.getByText("Up").parentElement?.textContent).toMatch(
       /^Up · 121 ms · checked .+ ago$/,
     );
     const last = site.getByRole("link", { name: "Fix the 500 on checkout" });
     expect(last.getAttribute("href")).toBe("/tasks/tsk_fix");
-    expect(fact(site, "Last deploy")).toMatch(/^Fix the 500 on checkout9f8e7d6cDone.+ago$/);
-    expect(lines(site.getByRole("list", { name: "Website checks" }))).toEqual([
+    expect(fact(site, "Last deploy")).toMatch(/^Fix the 500 on checkout9f8e7d6cDone.+$/);
+    expect(lines(site.getByRole("list", { name: "Website pages" }))).toEqual([
       "example.com200 · 84 ms",
       "example.com/health200 · 121 ms",
     ]);
 
-    const docs = await targetCard("Docs");
-    expect(fact(docs, "Method")).toBe("Host deploys on merge");
+    const docs = await checkCard("Docs");
+    expect(fact(docs, "Deploys")).toBe("Host deploys on merge");
     expect(docs.getByText("Down").parentElement?.textContent).toMatch(/3 failures in a row/);
     expect(docs.getByText("Expected 200 to 399, got 502")).toBeTruthy();
     expect(fact(docs, "Last deploy")).toBe("Never");
 
-    const api = await targetCard("API");
-    expect(fact(api, "Method")).toBe("Calls a hook on api.render.com");
+    const api = await checkCard("API");
+    expect(fact(api, "Deploys")).toBe("Calls a hook on api.render.com");
     expect(api.getAllByText("Not checked yet")).toHaveLength(2);
-    // One target is down, and the header says so.
+
+    const backup = await checkCard("Backup");
+    expect(backup.getByText("test -f ~/Backups/today")).toBeTruthy();
+    expect(backup.getByText(/on Studio Mac/)).toBeTruthy();
+    expect(backup.getByText("Passing").parentElement?.textContent).toMatch(/^Passing · /);
+    expect(backup.queryByText("Deploys")).toBeNull();
+
+    const jo = await checkCard("Jo replied");
+    expect(jo.getByText("from jo@silva.pt, “invoice”")).toBeTruthy();
+    expect(jo.getByText("Waiting").parentElement?.textContent).toMatch(/due by /);
+    expect(jo.getByText("No reply yet")).toBeTruthy();
+    // One check is down, and the header says so.
     expect(screen.getByText("1 down")).toBeTruthy();
   });
 
   it("shows a centered empty state with nothing added", async () => {
+    checks = [];
     targets = [];
-    renderAt("/deploys");
-    const empty = (await screen.findByText("No deploy targets yet")).parentElement as HTMLElement;
+    renderAt("/checks");
+    const empty = (await screen.findByText("Nothing watched yet")).parentElement as HTMLElement;
     expect(empty.className).toContain("justify-center");
-    expect(within(empty).getByRole("button", { name: "Add target" })).toBeTruthy();
+    expect(within(empty).getByRole("button", { name: "Add check" })).toBeTruthy();
     expect(screen.queryByRole("article")).toBeNull();
   });
 
-  it("follows targets as they change, appear, and go away", async () => {
-    renderAt("/deploys");
-    await targetCard("Docs");
+  it("follows checks as they change, appear, and go away", async () => {
+    renderAt("/checks");
+    await checkCard("Docs");
+    const docs = checks.find((c) => c.name === "Docs") as CheckView;
     emit({
-      type: "deploy_target.updated",
-      target: {
-        ...docsTarget,
-        lastCheck: {
-          at: new Date().toISOString(),
-          up: true,
-          failures: 0,
-          results: [
+      type: "check.changed",
+      check: {
+        ...docs,
+        state: "up",
+        failures: 0,
+        lastResult: result(docs.id, true, {
+          kind: "site",
+          checks: [
             { url: "https://docs.example.com/", ok: true, status: 200, ms: 70, error: null },
           ],
-        },
+          versionSeen: null,
+        }),
       },
     });
-    expect((await targetCard("Docs")).getByText("Up")).toBeTruthy();
+    expect((await checkCard("Docs")).getByText("Up")).toBeTruthy();
     expect(screen.queryByText("1 down")).toBeNull();
-
-    emit({
-      type: "deploy_target.updated",
-      target: { ...websiteTarget, id: "dpt_blog", name: "Blog" },
-    });
-    expect(await targetCard("Blog")).toBeTruthy();
-    emit({ type: "deploy_target.removed", id: "dpt_docs" });
+    emit({ type: "check.changed", check: { ...docs, id: "chk_blog", name: "Blog", deploy: null } });
+    expect(await checkCard("Blog")).toBeTruthy();
+    emit({ type: "check.removed", id: docs.id });
     await waitFor(() => expect(screen.queryByRole("article", { name: "Docs" })).toBeNull());
   });
 
-  it("checks a target now and shows what each check saw", async () => {
-    renderAt("/deploys");
+  it("checks one now, and shows its history", async () => {
+    renderAt("/checks");
     await openMenu("Website", "Check now");
-    await waitFor(() =>
-      expect(callsTo("POST", "/api/deploy-targets/dpt_site/check")).toHaveLength(1),
-    );
-    const site = await targetCard("Website");
+    await waitFor(() => expect(callsTo("POST", "/api/checks/chk_site/run")).toHaveLength(1));
+    const site = await checkCard("Website");
     expect(await site.findByText("Down")).toBeTruthy();
-    expect(lines(site.getByRole("list", { name: "Website checks" }))).toEqual([
+    expect(lines(site.getByRole("list", { name: "Website pages" }))).toEqual([
       "example.com503 · 250 msExpected 200 to 399, got 503",
       "example.com/health503 · 250 msExpected 200 to 399, got 503",
     ]);
+    fireEvent.click(site.getByRole("button", { name: "History" }));
+    const history = await site.findByRole("list", { name: "Website history" });
+    expect(lines(history)).toEqual([
+      expect.stringMatching(/^just now.+got 503\)$/),
+      expect.stringMatching(/Answered 200 in 121 ms$/),
+    ]);
+    expect(site.getByRole("list", { name: "Website recent runs" }).children).toHaveLength(2);
   });
 
-  it("deletes a target after asking", async () => {
-    renderAt("/deploys");
+  it("pauses a check, and deletes one after asking", async () => {
+    renderAt("/checks");
+    await openMenu("Backup", "Pause");
+    await waitFor(() => expect(callsTo("PATCH", "/api/checks/chk_backup")).toHaveLength(1));
+    expect(callsTo("PATCH", "/api/checks/chk_backup")[0]?.body).toEqual({ enabled: false });
+    expect(await (await checkCard("Backup")).findByText("Paused")).toBeTruthy();
     await openMenu("Docs", "Delete");
     const confirm = within(await screen.findByRole("dialog", { name: "Delete Docs?" }));
+    expect(confirm.getByText(/tasks in github.com\/a\/docs can't deploy/)).toBeTruthy();
     fireEvent.click(confirm.getByRole("button", { name: "Delete" }));
-    await waitFor(() => expect(callsTo("DELETE", "/api/deploy-targets/dpt_docs")).toHaveLength(1));
+    await waitFor(() => expect(callsTo("DELETE", "/api/checks/chk_docs")).toHaveLength(1));
     await waitFor(() => expect(screen.queryByRole("article", { name: "Docs" })).toBeNull());
   });
 });
 
-describe("the target dialog", () => {
-  it("adds a target the host deploys on merge, then says whether it's up", async () => {
-    sandboxRepos = allowedRepos;
-    const taken = await openAddDialog();
-    // Both repos have a target already, so there's nothing to pick.
-    expect(await taken.findByText("Every repo already has a deploy target.")).toBeTruthy();
-    expect((taken.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(
-      true,
-    );
-    targets = [];
-    cleanup();
+describe("the check dialog", () => {
+  it("adds a site that only gets watched, then says what it saw", async () => {
     const d = await openAddDialog();
-    await pickRepo(d, "github.com/a/site");
-    // The name comes from the repo until you type one.
-    const name = d.getByLabelText(/^Name/) as HTMLInputElement;
-    expect(name.value).toBe("Site");
-    fireEvent.change(name, { target: { value: "Website" } });
+    pickKind(d, KIND_CARD.site);
     next(d);
-    expect(d.getByRole("radio", { name: METHOD_CARD.merge }).getAttribute("aria-checked")).toBe(
+    fillCheck(d, "https://blog.example.com/");
+    // The name comes from the page until you type one.
+    expect((d.getByLabelText(/^Name/) as HTMLInputElement).value).toBe("Blog.example.com");
+    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "Blog" } });
+    next(d);
+    expect(d.getByRole("radio", { name: /^No, just watch it/ }).getAttribute("aria-checked")).toBe(
       "true",
     );
+    fireEvent.click(d.getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(callsTo("POST", "/api/checks")).toHaveLength(1));
+    expect(callsTo("POST", "/api/checks")[0]?.body).toEqual({
+      name: "Blog",
+      config: {
+        kind: "site",
+        checks: [{ url: "https://blog.example.com/", status: null, contains: null }],
+        versionUrl: null,
+      },
+      intervalSeconds: 60,
+      notify: true,
+    });
+    expect(await d.findByText("Blog is set up")).toBeTruthy();
+    expect(
+      d.getByText("https://blog.example.com/: 503 (Expected 200 to 399, got 503)"),
+    ).toBeTruthy();
+  });
+
+  it("adds a site the host deploys on merge, with a version URL", async () => {
+    targets = [];
+    checks = [];
+    const d = await openAddDialog();
+    pickKind(d, KIND_CARD.site);
     next(d);
     fillCheck(d, "https://example.com/");
     fireEvent.click(d.getByRole("button", { name: "More settings" }));
     fireEvent.change(d.getByLabelText(/^Version URL/), {
       target: { value: "https://example.com/version" },
     });
+    next(d);
+    await pickRepo(d, "github.com/a/site");
+    next(d);
+    expect(d.getByRole("radio", { name: METHOD_CARD.merge }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
     fireEvent.click(d.getByRole("button", { name: "Add" }));
-    await waitFor(() => expect(callsTo("POST", "/api/deploy-targets")).toHaveLength(1));
-    expect(callsTo("POST", "/api/deploy-targets")[0]?.body).toEqual({
-      name: "Website",
-      remoteKey: "github.com/a/site",
-      method: "merge",
-      mergeMethod: "squash",
-      checks: [{ url: "https://example.com/", status: null, contains: null }],
-      versionUrl: "https://example.com/version",
-      settleSeconds: 60,
-      timeoutSeconds: 600,
+    await waitFor(() => expect(callsTo("POST", "/api/checks")).toHaveLength(1));
+    expect(callsTo("POST", "/api/checks")[0]?.body).toEqual({
+      name: "Site",
+      config: {
+        kind: "site",
+        checks: [{ url: "https://example.com/", status: null, contains: null }],
+        versionUrl: "https://example.com/version",
+      },
+      intervalSeconds: 60,
+      notify: true,
+      deploy: {
+        remoteKey: "github.com/a/site",
+        method: "merge",
+        mergeMethod: "squash",
+        settleSeconds: 60,
+        timeoutSeconds: 600,
+      },
     });
-    // It checks the site straight away and says what it saw.
-    expect(await d.findByText("Website is set up")).toBeTruthy();
-    expect(d.getByText("example.com: Expected 200 to 399, got 503")).toBeTruthy();
-    fireEvent.click(d.getByRole("button", { name: "Done" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await targetCard("Website")).toBeTruthy();
   });
 
   it("offers the machines that report a deploy command, and picks the one that can", async () => {
     targets = [];
+    checks = [];
     runners = [studioMac, lockedMac, devbox];
     const d = await openAddDialog();
+    pickKind(d, KIND_CARD.site);
+    next(d);
+    fillCheck(d, "https://example.com/health");
+    fireEvent.click(d.getByRole("button", { name: "More settings" }));
+    fireEvent.change(d.getByLabelText(/^Status/), { target: { value: "200" } });
+    fireEvent.change(d.getByLabelText("Page contains"), { target: { value: "ok" } });
+    next(d);
     await pickRepo(d, "github.com/a/site");
     next(d);
     fireEvent.click(d.getByRole("radio", { name: METHOD_CARD.command }));
@@ -442,25 +686,23 @@ describe("the target dialog", () => {
       ["locked-macRefuses deploys: deploys are off", "false"],
       ["Studio MacRuns fly deploy", "true"],
     ]);
-    next(d);
-    fillCheck(d, "https://example.com/health");
-    fireEvent.click(d.getByRole("button", { name: "More settings" }));
-    fireEvent.change(d.getByLabelText(/^Status/), { target: { value: "200" } });
-    fireEvent.change(d.getByLabelText("Page contains"), { target: { value: "ok" } });
     fireEvent.click(d.getByRole("button", { name: "Add" }));
-    await waitFor(() => expect(callsTo("POST", "/api/deploy-targets")).toHaveLength(1));
-    expect(callsTo("POST", "/api/deploy-targets")[0]?.body).toMatchObject({
-      method: "command",
-      runnerId: "rnr_3",
-      checks: [{ url: "https://example.com/health", status: 200, contains: "ok" }],
-      settleSeconds: 0,
+    await waitFor(() => expect(callsTo("POST", "/api/checks")).toHaveLength(1));
+    expect(callsTo("POST", "/api/checks")[0]?.body).toMatchObject({
+      config: { checks: [{ url: "https://example.com/health", status: 200, contains: "ok" }] },
+      deploy: { method: "command", runnerId: "rnr_3", settleSeconds: 0 },
     });
   });
 
   it("shows the line that sets a deploy command, and waits for a machine to report it", async () => {
     targets = [];
+    checks = [];
     runners = [devbox];
     const d = await openAddDialog();
+    pickKind(d, KIND_CARD.site);
+    next(d);
+    fillCheck(d, "https://example.com/");
+    next(d);
     await pickRepo(d, "github.com/a/site");
     next(d);
     fireEvent.click(d.getByRole("radio", { name: METHOD_CARD.command }));
@@ -468,16 +710,21 @@ describe("the target dialog", () => {
     const line = 'sling-runner repo set site deploy-command "…"';
     expect(d.getByText(line)).toBeTruthy();
     expect(d.getByText("Waiting for a machine to report it")).toBeTruthy();
-    expect((d.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((d.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(d.getByRole("button", { name: "Copy" }));
     await waitFor(() => expect(clipboard).toEqual([line]));
     expect(d.getByRole("button", { name: "Copied" })).toBeTruthy();
-    expect(callsTo("POST", "/api/deploy-targets")).toHaveLength(0);
+    expect(callsTo("POST", "/api/checks")).toHaveLength(0);
   });
 
   it("adds a deploy hook with a header", async () => {
     targets = [];
+    checks = [];
     const d = await openAddDialog();
+    pickKind(d, KIND_CARD.site);
+    next(d);
+    fillCheck(d, "https://example.com/");
+    next(d);
     await pickRepo(d, "github.com/a/site");
     next(d);
     fireEvent.click(d.getByRole("radio", { name: METHOD_CARD.hook }));
@@ -490,25 +737,25 @@ describe("the target dialog", () => {
     fireEvent.change(d.getByLabelText("Header"), { target: { value: "Authorization" } });
     // A header name needs its value before it can go on.
     expect(d.getByText("Add the header's value, or clear its name.")).toBeTruthy();
-    expect((d.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((d.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(d.getByLabelText("Header value"), { target: { value: "Bearer t0k" } });
-    next(d);
-    fillCheck(d, "https://example.com/");
     fireEvent.click(d.getByRole("button", { name: "Add" }));
-    await waitFor(() => expect(callsTo("POST", "/api/deploy-targets")).toHaveLength(1));
-    expect(callsTo("POST", "/api/deploy-targets")[0]?.body).toMatchObject({
-      method: "hook",
-      hook: {
-        url: "https://api.render.com/deploy/srv-1?key=abc",
-        httpMethod: "GET",
-        headerName: "Authorization",
-        headerValue: "Bearer t0k",
+    await waitFor(() => expect(callsTo("POST", "/api/checks")).toHaveLength(1));
+    expect(callsTo("POST", "/api/checks")[0]?.body).toMatchObject({
+      deploy: {
+        method: "hook",
+        hook: {
+          url: "https://api.render.com/deploy/srv-1?key=abc",
+          httpMethod: "GET",
+          headerName: "Authorization",
+          headerValue: "Bearer t0k",
+        },
       },
     });
   });
 
   it("edits from a summary, and keeps a stored hook unless it's replaced", async () => {
-    renderAt("/deploys");
+    renderAt("/checks");
     await openMenu("API", "Edit");
     let d = within(await screen.findByRole("dialog", { name: "Edit API" }));
     const row = (label: string) =>
@@ -520,16 +767,20 @@ describe("the target dialog", () => {
     fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "Public API" } });
     fireEvent.click(d.getByRole("button", { name: "Done" }));
     fireEvent.click(d.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(callsTo("PATCH", "/api/deploy-targets/dpt_api")).toHaveLength(1));
-    const kept = callsTo("PATCH", "/api/deploy-targets/dpt_api")[0]?.body as Record<
-      string,
-      unknown
-    >;
+    await waitFor(() => expect(callsTo("PATCH", "/api/checks/chk_api")).toHaveLength(1));
+    const kept = callsTo("PATCH", "/api/checks/chk_api")[0]?.body as {
+      name: string;
+      config: unknown;
+      deploy: Record<string, unknown>;
+    };
     expect(kept.name).toBe("Public API");
-    expect(kept.checks).toEqual([
-      { url: "https://api.example.com/health", status: 204, contains: null },
-    ]);
-    expect("hook" in kept).toBe(false);
+    expect(kept.config).toEqual({
+      kind: "site",
+      checks: [{ url: "https://api.example.com/health", status: 204, contains: null }],
+      versionUrl: null,
+    });
+    expect(kept.deploy).toMatchObject({ remoteKey: "github.com/a/api", method: "hook" });
+    expect("hook" in kept.deploy).toBe(false);
 
     await openMenu("Public API", "Edit");
     d = within(await screen.findByRole("dialog", { name: "Edit Public API" }));
@@ -542,50 +793,68 @@ describe("the target dialog", () => {
     });
     fireEvent.click(d.getByRole("button", { name: "Done" }));
     fireEvent.click(d.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(callsTo("PATCH", "/api/deploy-targets/dpt_api")).toHaveLength(2));
-    expect(callsTo("PATCH", "/api/deploy-targets/dpt_api")[1]?.body).toMatchObject({
-      hook: { url: "https://api.render.com/deploy/srv-2", httpMethod: "POST" },
+    await waitFor(() => expect(callsTo("PATCH", "/api/checks/chk_api")).toHaveLength(2));
+    expect(callsTo("PATCH", "/api/checks/chk_api")[1]?.body).toMatchObject({
+      deploy: { hook: { url: "https://api.render.com/deploy/srv-2", httpMethod: "POST" } },
     });
   });
 
+  it("stops a site deploying when its repo is set to none", async () => {
+    renderAt("/checks");
+    await openMenu("Docs", "Edit");
+    const d = within(await screen.findByRole("dialog", { name: "Edit Docs" }));
+    const row = within(d.getByRole("list", { name: "Settings" }))
+      .getByText("Deploys")
+      .closest("button") as HTMLElement;
+    fireEvent.click(row);
+    fireEvent.click(await d.findByRole("radio", { name: /^No, just watch it/ }));
+    fireEvent.click(d.getByRole("button", { name: "Done" }));
+    fireEvent.click(d.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(callsTo("PATCH", "/api/checks/chk_docs")).toHaveLength(1));
+    expect(callsTo("PATCH", "/api/checks/chk_docs")[0]?.body).toMatchObject({ deploy: null });
+  });
+
   it("says what's wrong in place, and won't go on", async () => {
-    targets = targets.filter((t) => t.remoteKey === "github.com/a/api");
     const d = await openAddDialog();
-    await pickRepo(d, "github.com/a/site");
-    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "api" } });
-    expect(d.getByText("Another target has this name.")).toBeTruthy();
-    expect((d.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "Fresh" } });
-    next(d);
+    pickKind(d, KIND_CARD.site);
     next(d);
     fillCheck(d, "example.com");
     expect(d.getByText("Use an http or https URL.")).toBeTruthy();
-    expect((d.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((d.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
     fillCheck(d, "https://example.com");
+    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "api" } });
+    expect(d.getByText("Another check has this name.")).toBeTruthy();
+    expect((d.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "Fresh" } });
     fireEvent.click(d.getByRole("button", { name: "More settings" }));
     fireEvent.change(d.getByLabelText(/^Status/), { target: { value: "42" } });
     expect(d.getByText("A status is 100 to 599.")).toBeTruthy();
-    expect(callsTo("POST", "/api/deploy-targets")).toHaveLength(0);
+    expect((d.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(callsTo("POST", "/api/checks")).toHaveLength(0);
   });
 
   it("asks for a machine or a hook only when the method needs one", async () => {
     targets = [];
+    checks = [];
     const d = await openAddDialog();
     const steps = () => d.getByRole("list", { name: "Steps" }).children.length;
-    await pickRepo(d, "github.com/a/site");
+    pickKind(d, KIND_CARD.site);
     expect(steps()).toBe(3);
+    next(d);
+    fillCheck(d, "https://example.com/");
+    next(d);
+    await pickRepo(d, "github.com/a/site");
+    expect(steps()).toBe(4);
     next(d);
     fireEvent.click(d.getByRole("radio", { name: METHOD_CARD.hook }));
-    expect(steps()).toBe(4);
+    expect(steps()).toBe(5);
     fireEvent.click(d.getByRole("radio", { name: METHOD_CARD.merge }));
-    expect(steps()).toBe(3);
+    expect(steps()).toBe(4);
   });
 
-  it("adds and removes checks, up to five", async () => {
-    targets = [];
+  it("adds and removes pages, up to five", async () => {
     const d = await openAddDialog();
-    await pickRepo(d, "github.com/a/site");
-    next(d);
+    pickKind(d, KIND_CARD.site);
     next(d);
     expect(d.queryByRole("button", { name: "Remove check 1" })).toBeNull();
     for (let i = 0; i < 4; i++)
@@ -595,6 +864,72 @@ describe("the target dialog", () => {
     fireEvent.click(d.getByRole("button", { name: "Remove check 2" }));
     expect(d.queryByLabelText("Check 5 URL")).toBeNull();
     expect(d.getByRole("button", { name: "Check another page" })).toBeTruthy();
+  });
+
+  it("adds a command check on a machine that can sandbox it", async () => {
+    const sandboxed = [
+      shell(true),
+      { name: "shell.sandbox", version: "1", ready: true, detail: "" },
+    ];
+    runners = [
+      { ...studioMac, capabilities: [...studioMac.capabilities, ...sandboxed] },
+      devbox,
+      { ...devbox, id: "rnr_off", name: "old-mac", capabilities: [shell(false)] },
+    ];
+    const d = await openAddDialog();
+    pickKind(d, KIND_CARD.command);
+    next(d);
+    const machines = d
+      .getAllByRole("radio")
+      .map((r) => [r.textContent, r.getAttribute("aria-checked")]);
+    // Only Studio Mac can sandbox a command, so it's picked.
+    expect(machines).toEqual([
+      ["Studio MacOnline", "true"],
+      ["old-macCan't: commands are off", "false"],
+    ]);
+    fireEvent.change(d.getByLabelText(/^Command/), { target: { value: "test -f ~/Backups/x" } });
+    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "Nightly" } });
+    fireEvent.click(d.getByRole("button", { name: "More settings" }));
+    fireEvent.change(d.getByLabelText(/^Output contains/), { target: { value: "ok" } });
+    fireEvent.change(d.getByLabelText("How often"), { target: { value: "3600" } });
+    fireEvent.click(d.getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(callsTo("POST", "/api/checks")).toHaveLength(1));
+    expect(callsTo("POST", "/api/checks")[0]?.body).toEqual({
+      name: "Nightly",
+      config: {
+        kind: "command",
+        command: "test -f ~/Backups/x",
+        contains: "ok",
+        timeoutSeconds: 60,
+      },
+      intervalSeconds: 3600,
+      notify: true,
+      runnerId: "rnr_3",
+    });
+  });
+
+  it("adds a reply check, due by a time", async () => {
+    installations = [mailInstallation];
+    const d = await openAddDialog();
+    pickKind(d, KIND_CARD.reply);
+    next(d);
+    // With one email account, there's nothing to pick.
+    expect(d.queryByRole("radio")).toBeNull();
+    fireEvent.change(d.getByLabelText("From"), { target: { value: "jo@silva.pt" } });
+    expect((d.getByLabelText(/^Name/) as HTMLInputElement).value).toBe("Reply from jo");
+    fireEvent.change(d.getByLabelText(/^Due by/), { target: { value: "2020-01-01T10:00" } });
+    expect(d.getByText("Pick a time that's still to come.")).toBeTruthy();
+    expect((d.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(d.getByLabelText(/^Due by/), { target: { value: "2099-11-13T17:00" } });
+    fireEvent.click(d.getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(callsTo("POST", "/api/checks")).toHaveLength(1));
+    expect(callsTo("POST", "/api/checks")[0]?.body).toMatchObject({
+      name: "Reply from jo",
+      config: { kind: "reply", from: "jo@silva.pt", subject: null },
+      installationId: "ins_mail",
+      deadline: new Date("2099-11-13T17:00").toISOString(),
+      intervalSeconds: 300,
+    });
   });
 });
 
@@ -661,6 +996,29 @@ describe("deploy steps on a task", () => {
     );
   });
 
+  it("shows the PR's CI on its step and on the deploy approval", async () => {
+    const ci = { state: "failed" as const, message: "CI failed: lint (1 of 3)", at: checkedAt() };
+    tasks = [
+      {
+        ...deployWaitingTask,
+        conversationId: "cnv_1",
+        actions: deployWaitingTask.actions.map((a) =>
+          a.kind === "open_pr" ? { ...a, check: ci } : a,
+        ),
+      },
+    ];
+    targets = [websiteTarget];
+    runners = [studioMac];
+    renderAt("/c/cnv_1");
+    const ask = (await screen.findByText("Approve deployment?")).closest("div")
+      ?.parentElement as HTMLElement;
+    expect(
+      within(ask).getByRole("status", { name: "Check failed: CI failed: lint (1 of 3)" }),
+    ).toBeTruthy();
+    const steps = within(screen.getByRole("list", { name: "Steps after the task" }));
+    expect(steps.getByRole("status").textContent).toBe("CI failed: lint (1 of 3)");
+  });
+
   it("deploys a delivered PR later, and shows why it can't", async () => {
     tasks = [deliveredPrTask];
     targets = [websiteTarget];
@@ -697,6 +1055,49 @@ describe("deploy steps on a task", () => {
     await screen.findByRole("list", { name: "Steps after the task" });
     await waitFor(() => expect(callsTo("GET", "/api/deploy-targets")).toHaveLength(1));
     expect(screen.queryByRole("button", { name: "Deploy" })).toBeNull();
+  });
+});
+
+describe("an action's check in the chat", () => {
+  it("shows on the step, and follows it after the reply was saved", async () => {
+    messages = [
+      {
+        id: "msg_1",
+        conversationId: "cnv_1",
+        role: "assistant",
+        text: "Added it.",
+        taskIds: [],
+        createdAt: "2026-11-06T18:00:00.000Z",
+        trace: {
+          ms: 900,
+          steps: [
+            {
+              kind: "tool",
+              id: "call_1",
+              name: "calendar_create_event",
+              input: { title: "Dentist" },
+              status: "done",
+              output: "{}",
+              check: { state: "waiting", message: "Couldn't check yet", at: checkedAt() },
+            },
+          ],
+        },
+      },
+    ];
+    renderAt("/c/cnv_1");
+    expect(
+      await screen.findByRole("status", { name: "Still checking: Couldn't check yet" }),
+    ).toBeTruthy();
+    emit({
+      type: "tool_step.check",
+      conversationId: "cnv_1",
+      messageId: "msg_1",
+      stepId: "call_1",
+      check: { state: "passed", message: "In Work, Mon 9 Nov 10:00", at: checkedAt() },
+    });
+    expect(
+      await screen.findByRole("status", { name: "Checked: In Work, Mon 9 Nov 10:00" }),
+    ).toBeTruthy();
   });
 });
 

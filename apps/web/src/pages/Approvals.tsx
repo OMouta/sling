@@ -11,6 +11,7 @@ import {
   Upload,
   Workflow,
 } from "lucide-react";
+import { ActionCheckLine } from "../components/ActionCheck.tsx";
 import { DeployPlanText } from "../components/DeployBits.tsx";
 import { Content, Page } from "../components/Page.tsx";
 import { RuleQuestion } from "../components/RuleQuestion.tsx";
@@ -197,7 +198,8 @@ function DeployApprovalGroup({ taskId, approvals }: { taskId: string; approvals:
     ? targetForTask(task, targets.data, runners.data)
     : targetForRemote(t.remoteUrl, targets.data);
   const targetName = target?.name ?? task?.actions.find((a) => a.targetName)?.targetName;
-  const prUrl = task?.actions.find((a) => a.kind === "open_pr")?.url ?? null;
+  const pr = task?.actions.find((a) => a.kind === "open_pr");
+  const prUrl = pr?.url ?? null;
 
   return (
     <Card className="overflow-hidden">
@@ -240,6 +242,7 @@ function DeployApprovalGroup({ taskId, approvals }: { taskId: string; approvals:
             })}
           />
         </p>
+        {pr?.check && <ActionCheckLine check={pr.check} />}
         <StepList approvals={approvals} remoteUrl={t.remoteUrl} />
       </div>
       <DecisionFooter decide={decide} />

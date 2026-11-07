@@ -73,7 +73,7 @@ const sandboxesRoute = createRoute({
 const checksRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/checks",
-  component: lazyRouteComponent(() => import("./pages/Deploys.tsx"), "DeploysPage"),
+  component: lazyRouteComponent(() => import("./pages/Checks.tsx"), "ChecksPage"),
 });
 // Deploy targets became site checks; old links and notifications still land.
 const deploysRoute = createRoute({
