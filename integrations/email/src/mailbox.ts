@@ -48,6 +48,8 @@ export interface MailSummary {
   /** `folder:uidValidity:uid`, which `readMessage` takes. */
   id: string;
   messageId: string | null;
+  /** The Message-ID this one answers, so a reply can be told from other mail. */
+  inReplyTo: string | null;
   from: EmailAddress | null;
   to: EmailAddress[];
   subject: string;
@@ -315,6 +317,7 @@ export async function searchMailbox(
       byUid.set(m.uid, {
         id: dedupeKey(path, validity, m.uid),
         messageId: env?.messageId ?? null,
+        inReplyTo: env?.inReplyTo ?? null,
         from: address(env?.from?.[0]),
         to: addresses(env?.to),
         subject: env?.subject ?? "",

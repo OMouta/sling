@@ -196,6 +196,32 @@ export function answers(mail: FoundMail, config: ReplyCheckConfig): boolean {
   return refs.some((r) => bare(r) === want);
 }
 
+/** A sender's clock can run behind, and a Date header has no milliseconds. */
+const CLOCK_SKEW_MS = 60_000;
+
+/** One message from `email.search`, with its sender as text. */
+function foundMail(v: unknown): FoundMail | null {
+  if (!v || typeof v !== "object") return null;
+  const m = v as Record<string, unknown>;
+  const from = m.from as { name?: unknown; address?: unknown } | string | null | undefined;
+  const sender =
+    typeof from === "string"
+      ? from
+      : typeof from?.address === "string"
+        ? typeof from.name === "string" && from.name
+          ? `${from.name} <${from.address}>`
+          : from.address
+        : "";
+  return {
+    id: String(m.id ?? ""),
+    from: sender,
+    subject: String(m.subject ?? ""),
+    date: String(m.date ?? ""),
+    inReplyTo: typeof m.inReplyTo === "string" ? m.inReplyTo : null,
+    ...(m.references !== undefined ? { references: m.references as string[] | string } : {}),
+  };
+}
+
 /** Searches through the `email.search` node of the account's connector. */
 export function nodeMailSearch(ctx: AppContext): MailSearch {
   return async (q) => {
@@ -210,9 +236,13 @@ export function nodeMailSearch(ctx: AppContext): MailSearch {
       attempt: 1,
       signal,
     });
+    // IMAP searches by day, in the server's own zone, so ask from the day
+    // before and keep only what arrived after the check was made.
+    const dayBefore = new Date(q.since.getTime() - 86_400_000).toISOString().slice(0, 10);
     const config: Record<string, unknown> = {
       installationId: q.installationId,
-      since: q.since.toISOString(),
+      since: dayBefore,
+      limit: 50,
       ...(q.config.from ? { from: q.config.from } : {}),
       ...(q.config.subject ? { subject: q.config.subject } : {}),
       ...(q.config.folder ? { folder: q.config.folder } : {}),
@@ -220,11 +250,14 @@ export function nodeMailSearch(ctx: AppContext): MailSearch {
     try {
       const result = await spec.run(context, { config, inputs: {} });
       if ("wait" in result) return { error: "The email search didn't finish." };
-      const out = result.outputs ?? {};
-      const list = Array.isArray(out.messages)
-        ? out.messages
-        : (Object.values(out).find(Array.isArray) ?? []);
-      return { messages: list as FoundMail[] };
+      const list = result.outputs?.messages;
+      const messages = (Array.isArray(list) ? list : [])
+        .map(foundMail)
+        .filter(
+          (m): m is FoundMail =>
+            m !== null && Date.parse(m.date) >= q.since.getTime() - CLOCK_SKEW_MS,
+        );
+      return { messages };
     } catch (err) {
       return { error: scrub(err instanceof Error ? err.message : String(err), secrets) };
     }

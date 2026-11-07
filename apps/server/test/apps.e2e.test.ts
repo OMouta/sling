@@ -695,6 +695,54 @@ describe("sending", () => {
   });
 });
 
+describe("a reply check", () => {
+  it("is met by a real reply in the mailbox, found through the email search", async () => {
+    const check = await api<{ id: string; state: string }>("POST", "/api/checks", {
+      name: "Jo answered",
+      config: { kind: "reply", from: "jo@silva.pt", inReplyTo: "<quote-1@sling>" },
+      installationId: ids.email,
+      deadline: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    const run = () => api<{ state: string }>("POST", `/api/checks/${check.id}/run`);
+    expect((await run()).state).toBe("waiting");
+
+    const client = new ImapFlow({
+      host: mailHost,
+      port: imapPort,
+      secure: false,
+      auth: { user: "inbox@example.com", pass: "secret" },
+      logger: false,
+    });
+    await client.connect();
+    const mail = (subject: string, extra: string[]) =>
+      [
+        "From: Jo Silva <jo@silva.pt>",
+        "To: inbox@example.com",
+        `Subject: ${subject}`,
+        `Date: ${new Date().toUTCString()}`,
+        `Message-ID: <${newId("msg")}@silva.pt>`,
+        ...extra,
+        "",
+        "Body.",
+      ].join("\r\n");
+    try {
+      // From Jo, but not in the thread, so it doesn't count.
+      await client.append("INBOX", mail("Lunch?", []));
+      expect((await run()).state).toBe("waiting");
+      await client.append("INBOX", mail("Re: the quote", ["In-Reply-To: <quote-1@sling>"]));
+    } finally {
+      await client.logout();
+    }
+    expect((await run()).state).toBe("met");
+    const [last] = await api<{ state: string; message: string }[]>(
+      "GET",
+      `/api/checks/${check.id}/results`,
+    );
+    expect(last?.message).toContain("Jo Silva <jo@silva.pt>");
+    await api("DELETE", `/api/checks/${check.id}`);
+  });
+});
+
 describe("workflows", () => {
   async function workflow(name: string, nodes: unknown[], edges: unknown[]) {
     const wf = await api<{ id: string }>("POST", "/api/workflows", { name });
