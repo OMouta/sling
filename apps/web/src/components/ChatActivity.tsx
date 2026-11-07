@@ -618,12 +618,14 @@ function ChangeStep({
         waiting && "shadow-[inset_0_0_0_1px_var(--tag-amber-border)]",
       )}
     >
-      <div className={cx("flex items-center", editorId && "gap-1 pr-1")}>
+      <div
+        className={cx("flex items-center", editorId && "gap-1 pr-1 has-[>button:hover]:bg-hover")}
+      >
         <Disclosure
           open={open}
           onToggle={() => setOpen((o) => !o)}
           disabled={waiting || applying || change.rows.length === 0}
-          className={cx("py-1.5 pl-2.5 hover:bg-hover", !editorId && "pr-2.5")}
+          className={cx("py-1.5 pl-2.5", !editorId && "pr-2.5 hover:bg-hover")}
           label={line}
         >
           {applying ? (
