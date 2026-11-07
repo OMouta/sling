@@ -107,7 +107,8 @@ export function ChatsPage() {
           groups.map((g) => (
             <section key={g.label} aria-label={g.label} className="mt-4 first:mt-0">
               <h2 className="section-label mb-2 px-1">{g.label}</h2>
-              <Card className="divide-y divide-border overflow-hidden">
+              {/* Not clipped, so a row's menu can open past the card. */}
+              <Card className="divide-y divide-border">
                 {g.items.map((c) => (
                   <ChatRow key={c.id} c={c} menu={menu(c)} />
                 ))}
@@ -124,7 +125,7 @@ export function ChatsPage() {
 function ChatRow({ c, menu }: { c: ConversationSummaryView; menu: React.ReactNode }) {
   const who = c.previewRole === "user" ? "You: " : c.previewRole === "system" ? "Sling: " : "";
   return (
-    <div className="group relative flex items-start gap-3 px-4 py-3 transition-colors duration-150 hover:bg-hover">
+    <div className="group relative flex items-start gap-3 px-4 py-3 transition-colors duration-150 first:rounded-t-[inherit] last:rounded-b-[inherit] hover:bg-hover">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <Link
