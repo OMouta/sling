@@ -388,14 +388,20 @@ function saveDeployTarget(ctx: AppContext, scope: ToolScope): Tool {
           : []),
       ];
       const hookBefore = before.hook
-        ? `${before.hook.httpMethod} to ${before.hook.host}${before.hook.hasHeader ? ", with a header" : ""}`
+        ? hookLine(
+            before.hook.httpMethod,
+            before.hook.host,
+            before.hook.hasHeader ? "a header" : null,
+          )
         : null;
       const hookAfter =
-        method !== "hook"
-          ? null
-          : needsUrl || header !== undefined || input.hookMethod
-            ? `${input.hookMethod ?? before.hook?.httpMethod ?? "POST"}${needsUrl ? " to the new URL" : before.hook ? ` to ${before.hook.host}` : ""}${header ? `, with ${header}` : header === null ? "" : before.hook?.hasHeader ? ", with a header" : ""}`
-            : hookBefore;
+        method === "hook"
+          ? hookLine(
+              input.hookMethod ?? before.hook?.httpMethod ?? "POST",
+              needsUrl ? null : (before.hook?.host ?? null),
+              header === undefined ? (before.hook?.hasHeader ? "a header" : null) : header,
+            )
+          : null;
       const rows: SetupChangeRow[] = [
         ...diff("Name", target.name, name),
         ...diff("Repo", target.remoteKey, remote),
@@ -467,6 +473,11 @@ function saveDeployTarget(ctx: AppContext, scope: ToolScope): Tool {
       });
     },
   });
+}
+
+/** "POST to api.render.com, with Authorization". No host means the URL typed on the card. */
+function hookLine(method: string, host: string | null, header: string | null): string {
+  return `${method} to ${host ?? "the new URL"}${header ? `, with ${header}` : ""}`;
 }
 
 function targetSummary(t: DeployTargetView) {

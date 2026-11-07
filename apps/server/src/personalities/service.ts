@@ -33,7 +33,10 @@ export const PersonalityFields = z.object({
   shape: z.enum(GLYPH_SHAPES),
 });
 export type PersonalityFields = z.infer<typeof PersonalityFields>;
-export const PersonalityPatch = PersonalityFields.partial();
+/** A change to some fields. Without its default, a description left out stays as it is. */
+export const PersonalityPatch = PersonalityFields.extend({
+  description: z.string().trim().max(PERSONALITY_DESCRIPTION_MAX),
+}).partial();
 export type PersonalityPatch = z.infer<typeof PersonalityPatch>;
 
 interface Owner {

@@ -441,6 +441,26 @@ describe("connecting an app account", () => {
     expect(await everything()).not.toContain(WRONG);
   });
 
+  it("takes a new password on the card, and tests it before saving", async () => {
+    const id = await conversation("auto");
+    const before = await send(id, "save_app_account", {
+      account: "ana@vault.example",
+      newSecrets: true,
+    });
+    const { approval } = await card(id);
+    expect(approval.change).toMatchObject({
+      title: "Change ana@vault.example?",
+      rows: [],
+      secrets: [{ key: "password", label: "New password", required: true }],
+    });
+    await decide(id, approval.id, "approve", { password: WRONG });
+    expect(result(await reply(id, before)).error).toBe(
+      "The connection test failed: Login refused for ana@vault.example with [redacted]",
+    );
+    const [row] = await server.ctx.db.select().from(schema.connectorInstallations);
+    expect((await readCredentials(server.ctx, row as never)).password).toBe(RIGHT);
+  });
+
   it("turns an account off with one Apply", async () => {
     const id = await conversation("auto");
     const before = await send(id, "save_app_account", {
@@ -551,6 +571,28 @@ describe("each kind of change", () => {
     );
     expect(result(again).error).toContain("already has a deploy target, Website");
     expect(again.approval).toBeUndefined();
+
+    // Renaming it, with a new hook URL typed on the card.
+    const NEW_HOOK = "https://api.render.example/deploy/srv-new456?key=hook-secret-new";
+    const edit = await send(id, "save_deploy_target", {
+      target: "Website",
+      name: "Site",
+      newHookUrl: true,
+    });
+    const c = await card(id);
+    expect(c.approval.change).toMatchObject({
+      title: "Change deploy target Website?",
+      rows: [
+        { label: "Name", before: "Website", after: "Site" },
+        { label: "Hook", before: "POST to api.render.example", after: "POST to the new URL" },
+      ],
+      secrets: [{ key: "hookUrl", required: true }],
+    });
+    await decide(id, c.approval.id, "approve", { hookUrl: NEW_HOOK });
+    expect(result(await reply(id, edit))).toMatchObject({ target: { name: "Site" } });
+    const renamed = await server.ctx.deploys.find((await workspace()).id, "Site");
+    expect((await server.ctx.deploys.readHook(renamed as never))?.url).toBe(NEW_HOOK);
+    expect(await everything()).not.toContain("hook-secret-new");
   });
 
   it("adds a workflow from a template, on, then changes a step and publishes it", async () => {
@@ -583,6 +625,16 @@ describe("each kind of change", () => {
       `/api/workflows/${added.workflow.id}`,
     );
     expect(wf.active.nodes.find((n) => n.id === "everyMinute")?.config.cron).toBe("*/5 * * * *");
+
+    const off = await send(id, "change_workflow", { workflow: "Site down alert", enabled: false });
+    const o = await card(id);
+    expect(o.approval.change).toMatchObject({
+      title: "Turn off workflow Site down alert?",
+      done: "Turned off Site down alert",
+      rows: [{ label: "On", before: "On", after: "Off" }],
+    });
+    await decide(id, o.approval.id, "approve");
+    expect(result(await reply(id, off))).toMatchObject({ workflow: { enabled: false } });
   });
 
   it("adds a personality", async () => {
@@ -610,6 +662,40 @@ describe("each kind of change", () => {
     );
     expect(made).toMatchObject({ tools: ["apps"], color: "green", shape: "bloom" });
     expect(typesPublished().has("personality.updated")).toBe(true);
+
+    const edit = await send(id, "save_personality", {
+      personality: "gardener",
+      tools: ["apps", "setup"],
+      color: "teal",
+    });
+    const c = await card(id);
+    expect(c.approval.change).toMatchObject({
+      title: "Change personality Gardener?",
+      rows: [
+        {
+          label: "Tools",
+          before: "Apps and workflows",
+          after: "Apps and workflows, Change Sling's setup",
+        },
+        { label: "Look", before: "green, bloom", after: "teal, bloom" },
+      ],
+    });
+    await decide(id, c.approval.id, "approve");
+    await reply(id, edit);
+    const changed = (await api<PersonalityView[]>("GET", "/api/personalities")).find(
+      (p) => p.name === "Gardener",
+    );
+    expect(changed).toMatchObject({
+      description: "Plants and soil.",
+      tools: ["apps", "setup"],
+      color: "teal",
+      revision: 2,
+    });
+    // The route keeps a description it wasn't sent, too.
+    const patched = await api<PersonalityView>("PATCH", `/api/personalities/${changed?.id}`, {
+      color: "rose",
+    });
+    expect(patched).toMatchObject({ description: "Plants and soil.", color: "rose" });
   });
 
   it("changes settings, and the sandbox list", async () => {
