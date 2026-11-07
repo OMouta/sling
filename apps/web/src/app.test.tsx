@@ -278,7 +278,6 @@ describe("web app", () => {
   it("asks for a logged-in coding agent before the first conversation", async () => {
     renderAt("/");
     expect(await screen.findByText("Log in to a coding agent")).toBeTruthy();
-    expect(screen.getAllByText("Fix the footer").length).toBeGreaterThan(0);
   });
 
   it("shows a conversation with its task card and approval buttons", async () => {

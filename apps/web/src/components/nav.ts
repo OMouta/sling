@@ -6,6 +6,7 @@ import {
   Laptop,
   ListChecks,
   type LucideIcon,
+  MessagesSquare,
   Plug,
   Puzzle,
   Settings,
@@ -15,6 +16,7 @@ import {
 
 export interface NavItem {
   to:
+    | "/chats"
     | "/personalities"
     | "/memory"
     | "/tasks"
@@ -33,6 +35,7 @@ export interface NavItem {
 
 /** Every top-level page, in sidebar order. */
 export const NAV: NavItem[] = [
+  { to: "/chats", label: "Chats", icon: MessagesSquare, section: "main" },
   { to: "/personalities", label: "Personalities", icon: Drama, section: "main" },
   { to: "/memory", label: "Memory", icon: Brain, section: "main" },
   { to: "/tasks", label: "Tasks", icon: ListChecks, section: "main" },

@@ -116,19 +116,22 @@ describe("chats", () => {
     );
   });
 
-  it("groups the sidebar's chats by day and marks what waits for you", async () => {
+  it("keeps chats off the sidebar, which links to the Chats page with how many wait for you", async () => {
     open("/tasks");
-    await screen.findByText("Desktop items");
-    expect(screen.getByText("Today")).toBeTruthy();
-    expect(screen.getByText("Previous 7 days")).toBeTruthy();
-    const footer = screen.getByText("Fix the footer").closest("a") as HTMLElement;
-    expect(within(footer).getByTitle("Waiting for you")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Filter chats" }));
-    fireEvent.change(screen.getByLabelText("Filter chats by name"), {
-      target: { value: "foot" },
-    });
+    const sidebar = within(await screen.findByRole("navigation"));
+    const link = sidebar.getByRole("link", { name: /^Chats/ });
+    expect(link.getAttribute("href")).toBe("/chats");
+    await waitFor(() => expect(link.textContent).toBe("Chats1"));
     expect(screen.queryByText("Desktop items")).toBeNull();
-    expect(screen.getByText("Fix the footer")).toBeTruthy();
+  });
+
+  it("groups the Chats page by day and marks what waits for you", async () => {
+    open("/chats");
+    const main = within(await screen.findByRole("main"));
+    expect(await main.findByRole("region", { name: "Today" })).toBeTruthy();
+    const week = within(main.getByRole("region", { name: "Previous 7 days" }));
+    expect(week.getByText("Fix the footer")).toBeTruthy();
+    expect(week.getByTitle("Waiting for you")).toBeTruthy();
   });
 
   it("filters the Chats page and searches what was said", async () => {

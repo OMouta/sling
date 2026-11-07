@@ -5,11 +5,21 @@ import { useEffect, useMemo, useState } from "react";
 import { useConversationMenu } from "../components/ConversationMenu.tsx";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, Toolbar } from "../components/Page.tsx";
-import { ChatStatusMark } from "../components/SidebarChats.tsx";
-import { Badge, Button, Card, Empty, ErrorText, Skeleton, Tabs } from "../components/ui.tsx";
+import {
+  Badge,
+  Button,
+  Card,
+  Dot,
+  Empty,
+  ErrorText,
+  Skeleton,
+  Spinner,
+  Tabs,
+} from "../components/ui.tsx";
 import {
   activityAt,
   type ConversationFilter,
+  conversationStatus,
   FILTERS,
   groupByDate,
   useConversations,
@@ -172,4 +182,34 @@ function ChatRow({ c, menu }: { c: ConversationSummaryView; menu: React.ReactNod
       </div>
     </div>
   );
+}
+
+/** What a chat is doing, as a small mark at the end of its row. */
+function ChatStatusMark({ c }: { c: ConversationSummaryView }) {
+  const status = conversationStatus(c);
+  if (status === "waiting") {
+    return (
+      <span title="Waiting for you" className="grid size-4 place-items-center">
+        <Dot tone="warn" />
+      </span>
+    );
+  }
+  if (status === "thinking") {
+    return (
+      <span title="Replying" className="grid size-4 place-items-center">
+        <Spinner className="size-3" />
+      </span>
+    );
+  }
+  if (status === "tasks") {
+    return (
+      <span
+        title={`${c.activeTasks} task${c.activeTasks === 1 ? "" : "s"} running`}
+        className="grid size-4 place-items-center"
+      >
+        <Dot tone="accent" pulse />
+      </span>
+    );
+  }
+  return null;
 }

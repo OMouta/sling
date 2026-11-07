@@ -1,10 +1,11 @@
 import type { ApprovalView, RunnerView, TaskView } from "@sling/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { MessageSquare, PanelLeftClose, SquarePen } from "lucide-react";
+import { PanelLeftClose, SquarePen } from "lucide-react";
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api.ts";
 import { decisionCount } from "../lib/approvals.ts";
+import { useConversations } from "../lib/conversations.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { NEW_CHAT_EVENT } from "../lib/newChat.ts";
 import { connectRealtime, setOpenConversation, useConnection } from "../lib/realtime.ts";
@@ -14,7 +15,6 @@ import type { Status } from "../lib/types.ts";
 import { Logo } from "./Logo.tsx";
 import { NAV, type NavItem } from "./nav.ts";
 import { ShellContext } from "./Page.tsx";
-import { SidebarChats } from "./SidebarChats.tsx";
 import { Button, Count, cx, Spinner } from "./ui.tsx";
 
 const CommandPalette = lazy(() =>
@@ -163,10 +163,24 @@ const navRow =
   "group flex h-[30px] items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-muted transition-colors duration-150 ease-[cubic-bezier(0.25,1,0.5,1)] hover:text-text";
 const navActive = "active bg-surface-3 text-text! shadow-active";
 
-function NavLink({ item, count, warn }: { item: NavItem; count?: number; warn?: boolean }) {
+function NavLink({
+  item,
+  count,
+  warn,
+  active,
+}: {
+  item: NavItem;
+  count?: number;
+  warn?: boolean;
+  active?: boolean;
+}) {
   const Icon = item.icon;
   return (
-    <Link to={item.to} className={navRow} activeProps={{ className: navActive }}>
+    <Link
+      to={item.to}
+      className={cx(navRow, active && navActive)}
+      activeProps={{ className: navActive }}
+    >
       <Icon
         aria-hidden="true"
         className="text-subtle transition-colors duration-150 group-hover:text-icon group-[.active]:text-icon"
@@ -200,6 +214,9 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
     queryFn: () => api.get<TaskView[]>("/api/tasks"),
   });
   const sandboxes = useSandboxes();
+  const conversations = useConversations();
+  // An open chat is one of the Chats page's.
+  const inChat = useRouterState({ select: (s) => s.location.pathname.startsWith("/c/") });
 
   const machines = machinesOnly(runners.data ?? []);
   const online = machines.filter((m) => m.online).length;
@@ -207,6 +224,7 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
     (t) => t.state === "queued" || t.state === "dispatched" || t.state === "running",
   ).length;
   const counts: Partial<Record<NavItem["to"], { n?: number; warn?: boolean }>> = {
+    "/chats": { n: (conversations.data ?? []).filter((c) => c.waiting).length, warn: true },
     "/tasks": { n: activeTasks },
     "/approvals": { n: decisionCount(approvals.data), warn: true },
     "/machines": { n: online },
@@ -214,7 +232,13 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
   };
   const section = (s: NavItem["section"]) =>
     NAV.filter((n) => n.section === s).map((n) => (
-      <NavLink key={n.to} item={n} count={counts[n.to]?.n} warn={counts[n.to]?.warn} />
+      <NavLink
+        key={n.to}
+        item={n}
+        count={counts[n.to]?.n}
+        warn={counts[n.to]?.warn}
+        active={n.to === "/chats" && inChat}
+      />
     ));
 
   return (
@@ -250,23 +274,9 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
         />
       </div>
 
-      {/* Fades out above Settings instead of cutting a chat in half; the padding keeps the last one clear. */}
+      {/* On a short screen it scrolls and fades out above Settings; the padding keeps the last link clear. */}
       <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pt-3 pb-6 [mask-image:linear-gradient(to_bottom,black_calc(100%-28px),transparent)]">
-        <div className="space-y-px">
-          <Link
-            to="/"
-            className={navRow}
-            activeOptions={{ exact: true }}
-            activeProps={{ className: navActive }}
-          >
-            <MessageSquare
-              aria-hidden="true"
-              className="text-subtle transition-colors duration-150 group-hover:text-icon group-[.active]:text-icon"
-            />
-            <span className="flex-1">Chat</span>
-          </Link>
-          {section("main")}
-        </div>
+        <div className="space-y-px">{section("main")}</div>
 
         <div className="mt-5 space-y-px">
           <SectionLabel>Automation</SectionLabel>
@@ -277,8 +287,6 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
           <SectionLabel>Infrastructure</SectionLabel>
           {section("infrastructure")}
         </div>
-
-        <SidebarChats onNew={onNew} />
       </nav>
 
       <div className="shrink-0 space-y-2 px-3 pb-3">
