@@ -5,7 +5,7 @@ import { Activity, Ellipsis, Pencil, Plus, Rocket, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { CheckList, MethodLine } from "../components/DeployBits.tsx";
 import { DeployTargetDialog } from "../components/DeployTargetDialog.tsx";
-import { Page, Toolbar, ToolbarText } from "../components/Page.tsx";
+import { Page, Toolbar } from "../components/Page.tsx";
 import { ActionStateText } from "../components/TaskCard.tsx";
 import {
   Badge,
@@ -66,12 +66,7 @@ export function DeploysPage() {
               Add target
             </Button>
           }
-        >
-          <ToolbarText>
-            Repos Sling can merge, deploy, and check once you approve a fix. Each one has the checks
-            that say its site works.
-          </ToolbarText>
-        </Toolbar>
+        />
       }
     >
       {editing && (
@@ -91,10 +86,7 @@ export function DeploysPage() {
               Add target
             </Button>
           }
-        >
-          Add a repo's site so Sling can deploy a fix after you approve it, then check that the site
-          works.
-        </Empty>
+        />
       ) : (
         <div className="space-y-4 px-5 pt-1 pb-6">
           {list.isPending && <Skeleton className="h-[188px] w-full rounded-xl" />}
@@ -176,7 +168,7 @@ function TargetCard({
               onSelect={async () => {
                 const ok = await confirm({
                   title: `Delete ${t.name}?`,
-                  body: `Sling stops checking it, and tasks in ${t.remoteKey} can't deploy until you add a target again. Deploys already done stay as they are.`,
+                  body: `Tasks in ${t.remoteKey} can't deploy until you add a target again.`,
                   action: "Delete",
                   danger: true,
                 });

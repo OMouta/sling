@@ -134,7 +134,6 @@ export function DeployTargetDialog({
   return (
     <Dialog
       title={target ? `Edit ${target.name}` : "Add a deploy target"}
-      description="A repo Sling can merge, deploy, and check once a fix is approved."
       onClose={onClose}
       footer={
         <>
@@ -186,17 +185,10 @@ export function DeployTargetDialog({
             {/* Every method's fields share one cell, so the dialog keeps its height as you switch. */}
             <div className="grid">
               <MethodPanel active={draft.method === "merge"}>
-                <div className="space-y-2 text-xs leading-[18px] text-muted">
-                  <p>
-                    Your host deploys the default branch when it changes, as Vercel, Netlify, and
-                    Render do. Sling merges, waits {span(settle)}, then runs the checks.
-                  </p>
-                  <p>
-                    The host decides when the new version goes live, so add a version URL below.
-                    Then Sling waits until the site shows the merged commit, instead of passing on
-                    the old version.
-                  </p>
-                </div>
+                <p className="text-xs leading-[18px] text-muted">
+                  For hosts that deploy on merge, like Vercel or Netlify. Add a version URL so the
+                  checks wait for the new commit.
+                </p>
               </MethodPanel>
               <MethodPanel active={draft.method === "command"}>
                 <CommandFields
@@ -228,7 +220,7 @@ export function DeployTargetDialog({
               errors.versionUrl ? (
                 <Problem text={errors.versionUrl} />
               ) : (
-                "A URL whose page shows the deployed commit. Without one, Sling can't tell which version answered."
+                "A page that shows the deployed commit"
               )
             }
           >
@@ -406,14 +398,14 @@ function RepoPicker({
           <Problem text={error} />
         ) : none ? (
           <>
-            Sling knows a repo once a machine allows it. Add one under{" "}
+            Allow a repo under{" "}
             <Link to="/machines" className="text-accent-text hover:underline">
               Machines
-            </Link>
-            .
+            </Link>{" "}
+            first.
           </>
         ) : (
-          (where ?? "Repos with a remote, from your machines and the sandbox list.")
+          (where ?? "Repos with a remote")
         )
       }
     >
@@ -455,10 +447,7 @@ function CommandFields({
   if (!remoteKey) {
     // The same shape as once a repo is picked, so nothing jumps when it is.
     return (
-      <Field
-        label="Machine"
-        hint="The deploy command lives on the machine, so Sling picks where it runs but never what runs."
-      >
+      <Field label="Machine" hint="Machines with a deploy command for the repo">
         <Select value="" disabled onChange={() => {}}>
           <option value="">Pick a repo first</option>
         </Select>
@@ -470,12 +459,11 @@ function CommandFields({
     return (
       <div className="space-y-2">
         <p className="text-xs leading-[18px] text-muted">
-          No machine has a deploy command for this repo. The command lives on the machine, so Sling
-          can pick where it runs but never what runs. Set it on the machine that deploys:
+          No machine has a deploy command for this repo. Set one on the machine that deploys:
         </p>
         <CodeLine text={line} />
         <p className={cx("text-xs leading-4", error ? "text-danger" : "text-subtle")}>
-          {error ?? "It shows up here once the machine reports it."}
+          {error ?? "It shows up here once it's set."}
         </p>
       </div>
     );
@@ -490,10 +478,10 @@ function CommandFields({
             <Problem text={error} />
           ) : picked ? (
             <>
-              Runs <Mono>{picked.command}</Mono> in a fresh checkout of the merged commit.
+              Runs <Mono>{picked.command}</Mono> on the merged commit.
             </>
           ) : (
-            "Only machines with a deploy command for this repo are listed."
+            "Machines with a deploy command for the repo"
           )
         }
       >
@@ -583,9 +571,6 @@ function HookFields({
                 Replace
               </Button>
             </span>
-            <span className="block text-xs leading-4 text-subtle">
-              Stored encrypted. Sling never shows it again.
-            </span>
           </div>
         ) : (
           <Field
@@ -605,7 +590,7 @@ function HookFields({
                   </button>
                 </>
               ) : (
-                "Stored encrypted. Sling never shows it again."
+                "Hidden once saved"
               )
             }
           >
@@ -624,7 +609,7 @@ function HookFields({
         )}
         <Segmented
           label="Request"
-          className="sm:self-end sm:pb-[23px]"
+          className={cx("sm:self-end", !(locked && stored) && "sm:pb-[23px]")}
           options={[
             { value: "POST" as const, label: "POST" },
             { value: "GET" as const, label: "GET" },
@@ -660,8 +645,7 @@ function HookFields({
           </Field>
         </div>
         <p className={cx("text-xs leading-4", errors.header ? "text-danger" : "text-subtle")}>
-          {errors.header ??
-            (locked ? "Replace the hook to change these." : "Sent with each call, write-only.")}
+          {errors.header ?? (locked ? "Replace the hook to change these." : "Sent with each call")}
         </p>
       </div>
     </div>
@@ -687,9 +671,6 @@ function ChecksFields({
   return (
     <fieldset className="space-y-2">
       <legend className="mb-1.5 block text-xs font-medium text-soft">Health checks</legend>
-      <p className="-mt-0.5 text-xs leading-4 text-subtle">
-        Sling GETs each one. Any status from 200 to 399 passes unless you set one.
-      </p>
       <div aria-hidden="true" className={cx(cols, "text-xs text-subtle max-sm:hidden")}>
         <span>URL</span>
         <span>Status</span>

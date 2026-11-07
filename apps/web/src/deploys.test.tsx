@@ -408,8 +408,8 @@ describe("the target dialog", () => {
     ]);
     // The one machine that can deploy is picked for you.
     expect(machine.value).toBe("rnr_3");
-    expect(d.getByText(/in a fresh checkout of the merged commit/).textContent).toBe(
-      "Runs fly deploy in a fresh checkout of the merged commit.",
+    expect(d.getByText(/on the merged commit/).textContent).toBe(
+      "Runs fly deploy on the merged commit.",
     );
     fillCheck(d, "https://example.com/health");
     fireEvent.change(d.getByLabelText("Check 1 status"), { target: { value: "200" } });
