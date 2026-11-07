@@ -5,7 +5,7 @@
  */
 
 /** Groups of Sling's assistant tools a personality can be given. */
-export const PERSONALITY_TOOLS = ["commands", "coding", "apps", "deploys"] as const;
+export const PERSONALITY_TOOLS = ["commands", "coding", "apps", "deploys", "setup"] as const;
 export type PersonalityTool = (typeof PERSONALITY_TOOLS)[number];
 
 export const PERSONALITY_TOOL_INFO: Record<
@@ -27,6 +27,10 @@ export const PERSONALITY_TOOL_INFO: Record<
   deploys: {
     label: "Deploys",
     description: "Deploys finished fixes. Asks first.",
+  },
+  setup: {
+    label: "Change Sling's setup",
+    description: "Deploy targets, apps, workflows, personalities and settings. Asks first.",
   },
 };
 

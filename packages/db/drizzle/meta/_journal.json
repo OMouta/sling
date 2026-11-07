@@ -78,6 +78,13 @@
       "when": 1794000910471,
       "tag": "0010_deploy_timeout",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794054098731,
+      "tag": "0011_assistant_setup",
+      "breakpoints": true
     }
   ]
 }

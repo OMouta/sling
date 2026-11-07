@@ -28,6 +28,16 @@ function sendsNote(mode: PermissionMode): string {
   return "- When the user asks you to send or create something, such as an email, a message, an event, or a workflow run that does, call the tool right away. Don't ask in your reply first: Sling shows them exactly what would go out, with Approve and Deny, before anything leaves. If they decline or don't answer, nothing happened: say so, and don't try another way.";
 }
 
+function changesNote(mode: PermissionMode): string {
+  if (mode === "read-only") {
+    return "- This conversation is Read-only, so these tools can't change anything: they refuse. read_setup still works. If the user wants a change, tell them it needs another mode, which they switch in the app.";
+  }
+  if (mode === "full-access") {
+    return "- In Full access a change applies at once, unless it needs a password or token: then the card asks the user for it first. Be sure it's what the user asked for before you call the tool.";
+  }
+  return "- Call the tool as soon as you know what to change. Don't ask in your reply first: Sling shows the user the exact change, with Apply and Cancel. If they cancel or don't answer, nothing changed: say so, and don't try another way.";
+}
+
 const dateFormats = new Map<string, Intl.DateTimeFormat>();
 
 /** "It's Friday, 6 November 2026, 07:30 in Europe/Lisbon." */
@@ -95,6 +105,8 @@ export function assistantInstructions(
   const coding = personality.tools.includes("coding");
   const apps = personality.tools.includes("apps");
   const deploys = personality.tools.includes("deploys");
+  const setup = personality.tools.includes("setup");
+  const any = commands || coding || apps || deploys || setup;
   const policy = MODE_POLICY[mode];
   const out: string[] = [personality.instructions.trim()];
 
@@ -103,7 +115,7 @@ export function assistantInstructions(
     "- The chat shows Markdown. Use it where it helps: short paragraphs, lists, a table to compare things, code blocks for code and commands.",
     "- You can't browse the web. When something needs current information you don't have, say so instead of guessing.",
   ];
-  if (!commands && !coding && !apps && !deploys) {
+  if (!any) {
     chat.push(
       "- You have no tools in this chat. You can't see or change anything on the user's machines, files, or repos. If they ask for that, say you can't do it here, and that a chat with a personality that reaches their machines can.",
     );
@@ -121,12 +133,19 @@ export function assistantInstructions(
         "- You can check the sites and services the user deploys, and deploy a finished fix once they approve.",
       );
     }
+    if (setup) {
+      chat.push(
+        "- You can change Sling's own setup for the user: deploy targets, app accounts, workflows, personalities, and settings.",
+      );
+    }
     const depends =
       commands || coding
         ? `the user's machines, files, repos, ${apps ? "tasks, calendar, or apps" : "or tasks"}`
         : apps
           ? `the user's calendar${deploys ? ", apps, or sites" : " or apps"}`
-          : "the user's sites";
+          : deploys
+            ? "the user's sites"
+            : "how Sling is set up";
     chat.push(
       `- Answer directly from what you know when you can. Use a tool only when the answer depends on ${depends}, or when they want something done.`,
     );
@@ -181,7 +200,20 @@ export function assistantInstructions(
 
   if (deploys) out.push(deploysSection(mode));
 
-  if (commands || coding || apps || deploys) {
+  if (setup) {
+    out.push(
+      [
+        "Sling's own setup (read_setup, save_deploy_target, save_app_account, add_workflow, change_workflow, save_personality, change_settings):",
+        "- Use these when the user wants Sling set up differently: a deploy target for a site, an app account such as a mailbox or calendar, a workflow from a template or a change to one, a personality, or a setting such as the time zone.",
+        "- read_setup shows what's there now, including each connector's fields and the templates. Look before you change something you haven't seen in this chat.",
+        changesNote(mode),
+        "- Never ask for a password, app password, token, or deploy hook URL in the chat, and never pass one to a tool. The card asks the user for it, and you only hear whether it worked. If the user pastes one in the chat anyway, don't repeat it; the card still asks.",
+        "- A failed connection test comes back as the tool's error. Say what it said, and offer to try again.",
+      ].join("\n"),
+    );
+  }
+
+  if (any) {
     out.push(
       `This conversation is in ${policy.label} mode: ${policy.description} You can't change the mode. The user switches it in the app.`,
     );
@@ -203,6 +235,7 @@ function cliNote(tools: readonly PersonalityTool[], apps: readonly string[]): st
       ? ["delegate_coding_task is how code in a repo gets changed"]
       : []),
     ...(tools.includes("apps") ? ["the app tools are how you reach their calendar and apps"] : []),
+    ...(tools.includes("setup") ? ["the setup tools are how Sling's own setup changes"] : []),
   ].join(", and ");
   return `You're running inside a coding agent's CLI on one of the user's machines, for Sling. Your only tools are Sling's, from the MCP server named "sling": ${names.join(", ")}. You have no file, shell, or web tools of your own here: ${how}.`;
 }

@@ -14,13 +14,13 @@ export const PERSONALITY_TEMPLATES: PersonalityTemplateView[] = [
     group: "Your machines",
     name: "Sling",
     description:
-      "Runs commands on your machines, hands coding work to your coding agent, deploys fixes, and uses your apps.",
+      "Runs commands on your machines, hands coding work to your coding agent, deploys fixes, uses your apps, and sets up Sling.",
     instructions: lines(
       "You are Sling, the user's own assistant. Help with whatever they ask: answer questions, explain things, write and edit text, plan, compare options, and think problems through.",
       "",
       "Keep replies short and plain. No filler.",
     ),
-    tools: ["commands", "coding", "apps", "deploys"],
+    tools: ["commands", "coding", "apps", "deploys", "setup"],
     color: "violet",
     shape: "bloom",
   },

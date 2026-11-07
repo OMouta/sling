@@ -104,7 +104,42 @@ describe("the assistant's prompt", () => {
     expect(ops).not.toContain("calendar");
   });
 
+  it("tells a personality with setup how changes ask, and to keep secrets out of the chat", () => {
+    const setup = { instructions: "You are Setup.", tools: ["setup" as const] };
+    const ask = assistantInstructions(setup, "supervised", now, { cli: true });
+    for (const part of [
+      "You can change Sling's own setup",
+      "Sling's own setup (read_setup, save_deploy_target",
+      "Don't ask in your reply first: Sling shows the user the exact change, with Apply and Cancel.",
+      "Never ask for a password, app password, token, or deploy hook URL in the chat",
+      "the setup tools are how Sling's own setup changes",
+      "This conversation is in Supervised mode",
+    ]) {
+      expect(ask).toContain(part);
+    }
+    expect(ask).not.toContain("You have no tools");
+    expect(assistantInstructions(setup, "full-access", now)).toContain(
+      "a change applies at once, unless it needs a password or token",
+    );
+    expect(assistantInstructions(setup, "read-only", now)).toContain(
+      "these tools can't change anything",
+    );
+    // The default personality has it, and the others hear nothing about it.
+    expect(sling.tools).toContain("setup");
+    expect(assistantInstructions(sling, "auto", now)).toContain("change_settings");
+    expect(assistantInstructions(planner, "auto", now)).not.toContain("read_setup");
+  });
+
   it("maps tool groups to tool names", () => {
+    expect([...allowedTools(["setup"])]).toEqual([
+      "read_setup",
+      "save_deploy_target",
+      "save_app_account",
+      "add_workflow",
+      "change_workflow",
+      "save_personality",
+      "change_settings",
+    ]);
     expect([...allowedTools([])]).toEqual([]);
     expect([...allowedTools(["coding"])]).toEqual([
       "list_machines",

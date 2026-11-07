@@ -19,6 +19,7 @@ import { type CreatedTask, TaskInputError, TaskRoutingError } from "../tasks/ser
 import { runnerViews, taskPlace, taskView } from "../views.ts";
 import { APPROVAL_WAIT_MS, type CommandResult } from "./commands.ts";
 import { checkDeployTargetTool, deployTargetNames, deployTaskTool } from "./deploy-tools.ts";
+import { SETUP_TOOLS, setupTools } from "./setup-tools.ts";
 import type { TraceRecorder } from "./trace.ts";
 
 export interface ToolScope {
@@ -170,6 +171,7 @@ export const TOOLS_BY_GROUP: Record<PersonalityTool, readonly string[]> = {
   // Also every connector action flagged for the assistant, added per turn.
   apps: ["run_workflow"],
   deploys: ["list_machines", "check_deploy_target", "deploy_task"],
+  setup: SETUP_TOOLS,
 };
 
 /** Tool names a personality with these groups may call. */
@@ -514,6 +516,7 @@ function allTools(ctx: AppContext, scope: ToolScope, canDeploy: boolean) {
 
     check_deploy_target: checkDeployTargetTool(ctx, scope),
     deploy_task: deployTaskTool(ctx, scope),
+    ...setupTools(ctx, scope),
 
     cancel_task: tool({
       description: "Cancel a queued or running task. Only do this when the user asks.",
