@@ -36,6 +36,7 @@ import {
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { ProviderIcon } from "../components/ProviderIcon.tsx";
+import { ProviderSetupDialog } from "../components/ProviderSetup.tsx";
 import { SettingsSection } from "../components/SettingsSection.tsx";
 import { TimeZonePicker } from "../components/TimeZonePicker.tsx";
 import {
@@ -238,6 +239,8 @@ function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: Provi
   const qc = useQueryClient();
   const saveKey = useSaveProviderKey();
   const [editing, setEditing] = useState(false);
+  // Without a key yet, setting one up is a few steps in a dialog.
+  const [setup, setSetup] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(p.baseUrl ?? "");
   const save = useMutation({
@@ -323,9 +326,10 @@ function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: Provi
             <Button
               size="sm"
               variant="ghost"
-              aria-expanded={editing}
-              aria-controls={`${id}-form`}
-              onClick={() => setEditing((e) => !e)}
+              aria-expanded={p.connected ? editing : undefined}
+              aria-controls={p.connected ? `${id}-form` : undefined}
+              aria-haspopup={p.connected ? undefined : "dialog"}
+              onClick={() => (p.connected ? setEditing((e) => !e) : setSetup(true))}
             >
               {p.connected
                 ? sub
@@ -339,7 +343,8 @@ function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: Provi
             </Button>
           </span>
         </div>
-        {editing && (
+        {setup && <ProviderSetupDialog provider={p} onClose={() => setSetup(false)} />}
+        {editing && p.connected && (
           <form
             id={`${id}-form`}
             className="anim-pop space-y-2"

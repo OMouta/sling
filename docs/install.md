@@ -73,10 +73,10 @@ The assistant chats through Codex or Claude Code on a paired machine, on the log
 
 API keys are optional, for chatting when no machine is on or through another provider. Under **Settings**, each provider has one row showing how it's connected, with **Add API key** next to it:
 
-- **OpenAI** or **Anthropic** with an API key.
-- **OpenAI-compatible** for Ollama, OpenRouter, LM Studio, and similar. For Ollama on the Docker host, use `http://host.docker.internal:11434/v1`.
+- **OpenAI** or **Anthropic** with an API key. The dialog links to where to make one.
+- **Local or other** for Ollama, LM Studio, OpenRouter, and similar. Picking one fills in its address, such as `http://host.docker.internal:11434/v1` for Ollama on the Docker host.
 
-The key is encrypted at rest with AES-256-GCM. **Test** makes one small call.
+Sling checks the key by listing the models it can see, and a key the provider refuses isn't kept. Then you pick the model new chats start with from that list, or keep the one they use now. The key is encrypted at rest with AES-256-GCM. On a connected provider, **Test** makes one small call.
 
 ## Connectors
 
