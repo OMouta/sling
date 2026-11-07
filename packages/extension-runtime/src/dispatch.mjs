@@ -292,6 +292,17 @@ export function createDispatcher(definition, extensionId, peer, log) {
           signal,
         });
       }
+      case "setup": {
+        const conn = connector(p.connector);
+        if (typeof conn.setup !== "function") return {};
+        // What's typed so far, unchecked: setup runs before the form is complete.
+        return await conn.setup({
+          credentials: p.credentials ?? {},
+          config: p.config ?? {},
+          log: scopedLogger(log, p.scope),
+          signal,
+        });
+      }
       case "run":
         return await runNode(p, signal, false);
       case "resume":

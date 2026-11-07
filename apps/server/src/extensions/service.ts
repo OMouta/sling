@@ -660,6 +660,7 @@ export class ExtensionService {
       nodeTypes: d.nodes.map((n) => n.type),
       isExecutionProvider: d.isExecutionProvider,
       hasSource: d.hasSource,
+      hasSetup: d.hasSetup ?? false,
       extension: extensionRef(x),
     };
   }

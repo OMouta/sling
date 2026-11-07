@@ -57,6 +57,7 @@ export const DEFAULT_TIMINGS: HostTimings = {
 export const DEFAULT_DEADLINES = {
   describe: 30_000,
   test: 30_000,
+  setup: 15_000,
   run: 10 * 60_000,
   resume: 10 * 60_000,
   match: 1_000,
@@ -124,6 +125,7 @@ function duration(ms: number): string {
 const CALL_NAMES: Record<CallMethod, string> = {
   describe: "describing itself",
   test: "the connection test",
+  setup: "the setup lookup",
   run: "the node",
   resume: "the node",
   match: "the trigger",

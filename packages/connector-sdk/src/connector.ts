@@ -8,6 +8,76 @@ import type { z } from "zod";
 
 export type TestResult = { ok: true; detail?: string } | { ok: false; error: string };
 
+/**
+ * How a credential or config field shows in the setup form. Set it with zod's
+ * `.meta()`, for example `z.string().meta({ title: "IMAP server", advanced: true })`.
+ */
+export interface FieldMeta {
+  /** The label. Without one, the key is turned into words. */
+  title?: string;
+  /** One short line under the field, only when people would otherwise get it wrong. */
+  description?: string;
+  placeholder?: string;
+  /** Kept under "More settings", closed, unless the setup lookup couldn't fill it. */
+  advanced?: boolean;
+  /** Changing it runs the setup lookup again. */
+  lookup?: boolean;
+  /** Shown only while another field has one of these values. */
+  showWhen?: Record<string, string | boolean | (string | boolean)[]>;
+  /** Hidden until the setup lookup offers choices for it, then shown as a picker. */
+  picker?: boolean;
+  /** A list where nothing picked means everything, such as "all calendars". */
+  emptyMeansAll?: boolean;
+  /** A picker that also takes a typed value the lookup didn't offer. */
+  allowOther?: boolean;
+  /** Where the field goes in the form. Lower first; credentials come before config otherwise. */
+  order?: number;
+  /** `segmented` shows a short choice as buttons; `textarea` a long text. */
+  widget?: "segmented" | "textarea";
+}
+
+/** One choice for a field, offered by the setup lookup. */
+export interface SetupOption {
+  value: string;
+  label: string;
+  /** A second line, such as the server a channel is in. */
+  detail?: string;
+}
+
+/** A short line the setup form shows, under a field or above the form. */
+export interface SetupNote {
+  field?: string;
+  tone: "info" | "ok" | "warn" | "error";
+  text: string;
+  link?: { label: string; url: string };
+}
+
+export interface SetupResult<
+  Credentials = Record<string, unknown>,
+  Config = Record<string, unknown>,
+> {
+  /** Values the lookup worked out. They fill fields the person hasn't typed in. */
+  credentials?: Partial<Credentials>;
+  config?: Partial<Config>;
+  /** Choices for a field, by key, shown as a picker in place of typing. */
+  options?: Record<string, SetupOption[]>;
+  /** A name for the installation, such as the account's address. */
+  name?: string;
+  notes?: SetupNote[];
+  /** Advanced fields to show because the lookup couldn't fill them. */
+  reveal?: string[];
+  /** Run the lookup again after this long while the form is open, to notice something done elsewhere. */
+  retryAfterMs?: number;
+}
+
+export interface SetupContext<Credentials, Config> {
+  /** What the person has filled in so far. Any field may be missing. */
+  credentials: Partial<Credentials>;
+  config: Partial<Config>;
+  log: NodeLogger;
+  signal: AbortSignal;
+}
+
 export interface ConnectorDefinition<
   Credentials = Record<string, unknown>,
   Config = Record<string, unknown>,
@@ -29,6 +99,12 @@ export interface ConnectorDefinition<
     log: NodeLogger;
     signal: AbortSignal;
   }): Promise<TestResult>;
+  /**
+   * Fills in what it can from what the person typed so far, such as the mail
+   * servers for an address or the calendars on an account. Runs while the
+   * setup form is open, and again after each change to a `lookup` field.
+   */
+  setup?(ctx: SetupContext<Credentials, Config>): Promise<SetupResult<Credentials, Config>>;
   nodes: AnyNodeSpec[];
   source?: EventSourceFactory<Credentials, Config>;
   /** Present on connectors that create sandboxes, such as Docker or Railway. */

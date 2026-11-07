@@ -50,6 +50,8 @@ export interface ConnectorDescription {
   configSchema: JsonSchemaObject;
   hasSource: boolean;
   isExecutionProvider: boolean;
+  /** Has a setup lookup. Absent in descriptions from SDK 1.1 and older. */
+  hasSetup?: boolean;
   nodes: NodeDescription[];
 }
 
@@ -97,6 +99,7 @@ export function defineExtension(def: { connectors: AnyConnector[] }): ExtensionD
         configSchema: jsonSchema(c.configSchema),
         hasSource: c.source !== undefined,
         isExecutionProvider: c.executionProvider !== undefined,
+        hasSetup: typeof c.setup === "function",
         nodes: c.nodes.map((n) => ({
           type: n.type,
           version: n.version,

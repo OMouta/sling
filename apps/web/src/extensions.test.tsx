@@ -848,7 +848,9 @@ describe("realtime", () => {
 
   it("refetches connectors when an extension changes what it adds", async () => {
     renderAt("/connectors");
-    expect(await screen.findByText("From ntfy 1.0.0")).toBeTruthy();
+    const icon = () =>
+      document.querySelector('img[src^="/api/extensions/ntfy/icon"]')?.getAttribute("src");
+    await waitFor(() => expect(icon()).toBe("/api/extensions/ntfy/icon?v=1.0.0"));
     const before = callsTo("GET", "/api/connectors").length;
     connectors = [
       ...connectorFixtures,
@@ -858,7 +860,7 @@ describe("realtime", () => {
       },
     ];
     emit({ type: "extension.updated", extension: { ...ntfyExtension, version: "1.1.0" } });
-    expect(await screen.findByText("From ntfy 1.1.0")).toBeTruthy();
+    await waitFor(() => expect(icon()).toBe("/api/extensions/ntfy/icon?v=1.1.0"));
     expect(callsTo("GET", "/api/connectors")).toHaveLength(before + 1);
   });
 });
@@ -866,11 +868,16 @@ describe("realtime", () => {
 describe("elsewhere", () => {
   it("shows which extension a connector came from, with its icon", async () => {
     renderAt("/connectors");
-    const from = await screen.findByText("From ntfy 1.0.0");
-    const cardEl = from.closest(".rounded-xl") as HTMLElement;
-    const img = cardEl.querySelector("img");
-    expect(img?.getAttribute("src")).toBe("/api/extensions/ntfy/icon?v=1.0.0");
-    expect(screen.queryByText(/From Discord/)).toBeNull();
+    const card = (await screen.findByRole("button", { name: "Add ntfy" })).closest(
+      ".rounded-xl",
+    ) as HTMLElement;
+    expect(card.querySelector("img")?.getAttribute("src")).toBe(
+      "/api/extensions/ntfy/icon?v=1.0.0",
+    );
+    const discord = screen
+      .getByRole("button", { name: "Add Discord" })
+      .closest(".rounded-xl") as HTMLElement;
+    expect(discord.querySelector("img")).toBeNull();
   });
 
   it("shows which package a template came from", async () => {

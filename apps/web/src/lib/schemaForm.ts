@@ -8,6 +8,24 @@ export type Schema = Record<string, unknown>;
 
 export type Primitive = string | number | boolean;
 
+/** How a field shows in a setup form, from the schema's own keys (zod `.meta()`). */
+export interface FieldMeta {
+  placeholder: string | null;
+  /** Kept under "More settings" unless it has to be filled in. */
+  advanced: boolean;
+  /** Changing it runs the connector's setup lookup again. */
+  lookup: boolean;
+  /** Shown only while each of these fields has one of the values. */
+  showWhen: Record<string, Primitive[]> | null;
+  /** Hidden until the setup lookup offers choices for it. */
+  picker: boolean;
+  /** Nothing picked means everything. */
+  emptyMeansAll: boolean;
+  /** A picker that also takes a typed value. */
+  allowOther: boolean;
+  order: number | null;
+}
+
 interface FieldBase {
   key: string;
   label: string;
@@ -18,6 +36,7 @@ interface FieldBase {
   default: unknown;
   /** The schema's `widget` hint, for callers that render special pickers. */
   widget: string | null;
+  meta: FieldMeta;
 }
 
 export type FormField = FieldBase &
@@ -102,6 +121,29 @@ function isPrimitive(v: unknown): v is Primitive {
   return typeof v === "string" || typeof v === "number" || typeof v === "boolean";
 }
 
+function showWhenOf(v: unknown): Record<string, Primitive[]> | null {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, Primitive[]> = {};
+  for (const [k, raw] of Object.entries(v)) {
+    const list = (Array.isArray(raw) ? raw : [raw]).filter(isPrimitive);
+    if (list.length > 0) out[k] = list;
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+function metaOf(s: Schema): FieldMeta {
+  return {
+    placeholder: typeof s.placeholder === "string" ? s.placeholder : null,
+    advanced: s.advanced === true,
+    lookup: s.lookup === true,
+    showWhen: showWhenOf(s.showWhen),
+    picker: s.picker === true,
+    emptyMeansAll: s.emptyMeansAll === true,
+    allowOther: s.allowOther === true,
+    order: typeof s.order === "number" ? s.order : null,
+  };
+}
+
 /** Map one property to a field. `depth` is 0 at the top level of the form. */
 export function fieldFor(key: string, raw: Schema, required: boolean, depth = 0): FormField {
   const { schema, nullable } = normalize(raw);
@@ -114,6 +156,7 @@ export function fieldFor(key: string, raw: Schema, required: boolean, depth = 0)
     nullable,
     default: schema.default,
     widget: typeof schema.widget === "string" ? schema.widget : null,
+    meta: metaOf(schema),
   };
   const widget = schema.widget;
   if (widget === "json") return { ...base, kind: "json" };

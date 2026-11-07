@@ -24,6 +24,7 @@ import {
   type TriggerMatch,
 } from "@sling/workflow";
 import { z } from "zod";
+import { parseSetupResult } from "../workflows/connectors/setup.ts";
 import { assistantUse } from "./checks.ts";
 import type { CallScope, ExtensionHost, HostVersion, SourceScope } from "./host.ts";
 
@@ -171,6 +172,8 @@ const ConnectorDescriptionSchema = z.object({
   configSchema: JsonObject,
   hasSource: z.boolean(),
   isExecutionProvider: z.boolean(),
+  // Left out by extensions built on SDK 1.1 and older.
+  hasSetup: z.boolean().optional(),
   nodes: z.array(NodeDescriptionSchema).max(500),
 });
 
@@ -438,6 +441,17 @@ export function buildConnectors(host: ExtensionHost, version: HostVersion): AnyC
       nodes: c.nodes.map((n) => nodeSpec(c, n)),
     };
     if (c.setupHelp) connector.setupHelp = c.setupHelp;
+    if (c.hasSetup) {
+      connector.setup = async ({ credentials, config, log, signal }) =>
+        parseSetupResult(
+          await host.call(
+            version,
+            "setup",
+            { connector: c.id, credentials, config },
+            { signal, scope: { kind: "call", log } },
+          ),
+        );
+    }
     if (c.hasSource) connector.source = source(c);
     // A provider sees every sandbox's secrets, so it needs the permission the owner granted.
     if (c.isExecutionProvider && ext.granted.sandboxes) connector.executionProvider = provider(c);

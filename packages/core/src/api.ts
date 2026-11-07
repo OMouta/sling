@@ -475,8 +475,35 @@ export interface ConnectorView {
   isExecutionProvider?: boolean;
   /** Listens for events, such as new mail. Connectors without one have no listening status. */
   hasSource?: boolean;
+  /** Can fill in settings from what's typed so far, through `POST /api/connectors/:id/setup`. */
+  hasSetup?: boolean;
   /** The extension that adds this connector. Null for connectors built into Sling. */
   extension?: ExtensionRef | null;
+}
+
+export interface SetupOptionView {
+  value: string;
+  label: string;
+  detail?: string;
+}
+
+export interface SetupNoteView {
+  /** The field it sits under. Without one it shows above the form. */
+  field?: string;
+  tone: "info" | "ok" | "warn" | "error";
+  text: string;
+  link?: { label: string; url: string };
+}
+
+/** What a connector's setup lookup filled in from what's typed so far. */
+export interface SetupResultView {
+  credentials?: Record<string, unknown>;
+  config?: Record<string, unknown>;
+  options?: Record<string, SetupOptionView[]>;
+  name?: string;
+  notes?: SetupNoteView[];
+  reveal?: string[];
+  retryAfterMs?: number;
 }
 
 export type InstallationStatus = "idle" | "connecting" | "connected" | "error" | "disabled";

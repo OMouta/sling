@@ -677,13 +677,11 @@ describe("connectors: sandbox providers", () => {
     installations = [...integrationInstallations, dockerInstallation];
     renderAt("/connectors");
     const providers = await providerSection();
-    expect(providers.getByText(/Where Sling creates a fresh sandbox/)).toBeTruthy();
     expect(await providers.findByText("Docker host")).toBeTruthy();
     expect(providers.getByRole("button", { name: "Add Docker" })).toBeTruthy();
     expect(providers.getByRole("button", { name: "Add Railway" })).toBeTruthy();
     expect(providers.queryByRole("button", { name: "Add Discord" })).toBeNull();
-    // An idle provider isn't waiting on a workflow.
-    expect(providers.queryByText(/no enabled workflow uses it/)).toBeNull();
+    expect(providers.queryByText(/idle/i)).toBeNull();
 
     const available = within(
       screen.getByRole("heading", { name: "Available" }).closest("section") as HTMLElement,
@@ -691,29 +689,23 @@ describe("connectors: sandbox providers", () => {
     expect(available.getByRole("button", { name: "Add Discord" })).toBeTruthy();
     expect(available.queryByRole("button", { name: "Add Docker" })).toBeNull();
     const installed = within(
-      screen.getByRole("heading", { name: "Installed" }).closest("section") as HTMLElement,
+      screen.getByRole("heading", { name: "Added" }).closest("section") as HTMLElement,
     );
     expect(installed.getByText("Sling bot")).toBeTruthy();
     expect(installed.queryByText("Docker host")).toBeNull();
   });
 
-  it("says what a provider still needs to be useful", async () => {
+  it("lists only what a sandbox still needs", async () => {
     sandboxRepos = allowedRepos;
     settings = sandboxSettings;
     renderAt("/connectors");
     const providers = await providerSection();
-    const setup = providers.getByRole("list", { name: "Sandbox setup" });
-    await waitFor(() =>
-      expect(
-        within(setup)
-          .getAllByRole("listitem")
-          .map((li) => li.textContent),
-      ).toEqual([
-        "Done: 1 repo allowed in sandboxesMachines",
-        "Done: An OpenAI or Anthropic API key for the coding agentSettings",
-        "Still needed: A GitHub token to clone, push, and open pull requestsSettings",
-      ]),
-    );
+    const setup = await providers.findByRole("list", { name: "Sandbox setup" });
+    expect(
+      within(setup)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual(["Add a GitHub tokenSettings"]);
   });
 
   it("installs a provider with its schema form", async () => {
@@ -721,7 +713,6 @@ describe("connectors: sandbox providers", () => {
     const providers = await providerSection();
     fireEvent.click(providers.getByRole("button", { name: "Add Docker" }));
     const dialog = within(await screen.findByRole("dialog"));
-    expect(dialog.getByText(/Point it at the Docker socket/)).toBeTruthy();
     fireEvent.change(dialog.getByLabelText(/^Host/), {
       target: { value: "unix:///var/run/docker.sock" },
     });
@@ -729,9 +720,9 @@ describe("connectors: sandbox providers", () => {
     await waitFor(() => expect(callsTo("POST", "/api/installations")).toHaveLength(1));
     expect(callsTo("POST", "/api/installations")[0]?.body).toEqual({
       connectorId: "docker",
-      name: "Docker",
       credentials: { host: "unix:///var/run/docker.sock" },
       config: { image: "ghcr.io/sling/sling-sandbox:latest" },
+      check: true,
     });
   });
 

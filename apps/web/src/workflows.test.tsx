@@ -28,6 +28,8 @@ interface Call {
 let calls: Call[] = [];
 let publishResult: PublishResult = { ok: true, version: 2, issues: [] };
 let approvals: ApprovalView[] = [];
+/** The connection check's error when adding an installation with `check: true`. */
+let installFails: string | null = null;
 
 function route(method: string, path: string, body: unknown): unknown {
   const key = `${method} ${path}`;
@@ -69,11 +71,11 @@ function route(method: string, path: string, body: unknown): unknown {
     case "POST /api/workflows":
       return { ...workflowDetail, id: "wf_new" };
     case "POST /api/installations": {
-      const b = body as { connectorId: string; name: string; config: Record<string, unknown> };
+      const b = body as { connectorId: string; name?: string; config: Record<string, unknown> };
       const created: InstallationView = {
         id: "ins_new",
         connectorId: b.connectorId,
-        name: b.name,
+        name: b.name ?? b.connectorId,
         enabled: true,
         status: "idle",
         statusDetail: null,
@@ -131,6 +133,17 @@ beforeEach(() => {
       const method = init?.method ?? "GET";
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       calls.push({ method, path: url.pathname, body });
+      if (
+        installFails &&
+        method === "POST" &&
+        url.pathname === "/api/installations" &&
+        (body as { check?: boolean }).check
+      ) {
+        return new Response(JSON.stringify({ error: installFails, check: "failed" }), {
+          status: 422,
+          headers: { "content-type": "application/json" },
+        });
+      }
       try {
         const data = route(method, url.pathname, body);
         // Like the server: a publish that fails validation is a 422.
@@ -417,6 +430,11 @@ describe("connectors", () => {
     const dialog = await screen.findByRole("dialog");
     const token = within(dialog).getByLabelText(/Bot token/) as HTMLInputElement;
     expect(token.type).toBe("password");
+    // No name to type: the server names it after the connector.
+    expect(within(dialog).queryByLabelText("Name")).toBeNull();
+    // The setup steps stay closed until asked for.
+    expect(within(dialog).queryByText(/Message Content intent\./)).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Where to find these" }));
     expect(within(dialog).getByText(/Message Content intent\./)).toBeTruthy();
     fireEvent.change(token, { target: { value: "secret-token" } });
     const users = within(dialog).getByLabelText("Add to Allowed user ids");
@@ -424,12 +442,34 @@ describe("connectors", () => {
     fireEvent.keyDown(users, { key: "Enter" });
     fireEvent.click(within(dialog).getByText("Add"));
     await waitFor(() => expect(callsTo("POST", "/api/installations")).toHaveLength(1));
+    // It checks the connection before saving.
     expect(callsTo("POST", "/api/installations")[0]?.body).toEqual({
       connectorId: "discord",
-      name: "Discord",
       credentials: { botToken: "secret-token" },
       config: { allowedUserIds: ["42"], approverUserIds: [] },
+      check: true,
     });
+  });
+
+  it("offers to add anyway when the connection check fails", async () => {
+    installFails = "Discord says the bot token isn't valid";
+    try {
+      renderAt("/connectors");
+      fireEvent.click(await screen.findByRole("button", { name: "Add Discord" }));
+      const dialog = await screen.findByRole("dialog");
+      fireEvent.change(within(dialog).getByLabelText(/Bot token/), {
+        target: { value: "wrong" },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+      expect((await within(dialog).findByRole("alert")).textContent).toContain(
+        "bot token isn't valid",
+      );
+      fireEvent.click(within(dialog).getByRole("button", { name: "Add anyway" }));
+      await waitFor(() => expect(callsTo("POST", "/api/installations")).toHaveLength(2));
+      expect(callsTo("POST", "/api/installations")[1]?.body).toMatchObject({ check: false });
+    } finally {
+      installFails = null;
+    }
   });
 
   it("sends only changed values when editing, never stored secrets", async () => {

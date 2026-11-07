@@ -1,3 +1,4 @@
+import type { AnyConnector, SetupResult, TestResult } from "@sling/connector-sdk";
 import type { ConnectorView } from "@sling/core";
 import { newId } from "@sling/core";
 import { schema } from "@sling/db";
@@ -12,9 +13,17 @@ import { liveSandboxCount } from "../../sandboxes/routes.ts";
 import { toJsonSchema } from "../registry.ts";
 import { toInstallationView } from "../views.ts";
 import { readCredentials, writeCredentials } from "./installations.ts";
+import { runSetup } from "./setup.ts";
 
 const Id = z.object({ id: z.string() });
 const TEST_TIMEOUT_MS = 30_000;
+
+/** Fields typed into the form. Blank ones mean "keep what's stored". */
+function nonEmpty(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, v]) => v !== "" && v !== undefined && v !== null),
+  );
+}
 
 function issuesOf(error: z.ZodError): string {
   return error.issues
@@ -43,6 +52,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
             nodeTypes: c.nodes.map((n) => n.type),
             isExecutionProvider: c.executionProvider !== undefined,
             hasSource: c.source !== undefined,
+            hasSetup: c.setup !== undefined,
             extension: null,
           },
       ),
@@ -59,6 +69,51 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
         ),
       );
     return row ?? null;
+  }
+
+  function logFor(connectorId: string, installationId?: string) {
+    const log = ctx.log.child({
+      connector: connectorId,
+      ...(installationId ? { installationId } : {}),
+    });
+    return {
+      info: (m: string, d?: Record<string, unknown>) => log.info(d ?? {}, m),
+      warn: (m: string, d?: Record<string, unknown>) => log.warn(d ?? {}, m),
+      error: (m: string, d?: Record<string, unknown>) => log.error(d ?? {}, m),
+    };
+  }
+
+  /** Runs the connector's connection test. Never throws. */
+  async function check(
+    connector: AnyConnector,
+    credentials: unknown,
+    config: unknown,
+    installationId?: string,
+  ): Promise<TestResult> {
+    try {
+      return await connector.test({
+        credentials,
+        config,
+        log: logFor(connector.id, installationId),
+        signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
+      });
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** The connector's name, or "Name 2" and so on when the workspace already has one by that name. */
+  async function freeName(workspaceId: string, base: string): Promise<string> {
+    const rows = await ctx.db
+      .select({ name: schema.connectorInstallations.name })
+      .from(schema.connectorInstallations)
+      .where(eq(schema.connectorInstallations.workspaceId, workspaceId));
+    const taken = new Set(rows.map((r) => r.name.toLowerCase()));
+    if (!taken.has(base.toLowerCase())) return base;
+    for (let n = 2; ; n++) {
+      const name = `${base} ${n}`;
+      if (!taken.has(name.toLowerCase())) return name;
+    }
   }
 
   function publish(row: typeof schema.connectorInstallations.$inferSelect) {
@@ -83,10 +138,13 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
       schema: {
         body: z.object({
           connectorId: z.string().min(1),
-          name: z.string().trim().min(1).max(120),
+          /** Defaults to the connector's name, numbered when it's taken. */
+          name: z.string().trim().min(1).max(120).optional(),
           credentials: z.record(z.string(), z.unknown()).default({}),
           config: z.record(z.string(), z.unknown()).default({}),
           enabled: z.boolean().default(true),
+          /** Runs the connection test first, and saves nothing if it fails. */
+          check: z.boolean().default(false),
         }),
       },
     },
@@ -102,6 +160,11 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
       const config = connector.configSchema.safeParse(body.config);
       if (!config.success)
         return reply.code(400).send({ error: `Config: ${issuesOf(config.error)}` });
+      if (body.check) {
+        const result = await check(connector, creds.data, config.data);
+        if (!result.ok) return reply.code(422).send({ error: result.error, check: "failed" });
+      }
+      const name = body.name ?? (await freeName(actor.workspaceId, connector.name));
       const id = newId("ins");
       const row = await ctx.db.transaction(async (tx) => {
         const credentialId = await writeCredentials(
@@ -118,7 +181,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
             workspaceId: actor.workspaceId,
             ownerId: actor.userId,
             connectorId: connector.id,
-            name: body.name,
+            name,
             credentialId,
             config: config.data as Record<string, unknown>,
             enabled: body.enabled,
@@ -135,7 +198,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
         verb: "installation.created",
         subjectType: "installation",
         subjectId: id,
-        details: { connectorId: connector.id, name: body.name },
+        details: { connectorId: connector.id, name },
       });
       // Before the source starts, so it may already reach the host in its config.
       await ctx.extensions.installationsChanged(connector.id);
@@ -156,6 +219,8 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
           credentials: z.record(z.string(), z.unknown()).optional(),
           config: z.record(z.string(), z.unknown()).optional(),
           enabled: z.boolean().optional(),
+          /** Runs the connection test on the new credentials or config, and saves nothing if it fails. */
+          check: z.boolean().default(false),
         }),
       },
     },
@@ -181,6 +246,15 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
         if (!parsed.success)
           return reply.code(400).send({ error: `Config: ${issuesOf(parsed.error)}` });
         config = parsed.data as Record<string, unknown>;
+      }
+      if (body.check && (creds || config)) {
+        const result = await check(
+          connector,
+          creds ?? connector.credentialsSchema.parse(await readCredentials(ctx, row)),
+          config ?? connector.configSchema.parse(row.config),
+          row.id,
+        );
+        if (!result.ok) return reply.code(422).send({ error: result.error, check: "failed" });
       }
       await ctx.db.transaction(async (tx) => {
         const credentialId = creds
@@ -231,24 +305,60 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
     if (!row) return reply.code(404).send({ error: "not found" });
     const connector = ctx.registry.connector(row.connectorId);
     if (!connector) return { ok: false, error: `Connector ${row.connectorId} isn't available` };
-    const log = ctx.log.child({ installationId: row.id, connector: connector.id });
     try {
       const config = connector.configSchema.parse(row.config);
       const credentials = connector.credentialsSchema.parse(await readCredentials(ctx, row));
-      return await connector.test({
-        credentials,
-        config,
-        log: {
-          info: (m, d) => log.info(d ?? {}, m),
-          warn: (m, d) => log.warn(d ?? {}, m),
-          error: (m, d) => log.error(d ?? {}, m),
-        },
-        signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
-      });
+      return await check(connector, credentials, config, row.id);
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
+
+  r.post(
+    "/api/connectors/:id/setup",
+    {
+      schema: {
+        params: Id,
+        body: z.object({
+          credentials: z.record(z.string(), z.unknown()).default({}),
+          config: z.record(z.string(), z.unknown()).default({}),
+          /** Editing: the stored credentials fill whatever wasn't typed again. */
+          installationId: z.string().optional(),
+        }),
+      },
+    },
+    async (request, reply): Promise<SetupResult | undefined> => {
+      const actor = actorOf(request);
+      const connector = ctx.registry.connector(request.params.id);
+      if (!connector) return reply.code(404).send({ error: "not found" });
+      const body = request.body;
+      let credentials = body.credentials;
+      let stored = false;
+      if (body.installationId) {
+        const row = await owned(actor.workspaceId, body.installationId);
+        if (!row || row.connectorId !== connector.id)
+          return reply.code(404).send({ error: "not found" });
+        credentials = { ...(await readCredentials(ctx, row)), ...nonEmpty(body.credentials) };
+        stored = true;
+      }
+      const result = await runSetup(connector, {
+        credentials,
+        config: body.config,
+        log: logFor(connector.id, body.installationId),
+      });
+      // Credentials are write-only: a lookup may suggest new ones, never echo a secret or a stored value.
+      if (result.credentials) {
+        const out = Object.fromEntries(
+          Object.entries(result.credentials).filter(
+            ([k, v]) => !connector.secretFields.includes(k) && !(stored && credentials[k] === v),
+          ),
+        );
+        if (stored || Object.keys(out).length === 0) delete result.credentials;
+        else result.credentials = out;
+      }
+      return result;
+    },
+  );
 
   r.delete("/api/installations/:id", { schema: { params: Id } }, async (request, reply) => {
     const actor = actorOf(request);

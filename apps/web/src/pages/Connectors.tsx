@@ -12,34 +12,17 @@ import {
   Pencil,
   Plug,
   Plus,
-  Puzzle,
   TrainFront,
   Trash2,
 } from "lucide-react";
-import { type FormEvent, type ReactNode, useMemo, useState } from "react";
-import Markdown from "react-markdown";
+import { type ReactNode, useState } from "react";
+import { ConnectorSetupDialog } from "../components/ConnectorSetup.tsx";
 import { ExtensionIcon } from "../components/extensions/ExtensionBits.tsx";
-import { Content, Page, Toolbar, ToolbarText } from "../components/Page.tsx";
-import { SchemaForm } from "../components/SchemaForm.tsx";
-import { InstallationStatusLabel } from "../components/StatusBadge.tsx";
-import {
-  Button,
-  Card,
-  cx,
-  Dialog,
-  Dot,
-  Empty,
-  ErrorText,
-  Field,
-  Input,
-  Skeleton,
-  Switch,
-} from "../components/ui.tsx";
+import { Content, Page } from "../components/Page.tsx";
+import { Button, Card, cx, Dialog, Dot, ErrorText, Skeleton, Switch } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
-import { ago, plural } from "../lib/format.ts";
 import { isProviderConnector } from "../lib/sandbox.ts";
 import { useSandboxRepos, useSandboxSettings } from "../lib/sandboxApi.ts";
-import { defaultsFor, formFields, missingRequired } from "../lib/schemaForm.ts";
 import { qk, useConnectors, useInstallations } from "../lib/workflowApi.ts";
 
 type TestResult = { ok: true; detail?: string } | { ok: false; error: string };
@@ -82,31 +65,25 @@ function ConnectorIcon({
   );
 }
 
-function Group({
-  id,
-  title,
-  description,
-  children,
-}: {
-  id: string;
-  title: string;
-  description?: ReactNode;
-  children: ReactNode;
-}) {
+function Group({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
     <section aria-labelledby={id} className="space-y-3">
-      <div>
-        <h2 id={id} className="section-label">
-          {title}
-        </h2>
-        {description && (
-          <p className="mt-1.5 max-w-2xl text-xs leading-4 text-muted">{description}</p>
-        )}
-      </div>
+      <h2 id={id} className="section-label">
+        {title}
+      </h2>
       {children}
     </section>
   );
 }
+
+/** What an installation's status says, when it says something. Idle and off show nothing. */
+const STATUS: Partial<
+  Record<InstallationView["status"], { label: string; tone: "ok" | "warn" | "danger" }>
+> = {
+  connected: { label: "Connected", tone: "ok" },
+  connecting: { label: "Connecting", tone: "warn" },
+  error: { label: "Error", tone: "danger" },
+};
 
 export function ConnectorsPage() {
   const connectors = useConnectors();
@@ -130,40 +107,27 @@ export function ConnectorsPage() {
       title="Connectors"
       badge={
         installations.data && installations.data.length > 0 ? (
-          <span className="tabular text-xs text-subtle">{installations.data.length} installed</span>
+          <span className="tabular text-xs text-subtle">{installations.data.length} added</span>
         ) : undefined
-      }
-      toolbar={
-        <Toolbar>
-          <ToolbarText>
-            Accounts Sling's workflows can use. Credentials are stored encrypted and never shown
-            again.
-          </ToolbarText>
-        </Toolbar>
       }
     >
       <Content className="max-w-5xl space-y-9 pt-2">
-        <Group id="installed" title="Installed">
-          {installations.isPending && <Skeleton className="h-24 w-full rounded-xl" />}
-          <ErrorText error={installations.error} />
-          {installed?.length === 0 && (
-            <Card>
-              <Empty icon={Plug} title="Nothing installed" className="py-10">
-                Add a connector below.
-              </Empty>
-            </Card>
-          )}
-          <div className="space-y-3">
-            {installed?.map((i) => (
-              <InstallationCard
-                key={i.id}
-                installation={i}
-                connector={byId.get(i.connectorId)}
-                onEdit={() => edit(i)}
-              />
-            ))}
-          </div>
-        </Group>
+        {(installations.isPending || installations.error || (installed?.length ?? 0) > 0) && (
+          <Group id="installed" title="Added">
+            {installations.isPending && <Skeleton className="h-24 w-full rounded-xl" />}
+            <ErrorText error={installations.error} />
+            <div className="space-y-3">
+              {installed?.map((i) => (
+                <InstallationCard
+                  key={i.id}
+                  installation={i}
+                  connector={byId.get(i.connectorId)}
+                  onEdit={() => edit(i)}
+                />
+              ))}
+            </div>
+          </Group>
+        )}
 
         <Group id="available" title="Available">
           {connectors.isPending && <Skeleton className="h-28 w-full rounded-xl" />}
@@ -176,16 +140,11 @@ export function ConnectorsPage() {
         </Group>
 
         {(providers.length > 0 || installedProviders.length > 0) && (
-          <Group
-            id="sandbox-providers"
-            title="Sandbox providers"
-            description="Where Sling creates a fresh sandbox for a task no machine can take, after you approve it. Each sandbox clones an allowed repo from its remote, runs the coding agent, and is destroyed once the task is delivered."
-          >
+          <Group id="sandbox-providers" title="Sandbox providers">
             <ProviderReadiness />
             {installedProviders.map((i) => (
               <InstallationCard
                 key={i.id}
-                provider
                 installation={i}
                 connector={byId.get(i.connectorId)}
                 onEdit={() => edit(i)}
@@ -201,7 +160,7 @@ export function ConnectorsPage() {
       </Content>
 
       {form && (
-        <InstallationForm
+        <ConnectorSetupDialog
           connector={form.connector}
           installation={form.installation}
           onClose={() => setForm(null)}
@@ -222,62 +181,41 @@ function ConnectorCard({ connector: c, onAdd }: { connector: ConnectorView; onAd
       </div>
       <h3 className="mt-3 text-sm font-medium">{c.name}</h3>
       <p className="mt-1 flex-1 text-xs leading-4 text-muted">{c.description}</p>
-      {c.extension && (
-        <p className="mt-3 flex min-w-0 items-center gap-1.5 text-xs text-subtle">
-          <Puzzle aria-hidden="true" size={12} className="shrink-0" />
-          <span className="truncate">
-            From {c.extension.name} {c.extension.version}
-          </span>
-        </p>
-      )}
     </Card>
   );
 }
 
-/** What a provider needs before a sandbox can do anything, and whether it's in place. */
+/** What a sandbox still needs before a provider can run one. Nothing shows once it's all in place. */
 function ProviderReadiness() {
   const repos = useSandboxRepos();
   const settings = useSandboxSettings();
   const secrets = settings.data?.secrets;
-  const allowed = repos.data?.length ?? 0;
-  const items: {
-    done: boolean | null;
-    text: string;
-    to: "/machines" | "/settings";
-    where: string;
-  }[] = [
-    {
-      done: repos.data ? allowed > 0 : null,
-      text:
-        allowed > 0
-          ? `${plural(allowed, "repo")} allowed in sandboxes`
-          : "At least one repo allowed in sandboxes",
-      to: "/machines",
-      where: "Machines",
-    },
-    {
-      done: secrets ? secrets.openaiApiKey || secrets.anthropicApiKey : null,
-      text: "An OpenAI or Anthropic API key for the coding agent",
-      to: "/settings",
-      where: "Settings",
-    },
-    {
-      done: secrets ? secrets.gitToken : null,
-      text: "A GitHub token to clone, push, and open pull requests",
-      to: "/settings",
-      where: "Settings",
-    },
+  if (!repos.data || !secrets) return null;
+  const items: { text: string; to: "/machines" | "/settings"; where: string }[] = [
+    ...(repos.data.length === 0
+      ? [{ text: "Allow a repo in sandboxes", to: "/machines" as const, where: "Machines" }]
+      : []),
+    ...(!secrets.openaiApiKey && !secrets.anthropicApiKey
+      ? [
+          {
+            text: "Add an OpenAI or Anthropic API key",
+            to: "/settings" as const,
+            where: "Settings",
+          },
+        ]
+      : []),
+    ...(!secrets.gitToken
+      ? [{ text: "Add a GitHub token", to: "/settings" as const, where: "Settings" }]
+      : []),
   ];
+  if (items.length === 0) return null;
   return (
     <Card className="p-4">
-      <p className="text-[13px] font-medium">A provider is only useful with these in place</p>
+      <p className="text-[13px] font-medium">Before a sandbox can run</p>
       <ul aria-label="Sandbox setup" className="mt-3 space-y-2 text-[13px]">
         {items.map((item) => (
           <li key={item.text} className="flex items-center gap-2.5">
-            <Dot tone={item.done === null ? "neutral" : item.done ? "ok" : "warn"} />
-            <span className="sr-only">
-              {item.done === null ? "" : item.done ? "Done: " : "Still needed: "}
-            </span>
+            <Dot tone="warn" />
             <span className="min-w-0 flex-1">{item.text}</span>
             <Link
               to={item.to}
@@ -289,9 +227,6 @@ function ProviderReadiness() {
           </li>
         ))}
       </ul>
-      <p className="mt-3 text-xs text-subtle">
-        A provider set to a custom image can bring its own logins instead of the stored keys.
-      </p>
     </Card>
   );
 }
@@ -300,18 +235,15 @@ function InstallationCard({
   installation: i,
   connector,
   onEdit,
-  provider,
 }: {
   installation: InstallationView;
   connector: ConnectorView | undefined;
   onEdit: () => void;
-  /** Providers aren't used by workflows, so "idle" means nothing for them. */
-  provider?: boolean;
 }) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState(false);
   // A connector that never listens for events, such as the calendar, has no status to show.
-  const listens = connector?.hasSource !== false;
+  const status = connector?.hasSource !== false && i.enabled ? STATUS[i.status] : undefined;
   const update = (next: InstallationView) =>
     qc.setQueryData<InstallationView[]>(qk.installations(), (list) =>
       list?.map((x) => (x.id === next.id ? next : x)),
@@ -342,32 +274,26 @@ function InstallationCard({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 p-4">
           <ConnectorIcon connector={connector ?? { id: i.connectorId, name: "" }} />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">{i.name}</p>
-            <p className="text-xs text-muted">
-              {connector?.name ?? i.connectorId} · added {ago(i.createdAt)}
-            </p>
+            <p className="truncate text-sm font-medium">{i.name}</p>
+            <p className="text-xs text-muted">{connector?.name ?? i.connectorId}</p>
           </div>
-          {listens && <InstallationStatusLabel status={i.status} />}
+          {status && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-soft">
+              <Dot tone={status.tone} />
+              {status.label}
+            </span>
+          )}
           <Switch
             checked={i.enabled}
-            label={`${i.enabled ? "Disable" : "Enable"} ${i.name}`}
+            label={`${i.enabled ? "Turn off" : "Turn on"} ${i.name}`}
             disabled={toggle.isPending}
             onChange={(enabled) => toggle.mutate(enabled)}
           />
         </div>
-        {(i.statusDetail ||
-          (i.status === "idle" && !provider && listens) ||
-          test.data ||
-          toggle.error ||
-          test.error) && (
+        {((i.status === "error" && i.statusDetail) || test.data || toggle.error || test.error) && (
           <div className="space-y-1.5 px-4 pb-3 pl-16 text-xs">
-            {i.statusDetail && (
-              <p className={i.status === "error" ? "text-danger" : "text-muted"}>
-                {i.statusDetail}
-              </p>
-            )}
-            {i.status === "idle" && !i.statusDetail && !provider && listens && (
-              <p className="text-muted">Not listening: no enabled workflow uses it.</p>
+            {i.status === "error" && i.statusDetail && (
+              <p className="text-danger">{i.statusDetail}</p>
             )}
             {test.data && (
               <p role="status" className={test.data.ok ? "text-ok" : "text-danger"}>
@@ -411,150 +337,11 @@ function InstallationCard({
             }
           >
             <p className="text-[13px] leading-5 text-soft">
-              Its stored credentials are erased. Workflows that use it fail until you pick another
-              installation.
+              Workflows that use it stop working until you pick another.
             </p>
           </Dialog>
         )}
       </Card>
     </article>
-  );
-}
-
-function InstallationForm({
-  connector,
-  installation,
-  onClose,
-}: {
-  connector: ConnectorView;
-  installation?: InstallationView;
-  onClose: () => void;
-}) {
-  const qc = useQueryClient();
-  const editing = installation !== undefined;
-  const credFields = useMemo(() => formFields(connector.credentialsSchema), [connector]);
-  const configFields = useMemo(() => formFields(connector.configSchema), [connector]);
-  const [name, setName] = useState(installation?.name ?? connector.name);
-  // Credentials are write-only: editing starts blank and sends only what you type.
-  const [credentials, setCredentials] = useState<Record<string, unknown>>(() =>
-    editing ? {} : defaultsFor(connector.credentialsSchema),
-  );
-  const initialConfig = useMemo(
-    () => ({ ...defaultsFor(connector.configSchema), ...(installation?.config ?? {}) }),
-    [connector, installation],
-  );
-  const [config, setConfig] = useState<Record<string, unknown>>(initialConfig);
-
-  const changedCredentials = Object.fromEntries(
-    Object.entries(credentials).filter(([, v]) => v !== "" && v !== undefined && v !== null),
-  );
-  const credentialsStored = editing && installation.hasCredentials;
-  const missing = [
-    ...(credentialsStored ? [] : missingRequired(credFields, credentials)),
-    ...missingRequired(configFields, config),
-  ];
-
-  const save = useMutation({
-    mutationFn: () => {
-      if (!editing) {
-        return api.post<InstallationView>("/api/installations", {
-          connectorId: connector.id,
-          name: name.trim(),
-          credentials,
-          config,
-        });
-      }
-      const body: Record<string, unknown> = {};
-      if (name.trim() !== installation.name) body.name = name.trim();
-      if (JSON.stringify(config) !== JSON.stringify(initialConfig)) body.config = config;
-      if (Object.keys(changedCredentials).length > 0) body.credentials = changedCredentials;
-      return api.patch<InstallationView>(`/api/installations/${installation.id}`, body);
-    },
-    onSuccess: (res) => {
-      if (res && typeof res === "object" && "id" in res) {
-        qc.setQueryData<InstallationView[]>(qk.installations(), (list) => {
-          if (!list) return list;
-          return list.some((x) => x.id === res.id)
-            ? list.map((x) => (x.id === res.id ? res : x))
-            : [...list, res];
-        });
-      }
-      void qc.invalidateQueries({ queryKey: qk.installations() });
-      onClose();
-    },
-  });
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (missing.length === 0 && name.trim()) save.mutate();
-  };
-
-  return (
-    <Dialog
-      wide
-      title={editing ? `Edit ${installation.name}` : `Add ${connector.name}`}
-      description={connector.description}
-      onClose={onClose}
-      footer={
-        <>
-          {missing.length > 0 && (
-            <p className="mr-auto text-xs text-muted">Fill in the fields marked *.</p>
-          )}
-          <ErrorText error={save.error} />
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            type="submit"
-            form="installation-form"
-            busy={save.isPending}
-            disabled={missing.length > 0 || !name.trim()}
-          >
-            {editing ? "Save" : "Add"}
-          </Button>
-        </>
-      }
-    >
-      <form
-        id="installation-form"
-        onSubmit={submit}
-        className="grid gap-6 md:grid-cols-[1fr_16rem]"
-      >
-        <div className="space-y-6">
-          <Field label="Name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
-          </Field>
-          {credFields.length > 0 && (
-            <section className="space-y-3">
-              <h3 className="section-label">Credentials</h3>
-              {credentialsStored && (
-                <p className="text-xs text-muted">
-                  Stored. Leave a field blank to keep it; type a new value to replace it.
-                </p>
-              )}
-              <SchemaForm
-                fields={credFields}
-                value={credentials}
-                onChange={setCredentials}
-                secretFields={connector.secretFields}
-                placeholder={credentialsStored ? "Stored" : undefined}
-                secretPlaceholder={credentialsStored ? "Stored (hidden)" : undefined}
-              />
-            </section>
-          )}
-          {configFields.length > 0 && (
-            <section className="space-y-3">
-              <h3 className="section-label">Settings</h3>
-              <SchemaForm fields={configFields} value={config} onChange={setConfig} />
-            </section>
-          )}
-        </div>
-        {connector.setupHelp && (
-          <aside className="prose-chat rounded-xl bg-surface-2 p-3.5 text-xs leading-5 text-muted shadow-raised md:self-start">
-            <p className="mb-1.5 text-[13px] font-medium text-text">Setup</p>
-            <Markdown>{connector.setupHelp}</Markdown>
-          </aside>
-        )}
-      </form>
-    </Dialog>
   );
 }

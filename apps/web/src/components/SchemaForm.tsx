@@ -1,3 +1,5 @@
+import type { SetupOptionView } from "@sling/core";
+import { Check } from "lucide-react";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { blankRow, type FormField, setField } from "../lib/schemaForm.ts";
 import { Button, cx, Dialog, Input, Select, Switch, Textarea } from "./ui.tsx";
@@ -7,6 +9,8 @@ export interface FieldOverride {
   control?: ReactNode;
   /** Shown at the end of the label row, for example a mode toggle. */
   accessory?: ReactNode;
+  /** Shown under the field, after its description. */
+  after?: ReactNode;
 }
 
 export interface SchemaFormProps {
@@ -22,6 +26,8 @@ export interface SchemaFormProps {
   placeholder?: string;
   disabled?: boolean;
   compact?: boolean;
+  /** Choices for a field, by key. A string field becomes a picker, a list a checklist. */
+  options?: Record<string, SetupOptionView[]>;
 }
 
 /** A form generated from JSON Schema fields. */
@@ -43,6 +49,28 @@ export function SchemaForm(props: SchemaFormProps) {
   );
 }
 
+/** One field of a schema form, for forms that lay fields out themselves. */
+export function SchemaField({
+  field,
+  value,
+  onChange,
+  form,
+}: {
+  field: FormField;
+  value: Record<string, unknown>;
+  onChange: (next: Record<string, unknown>, key: string) => void;
+  form: Omit<SchemaFormProps, "fields" | "value" | "onChange">;
+}) {
+  return (
+    <FieldRow
+      field={field}
+      value={value[field.key]}
+      set={(v) => onChange(setField(value, field, v), field.key)}
+      form={{ ...form, fields: [field], value, onChange }}
+    />
+  );
+}
+
 function FieldRow({
   field,
   value,
@@ -57,7 +85,12 @@ function FieldRow({
   const id = useId();
   const custom = form.override?.(field, value, set) ?? null;
   const secret = form.secretFields?.includes(field.key) ?? false;
-  const placeholder = secret ? (form.secretPlaceholder ?? form.placeholder) : form.placeholder;
+  const placeholder =
+    (secret ? (form.secretPlaceholder ?? form.placeholder) : form.placeholder) ??
+    field.meta.placeholder ??
+    undefined;
+  const options = form.options?.[field.key];
+  const picked = options && options.length > 0 ? options : null;
   const control = custom?.control ?? (
     <Control
       id={id}
@@ -67,9 +100,15 @@ function FieldRow({
       secret={secret}
       placeholder={placeholder}
       disabled={form.disabled}
+      options={picked}
     />
   );
-  const labelFor = field.kind === "boolean" || field.kind === "stringList" ? undefined : id;
+  const labelFor =
+    field.kind === "boolean" ||
+    field.kind === "stringList" ||
+    (field.kind === "enum" && field.widget === "segmented")
+      ? undefined
+      : id;
   return (
     <div className="space-y-1.5" data-field={field.key}>
       <div className="flex items-center justify-between gap-2">
@@ -85,6 +124,7 @@ function FieldRow({
       </div>
       {control}
       {field.description && <p className="text-xs text-muted">{field.description}</p>}
+      {custom?.after}
     </div>
   );
 }
@@ -97,6 +137,7 @@ function Control({
   secret,
   placeholder,
   disabled,
+  options,
 }: {
   id: string;
   field: FormField;
@@ -105,11 +146,49 @@ function Control({
   secret: boolean;
   placeholder?: string;
   disabled?: boolean;
+  options: SetupOptionView[] | null;
 }) {
   const fallback =
     field.default !== undefined && typeof field.default !== "object"
       ? String(field.default)
       : undefined;
+  if (options && field.kind === "string") {
+    return (
+      <OptionSelect
+        id={id}
+        value={typeof value === "string" ? value : ""}
+        options={options}
+        required={field.required}
+        disabled={disabled}
+        onChange={set}
+      />
+    );
+  }
+  if (options && field.kind === "stringList") {
+    return (
+      <CheckList
+        label={field.label}
+        value={Array.isArray(value) ? value.map(String) : []}
+        options={options}
+        emptyMeansAll={field.meta.emptyMeansAll}
+        allowOther={field.meta.allowOther}
+        disabled={disabled}
+        onChange={set}
+      />
+    );
+  }
+  if (field.kind === "enum" && field.widget === "segmented") {
+    const current = value === undefined ? field.default : value;
+    return (
+      <SegmentedControl
+        label={field.label}
+        options={field.options.map((o) => ({ value: String(o.value), label: o.label }))}
+        value={String(current)}
+        disabled={disabled}
+        onChange={(v) => set(field.options.find((o) => String(o.value) === v)?.value)}
+      />
+    );
+  }
   switch (field.kind) {
     case "string":
       return (
@@ -234,6 +313,169 @@ function Control({
         />
       );
   }
+}
+
+/** Picks one of the setup lookup's choices. A stored value it didn't offer stays pickable. */
+function OptionSelect({
+  id,
+  value,
+  options,
+  required,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  options: SetupOptionView[];
+  required: boolean;
+  disabled?: boolean;
+  onChange: (v: string) => void;
+}) {
+  const known = value === "" || options.some((o) => o.value === value);
+  return (
+    <Select id={id} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+      {(!required || value === "") && <option value="">{required ? "Pick one" : "None"}</option>}
+      {!known && <option value={value}>{value}</option>}
+      {options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.detail ? `${o.label} · ${o.detail}` : o.label}
+        </option>
+      ))}
+    </Select>
+  );
+}
+
+/** Ticks choices from the setup lookup, with an "Add" row when other values are allowed. */
+function CheckList({
+  label,
+  value,
+  options,
+  emptyMeansAll,
+  allowOther,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string[];
+  options: SetupOptionView[];
+  emptyMeansAll: boolean;
+  allowOther: boolean;
+  disabled?: boolean;
+  onChange: (v: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const all = options.map((o) => o.value);
+  const extra = value.filter((v) => !all.includes(v));
+  const rows: SetupOptionView[] = [...options, ...extra.map((v) => ({ value: v, label: v }))];
+  const isOn = (v: string) => value.includes(v) || (emptyMeansAll && value.length === 0);
+  const toggle = (v: string) => {
+    const on = rows.filter((r) => isOn(r.value)).map((r) => r.value);
+    const next = on.includes(v) ? on.filter((x) => x !== v) : [...on, v];
+    // Everything ticked is stored as nothing, so new ones are picked up too.
+    onChange(emptyMeansAll && all.every((x) => next.includes(x)) && extra.length === 0 ? [] : next);
+  };
+  const add = () => {
+    const v = draft.trim();
+    if (v && !value.includes(v))
+      onChange([...rows.filter((r) => isOn(r.value)).map((r) => r.value), v]);
+    setDraft("");
+  };
+  return (
+    <ul
+      aria-label={label}
+      className="divide-y divide-border overflow-hidden rounded-lg bg-field shadow-field"
+    >
+      {rows.map((o) => {
+        const on = isOn(o.value);
+        return (
+          <li key={o.value}>
+            <label className="flex min-h-9 cursor-pointer items-center gap-2.5 px-3 py-1.5 text-[13px] has-disabled:cursor-not-allowed">
+              <input
+                type="checkbox"
+                className="peer sr-only"
+                checked={on}
+                disabled={disabled}
+                onChange={() => toggle(o.value)}
+              />
+              <span
+                aria-hidden="true"
+                className={cx(
+                  "grid size-4 shrink-0 place-items-center rounded-[5px] shadow-field transition-colors duration-150 peer-focus-visible:shadow-focus",
+                  on ? "bg-accent text-accent-fg" : "bg-surface-3",
+                )}
+              >
+                {on && <Check size={11} strokeWidth={3} />}
+              </span>
+              <span className="min-w-0 flex-1 truncate">{o.label}</span>
+              {o.detail && <span className="shrink-0 text-xs text-subtle">{o.detail}</span>}
+            </label>
+          </li>
+        );
+      })}
+      {allowOther && (
+        <li>
+          <input
+            aria-label={`Add to ${label}`}
+            className="h-9 w-full bg-transparent px-3 text-[13px] outline-none placeholder:text-subtle"
+            placeholder="Add another"
+            value={draft}
+            disabled={disabled}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={add}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                add();
+              }
+            }}
+          />
+        </li>
+      )}
+    </ul>
+  );
+}
+
+/** A short choice as buttons in a pill. */
+function SegmentedControl({
+  label,
+  options,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  value: string;
+  disabled?: boolean;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label={label}
+      className="flex w-fit max-w-full rounded-full bg-field p-0.5 shadow-field"
+    >
+      {options.map((o) => (
+        // biome-ignore lint/a11y/useSemanticElements: styled radios inside a radiogroup.
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          disabled={disabled}
+          onClick={() => onChange(o.value)}
+          className={cx(
+            "h-[26px] cursor-pointer rounded-full px-3 text-xs whitespace-nowrap transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-50",
+            value === o.value
+              ? "bg-surface-3 text-text shadow-active"
+              : "text-subtle enabled:hover:text-soft",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 /** A number field that keeps what you typed until it parses. */
@@ -567,6 +809,7 @@ function RowCell({
         secret={false}
         placeholder={label}
         disabled={disabled}
+        options={null}
       />
     </div>
   );
