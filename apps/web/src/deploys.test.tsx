@@ -269,6 +269,24 @@ const METHOD_CARD = {
   hook: /^A deploy hook/,
 };
 
+describe("checks in place of deploys", () => {
+  it("sends old links to Checks, which the sidebar lists where Deploys was, after Memory", async () => {
+    const { router } = renderAt("/deploys");
+    await targetCard("Website");
+    expect(router.state.location.pathname).toBe("/checks");
+    const nav = screen.getAllByRole("link").map((l) => l.textContent);
+    expect(nav).toContain("Checks");
+    expect(nav).not.toContain("Deploys");
+    expect(nav.indexOf("Memory")).toBe(nav.indexOf("Personalities") + 1);
+    expect(nav.indexOf("Checks")).toBe(nav.indexOf("Sandboxes") + 1);
+  });
+
+  it("has a Memory page", async () => {
+    renderAt("/memory");
+    expect(await screen.findByRole("heading", { name: "Memory" })).toBeTruthy();
+  });
+});
+
 describe("deploys page", () => {
   it("lists each target with its method, status, last deploy, and checks", async () => {
     renderAt("/deploys");

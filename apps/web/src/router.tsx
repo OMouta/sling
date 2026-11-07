@@ -6,6 +6,7 @@ import {
   lazyRouteComponent,
   Outlet,
   type RouterHistory,
+  redirect,
 } from "@tanstack/react-router";
 import { AppLayout } from "./components/Shell.tsx";
 import { ApprovalsPage } from "./pages/Approvals.tsx";
@@ -69,10 +70,18 @@ const sandboxesRoute = createRoute({
   component: SandboxesPage,
 });
 // Visited now and then, so it loads on first visit (or on hover over its link).
+const checksRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/checks",
+  component: lazyRouteComponent(() => import("./pages/Deploys.tsx"), "DeploysPage"),
+});
+// Deploy targets became site checks; old links and notifications still land.
 const deploysRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/deploys",
-  component: lazyRouteComponent(() => import("./pages/Deploys.tsx"), "DeploysPage"),
+  beforeLoad: () => {
+    throw redirect({ to: "/checks", replace: true });
+  },
 });
 const approvalsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -131,6 +140,11 @@ const personalitiesRoute = createRoute({
   path: "/personalities",
   component: PersonalitiesPage,
 });
+const memoryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/memory",
+  component: lazyRouteComponent(() => import("./pages/Memory.tsx"), "MemoryPage"),
+});
 /** `new` makes one; anything else is the ID of one to edit. */
 export const personalityRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -161,6 +175,7 @@ const routeTree = rootRoute.addChildren([
     chatsRoute,
     machinesRoute,
     sandboxesRoute,
+    checksRoute,
     deploysRoute,
     approvalsRoute,
     settingsRoute,
@@ -173,6 +188,7 @@ const routeTree = rootRoute.addChildren([
     extensionsRoute,
     personalitiesRoute,
     personalityRoute,
+    memoryRoute,
   ]),
 ]);
 

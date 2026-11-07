@@ -23,7 +23,7 @@ const DELIVER: Record<Delivery, string> = {
 function Delivers({ task }: { task: TaskView }) {
   const name = task.actions.find((a) => a.targetName)?.targetName;
   const target = name ? (
-    <Link to="/deploys" className="decoration-faint underline-offset-2 hover:underline">
+    <Link to="/checks" className="decoration-faint underline-offset-2 hover:underline">
       {name}
     </Link>
   ) : null;

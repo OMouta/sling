@@ -1,12 +1,13 @@
 import {
+  Activity,
   Box,
+  Brain,
   Drama,
   Laptop,
   ListChecks,
   type LucideIcon,
   Plug,
   Puzzle,
-  Rocket,
   Settings,
   ShieldCheck,
   Workflow,
@@ -15,6 +16,7 @@ import {
 export interface NavItem {
   to:
     | "/personalities"
+    | "/memory"
     | "/tasks"
     | "/approvals"
     | "/workflows"
@@ -22,7 +24,7 @@ export interface NavItem {
     | "/extensions"
     | "/machines"
     | "/sandboxes"
-    | "/deploys"
+    | "/checks"
     | "/settings";
   label: string;
   icon: LucideIcon;
@@ -32,6 +34,7 @@ export interface NavItem {
 /** Every top-level page, in sidebar order. */
 export const NAV: NavItem[] = [
   { to: "/personalities", label: "Personalities", icon: Drama, section: "main" },
+  { to: "/memory", label: "Memory", icon: Brain, section: "main" },
   { to: "/tasks", label: "Tasks", icon: ListChecks, section: "main" },
   { to: "/approvals", label: "Approvals", icon: ShieldCheck, section: "main" },
   { to: "/workflows", label: "Workflows", icon: Workflow, section: "automation" },
@@ -39,6 +42,6 @@ export const NAV: NavItem[] = [
   { to: "/extensions", label: "Extensions", icon: Puzzle, section: "automation" },
   { to: "/machines", label: "Machines", icon: Laptop, section: "infrastructure" },
   { to: "/sandboxes", label: "Sandboxes", icon: Box, section: "infrastructure" },
-  { to: "/deploys", label: "Deploys", icon: Rocket, section: "infrastructure" },
+  { to: "/checks", label: "Checks", icon: Activity, section: "infrastructure" },
   { to: "/settings", label: "Settings", icon: Settings, section: "footer" },
 ];
