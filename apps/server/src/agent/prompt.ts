@@ -2,6 +2,7 @@ import { MODE_POLICY, type PermissionMode, type PersonalityTool } from "@sling/c
 import { filesSection } from "../files/prompt.ts";
 import { memorySection } from "../memory/prompt.ts";
 import { RULES_NOTE } from "../rules/tool.ts";
+import { SOURCE_TOOLS } from "../sources/tools.ts";
 import { deploysSection } from "./deploy-prompt.ts";
 import { FOLLOW_UPS_RULE } from "./follow-ups.ts";
 import { allowedTools, isBuiltTool } from "./tools.ts";
@@ -115,6 +116,8 @@ export function assistantInstructions(
     research?: boolean;
     /** The part on the personality's sources and the chat's documents. */
     sources?: string;
+    /** The turn has search_sources and read_source: the personality's sources, or the chat's files. */
+    sourceTools?: boolean;
   } = {},
 ): string {
   const commands = personality.tools.includes("commands");
@@ -125,6 +128,7 @@ export function assistantInstructions(
   const remembers = personality.tools.includes("memory");
   const files = personality.tools.includes("files");
   const searches = opts.web === true;
+  const sourced = opts.sourceTools === true;
   // Memory holds only what the user told Sling: it reaches nothing of theirs.
   const reaches = commands || coding || apps || deploys || setup || files;
   const any = reaches || remembers;
@@ -139,6 +143,7 @@ export function assistantInstructions(
   if (!reaches) {
     const besides = [
       ...(searches ? ["web search"] : []),
+      ...(sourced ? ["your sources"] : []),
       ...(remembers ? ["your memory of the user"] : []),
     ];
     chat.push(
@@ -260,7 +265,9 @@ export function assistantInstructions(
       `This conversation is in ${policy.label} mode: ${policy.description} You can't change the mode. The user switches it in the app.`,
     );
   }
-  if (any && opts.cli) out.push(cliNote(personality.tools, opts.apps ?? [], searches));
+  if ((any || sourced) && opts.cli) {
+    out.push(cliNote(personality.tools, opts.apps ?? [], searches, sourced));
+  }
   if (remembers && opts.memory) out.push(opts.memory);
   out.push(FOLLOW_UPS_RULE);
   out.push(dateLine(now, opts.timeZone ?? "UTC"));
@@ -269,10 +276,16 @@ export function assistantInstructions(
 }
 
 /** Told to the assistant when it runs on a CLI, which has its own tools by default. */
-function cliNote(tools: readonly PersonalityTool[], apps: readonly string[], web: boolean): string {
+function cliNote(
+  tools: readonly PersonalityTool[],
+  apps: readonly string[],
+  web: boolean,
+  sourced: boolean,
+): string {
   // The app tools are built per turn, run_workflow among them.
   const names = [
     ...new Set([...allowedTools(tools), ...apps].filter((n) => isBuiltTool(n) || apps.includes(n))),
+    ...(sourced ? SOURCE_TOOLS : []),
   ];
   const how = [
     ...(tools.includes("commands")
@@ -288,6 +301,9 @@ function cliNote(tools: readonly PersonalityTool[], apps: readonly string[], web
       : []),
     ...(tools.includes("memory")
       ? ["remember and recall are how you keep and find what you know about them"]
+      : []),
+    ...(sourced
+      ? ["search_sources and read_source are how you read your sources and the chat's files"]
       : []),
   ].join(", and ");
   const own = web

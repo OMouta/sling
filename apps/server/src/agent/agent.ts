@@ -336,6 +336,7 @@ export class Agent {
             memory,
             web,
             sources: files.section,
+            sourceTools: files.tools,
           }),
           tools: [...allowed],
           appTools: apps,
@@ -363,6 +364,7 @@ export class Agent {
           web,
           research,
           sources: files.section,
+          sourceTools: files.tools,
         }),
         messages: toModelMessages(await files.forApi()),
         tools: {

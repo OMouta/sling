@@ -168,6 +168,23 @@ describe("the assistant's prompt", () => {
     expect(p.trimEnd().endsWith("It's Friday, 6 November 2026, 12:00 in UTC.")).toBe(true);
   });
 
+  it("names the source tools on a CLI, even for a personality with no other tools", () => {
+    const p = assistantInstructions({ ...finance, tools: [] }, "auto", now, {
+      cli: true,
+      sources: "SOURCES",
+      sourceTools: true,
+    });
+    expect(p).toContain("You have no tools in this chat besides your sources.");
+    expect(p).toContain('"sling": search_sources, read_source.');
+    expect(p).toContain("search_sources and read_source are how you read your sources");
+    expect(p).toContain("SOURCES");
+    const withMemory = assistantInstructions({ ...finance, tools: ["memory"] }, "auto", now, {
+      cli: true,
+      sourceTools: true,
+    });
+    expect(withMemory).toContain('"sling": remember, forget, recall, search_sources, read_source.');
+  });
+
   it("leaves memories out for a personality without memory", () => {
     const p = assistantInstructions({ ...finance, tools: [] }, "auto", now, {
       memory: "What you know about the user:\n- Vegetarian",
