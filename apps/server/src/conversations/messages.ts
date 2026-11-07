@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { toMessageView } from "../agent/history.ts";
 import type { AppContext } from "../context.ts";
 import { toSourceView } from "../sources/views.ts";
-import { replaceableIds } from "./replace.ts";
+import { replaceable } from "./replace.ts";
 
 type MessageRow = typeof schema.messages.$inferSelect;
 
@@ -18,7 +18,7 @@ export async function messageViews(
   const views = rows.map(toMessageView).filter((m) => m !== null);
   const users = views.filter((m) => m.role === "user").map((m) => m.id);
   const replies = views.filter((m) => m.role === "assistant").map((m) => m.id);
-  const [files, feedback] = await Promise.all([
+  const [files, feedback, replaceableIds] = await Promise.all([
     ctx.sources.forMessages(workspaceId, users),
     replies.length
       ? ctx.db
@@ -34,13 +34,13 @@ export async function messageViews(
             ),
           )
       : [],
+    replaceable(ctx, rows),
   ]);
   const ratings = new Map(feedback.map((f) => [f.messageId, f.rating]));
-  const replaceable = replaceableIds(rows);
   for (const v of views) {
     v.attachments = files.filter((f) => f.messageId === v.id).map(toSourceView);
     v.feedback = ratings.get(v.id) ?? null;
-    v.replaceable = replaceable.has(v.id);
+    v.replaceable = replaceableIds.has(v.id);
   }
   return views;
 }
