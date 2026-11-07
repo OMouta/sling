@@ -612,11 +612,11 @@ describe("each kind of change", () => {
 
     const next = await send(id, "change_workflow", {
       workflow: "Site down alert",
-      steps: [{ step: "Every minute", settings: { cron: "*/5 * * * *" } }],
+      steps: [{ step: "A site changed", settings: { check: "Website" } }],
     });
     const c = await card(id);
     expect(c.approval.change?.rows).toEqual([
-      { label: "Every minute: Cron", before: "Every minute", after: "Every 5 minutes" },
+      { label: "A site changed: Check", before: "None", after: "Website" },
     ]);
     await decide(id, c.approval.id, "approve");
     expect(result(await reply(id, next))).toMatchObject({ applied: true, version: 2 });
@@ -624,7 +624,7 @@ describe("each kind of change", () => {
       "GET",
       `/api/workflows/${added.workflow.id}`,
     );
-    expect(wf.active.nodes.find((n) => n.id === "everyMinute")?.config.cron).toBe("*/5 * * * *");
+    expect(wf.active.nodes.find((n) => n.id === "changed")?.config.check).toBe("Website");
 
     const off = await send(id, "change_workflow", { workflow: "Site down alert", enabled: false });
     const o = await card(id);
