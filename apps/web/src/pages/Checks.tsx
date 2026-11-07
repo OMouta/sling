@@ -312,12 +312,7 @@ function Status({ check: c, now, running }: { check: CheckView; now: number; run
   const tone = stateTone(c.state);
   const ms = r.detail.kind === "site" ? slowest(r.detail.checks) : r.ms;
   const parts: string[] = [];
-  if (
-    (c.state === "up" || c.state === "unknown") &&
-    r.passed &&
-    c.kind === "site" &&
-    ms !== null
-  ) {
+  if ((c.state === "up" || c.state === "unknown") && r.passed && c.kind === "site" && ms !== null) {
     parts.push(duration(ms));
   }
   if (c.failures > 1 && c.kind !== "reply") parts.push(`${c.failures} failures in a row`);

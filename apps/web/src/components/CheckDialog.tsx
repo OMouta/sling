@@ -548,10 +548,7 @@ export function CheckDialog({
             }}
           />
         )}
-        <Field
-          label="Command"
-          hint="Runs in the machine's read-only sandbox, with no network"
-        >
+        <Field label="Command" hint="Runs in the machine's read-only sandbox, with no network">
           <Input
             value={command}
             spellCheck={false}
