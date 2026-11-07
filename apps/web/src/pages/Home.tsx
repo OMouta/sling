@@ -221,7 +221,7 @@ export function HomePage() {
                     title="Log in to a coding agent"
                     to="/machines"
                   >
-                    Run codex login or claude auth login on it.
+                    Run codex login or claude auth login on that machine.
                   </Step>
                 </Card>
               )}
