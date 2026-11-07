@@ -303,6 +303,9 @@ const TYPES: Record<string, (a: Args) => Described> = {
     if (a.config.scope === "any") return { text: `When someone messages ${bot} on Discord` };
     return { text: `When someone sends ${bot} a direct message on Discord` };
   },
+  "telegram.message_received": (a) => ({
+    text: `When someone messages ${account(a) ?? "the bot"} on Telegram`,
+  }),
   "email.received": (a) => {
     const box = account(a);
     const folder = plain(a.config.folder);
@@ -434,6 +437,7 @@ const TYPES: Record<string, (a: Args) => Described> = {
       sends: true,
     };
   },
+  "telegram.send_message": () => ({ text: "Send a Telegram message" }),
   "discord.send_message": (a) => {
     const target = discordTarget(a);
     const text = target

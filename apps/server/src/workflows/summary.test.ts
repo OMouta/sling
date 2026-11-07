@@ -1,6 +1,7 @@
 import { connector as calendar } from "@sling/integration-calendar";
 import { connector as discord } from "@sling/integration-discord";
 import { connector as email } from "@sling/integration-email";
+import { connector as telegram } from "@sling/integration-telegram";
 import { WORKFLOW_SCHEMA, type WorkflowDefinition } from "@sling/workflow";
 import { describe, expect, it } from "vitest";
 import { registerCoreNodes } from "./nodes/index.ts";
@@ -10,7 +11,7 @@ import { applyBindings, loadTemplates, TEMPLATES_DIR } from "./templates.ts";
 
 const registry = new NodeRegistry();
 registerCoreNodes(registry);
-for (const c of [calendar, discord, email]) registry.registerConnector(c);
+for (const c of [calendar, discord, email, telegram]) registry.registerConnector(c);
 
 const NOW = new Date("2026-11-07T12:00:00Z");
 const GENERAL = "222222222222222222";
@@ -19,6 +20,7 @@ const accounts: Record<string, { name: string; config: Record<string, unknown> }
   ins_discord: { name: "Sling bot", config: { defaultChannelId: GENERAL } },
   ins_email: { name: "ana@example.com", config: {} },
   ins_calendar: { name: "Personal", config: {} },
+  ins_telegram: { name: "@sling_home_bot", config: {} },
 };
 
 const names: StepNames = {
@@ -40,6 +42,7 @@ describe("a workflow's steps in words", () => {
       $discord: "ins_discord",
       $email: "ins_email",
       $calendar: "ins_calendar",
+      $telegram: "ins_telegram",
     });
   };
 
@@ -79,6 +82,13 @@ describe("a workflow's steps in words", () => {
       "Or when a task from its chat finishes or needs you",
       "Find or start its chat",
       "The assistant replies",
+    ],
+    "telegram-assistant": [
+      "When someone messages @sling_home_bot on Telegram",
+      "Or when a task from its chat finishes or needs you",
+      "Find or start its chat",
+      "Ask the assistant",
+      "Send a Telegram message [sends]",
     ],
     "website-health-monitor": [
       "Every 5 minutes",
