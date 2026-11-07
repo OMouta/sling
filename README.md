@@ -1,124 +1,88 @@
-<p align="center"><img src="assets/icons/sling-icon-currentcolor.svg" width="72" alt="Sling"></p>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/banners/sling-readme-dark.png">
+  <img alt="Sling: your agents, your machines, your workflows" src="assets/brand/banners/sling-readme-light.png">
+</picture>
 
-# Sling
+<p align="center">
+  <a href="#get-started">Get started</a> ·
+  <a href="docs/install.md">Install</a> ·
+  <a href="docs/runner.md">Sling Runner</a> ·
+  <a href="docs/workflows.md">Workflows</a> ·
+  <a href="#docs">Docs</a>
+</p>
 
-Your agents. Your machines. Your workflows.
+Sling is a self-hosted assistant that hands coding work to the agents on your own computers. Ask from the web app or your phone. Sling runs Codex or Claude Code on a machine you paired, in a fresh git worktree, then commits, pushes, and opens the pull request. When your permission mode says so, it asks you first.
 
-Sling is a self-hosted assistant that hands real work to coding agents on your own computers. You ask for a change from the web app, from your phone if you like, and Sling delegates it to Codex or Claude Code on a machine you paired, or in a fresh sandbox when that machine is offline. The agent works in a fresh git worktree, and Sling commits, pushes, and opens the pull request, asking first when your permission mode says so.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/screenshots/sling-chat-dark.png">
+  <img alt="A Sling chat: Claude Code made the change on studio-mac in 15 seconds, and Sling asks to push the branch and open a pull request" src="assets/brand/screenshots/sling-chat-light.png">
+</picture>
 
-Sling coordinates. The coding agent writes the code. The control plane never edits source itself.
+## What it does
 
-Around that sits a workflow engine with a visual editor. Workflows react to email, Discord messages, schedules, webhooks, and Sling's own events, and they can summarize with a model, ask for approval, or hand work to a coding agent. The chat assistant is itself a workflow, so the web app and Discord talk to the same one.
+- **Hands work to your coding agents.** Codex or Claude Code run on your machine, on your own login, so there's no API key to pay for. When that machine is offline, a Docker or Railway sandbox can take the task instead.
+- **Asks before anything leaves.** Four permission modes decide what waits for your approval, from read-only up to full access. Each machine sets the highest mode it accepts, and Sling can't raise it.
+- **Fixes your site.** Add a check and Sling tests it every minute. Say "the site is down, fix it" and a coding agent finds the cause and opens a PR. Once you approve, Sling merges, deploys, and checks the site again.
+- **Runs workflows.** A visual editor for automations that start on an email, a Discord message, a schedule, a webhook, or a check that fails. Steps can summarize with a model, ask for approval, or start a coding task.
+- **Works from your phone.** The web app installs to your home screen. Approvals, finished tasks, and replies arrive as push notifications, and you can hold the mic to talk instead of typing. Discord, Telegram, iMessage, Signal, and email work too.
+- **Knows your context.** It remembers what you tell it, searches the web with citations, reads the files and photos you attach, and checks your calendar. What it remembers is listed under Memory, where you can edit or delete it.
+- **Takes extensions.** Connectors, sandbox providers, and workflow templates install as signed packages, each running in its own restricted process.
 
-This repo is at **Stage 7** of the plan in [`plan/`](plan/): personalities that search the web and cite it, answer from files you give them, read the files and photos you attach, run on a model of their own, and hand a question to each other with an @mention, with retry, edit, follow-ups, read aloud, and feedback on every reply. Stage 6 brought an assistant that remembers what you tell it, writes workflows from chat, answers under rules you set, checks that what it did happened, and talks to you over Telegram, iMessage, and Signal. Stage 5 brought fixes that Sling merges, deploys, and checks once you approve, a calendar, and the web app on your phone's home screen with push notifications. Stage 4 brought extensions that other people write and you install, as signed packages that run in their own restricted processes. Stage 3 brought routing across machines, Docker and Railway sandboxes, and Claude Code next to Codex. Workflows, the editor, and the Discord and email connectors came in Stage 2.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/screenshots/sling-workflow-dark.png">
+    <img alt="The workflow editor: when the site check fails, Claude Code fixes it, then a notification goes to your phone" src="assets/brand/screenshots/sling-workflow-light.png" width="68%">
+  </picture>
+  &nbsp;
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/brand/screenshots/sling-phone-dark.png">
+    <img alt="The same chat on a phone, with Approve and Reject buttons" src="assets/brand/screenshots/sling-phone-light.png" width="19.6%">
+  </picture>
+</p>
 
-## How it fits together
+## Get started
 
-```text
- browser / phone ──HTTPS──▶  control plane (Docker)  ◀──WSS──  sling-runner on your machine
-                            Fastify, Postgres, agent              │
-                                                                  ├─ git worktree per task
-                                                                  └─ codex exec --json
-```
-
-- **Control plane** (`apps/server`, `apps/web`): the API, the master agent, task state, approvals, and the web app. Runs in Docker next to Postgres.
-- **Sling Runner** (`apps/runner`, Rust): a small daemon on each machine. It dials out to the control plane, so no ports open on your computer. Repos and the highest allowed permission mode are set on the machine, and the control plane can't change them.
-- **Agent adapters** (`crates/harness-codex`, `crates/harness-claude-code`): run `codex exec --json` or `claude -p` with the sandbox that matches the permission mode, and stream their events back.
-- **Sandboxes** (`integrations/docker`, `integrations/railway`): start the `sling-sandbox` image for one task. Inside it, `sling-runner sandbox` clones the repo from its remote, pairs itself, and connects back like any machine.
-- **Extensions** (`packages/connector-sdk`, `packages/extension-*`, `extensions/`): connectors, sandbox providers, and workflow templates as signed `.slx` packages. Each one with code runs in its own Node process that can't touch files, the environment, or the network except the hosts it declared, through Sling.
-
-## Quick start
-
-You need Docker on the server, and Codex or Claude Code installed and logged in on the machine that has your code.
+You need Docker on the server, and Codex or Claude Code installed and logged in on the computer that has your code.
 
 ```sh
-git clone <this repo> sling && cd sling/deploy
+git clone https://github.com/OMouta/sling && cd sling/deploy
 ./setup.sh
 ```
 
-The script asks how you'll reach Sling: this computer, your local network, or from anywhere through Tailscale or Cloudflare Tunnel. Then it writes `deploy/.env`, generates its secrets, and starts it. Open the address it prints and create the account. Under **Machines**, choose **Add machine** and run the command it shows on the computer with your repos. It installs `sling-runner`, pairs it, and starts it:
+The script asks how you'll reach Sling: from this computer, your local network, or anywhere through Tailscale or Cloudflare Tunnel. It generates the secrets, starts Sling, and prints the address. Open it and create your account.
+
+Then go to **Machines**, choose **Add machine**, and run the command it shows on the computer with your repos:
 
 ```sh
 curl -fsSL https://sling.example.com/install.sh | SLING_CODE=K7QM-2XVD-HP4R sh
 ```
 
-Once it connects, the dialog lists the repos the machine found. Pick the ones Sling may use, and change them later under **Machines**. Start a conversation: "The footer year in site is hardcoded. Make it dynamic and add a test."
+Pick the repos Sling may use, start a chat, and ask: "The footer year in the site repo is hardcoded. Make it dynamic and add a test."
 
-The assistant chats through that machine's Codex or Claude Code, on your own login, so it runs on your subscription with no API key. It picks the coding agent and model for each task itself, unless you name one. API keys under **Settings** are optional, for chatting when no machine is on or through another provider such as Ollama.
+## How it works
 
-To use Discord, Telegram, or email, add them under **Connectors**, then install a template under **Workflows**, for example **Important email to Discord**, **Discord assistant**, or **Telegram assistant**.
+```text
+ browser / phone ──HTTPS──▶  Sling (Docker)  ◀──WSS──  sling-runner on your machine
+                             Fastify, Postgres           ├─ a git worktree per task
+                                                         └─ codex or claude
+```
 
-## Checks and deploys
-
-Add your site under **Checks**: a URL that says it works, and, if Sling should deploy it, its repo and how it deploys (your host deploys on merge, a command on one of your machines, or a deploy hook). Sling checks it every minute and sends a push when it goes down. Then "the site is down, fix it" goes all the way: the assistant checks the site, a coding agent fixes it, and once the PR is open Sling asks "Approve deployment?" in the chat and on your phone. After you approve, it merges, deploys, and checks the site until it passes, and tells you what it saw. The machine's own config decides what a deploy command runs, and it only deploys merged commits. Checks also watch a command on one of your machines, such as whether last night's backup is there, and an email you're waiting for by a deadline, and a delivered PR shows its CI. [docs/checks.md](docs/checks.md) has the details.
-
-## Your calendar and apps
-
-Add your calendar under **Connectors**: iCloud, Fastmail, Nextcloud, or any CalDAV account, Google Calendar through your own OAuth client, or the private iCal link of an Outlook calendar. The assistant then answers "what's on tomorrow?" and adds events, and the **Morning briefing** template writes you a briefing each morning. It can also search and read your email, send email, Discord, and Telegram messages, and run your workflows from chat. Reading never asks; anything that goes out asks you in the chat first, except in Full access.
-
-## The web, sources, and files
-
-Give a personality **Web search** and it searches and reads pages with the model's own search, on your Claude or ChatGPT subscription when it runs on Claude Code or Codex. Replies cite what they used as small numbered links, with the sources listed underneath. **+ → Deep research** turns one message into a longer search that ends in a report.
-
-A personality's page takes **Sources**: PDFs, Word files, text, and links it answers from, and a citation opens the PDF at the page. In any chat, drop, paste, or attach files and photos to a message, and the assistant reads them. See [docs/sources.md](docs/sources.md).
-
-Each personality can run on its own model, picked on its page, which a chat starts on and can still change. Type `@` in the composer to hand one message to another personality. Replies have copy, read aloud, retry, thumbs up and down, and follow-ups to tap, and the downvotes on a personality can suggest better instructions. Personalities export to a file and import from one. See [docs/personalities.md](docs/personalities.md).
-
-## Memory and your files
-
-Tell the assistant something about yourself and it remembers: the chat shows "Remembered: Vegetarian" with **Undo**, and every chat after that knows it, whichever personality answers. **Memory** lists what it knows, with the chat each fact came from, to edit or delete. It never keeps passwords or card numbers. To let it read your notes, share a folder on the machine that has them with `sling-runner folder add ~/Notes`; it searches and reads them there and never uploads the folder. See [docs/memory.md](docs/memory.md).
-
-## Rules
-
-When the assistant asks before sending something, **Always allow** makes a rule from that answer, such as "Email to anyone at acme.com", and matching sends go without asking from then on. After five approvals in a row, the card suggests it. A start rule does work on its own: "When Website goes down, Incident investigates" opens a chat and starts on it before you've seen the alert. Merges and deploys always ask, except in Full access. Rules are listed under **Approvals → Rules**, where you revoke them. See [docs/rules.md](docs/rules.md).
-
-## Setting Sling up from chat
-
-The assistant can change Sling's own setup for you: "add a deploy target for my site", "connect my Fastmail", "every Monday at 9, send me this week's calendar on Telegram", "remind me at 17:00 to call the bank", "set my time zone to Lisbon". A request that repeats becomes a workflow whose steps the card lists in plain words, and it runs without a model wherever a step doesn't need one. Each change shows in the chat with **Apply** and **Cancel**, except in Full access, and a password or token goes in a field on that card, never in the chat. See [docs/modes.md](docs/modes.md#changing-slings-setup).
-
-## On your phone
-
-Open Sling on your phone and add it to the home screen. Under **Settings → Notifications**, turn on notifications for that device: approvals, finished tasks, and replies then reach you with Sling closed, and a tap opens the right page. On Android and desktop, a send or a push and pull request can be allowed or denied from the notification itself. Hold the mic in the composer to talk instead of typing. Push needs an HTTPS address, which the Tailscale and Cloudflare Tunnel setups give you. See [docs/notifications.md](docs/notifications.md).
-
-You can also talk to Sling from Telegram, or from iMessage and Signal through one of your machines. Add the account under **Connectors** and turn on its assistant template under **Workflows**.
-
-## Extensions
-
-Under **Extensions**, install connectors, sandbox providers, and workflow templates that aren't built in. Sling ships a catalog with three: [ntfy](extensions/ntfy) push notifications, a [Fly Machines](extensions/fly-machines) sandbox provider, and [Task alerts](extensions/task-alerts), a template that pings your phone when a task finishes. Add other catalogs by URL, or upload a `.slx` file.
-
-Before anything installs you see what it adds and every permission it asks for, and you trust its publisher's key by fingerprint. Updates wait for you and show the permissions they add. To write one, `pnpm sling-ext init my-extension`; [docs/extensions](docs/extensions/README.md) covers the rest.
-
-## Permission modes
-
-| Mode | Codex | Claude Code | Asks before |
-|---|---|---|---|
-| Read-only | `read-only` sandbox | plan mode | nothing gets written |
-| Supervised | `workspace-write` sandbox | accept edits, sandboxed | push, PR, merge, deploy |
-| Auto (default) | `workspace-write` sandbox | accept edits, sandboxed | merge, deploy |
-| Full access | `danger-full-access` | permissions skipped | nothing |
-
-Each conversation has a mode, and each machine can cap the mode it accepts. Details in [`docs/modes.md`](docs/modes.md).
+Sling coordinates and the coding agent writes the code. Sling Runner is a small Rust daemon on each machine. It dials out to Sling, so no ports open on your computer, and it only works in repos you allowed on that machine. The [threat model](docs/threat-model.md) covers the rest.
 
 ## Docs
 
-- [Install the control plane](docs/install.md)
-- [Run Sling Runner on a machine](docs/runner.md)
-- [Reach Sling from your phone, at home or away](docs/remote-access.md)
-- [Permission modes and what enforces them](docs/modes.md)
-- [Personalities: who answers, and what it may use](docs/personalities.md)
-- [Sources, files in chat, and the web](docs/sources.md)
-- [Memory, and the folders your machines share](docs/memory.md)
-- [Rules: standing answers, and work that starts on its own](docs/rules.md)
-- [Checks: watch sites, commands, and replies, and deploy a fix](docs/checks.md)
-- [Notifications and the phone app](docs/notifications.md)
-- [Workflows, nodes, and templates](docs/workflows.md)
-- [Routing and sandboxes](docs/sandboxes.md), and [the sandbox image](docs/sandbox-image.md)
-- Connectors: [Discord](docs/connectors/discord.md), [Telegram](docs/connectors/telegram.md), [Email](docs/connectors/email.md), [Calendar](docs/connectors/calendar.md), [iMessage](docs/connectors/imessage.md), [Signal](docs/connectors/signal.md), [Docker](docs/connectors/docker.md), [Railway](docs/connectors/railway.md)
-- [Extensions](docs/extensions/README.md): installing them, and writing [connectors](docs/extensions/connectors.md), [sandbox providers](docs/extensions/providers.md), and [workflow packages](docs/extensions/workflow-packages.md), with [signing and catalogs](docs/extensions/signing.md) and [the CLI](docs/extensions/cli.md)
-- [Threat model](docs/threat-model.md)
-- [Development](docs/development.md)
-- Product spec, decisions, and plan: [`plan/`](plan/)
+| Set up | Use | Extend |
+|---|---|---|
+| [Install Sling](docs/install.md) | [Permission modes](docs/modes.md) | [Extensions](docs/extensions/README.md) |
+| [Sling Runner](docs/runner.md) | [Personalities](docs/personalities.md) | [Write a connector](docs/extensions/connectors.md) |
+| [Reach it from anywhere](docs/remote-access.md) | [Sources, files, and the web](docs/sources.md) | [Write a sandbox provider](docs/extensions/providers.md) |
+| [Notifications and the phone app](docs/notifications.md) | [Memory](docs/memory.md) | [Workflow packages](docs/extensions/workflow-packages.md) |
+| [Machines and sandboxes](docs/sandboxes.md) | [Rules](docs/rules.md) | [Development](docs/development.md) |
+| [Threat model](docs/threat-model.md) | [Checks and deploys](docs/checks.md) | |
+| | [Workflows](docs/workflows.md) | |
+
+Connectors: [Discord](docs/connectors/discord.md), [Telegram](docs/connectors/telegram.md), [Email](docs/connectors/email.md), [Calendar](docs/connectors/calendar.md), [iMessage](docs/connectors/imessage.md), [Signal](docs/connectors/signal.md), [Docker](docs/connectors/docker.md), [Railway](docs/connectors/railway.md).
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0, see [LICENSE](LICENSE). Logos, banners, and screenshots are in [assets/brand](assets/brand).
