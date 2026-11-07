@@ -27,7 +27,7 @@ import { schema } from "@sling/db";
 import { createEmailConnector } from "@sling/integration-email";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { CheckChange } from "../src/checks/service.ts";
@@ -227,7 +227,8 @@ async function audits(verb: string): Promise<(Record<string, unknown> & { subjec
   const rows = await server.ctx.db
     .select()
     .from(schema.auditEvents)
-    .where(eq(schema.auditEvents.verb, verb));
+    .where(eq(schema.auditEvents.verb, verb))
+    .orderBy(asc(schema.auditEvents.at), asc(schema.auditEvents.id));
   return rows.map((r) => ({ ...(r.details as Record<string, unknown>), subjectId: r.subjectId }));
 }
 
