@@ -550,7 +550,7 @@ describe("chat on a coding agent's CLI", () => {
     await api("POST", `/api/conversations/${conv.id}/messages`, { text: "[fake:tool] machines?" });
     const r = await reply(conv.id, 0);
     expect(r.text).toBe(
-      "Tools: list_machines, delegate_coding_task, get_task, run_command, run_check, deploy_task, cancel_task, read_setup, save_deploy_target, save_app_account, add_workflow, change_workflow, save_personality, change_settings, create_workflow, workflow_nodes, save_rule. Machines: devbox.",
+      "Tools: list_machines, delegate_coding_task, get_task, run_command, run_check, deploy_task, cancel_task, read_setup, save_deploy_target, save_app_account, add_workflow, change_workflow, save_personality, change_settings, create_workflow, workflow_nodes, save_rule, remember, forget, recall, search_files, read_file. Machines: devbox.",
     );
     // The reply keeps its thinking and the tool call Sling served, in order.
     const { messages } = await api<{ messages: { role: string; trace: ReplyTrace | null }[] }>(
@@ -665,7 +665,7 @@ describe("personalities", () => {
     await api("DELETE", `/api/personalities/${trips.id}`);
   });
 
-  it("gives a Finance chat on a CLI no tools, and refuses them if it asks anyway", async () => {
+  it("gives a Finance chat on a CLI only its memory, and refuses other tools if it asks", async () => {
     const finance = await byName("Finance");
     const conv = await api<{ id: string; personalityId: string }>("POST", "/api/conversations", {
       personalityId: finance.id,
@@ -679,15 +679,18 @@ describe("personalities", () => {
     await reply(conv.id, 0);
     const turn = runner?.chatTurns[before];
     expect(turn?.instructions).toContain("You are Finance");
-    expect(turn?.instructions).toContain("You have no tools in this chat");
+    expect(turn?.instructions).toContain(
+      "You have no tools in this chat besides your memory of the user.",
+    );
     expect(turn?.instructions).not.toContain("delegate_coding_task");
     expect(turn?.instructions).not.toContain("Coding agents you can delegate to");
     expect(turn?.instructions).not.toContain("mode:");
 
-    // The turn's token still works for a moment after the turn, and serves nothing.
+    // The turn's token still works for a moment after the turn, and serves only memory.
     const auth = { authorization: `Bearer ${turn?.toolsToken}` };
     const listed = await realFetch(`${origin}/api/agent/tools`, { headers: auth });
-    expect(await listed.json()).toEqual({ tools: [] });
+    const { tools } = (await listed.json()) as { tools: { name: string }[] };
+    expect(tools.map((t) => t.name)).toEqual(["remember", "forget", "recall"]);
     const called = await realFetch(`${origin}/api/agent/tools/list_machines`, {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },

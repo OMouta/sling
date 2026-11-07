@@ -236,12 +236,13 @@ export function assistantInstructions(
     );
   }
 
-  if (any) {
+  // Memory works the same in every mode, so it alone needs no word on the mode.
+  if (reaches) {
     out.push(
       `This conversation is in ${policy.label} mode: ${policy.description} You can't change the mode. The user switches it in the app.`,
     );
-    if (opts.cli) out.push(cliNote(personality.tools, opts.apps ?? []));
   }
+  if (any && opts.cli) out.push(cliNote(personality.tools, opts.apps ?? []));
   if (remembers && opts.memory) out.push(opts.memory);
   out.push(dateLine(now, opts.timeZone ?? "UTC"));
   if (coding && opts.agents) out.push(opts.agents);

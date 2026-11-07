@@ -163,6 +163,7 @@ describe("the assistant's prompt", () => {
     }
     expect(p).not.toContain("You have no tools in this chat.");
     expect(p).not.toContain("Use a tool only when");
+    expect(p).not.toContain("mode");
     // The memories come after the rules, and the date stays last.
     expect(p.indexOf("- Vegetarian")).toBeGreaterThan(p.indexOf("Never save a secret"));
     expect(p.trimEnd().endsWith("It's Friday, 6 November 2026, 12:00 in UTC.")).toBe(true);
