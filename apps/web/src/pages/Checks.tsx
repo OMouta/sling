@@ -315,7 +315,7 @@ function Status({ check: c, now, running }: { check: CheckView; now: number; run
   if (
     (c.state === "up" || c.state === "unknown") &&
     r.passed &&
-    c.kind !== "reply" &&
+    c.kind === "site" &&
     ms !== null
   ) {
     parts.push(duration(ms));

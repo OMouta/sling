@@ -550,7 +550,7 @@ export function CheckDialog({
         )}
         <Field
           label="Command"
-          hint="Runs in the read-only sandbox: it reads files, and writes nothing"
+          hint="Runs in the machine's read-only sandbox, with no network"
         >
           <Input
             value={command}
