@@ -506,7 +506,8 @@ describe("checks page", () => {
 
     const api = await checkCard("API");
     expect(fact(api, "Deploys")).toBe("Calls a hook on api.render.com");
-    expect(api.getAllByText("Not checked yet")).toHaveLength(2);
+    // One page says nothing the header doesn't.
+    expect(api.getAllByText("Not checked yet")).toHaveLength(1);
 
     const backup = await checkCard("Backup");
     expect(backup.getByText("test -f ~/Backups/today")).toBeTruthy();

@@ -146,6 +146,10 @@ function CheckCard({
   const tone = run.isPending || !c.enabled ? "neutral" : stateTone(c.state);
   const r = c.lastResult;
   const siteResults = r?.detail.kind === "site" ? r.detail.checks : null;
+  // One page says the same as the header, unless it's failing and has more to say.
+  const pageRows =
+    c.config.kind === "site" &&
+    (c.config.checks.length > 1 || (siteResults ?? []).some((x) => !x.ok));
 
   return (
     <article aria-label={c.name}>
@@ -255,7 +259,9 @@ function CheckCard({
 
         <div className="border-t border-border px-4 py-2.5">
           {c.config.kind === "site" ? (
-            <CheckList checks={c.config.checks} results={siteResults} label={`${c.name} pages`} />
+            pageRows && (
+              <CheckList checks={c.config.checks} results={siteResults} label={`${c.name} pages`} />
+            )
           ) : (
             <p
               className={cx(
@@ -274,7 +280,10 @@ function CheckCard({
             type="button"
             aria-expanded={history}
             onClick={() => setHistory((h) => !h)}
-            className="-ml-1 mt-1.5 inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1 text-xs text-muted transition-colors duration-150 hover:text-text"
+            className={cx(
+              "-ml-1 inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1 text-xs text-muted transition-colors duration-150 hover:text-text",
+              (c.config.kind !== "site" || pageRows) && "mt-1.5",
+            )}
           >
             <ChevronRight
               aria-hidden="true"
