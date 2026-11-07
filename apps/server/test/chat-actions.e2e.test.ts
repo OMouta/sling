@@ -452,4 +452,37 @@ describe("on a coding agent's CLI", () => {
     ]);
     expect(after[3]?.id).not.toBe(before[3]?.id);
   });
+
+  it("asks for a suggestion as a one-off turn with no tools", async () => {
+    const list = await api<{ id: string; isDefault: boolean }[]>("GET", "/api/personalities");
+    const id = list.find((p) => p.isDefault)?.id ?? "";
+    await server.ctx.db
+      .update(schema.personalities)
+      .set({ assistant: { provider: "codex", model: "gpt-6-luna", effort: "low", fast: false } })
+      .where(eq(schema.personalities.id, id));
+    const before = runner?.chatTurns.length ?? 0;
+    // The fake CLI answers with an echo, not new instructions, so this says so.
+    const res = await raw("POST", `/api/personalities/${id}/suggest`);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("didn't send back new instructions");
+    expect(runner?.chatTurns.length).toBe(before + 1);
+    const turn = runner?.chatTurns.at(-1);
+    expect(turn).toMatchObject({
+      harness: "codex",
+      model: "gpt-6-luna",
+      sessionId: "",
+      history: "",
+    });
+    expect(turn?.instructions).toContain("thumbs down");
+    expect(turn?.prompt).toMatch(/^The current instructions:/);
+    expect(turn?.prompt).toContain("<reason>rambles</reason>");
+    const tools = await fetch(turn?.toolsUrl ?? "", {
+      headers: { authorization: `Bearer ${turn?.toolsToken}` },
+    }).then((r) => r.json());
+    expect(tools).toEqual({ tools: [] });
+    await server.ctx.db
+      .update(schema.personalities)
+      .set({ assistant: null })
+      .where(eq(schema.personalities.id, id));
+  });
 });
