@@ -1,7 +1,7 @@
 import { MODE_POLICY, type PermissionMode, type PersonalityTool } from "@sling/core";
-import { RULES_NOTE } from "../rules/tool.ts";
 import { filesSection } from "../files/prompt.ts";
 import { memorySection } from "../memory/prompt.ts";
+import { RULES_NOTE } from "../rules/tool.ts";
 import { deploysSection } from "./deploy-prompt.ts";
 import { allowedTools, isBuiltTool } from "./tools.ts";
 
