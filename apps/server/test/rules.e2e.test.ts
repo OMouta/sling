@@ -81,7 +81,11 @@ const model = new MockLanguageModelV4({
     const users = options.prompt.filter((m) => m.role === "user").map(textOf);
     calls.push({ system: textOf(options.prompt.find((m) => m.role === "system")), users });
     if (options.prompt.at(-1)?.role === "tool") return text("Done.");
-    if (users.at(-1)?.includes("Find out why")) return text("Looking into it.");
+    // Chats a start rule opened answer on their own. They may still be running
+    // when the next test plans a call, and must never take it.
+    if (/Find out why|Tell me what happened/.test(users.at(-1) ?? "")) {
+      return text("Looking into it.");
+    }
     const next = plan.shift();
     if (!next) return text("Nothing to do.");
     return respond(
