@@ -5,6 +5,7 @@ import { Download, Ellipsis, Upload } from "lucide-react";
 import { useRef } from "react";
 import { ApiError, api, saveBlob } from "../lib/api.ts";
 import { personalitiesKey } from "../lib/personalities.ts";
+import { noteImportMisses } from "../lib/sources.ts";
 import { Button, ErrorText, Menu, MenuItem, Spinner } from "./ui.tsx";
 
 /** Largest personality file the server takes. */
@@ -62,7 +63,8 @@ export function FromFileCard() {
       if (file.size > IMPORT_MAX_BYTES) throw new Error("This file is bigger than 100 MB.");
       return api.post<PersonalityImportView>("/api/personalities/import", file);
     },
-    onSuccess: ({ personality: p }) => {
+    onSuccess: ({ personality: p, sourcesFailed }) => {
+      noteImportMisses(p.id, sourcesFailed);
       qc.setQueryData<PersonalityView[]>(personalitiesKey, (l) =>
         l && !l.some((x) => x.id === p.id) ? [...l, p] : l,
       );

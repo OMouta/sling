@@ -5,6 +5,7 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryFileLabel } from "./components/stepLabels.ts";
+import { noteImportMisses } from "./lib/sources.ts";
 import { createAppRouter } from "./router.tsx";
 
 vi.mock("./lib/auth.ts", () => ({
@@ -259,6 +260,16 @@ describe("a personality's Sources section", () => {
     });
     expect(callsTo("PATCH", "/api/personalities/prs_tutor")).toHaveLength(0);
     expect(screen.queryByRole("textbox", { name: "Link" })).toBeNull();
+  });
+
+  it("says once how many of an imported file's sources couldn't be added", async () => {
+    noteImportMisses("prs_tutor", 2);
+    renderAt("/personalities/prs_tutor");
+    expect(await screen.findByText("2 sources in the file couldn't be added.")).toBeTruthy();
+    cleanup();
+    renderAt("/personalities/prs_tutor");
+    expect(await screen.findByRole("heading", { name: "Sources" })).toBeTruthy();
+    expect(screen.queryByText(/couldn't be added/)).toBeNull();
   });
 });
 

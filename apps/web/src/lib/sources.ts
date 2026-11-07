@@ -150,3 +150,19 @@ export function pickFiles(accept: string, onFiles: (files: File[]) => void) {
   input.addEventListener("cancel", () => input.remove());
   input.click();
 }
+
+/**
+ * How many sources an imported personality's file had that couldn't be
+ * added, kept from the import until its Sources section has shown it once.
+ */
+const importMisses = new Map<string, number>();
+
+export function noteImportMisses(personalityId: string, count: number) {
+  if (count > 0) importMisses.set(personalityId, count);
+}
+
+export function takeImportMisses(personalityId: string): number {
+  const n = importMisses.get(personalityId) ?? 0;
+  importMisses.delete(personalityId);
+  return n;
+}

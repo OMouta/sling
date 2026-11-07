@@ -10,6 +10,7 @@ import {
   pickFiles,
   sourceDetail,
   sourcesKey,
+  takeImportMisses,
   uploadSource,
   useSources,
   viewUrl,
@@ -27,6 +28,8 @@ export function SourcesSection({ personality }: { personality: PersonalityView }
   const [linking, setLinking] = useState(false);
   const [url, setUrl] = useState("");
   const [over, setOver] = useState(false);
+  // Read once: the note is for the visit right after an import.
+  const [misses] = useState(() => takeImportMisses(personality.id));
   const full = list.length >= PERSONALITY_MAX_SOURCES;
 
   const added = (s: SourceView) =>
@@ -160,7 +163,16 @@ export function SourcesSection({ personality }: { personality: PersonalityView }
           </>
         )}
       </div>
-      <ErrorText error={upload.error ?? link.error ?? remove.error} />
+      <ErrorText
+        error={
+          upload.error ??
+          link.error ??
+          remove.error ??
+          (misses > 0
+            ? `${misses === 1 ? "1 source" : `${misses} sources`} in the file couldn't be added.`
+            : null)
+        }
+      />
 
       {sources.isPending ? (
         <Skeleton className="h-14 w-full rounded-xl" />
