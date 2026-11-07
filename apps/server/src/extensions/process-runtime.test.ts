@@ -981,13 +981,8 @@ export default defineExtension({
         }),
         node("crashy.loop", async () => { for (;;) {} }),
         node("crashy.oom", async () => {
-          // It yields between allocations, so it still answers heartbeats on a
-          // slow machine: it must run out of memory, not be killed for hanging.
           const hoard = [];
-          for (;;) {
-            hoard.push(new Array(1000000).fill(hoard.length));
-            await new Promise((r) => setTimeout(r, 0));
-          }
+          for (;;) hoard.push(new Array(100000).fill({ x: hoard.length }));
         }),
       ],
     }),
@@ -1085,17 +1080,9 @@ describe("crashes and hangs", () => {
     expect(await okPid()).toBeGreaterThan(0);
   });
 
-  it("fails the node when the process runs out of memory", async () => {
-    const err = await failure(run(crashy, "crashy.oom"));
-    expect(err).toMatchObject({
-      code: "extension_crashed",
-      message: "The extension stopped responding: it ran out of memory",
-    });
-    expect(t.crashes.at(-1)).toEqual({ id: "crashy", reason: "it ran out of memory" });
-  }, 30_000);
-
   it("goes to error after five crashes, until turned off and on", async () => {
-    expect(t.crashes.filter((c) => c.id === "crashy")).toHaveLength(4);
+    expect(t.crashes.filter((c) => c.id === "crashy")).toHaveLength(3);
+    await failure(run(crashy, "crashy.exit"));
     await failure(run(crashy, "crashy.exit"));
     expect(t.crashes.filter((c) => c.id === "crashy")).toHaveLength(5);
     expect(t.statuses.at(-1)).toMatchObject({ id: "crashy", status: "error" });
@@ -1114,4 +1101,35 @@ describe("crashes and hangs", () => {
     expect(await okPid()).toBeGreaterThan(0);
     expect(t.runtime.host("crashy")?.state).toBe("active");
   });
+});
+
+// With the real heartbeat timeout. Near its heap limit V8 collects garbage in
+// long pauses, longer than the short timeout above on a slow machine, and the
+// process must be reported out of memory, not unresponsive.
+describe("running out of memory", () => {
+  let t: TestRuntime;
+  let crashy: AnyConnector[];
+
+  beforeAll(async () => {
+    t = testRuntime({ network: { resolver } });
+    const ext = await fixtureExtension(t.runtime, {
+      id: "crashy",
+      source: CRASHY,
+      manifest: { memoryMb: 64 },
+    });
+    crashy = t.runtime.activate(ext);
+  }, 30_000);
+
+  afterAll(async () => {
+    await t.runtime.stopAll();
+  });
+
+  it("fails the node when the process runs out of memory", async () => {
+    const err = await failure(run(crashy, "crashy.oom"));
+    expect(err).toMatchObject({
+      code: "extension_crashed",
+      message: "The extension stopped responding: it ran out of memory",
+    });
+    expect(t.crashes.at(-1)).toEqual({ id: "crashy", reason: "it ran out of memory" });
+  }, 30_000);
 });
