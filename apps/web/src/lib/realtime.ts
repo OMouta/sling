@@ -14,11 +14,12 @@ import type {
 } from "@sling/core";
 import type { WorkflowDetailView } from "@sling/workflow";
 import type { QueryClient } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { applyCheckEvent, applyToolStepCheck } from "./checks.ts";
 import { byActivity, conversationsKey, previewText } from "./conversations.ts";
 import { applyDeployTargetEvent } from "./deploys.ts";
 import { applyExtension, forgetExtension } from "./extensionApi.ts";
+import { liveText } from "./followUps.ts";
 import { applyMemoryEvent } from "./memory.ts";
 import { modelsKey } from "./models.ts";
 import { applyPersonalityEvent } from "./personalities.ts";
@@ -67,7 +68,8 @@ export function useConnection() {
 /** The reply streaming in for a conversation's current turn, if any. */
 export function useLiveReply(conversationId: string): LiveReply | null {
   const all = useSyncExternalStore(streaming.subscribe, streaming.get);
-  return all[conversationId] ?? null;
+  const reply = all[conversationId] ?? null;
+  return useMemo(() => (reply ? { ...reply, text: liveText(reply.text) } : null), [reply]);
 }
 
 /**
@@ -97,7 +99,7 @@ function clearStream(conversationId: string) {
  * step is the answer. The server builds the same steps (`TraceRecorder`).
  */
 function settleText(r: LiveReply): LiveReply {
-  const text = r.text.trim();
+  const text = liveText(r.text).trim();
   if (!text) return { ...r, text: "" };
   return { ...r, text: "", steps: [...r.steps, { kind: "text", text }] };
 }
@@ -118,6 +120,42 @@ function upsert<T extends { id: string }>(list: T[] | undefined, item: T, prepen
 }
 
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+const chatTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * Refetches an open chat soon. Whether Retry and Edit may replace a message
+ * depends on everything after it, which only the server can tell.
+ */
+function refreshChat(qc: QueryClient, conversationId: string) {
+  clearTimeout(chatTimers.get(conversationId));
+  chatTimers.set(
+    conversationId,
+    setTimeout(() => {
+      chatTimers.delete(conversationId);
+      void qc.invalidateQueries({ queryKey: ["conversation", conversationId], exact: true });
+    }, 300),
+  );
+}
+
+/**
+ * Changes a chat's messages. None of the others stays replaceable until the
+ * server says again: a new message is the latest now, and a new reply may
+ * have done something outside the chat.
+ */
+function patchMessages(
+  qc: QueryClient,
+  conversationId: string,
+  fn: (messages: ConversationDetail["messages"]) => ConversationDetail["messages"],
+) {
+  qc.setQueryData<ConversationDetail>(["conversation", conversationId], (d) =>
+    d
+      ? {
+          ...d,
+          messages: fn(d.messages.map((m) => (m.replaceable ? { ...m, replaceable: false } : m))),
+        }
+      : d,
+  );
+}
 
 /** Refetches the conversation lists soon, once for a burst of changes. */
 function refreshConversations(qc: QueryClient) {
@@ -300,10 +338,18 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
         previewRole: ev.message.role,
         lastMessageAt: ev.message.createdAt,
       }));
-      qc.setQueryData<ConversationDetail>(["conversation", ev.message.conversationId], (d) =>
-        d ? { ...d, messages: upsert(d.messages, ev.message) } : d,
-      );
+      patchMessages(qc, ev.message.conversationId, (list) => upsert(list, ev.message));
+      if (ev.message.role === "assistant") refreshChat(qc, ev.message.conversationId);
       return;
+    case "message.updated":
+      patchMessages(qc, ev.message.conversationId, (list) => upsert(list, ev.message));
+      return;
+    case "message.removed": {
+      const gone = new Set(ev.messageIds);
+      patchMessages(qc, ev.conversationId, (list) => list.filter((m) => !gone.has(m.id)));
+      refreshConversations(qc);
+      return;
+    }
     case "agent.delta":
       patchStream(ev.conversationId, (r) => ({ ...r, text: r.text + ev.text }));
       return;

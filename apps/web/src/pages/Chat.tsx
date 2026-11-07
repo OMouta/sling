@@ -27,7 +27,6 @@ import { FollowUps } from "../components/FollowUps.tsx";
 import { Glyph } from "../components/Glyph.tsx";
 import { Logo } from "../components/Logo.tsx";
 import { MentionList } from "../components/MentionList.tsx";
-import { MentionText } from "../components/MentionText.tsx";
 import { MessageFiles } from "../components/MessageFiles.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
@@ -35,6 +34,7 @@ import { ReplyActions } from "../components/ReplyActions.tsx";
 import { ReplySources } from "../components/ReplySources.tsx";
 import { StartedBy } from "../components/StartedBy.tsx";
 import { TaskCard } from "../components/TaskCard.tsx";
+import { UserBubble } from "../components/UserBubble.tsx";
 import { Badge, cx, Dot, ErrorText, Skeleton, type Tone } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { useDictation } from "../lib/dictation.ts";
@@ -370,7 +370,7 @@ function AssistantRow({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex gap-3">
+    <div className="group/reply flex gap-3">
       {personality ? (
         <span className="mt-0.5 grid size-6 shrink-0 place-items-center">
           <Glyph
@@ -461,12 +461,10 @@ function Message({
     return (
       <div className="flex flex-col items-end gap-1.5">
         {message.attachments.length > 0 && <MessageFiles files={message.attachments} />}
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-surface-3 px-3.5 py-2 text-sm leading-6 whitespace-pre-wrap shadow-active [overflow-wrap:anywhere]">
-          <MentionText
-            text={message.text}
-            personality={personalities?.find((p) => p.id === message.personalityId)}
-          />
-        </div>
+        <UserBubble
+          message={message}
+          mentioned={personalities?.find((p) => p.id === message.personalityId)}
+        />
       </div>
     );
   }
