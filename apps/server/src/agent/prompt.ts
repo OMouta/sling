@@ -38,6 +38,9 @@ function changesNote(mode: PermissionMode): string {
   return "- Call the tool as soon as you know what to change. Don't ask in your reply first: Sling shows the user the exact change, with Apply and Cancel. If they cancel or don't answer, nothing changed: say so, and don't try another way.";
 }
 
+const WORKFLOWS_NOTE =
+  '- When a request repeats ("every", "whenever", "each time") or is for a set time ("remind me at 17:00"), make it a workflow with workflow_nodes and create_workflow. Prefer plain nodes, and use ai.* only for a step that needs judgment.';
+
 const dateFormats = new Map<string, Intl.DateTimeFormat>();
 
 /** "It's Friday, 6 November 2026, 07:30 in Europe/Lisbon." */
@@ -205,6 +208,7 @@ export function assistantInstructions(
       [
         "Sling's own setup (read_setup, save_deploy_target, save_app_account, add_workflow, change_workflow, save_personality, change_settings):",
         "- Use these when the user wants Sling set up differently: a deploy target for a site, an app account such as a mailbox or calendar, a workflow from a template or a change to one, a personality, or a setting such as the time zone.",
+        WORKFLOWS_NOTE,
         "- read_setup shows what's there now, including each connector's fields and the templates. Look before you change something you haven't seen in this chat.",
         changesNote(mode),
         "- Never ask for a password, app password, token, or deploy hook URL in the chat, and never pass one to a tool. The card asks the user for it, and you only hear whether it worked. If the user pastes one in the chat anyway, don't repeat it; the card still asks.",

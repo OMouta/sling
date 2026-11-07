@@ -213,6 +213,11 @@ async function workflows(ctx: AppContext, workspaceId: string, which: string | u
               : {}),
           };
         }),
+        // As create_workflow and change_workflow take them.
+        edges: def.edges.map((e) => ({
+          from: `${e.from.node}.${e.from.port}`,
+          to: `${e.to.node}.${e.to.port}`,
+        })),
       };
     }),
   );

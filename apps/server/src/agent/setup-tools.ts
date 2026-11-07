@@ -21,9 +21,10 @@ import {
   type PersonalityTool,
   type SetupChangeRow,
   type SetupSecretField,
+  type WorkflowStepView,
 } from "@sling/core";
 import { schema } from "@sling/db";
-import { validate, type WorkflowDefinition, WorkflowDefinitionSchema } from "@sling/workflow";
+import { type WorkflowDefinition, WorkflowDefinitionSchema } from "@sling/workflow";
 import { type Tool, tool } from "ai";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -88,6 +89,7 @@ import {
 } from "./setup-change.ts";
 import { connectorFields, currentDefinition, readSetupTool } from "./setup-read.ts";
 import type { ToolScope } from "./tools.ts";
+import { GraphInput, prepareGraph, stepRows, stepsFor, workflowTools } from "./workflow-tools.ts";
 
 /** The setup tools, by name. Their group is `setup`. */
 export const SETUP_TOOLS = [
@@ -98,6 +100,8 @@ export const SETUP_TOOLS = [
   "change_workflow",
   "save_personality",
   "change_settings",
+  "create_workflow",
+  "workflow_nodes",
 ] as const;
 
 const ASKS =
@@ -902,7 +906,7 @@ function addWorkflow(ctx: AppContext, scope: ToolScope): Tool {
 
 function changeWorkflow(ctx: AppContext, scope: ToolScope): Tool {
   return tool({
-    description: `Turn one of the user's workflows on or off, rename it, or change its steps' settings, which publishes a new version. read_setup with workflow set shows its steps and their settings.${ASKS}`,
+    description: `Turn one of the user's workflows on or off, rename it, change its steps' settings, or replace its graph with definition, as for create_workflow. A change to its steps publishes a new version. read_setup with workflow set shows its steps, settings, and edges.${ASKS}`,
     inputSchema: z.object({
       workflow: z.string().min(1).max(200).describe("The workflow's name or id."),
       name: z.string().trim().min(1).max(120).optional(),
@@ -920,6 +924,9 @@ function changeWorkflow(ctx: AppContext, scope: ToolScope): Tool {
         )
         .max(20)
         .optional(),
+      definition: GraphInput.optional().describe(
+        "A whole new graph, replacing its steps and edges. Keep a step's id to keep it where it is in the editor.",
+      ),
     }),
     execute: async (input, options: CallOptions) => {
       const found = await findWorkflow(ctx, scope.workspaceId, input.workflow);
@@ -927,7 +934,33 @@ function changeWorkflow(ctx: AppContext, scope: ToolScope): Tool {
       const wf = found;
       const rows: SetupChangeRow[] = [];
       let definition: WorkflowDefinition | null = null;
-      if (input.steps?.length) {
+      let steps: WorkflowStepView[] | null = null;
+      if (input.definition && input.steps?.length) {
+        return { error: "Pass steps or definition, not both." };
+      }
+      if (input.definition) {
+        if (wf.draftDirty && wf.activeVersionId) {
+          return {
+            error: `${wf.name} has unpublished changes in the editor. The user publishes or discards them there first.`,
+          };
+        }
+        const base = await currentDefinition(ctx, wf);
+        const prepared = await prepareGraph(ctx, scope, "change_workflow", {
+          name: input.name ?? wf.name,
+          description: wf.description,
+          graph: input.definition,
+          base,
+        });
+        if ("error" in prepared) return prepared;
+        definition = prepared.definition;
+        const [was, now] = await Promise.all([
+          stepsFor(ctx, scope.workspaceId, base),
+          stepsFor(ctx, scope.workspaceId, definition),
+        ]);
+        steps = now;
+        rows.push(...stepRows(was, now));
+        if (rows.length === 0) rows.push({ label: "Steps", after: "New settings" });
+      } else if (input.steps?.length) {
         if (wf.draftDirty && wf.activeVersionId) {
           return {
             error: `${wf.name} has unpublished changes in the editor. The user publishes or discards them there first.`,
@@ -983,9 +1016,10 @@ function changeWorkflow(ctx: AppContext, scope: ToolScope): Tool {
           if (!parsed.success) return { error: `${label}: ${zodIssues(parsed.error)}` };
         }
         definition = { ...base, nodes, ...(input.name ? { name: input.name } : {}) };
-        const issues = validate(definition, ctx.registry);
+        const issues = await ctx.workflows.issues(scope.workspaceId, definition);
         if (issues.length > 0)
           return { error: `That wouldn't publish: ${issues.map((i) => i.message).join("; ")}` };
+        steps = await stepsFor(ctx, scope.workspaceId, definition);
       }
       const name = input.name ?? wf.name;
       rows.unshift(...diff("Name", wf.name, name));
@@ -1016,6 +1050,7 @@ function changeWorkflow(ctx: AppContext, scope: ToolScope): Tool {
           done: `${done} ${name}`,
           rows,
           secrets: [],
+          ...(steps ? { workflow: { steps, workflowId: null } } : {}),
         },
         apply: async () => {
           const actor = actorOf(scope);
@@ -1396,5 +1431,6 @@ export function setupTools(ctx: AppContext, scope: ToolScope) {
     change_workflow: changeWorkflow(ctx, scope),
     save_personality: savePersonality(ctx, scope),
     change_settings: changeSettings(ctx, scope),
+    ...workflowTools(ctx, scope),
   } satisfies Record<(typeof SETUP_TOOLS)[number], Tool>;
 }

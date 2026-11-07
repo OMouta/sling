@@ -12,6 +12,7 @@
  */
 import { randomBytes } from "node:crypto";
 import type {
+  CommandApprovalView,
   PermissionMode,
   SetupChangeRow,
   SetupChangeView,
@@ -217,6 +218,7 @@ export async function propose(
   const trace = scope.trace;
   let decision: ChangeDecision = "full_access";
   let secrets: SecretValues = {};
+  let card: CommandApprovalView | undefined;
   if (policy === "ask" || p.change.secrets.length > 0) {
     if (!trace) return { error: "Can't ask the user to approve this from here." };
     const answer = await ctx.commands.change({
@@ -224,7 +226,10 @@ export async function propose(
       conversationId: scope.conversationId,
       change: p.change,
       ...(options.abortSignal ? { signal: options.abortSignal } : {}),
-      onChange: (approval) => trace.toolUpdate(options.toolCallId, { approval }),
+      onChange: (approval) => {
+        card = approval;
+        trace.toolUpdate(options.toolCallId, { approval });
+      },
     });
     if (answer.decision !== "approved") {
       await record(ctx, scope, p, { decision: answer.decision, ok: false });
@@ -234,16 +239,15 @@ export async function propose(
     secrets = answer.secrets;
   } else {
     // Full access doesn't ask, but the chat still shows what changed.
-    trace?.toolUpdate(options.toolCallId, {
-      approval: {
-        id: `cap_${randomBytes(12).toString("hex")}`,
-        kind: "change",
-        state: "approved",
-        machine: "",
-        summary: p.change.title,
-        change: p.change,
-      },
-    });
+    card = {
+      id: `cap_${randomBytes(12).toString("hex")}`,
+      kind: "change",
+      state: "approved",
+      machine: "",
+      summary: p.change.title,
+      change: p.change,
+    };
+    trace?.toolUpdate(options.toolCallId, { approval: card });
   }
   let applied: Applied;
   try {
@@ -257,5 +261,15 @@ export async function propose(
     return { error };
   }
   await record(ctx, scope, p, { decision, ok: true, subjectId: applied.subjectId });
+  const workflow = card?.change?.workflow;
+  if (card?.change && workflow) {
+    // The card links to the workflow in the editor once it exists.
+    trace?.toolUpdate(options.toolCallId, {
+      approval: {
+        ...card,
+        change: { ...card.change, workflow: { ...workflow, workflowId: applied.subjectId } },
+      },
+    });
+  }
   return { applied: true, ...applied.result };
 }

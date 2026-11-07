@@ -123,6 +123,7 @@ describe("the assistant's prompt", () => {
       "Don't ask in your reply first: Sling shows the user the exact change, with Apply and Cancel.",
       "Never ask for a password, app password, token, or deploy hook URL in the chat",
       "the setup tools are how Sling's own setup changes",
+      "make it a workflow with workflow_nodes and create_workflow",
       "This conversation is in Supervised mode",
     ]) {
       expect(ask).toContain(part);
