@@ -26,6 +26,8 @@ import {
 import { FollowUps } from "../components/FollowUps.tsx";
 import { Glyph } from "../components/Glyph.tsx";
 import { Logo } from "../components/Logo.tsx";
+import { MentionList } from "../components/MentionList.tsx";
+import { MentionText } from "../components/MentionText.tsx";
 import { MessageFiles } from "../components/MessageFiles.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
@@ -36,6 +38,7 @@ import { TaskCard } from "../components/TaskCard.tsx";
 import { Badge, cx, Dot, ErrorText, Skeleton, type Tone } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { useDictation } from "../lib/dictation.ts";
+import { replyAuthor, useMention } from "../lib/mentions.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
 import { usePersonalities } from "../lib/personalities.ts";
 import { seedLiveReply, useLiveReply } from "../lib/realtime.ts";
@@ -89,6 +92,12 @@ export function ChatPage() {
   const modeChange = useModeChange((mode) => setMode.mutate(mode));
   const catalog = useModelCatalog();
   const personalities = usePersonalities();
+  const mention = useMention({
+    text,
+    setText,
+    inputRef: input,
+    personalities: (personalities.data ?? []).filter((p) => p.id !== detail.data?.personality?.id),
+  });
   // Choices apply right away in the UI; the server stores them for the next turn.
   const setSettings = useMutation({
     mutationFn: (settings: Partial<ChatSettings>) =>
@@ -205,6 +214,10 @@ export function ChatPage() {
     tasks,
   };
   const lastReplyId = detail.data.messages.findLast((m) => m.role !== "system")?.id;
+  // A turn answering an @mention is that personality's.
+  const mentioned = detail.data.messages.findLast((m) => m.role === "user")?.personalityId;
+  const answering =
+    (mentioned && personalities.data?.find((p) => p.id === mentioned)) || personality;
   const liveSteps = live?.steps ?? [];
   const lastLive = liveSteps.at(-1);
   // Something already shows it's working: a running tool, or thinking as it comes.
@@ -265,16 +278,21 @@ export function ChatPage() {
                   activity={activity}
                   tasks={tasks}
                   personality={personality}
+                  personalities={personalities.data}
                   latest={!thinking && item.message.id === lastReplyId}
                   onSend={(t) => {
                     following.current = true;
-                    send.mutate(t);
+                    send.mutate({ text: t });
                   }}
                 />
               ),
             )}
             {thinking && (
-              <AssistantRow personality={personality} active>
+              <AssistantRow
+                personality={answering}
+                name={answering !== personality ? answering?.name : undefined}
+                active
+              >
                 <ReplySteps steps={liveSteps} live ctx={activity} />
                 {researching && !live?.text && (
                   <ResearchLine steps={liveSteps} startedAt={live?.startedAt ?? openedAt} />
@@ -305,6 +323,7 @@ export function ChatPage() {
                 send.mutate({
                   text: text.trim(),
                   ...(researchable && research.on ? { research: true } : {}),
+                  ...(mention.mentioned ? { personalityId: mention.mentioned.id } : {}),
                 });
               }}
               inputRef={input}
@@ -314,6 +333,8 @@ export function ChatPage() {
               error={send.error ?? dictation.error ?? setMode.error ?? setSettings.error}
               above={researchable && research.on && <ResearchChip onRemove={research.off} />}
               {...(researchable ? { plus: { research: research.option } } : {})}
+              overlay={<MentionList mention={mention} />}
+              onKeyDown={mention.onKeyDown}
               controls={
                 <ChatControls
                   catalog={catalog.data}
@@ -338,10 +359,13 @@ export function ChatPage() {
  */
 function AssistantRow({
   personality,
+  name,
   active = false,
   children,
 }: {
   personality: PersonalityView | null | undefined;
+  /** Shown next to the glyph when it isn't the chat's own personality. */
+  name?: string | undefined;
   active?: boolean;
   children?: React.ReactNode;
 }) {
@@ -363,7 +387,10 @@ function AssistantRow({
           <Logo className="size-3.5" />
         </span>
       )}
-      <div className="min-w-0 flex-1 space-y-2.5">{children}</div>
+      <div className="min-w-0 flex-1 space-y-2.5">
+        {name && <p className="text-[13px] leading-6 font-medium">{name}</p>}
+        {children}
+      </div>
     </div>
   );
 }
@@ -416,6 +443,7 @@ function Message({
   activity,
   tasks,
   personality,
+  personalities,
   latest,
   onSend,
 }: {
@@ -423,6 +451,7 @@ function Message({
   activity: ActivityContext;
   tasks: Map<string, TaskView>;
   personality: PersonalityView | null | undefined;
+  personalities: PersonalityView[] | undefined;
   /** The chat's last reply, with nothing being written after it. */
   latest: boolean;
   onSend: (text: string) => void;
@@ -433,13 +462,17 @@ function Message({
       <div className="flex flex-col items-end gap-1.5">
         {message.attachments.length > 0 && <MessageFiles files={message.attachments} />}
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-surface-3 px-3.5 py-2 text-sm leading-6 whitespace-pre-wrap shadow-active [overflow-wrap:anywhere]">
-          {message.text}
+          <MentionText
+            text={message.text}
+            personality={personalities?.find((p) => p.id === message.personalityId)}
+          />
         </div>
       </div>
     );
   }
+  const author = replyAuthor(message, personalities, personality);
   return (
-    <AssistantRow personality={personality}>
+    <AssistantRow personality={author} name={author !== personality ? author?.name : undefined}>
       {message.trace &&
         (message.trace.research ? (
           <ResearchSteps trace={message.trace} ctx={activity} />

@@ -15,6 +15,7 @@ import { Composer } from "../components/Composer.tsx";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { ResearchChip, useDeepResearch } from "../components/DeepResearch.tsx";
 import { Glyph } from "../components/Glyph.tsx";
+import { MentionList } from "../components/MentionList.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { PersonalityBar, useArrowKeys, useSwipe } from "../components/PersonalitySwitcher.tsx";
@@ -24,6 +25,7 @@ import { api } from "../lib/api.ts";
 import { useDictation } from "../lib/dictation.ts";
 import { ago } from "../lib/format.ts";
 import { machinesOnly } from "../lib/machines.ts";
+import { useMention } from "../lib/mentions.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
 import { linkedPersonality, NEW_CHAT_EVENT, readNewChatLink } from "../lib/newChat.ts";
 import {
@@ -116,9 +118,18 @@ export function HomePage() {
   const swipe = useSwipe(prev, next, index > 0, index >= 0 && index < list.length - 1);
   useArrowKeys(prev, next);
   const switches = Boolean(picked) && list.length > 1;
+  const mention = useMention({
+    text,
+    setText,
+    inputRef: input,
+    personalities: list.filter((p) => p.id !== picked?.id),
+  });
   const hasTools = (picked?.tools.length ?? 1) > 0;
   const research = useDeepResearch();
-  const researchable = canResearch(picked, assistant ?? catalog.data?.defaults.assistant);
+  const researchable = canResearch(
+    picked,
+    assistant ?? picked?.assistant ?? catalog.data?.defaults.assistant,
+  );
 
   const start = useMutation({
     mutationFn: async (message: SendMessageInput) => {
@@ -244,6 +255,7 @@ export function HomePage() {
               start.mutate({
                 text: text.trim(),
                 ...(researchable && research.on ? { research: true } : {}),
+                ...(mention.mentioned ? { personalityId: mention.mentioned.id } : {}),
               });
             }}
             inputRef={input}
@@ -258,6 +270,8 @@ export function HomePage() {
             error={start.error ?? dictation.error}
             above={researchable && research.on && <ResearchChip onRemove={research.off} />}
             {...(researchable ? { plus: { research: research.option } } : {})}
+            overlay={<MentionList mention={mention} />}
+            onKeyDown={mention.onKeyDown}
             controls={
               <ChatControls
                 catalog={catalog.data}
