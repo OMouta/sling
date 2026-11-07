@@ -6,6 +6,7 @@
  * They call the same functions the routes do, with the same checks.
  */
 import {
+  type AssistantChoice,
   cloneUrlFor,
   DEPLOY_METHODS,
   type DeployCheck,
@@ -127,6 +128,60 @@ function zodIssues(error: z.ZodError): string {
 }
 
 const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** A model as the assistant passes it: provider, a model id from read_setup, and effort. */
+const ModelInput = z.object({
+  provider: z.string().max(40),
+  model: z
+    .string()
+    .max(200)
+    .describe("A model id from read_setup, or empty for a CLI's own default."),
+  effort: z.string().max(20).nullable().optional(),
+});
+
+type Catalog = Awaited<ReturnType<typeof modelCatalog>>;
+
+/** A model checked against what the workspace can run: a connected provider and a model it lists. */
+function checkModel(
+  catalog: Catalog,
+  input: z.infer<typeof ModelInput>,
+): { choice: AssistantChoice } | { error: string } {
+  const choice = AssistantChoiceSchema.safeParse({
+    provider: input.provider,
+    model: input.model,
+    effort: input.effort ?? null,
+    fast: false,
+  });
+  if (!choice.success) return { error: zodIssues(choice.error) };
+  const provider = catalog.assistant.find((p) => p.provider === choice.data.provider);
+  if (!provider?.connected) {
+    return {
+      error: `${input.provider} isn't set up. Models can come from: ${
+        catalog.assistant
+          .filter((p) => p.connected)
+          .map((p) => p.provider)
+          .join(", ") || "nothing yet"
+      }.`,
+    };
+  }
+  if (
+    choice.data.model &&
+    provider.models.length > 0 &&
+    !provider.models.some((m) => m.id === choice.data.model)
+  ) {
+    return { error: `${provider.label} has no model ${choice.data.model}.` };
+  }
+  return { choice: choice.data };
+}
+
+/** A model as the card shows it, by its label: "Haiku 5.5 on Claude Code, low effort". */
+function modelText(catalog: Catalog, c: AssistantChoice | null, none: string): string {
+  if (!c) return none;
+  const provider = catalog.assistant.find((x) => x.provider === c.provider);
+  const where = provider?.label ?? c.provider;
+  const model = provider?.models.find((m) => m.id === c.model)?.label ?? c.model;
+  return `${model ? `${model} on ${where}` : `${where}'s default`}${c.effort ? `, ${c.effort} effort` : ""}`;
+}
 
 // ------------------------------------------------------------- deploy targets
 
@@ -1111,7 +1166,7 @@ function toolsText(tools: readonly PersonalityTool[]): string {
 
 function savePersonality(ctx: AppContext, scope: ToolScope): Tool {
   return tool({
-    description: `Add a personality, or change one: its name, the line under it, its instructions, the tool groups it may use, and its look (color and shape).${ASKS}`,
+    description: `Add a personality, or change one: its name, the line under it, its instructions, the tool groups it may use, its look (color and shape), and the model its chats start on.${ASKS}`,
     inputSchema: z.object({
       personality: z
         .string()
@@ -1124,9 +1179,25 @@ function savePersonality(ctx: AppContext, scope: ToolScope): Tool {
       tools: z.array(z.enum(PERSONALITY_TOOLS)).optional(),
       color: z.enum(PERSONALITY_COLORS).optional(),
       shape: z.enum(GLYPH_SHAPES).optional(),
+      model: ModelInput.nullable()
+        .optional()
+        .describe(
+          "The model its chats start on, from read_setup's settings. Null for the workspace default. A chat can still switch.",
+        ),
     }),
     execute: async (input, options: CallOptions) => {
       const all = await listPersonalities(ctx.db, scope.workspaceId);
+      const catalog = input.model !== undefined ? await modelCatalog(ctx, scope.workspaceId) : null;
+      let assistant: AssistantChoice | null | undefined;
+      if (input.model && catalog) {
+        const checked = checkModel(catalog, input.model);
+        if ("error" in checked) return checked;
+        assistant = checked.choice;
+      } else if (input.model === null) {
+        assistant = null;
+      }
+      const label = (c: AssistantChoice | null) =>
+        catalog ? modelText(catalog, c, "Workspace default") : "Workspace default";
       if (!input.personality) {
         const usedColors = new Set(all.map((p) => p.color));
         const usedShapes = new Set(all.map((p) => p.shape));
@@ -1137,6 +1208,7 @@ function savePersonality(ctx: AppContext, scope: ToolScope): Tool {
           tools: input.tools ?? [],
           color: input.color ?? PERSONALITY_COLORS.find((c) => !usedColors.has(c)) ?? "blue",
           shape: input.shape ?? GLYPH_SHAPES.find((s) => !usedShapes.has(s)) ?? "drift",
+          assistant: assistant ?? null,
         });
         if (!parsed.success) return { error: zodIssues(parsed.error) };
         const p = parsed.data;
@@ -1154,6 +1226,7 @@ function savePersonality(ctx: AppContext, scope: ToolScope): Tool {
               row("Instructions", p.instructions),
               row("Tools", toolsText(p.tools)),
               row("Look", `${p.color}, ${p.shape}`),
+              ...(p.assistant ? [row("Model", label(p.assistant))] : []),
             ],
             secrets: [],
           },
@@ -1182,6 +1255,7 @@ function savePersonality(ctx: AppContext, scope: ToolScope): Tool {
         ...(input.tools !== undefined ? { tools: input.tools } : {}),
         ...(input.color !== undefined ? { color: input.color } : {}),
         ...(input.shape !== undefined ? { shape: input.shape } : {}),
+        ...(assistant !== undefined ? { assistant } : {}),
       });
       if (!parsed.success) return { error: zodIssues(parsed.error) };
       const b = parsed.data;
@@ -1195,6 +1269,9 @@ function savePersonality(ctx: AppContext, scope: ToolScope): Tool {
           `${current.color}, ${current.shape}`,
           `${b.color ?? current.color}, ${b.shape ?? current.shape}`,
         ),
+        ...(b.assistant !== undefined
+          ? diff("Model", label(current.assistant ?? null), label(b.assistant))
+          : []),
       ];
       if (rows.length === 0)
         return { error: `Nothing to change: ${current.name} already looks like that.` };
@@ -1226,7 +1303,14 @@ function savePersonality(ctx: AppContext, scope: ToolScope): Tool {
 
 function personalitySummary(p: PersonalityRow) {
   const v = toPersonalityView(p);
-  return { id: v.id, name: v.name, tools: v.tools, color: v.color, shape: v.shape };
+  return {
+    id: v.id,
+    name: v.name,
+    tools: v.tools,
+    color: v.color,
+    shape: v.shape,
+    model: v.assistant,
+  };
 }
 
 // ------------------------------------------------------------- settings
@@ -1243,17 +1327,7 @@ function changeSettings(ctx: AppContext, scope: ToolScope): Tool {
     inputSchema: z.object({
       timeZone: z.string().max(64).optional().describe("An IANA time zone, such as Europe/Lisbon."),
       defaultMode: z.enum(PERMISSION_MODES).optional().describe("The mode new chats start in."),
-      chatModel: z
-        .object({
-          provider: z.string().max(40),
-          model: z
-            .string()
-            .max(200)
-            .describe("A model id from read_setup, or empty for a CLI's own default."),
-          effort: z.string().max(20).nullable().optional(),
-        })
-        .optional()
-        .describe("The model new chats use."),
+      chatModel: ModelInput.optional().describe("The model new chats use."),
       notifications: NotificationsPatch.optional(),
       sandboxes: SandboxSettingsPatch.pick({
         concurrentLimit: true,
@@ -1303,40 +1377,19 @@ function changeSettings(ctx: AppContext, scope: ToolScope): Tool {
         steps.push(() => setDefaultMode(ctx, owner, mode));
       }
       if (input.chatModel) {
-        const choice = AssistantChoiceSchema.safeParse({
-          provider: input.chatModel.provider,
-          model: input.chatModel.model,
-          effort: input.chatModel.effort ?? null,
-          fast: false,
-        });
-        if (!choice.success) return { error: zodIssues(choice.error) };
         const catalog = await modelCatalog(ctx, scope.workspaceId);
-        const provider = catalog.assistant.find((p) => p.provider === choice.data.provider);
-        if (!provider?.connected) {
-          return {
-            error: `${input.chatModel.provider} isn't set up. Models can come from: ${
-              catalog.assistant
-                .filter((p) => p.connected)
-                .map((p) => p.provider)
-                .join(", ") || "nothing yet"
-            }.`,
-          };
-        }
-        if (
-          choice.data.model &&
-          provider.models.length > 0 &&
-          !provider.models.some((m) => m.id === choice.data.model)
-        ) {
-          return { error: `${provider.label} has no model ${choice.data.model}.` };
-        }
+        const checked = checkModel(catalog, input.chatModel);
+        if ("error" in checked) return checked;
+        const { choice } = checked;
         const current = (await chatDefaults(ctx, scope.workspaceId)).assistant;
-        const label = (c: { provider: string; model: string; effort: string | null } | null) => {
-          if (!c) return "None";
-          const p = catalog.assistant.find((x) => x.provider === c.provider)?.label ?? c.provider;
-          return `${p}${c.model ? ` ${c.model}` : ""}${c.effort ? `, ${c.effort} effort` : ""}`;
-        };
-        rows.push(...diff("Chat model", label(current), label(choice.data)));
-        steps.push(() => setChatDefaults(ctx, owner, { assistant: choice.data }));
+        rows.push(
+          ...diff(
+            "Chat model",
+            modelText(catalog, current, "None"),
+            modelText(catalog, choice, "None"),
+          ),
+        );
+        steps.push(() => setChatDefaults(ctx, owner, { assistant: choice }));
       }
       if (input.notifications) {
         const patch = input.notifications;

@@ -104,16 +104,24 @@ export async function cliDefault(
   return null;
 }
 
-/** The choices in effect for a conversation: its own, then the workspace defaults. */
+/**
+ * The choices in effect for a conversation: its own, then its personality's
+ * model, then the workspace defaults. A caller that already has the
+ * personality passes it, which saves looking it up.
+ */
 export async function effectiveChat(
   ctx: Pick<AppContext, "db">,
   workspaceId: string,
   conversationId: string | null,
+  personality?: { assistant: AssistantChoice | null } | null,
 ): Promise<{ assistant: AssistantChoice | null; agent: AgentChoice }> {
   const defaults = await chatDefaults(ctx, workspaceId);
   if (!conversationId) return defaults;
   const [conv] = await ctx.db
-    .select({ settings: schema.conversations.settings })
+    .select({
+      settings: schema.conversations.settings,
+      personalityId: schema.conversations.personalityId,
+    })
     .from(schema.conversations)
     .where(
       and(
@@ -121,8 +129,35 @@ export async function effectiveChat(
         eq(schema.conversations.workspaceId, workspaceId),
       ),
     );
+  const own = conv?.settings?.assistant;
+  const fromPersonality = own
+    ? null
+    : personality !== undefined
+      ? (personality?.assistant ?? null)
+      : await personalityModel(ctx, workspaceId, conv?.personalityId ?? null);
   return {
-    assistant: conv?.settings?.assistant ?? defaults.assistant,
+    assistant: own ?? fromPersonality ?? defaults.assistant,
     agent: conv?.settings?.agent ?? defaults.agent,
   };
+}
+
+/** A personality's own model, or the default personality's for a chat without one. */
+async function personalityModel(
+  ctx: Pick<AppContext, "db">,
+  workspaceId: string,
+  personalityId: string | null,
+): Promise<AssistantChoice | null> {
+  const [row] = await ctx.db
+    .select({ assistant: schema.personalities.assistant })
+    .from(schema.personalities)
+    .where(
+      and(
+        eq(schema.personalities.workspaceId, workspaceId),
+        personalityId
+          ? eq(schema.personalities.id, personalityId)
+          : and(eq(schema.personalities.isDefault, true), isNull(schema.personalities.archivedAt)),
+      ),
+    )
+    .limit(1);
+  return row?.assistant ?? null;
 }

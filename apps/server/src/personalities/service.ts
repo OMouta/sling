@@ -12,6 +12,7 @@ import {
 import { schema } from "@sling/db";
 import { and, asc, eq, isNull, max, sql } from "drizzle-orm";
 import { z } from "zod";
+import { AssistantChoiceSchema } from "../agent/chat-settings.ts";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { workspaceOwner } from "../workflows/connectors/installations.ts";
@@ -31,11 +32,14 @@ export const PersonalityFields = z.object({
     .transform((t) => PERSONALITY_TOOLS.filter((g) => t.includes(g))),
   color: z.enum(PERSONALITY_COLORS),
   shape: z.enum(GLYPH_SHAPES),
+  /** The model its chats start on. Null uses the workspace default. */
+  assistant: AssistantChoiceSchema.nullable().default(null),
 });
 export type PersonalityFields = z.infer<typeof PersonalityFields>;
-/** A change to some fields. Without its default, a description left out stays as it is. */
+/** A change to some fields. Without their defaults, a description or model left out stays as it is. */
 export const PersonalityPatch = PersonalityFields.extend({
   description: z.string().trim().max(PERSONALITY_DESCRIPTION_MAX),
+  assistant: AssistantChoiceSchema.nullable(),
 }).partial();
 export type PersonalityPatch = z.infer<typeof PersonalityPatch>;
 
@@ -102,7 +106,8 @@ export async function createPersonality(
 
 /**
  * Changes a personality. A change to what the assistant is told or may do
- * bumps its revision, so later replies say which one wrote them.
+ * bumps its revision, so later replies say which one wrote them. Its model
+ * doesn't: the prompt stays the same.
  */
 export async function updatePersonality(
   ctx: AppContext,
@@ -149,6 +154,7 @@ export function fromTemplate(t: PersonalityTemplateView) {
     tools: t.tools,
     color: t.color,
     shape: t.shape,
+    assistant: null,
     templateKey: t.key,
   };
 }

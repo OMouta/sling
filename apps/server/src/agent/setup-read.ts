@@ -247,6 +247,7 @@ async function personalities(ctx: AppContext, workspaceId: string) {
       color: p.color,
       shape: p.shape,
       ...(p.isDefault ? { default: true } : {}),
+      ...(p.assistant ? { model: p.assistant } : {}),
       instructions:
         p.instructions.length > MAX_INSTRUCTIONS
           ? `${p.instructions.slice(0, MAX_INSTRUCTIONS)}…`
