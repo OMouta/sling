@@ -72,6 +72,7 @@ import {
 } from "../workflows/connectors/manage.ts";
 import { runSetup } from "../workflows/connectors/setup.ts";
 import { toJsonSchema } from "../workflows/registry.ts";
+import { settingText } from "../workflows/summary.ts";
 import type { InstallationRow, WorkflowRow } from "../workflows/views.ts";
 import { modelCatalog } from "./catalog.ts";
 import { AssistantChoiceSchema, chatDefaults } from "./chat-settings.ts";
@@ -1008,7 +1009,8 @@ function changeWorkflow(ctx: AppContext, scope: ToolScope): Tool {
             const was = node.config[key];
             const wasShown = installationFields.has(key)
               ? (accounts.find((a) => a.id === was)?.name ?? was)
-              : was;
+              : (settingText(node.type, key, was) ?? was);
+            display = settingText(node.type, key, display) ?? display;
             node.config[key] = next;
             rows.push(...diff(`${label}: ${field.title}`, wasShown, display));
           }

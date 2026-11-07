@@ -144,7 +144,9 @@ function refused(tool: string, issues: ValidationIssue[] | string[]) {
     if (typeof i === "string") return i;
     // Most of the validator's messages already name the node or edge.
     const where = i.nodeId ?? (i.edgeId ? `edge ${i.edgeId}` : "");
-    return where && !i.message.includes(i.nodeId ?? i.edgeId ?? "") ? `${where}: ${i.message}` : i.message;
+    return where && !i.message.includes(i.nodeId ?? i.edgeId ?? "")
+      ? `${where}: ${i.message}`
+      : i.message;
   });
   return {
     error: `The workflow isn't valid, so nothing was shown to the user. Fix these and call ${tool} again.`,

@@ -5,7 +5,7 @@ import { WORKFLOW_SCHEMA, type WorkflowDefinition } from "@sling/workflow";
 import { describe, expect, it } from "vitest";
 import { registerCoreNodes } from "./nodes/index.ts";
 import { NodeRegistry } from "./registry.ts";
-import { cronText, type StepNames, workflowSteps } from "./summary.ts";
+import { cronText, type StepNames, settingText, workflowSteps } from "./summary.ts";
 import { applyBindings, loadTemplates, TEMPLATES_DIR } from "./templates.ts";
 
 const registry = new NodeRegistry();
@@ -241,5 +241,15 @@ describe("a cron expression in words", () => {
     ["0 1,5,9,13 * * *", "On the schedule 0 1,5,9,13 * * *"],
   ])("%s", (cron, text) => {
     expect(cronText(cron)).toBe(text);
+  });
+});
+
+describe("a setting in words", () => {
+  it("reads a schedule's cron and time, and leaves the rest", () => {
+    expect(settingText("core.schedule", "cron", "0 9 * * 2")).toBe("Every Tuesday at 09:00");
+    expect(settingText("core.schedule", "at", "2026-11-09T17:00")).toMatch(/^Monday 9 November/);
+    expect(settingText("core.schedule", "timezone", "Europe/Lisbon")).toBeNull();
+    expect(settingText("core.schedule", "cron", "")).toBeNull();
+    expect(settingText("discord.send_message", "cron", "0 9 * * 2")).toBeNull();
   });
 });

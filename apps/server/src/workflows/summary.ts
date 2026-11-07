@@ -185,6 +185,15 @@ export function cronText(cron: string): string {
   return `${days}${at}`;
 }
 
+/** A setting's value in words where a card reads it better that way, such as a cron expression. */
+export function settingText(type: string, key: string, value: unknown): string | null {
+  const v = plain(value);
+  if (type !== "core.schedule" || !v) return null;
+  if (key === "cron") return cronText(v);
+  if (key === "at") return localTimeText(v);
+  return null;
+}
+
 function scheduleText(config: Record<string, unknown>, now: Date): string {
   const at = plain(config.at);
   const zone = plain(config.timezone);

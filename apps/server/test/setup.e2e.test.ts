@@ -616,7 +616,7 @@ describe("each kind of change", () => {
     });
     const c = await card(id);
     expect(c.approval.change?.rows).toEqual([
-      { label: "Every minute: Cron", before: "* * * * *", after: "*/5 * * * *" },
+      { label: "Every minute: Cron", before: "Every minute", after: "Every 5 minutes" },
     ]);
     await decide(id, c.approval.id, "approve");
     expect(result(await reply(id, next))).toMatchObject({ applied: true, version: 2 });
