@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
-import { NodeError, type NodeSpec } from "@sling/connector-sdk";
+import { type NodeContext, NodeError, type NodeSpec } from "@sling/connector-sdk";
 import { z } from "zod";
 import { errorMessage } from "./backoff.ts";
+import { BOUNCE_WATCH_MS, checkSend } from "./bounce.ts";
 import { smtpTransport } from "./clients.ts";
+import { MAX_RESULTS, readMessage, searchMailbox } from "./mailbox.ts";
 import {
   CONNECTOR_ID,
   credentialsSchema,
@@ -154,11 +156,16 @@ export const sendEmail: NodeSpec<SendConfig> = {
       required: false,
     },
   ],
-  outputs: [{ name: "messageId", type: "string", label: "Message-ID" }],
+  outputs: [
+    { name: "messageId", type: "string", label: "Message-ID" },
+    { name: "sentAt", type: "string", label: "Sent at (ISO 8601)" },
+  ],
   execInput: true,
   execOutputs: [{ name: "next" }],
   idempotent: false,
   assistant: { sends: true, summary: "Email {to}: {subject}", ruleFields: ["to"] },
+  // A little past the watch, so the last look always lands inside it.
+  verifyForSeconds: BOUNCE_WATCH_MS / 1000 + 120,
 
   async run(ctx, { inputs, config: rawConfig }) {
     const parsed = sendConfigSchema.safeParse(rawConfig);
@@ -166,32 +173,19 @@ export const sendEmail: NodeSpec<SendConfig> = {
       throw new NodeError(`Invalid settings: ${parsed.error.message}`, { code: "invalid_config" });
     }
     const config = parsed.data;
-    const installation = await ctx.installation<EmailCredentials, EmailConfig>(
-      config.installationId,
-    );
-    if (installation.connectorId !== CONNECTOR_ID) {
-      throw new NodeError(`Installation ${installation.name} isn't an email installation`, {
-        code: "wrong_installation",
-      });
-    }
-    const credentials = credentialsSchema.safeParse(installation.credentials);
-    if (!credentials.success) {
-      throw new NodeError(`Installation ${installation.name} is missing SMTP settings`, {
-        code: "missing_credentials",
-      });
-    }
+    const credentials = await mailbox(ctx, config.installationId);
     const to = config.to.trim();
     if (!to) throw new NodeError("No recipients", { code: "no_recipient" });
     const text = typeof inputs.text === "string" ? inputs.text : config.text;
     const inReplyTo = config.inReplyTo?.trim() || undefined;
-    const messageId = messageIdFor(ctx.idempotencyKey, credentials.data.fromAddress);
+    const messageId = messageIdFor(ctx.idempotencyKey, credentials.fromAddress);
 
-    const transport = smtpTransport(credentials.data);
+    const transport = smtpTransport(credentials);
     const onAbort = () => transport.close();
     ctx.signal.addEventListener("abort", onAbort, { once: true });
     try {
       await transport.sendMail({
-        from: credentials.data.fromAddress,
+        from: credentials.fromAddress,
         to,
         subject: config.subject,
         text,
@@ -206,6 +200,155 @@ export const sendEmail: NodeSpec<SendConfig> = {
       transport.close();
     }
     ctx.log.info("Sent email", { messageId });
-    return { exec: "next", outputs: { messageId } };
+    return { exec: "next", outputs: { messageId, sentAt: new Date().toISOString() } };
+  },
+
+  async verify(ctx, { config: rawConfig, outputs }) {
+    const parsed = sendConfigSchema.safeParse(rawConfig);
+    const messageId = typeof outputs.messageId === "string" ? outputs.messageId : "";
+    const sentAtMs = typeof outputs.sentAt === "string" ? Date.parse(outputs.sentAt) : Number.NaN;
+    if (!parsed.success || !messageId || !Number.isFinite(sentAtMs)) {
+      return { state: "unchecked", message: "Sent, but there's nothing to watch for a bounce" };
+    }
+    const credentials = await mailbox(ctx, parsed.data.installationId);
+    const recipients = parsed.data.to.split(",").filter((a) => a.trim()).length;
+    return checkSend(
+      credentials,
+      { messageId, sentAtMs, recipients },
+      { now: Date.now(), attempt: ctx.attempt, signal: ctx.signal },
+    );
+  },
+};
+
+/** The installation's mail settings, checked to be an email account's. */
+async function mailbox(ctx: NodeContext, installationId: string): Promise<EmailCredentials> {
+  const installation = await ctx.installation<EmailCredentials, EmailConfig>(installationId);
+  if (installation.connectorId !== CONNECTOR_ID) {
+    throw new NodeError(`Installation ${installation.name} isn't an email installation`, {
+      code: "wrong_installation",
+    });
+  }
+  const credentials = credentialsSchema.safeParse(installation.credentials);
+  if (!credentials.success) {
+    throw new NodeError(`Installation ${installation.name} is missing its mail server settings`, {
+      code: "missing_credentials",
+    });
+  }
+  return credentials.data;
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const day = (what: string) =>
+  z.string().trim().regex(DAY, "Use a date such as 2026-11-06").optional().describe(what);
+
+export const searchConfigSchema = z.object({
+  installationId: z.string().min(1).describe("Email installation whose mailbox is searched"),
+  folder: z
+    .string()
+    .default("INBOX")
+    .describe(
+      "Folder to search. Sent, Drafts, Archive, Junk, and Trash find those folders by their usual names.",
+    ),
+  from: z.string().max(200).optional().describe("The sender's address or name contains this"),
+  to: z.string().max(200).optional().describe("A recipient's address or name contains this"),
+  subject: z.string().max(200).optional().describe("The subject contains this"),
+  text: z
+    .string()
+    .max(200)
+    .optional()
+    .describe("Words anywhere in the message, its headers and body"),
+  since: day("Only messages from this day on, such as 2026-11-01"),
+  before: day("Only messages from before this day, such as 2026-11-08"),
+  unread: z
+    .boolean()
+    .optional()
+    .describe("True for unread messages only, false for read ones only. Leave it out for both"),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_RESULTS)
+    .default(20)
+    .describe(`How many messages to return, newest first, up to ${MAX_RESULTS}`),
+});
+
+export type SearchConfig = z.infer<typeof searchConfigSchema>;
+
+export const searchEmail: NodeSpec<SearchConfig> = {
+  type: "email.search",
+  version: 1,
+  title: "Search email",
+  description:
+    "Finds messages in a folder by sender, recipient, subject, words, dates, or whether they're read. Returns each message's ID, sender, recipients, subject, date, and the start of its text, newest first. Pass an ID to email.read for the whole message.",
+  category: "action",
+  connector: CONNECTOR_ID,
+  configSchema: searchConfigSchema,
+  expressionFields: ["folder", "from", "to", "subject", "text", "since", "before"],
+  installationFields: ["installationId"],
+  inputs: [],
+  outputs: [
+    { name: "messages", type: "list<json>", label: "Messages" },
+    { name: "total", type: "number", label: "How many matched" },
+  ],
+  execInput: true,
+  execOutputs: [{ name: "next" }],
+  idempotent: true,
+  retry: { maxAttempts: 2, backoffMs: 2_000 },
+  assistant: { sends: false, summary: "Search email: {from} {subject} {text}" },
+
+  async run(ctx, { config: raw }) {
+    const parsed = searchConfigSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new NodeError(`Invalid settings: ${parsed.error.issues[0]?.message}`, {
+        code: "invalid_config",
+      });
+    }
+    const { installationId, ...query } = parsed.data;
+    const credentials = await mailbox(ctx, installationId);
+    const found = await searchMailbox(credentials, query, ctx.signal);
+    return { exec: "next", outputs: { messages: found.messages, total: found.total } };
+  },
+};
+
+export const readConfigSchema = z.object({
+  installationId: z.string().min(1).describe("Email installation the message is in"),
+  id: z
+    .string()
+    .min(5)
+    .max(1_000)
+    .describe("The message's ID from email.search, such as INBOX:1700000000:42"),
+});
+
+export type ReadConfig = z.infer<typeof readConfigSchema>;
+
+export const readEmail: NodeSpec<ReadConfig> = {
+  type: "email.read",
+  version: 1,
+  title: "Read email",
+  description:
+    "Reads one message found with email.search: its headers, its text up to 20 KB (from the HTML when it has no plain text), and its attachments by name and size.",
+  category: "action",
+  connector: CONNECTOR_ID,
+  configSchema: readConfigSchema,
+  expressionFields: ["id"],
+  installationFields: ["installationId"],
+  inputs: [],
+  outputs: [{ name: "message", type: "json", label: "Message" }],
+  execInput: true,
+  execOutputs: [{ name: "next" }],
+  idempotent: true,
+  retry: { maxAttempts: 2, backoffMs: 2_000 },
+  assistant: { sends: false, summary: "Read email {id}" },
+
+  async run(ctx, { config: raw }) {
+    const parsed = readConfigSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new NodeError(`Invalid settings: ${parsed.error.issues[0]?.message}`, {
+        code: "invalid_config",
+      });
+    }
+    const credentials = await mailbox(ctx, parsed.data.installationId);
+    const message = await readMessage(credentials, parsed.data.id, ctx.signal);
+    return { exec: "next", outputs: { message } };
   },
 };

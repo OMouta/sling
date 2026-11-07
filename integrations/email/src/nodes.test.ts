@@ -98,7 +98,12 @@ describe("email connector definition", () => {
   it("declares credentials with defaults and a secret password", () => {
     expect(connector.id).toBe("email");
     expect(connector.secretFields).toEqual(["password"]);
-    expect(connector.nodes.map((n) => n.type)).toEqual(["email.received", "email.send"]);
+    expect(connector.nodes.map((n) => n.type)).toEqual([
+      "email.received",
+      "email.send",
+      "email.search",
+      "email.read",
+    ]);
     expect(
       connector.credentialsSchema.parse({
         imapHost: "imap.example.com",

@@ -56,6 +56,8 @@ const TOOLS: Record<string, [string, string, string]> = {
   ],
   calendar_create_event: ["Adding an event", "Added an event", "Couldn't add the event"],
   email_send: ["Sending an email", "Sent an email", "Couldn't send the email"],
+  email_search: ["Searching your email", "Searched your email", "Couldn't search your email"],
+  email_read: ["Reading an email", "Read an email", "Couldn't read the email"],
   discord_send_message: [
     "Sending a Discord message",
     "Sent a Discord message",

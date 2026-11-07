@@ -2,7 +2,7 @@ import { type ConnectorDefinition, defineConnector, type TestResult } from "@sli
 import { type AutoconfigDeps, addressOf, findServers } from "./autoconfig.ts";
 import { errorMessage } from "./backoff.ts";
 import { closeImap, imapClient, imapErrorMessage, smtpTransport } from "./clients.ts";
-import { emailReceived, sendEmail } from "./nodes.ts";
+import { emailReceived, readEmail, searchEmail, sendEmail } from "./nodes.ts";
 import {
   CONNECTOR_ID,
   configSchema,
@@ -12,6 +12,15 @@ import {
 } from "./schemas.ts";
 import { createEmailSource, type EmailSourceOptions } from "./source.ts";
 
+export { type Bounce, findBounce } from "./bounce.ts";
+export {
+  type MailMessage,
+  type MailQuery,
+  type MailSummary,
+  readMessage,
+  type SearchResult,
+  searchMailbox,
+} from "./mailbox.ts";
 export type { Email, EmailAddress, EmailConfig, EmailCredentials } from "./schemas.ts";
 
 const TEST_TIMEOUT_MS = 20_000;
@@ -80,7 +89,7 @@ export function createEmailConnector(
   return defineConnector<EmailCredentials, EmailConfig>({
     id: CONNECTOR_ID,
     name: "Email",
-    description: "Read and send mail from your address.",
+    description: "Read, search, and send mail from your address.",
     credentialsSchema,
     secretFields: ["password"],
     configSchema,
@@ -151,7 +160,7 @@ export function createEmailConnector(
       };
     },
 
-    nodes: [emailReceived, sendEmail],
+    nodes: [emailReceived, sendEmail, searchEmail, readEmail],
     source: createEmailSource(options),
   });
 }

@@ -1,6 +1,6 @@
 # Email
 
-The email connector works with any mailbox that offers IMAP and SMTP. Workflows can start on new mail in a folder and send plain text email from your address.
+The email connector works with any mailbox that offers IMAP and SMTP. Workflows can start on new mail in a folder, search and read mail, and send plain text email from your address. The assistant can search and read your mail from a chat, and send with your approval.
 
 ## Adding a mailbox
 
@@ -55,6 +55,30 @@ Under **More settings**, prefer port 993 for IMAP and 465 for SMTP, both with TL
 | Text | The body. A connected `text` input replaces it |
 | In reply to | Optional Message-ID of the mail you're answering, so mail apps thread the reply. For example `={{ trigger.email.messageId }}` |
 
+**Search email** finds messages in one folder and returns them newest first: each one's ID, sender, recipients, subject, date, whether it's unread, and the first 200 characters of its text. It returns at most 50.
+
+| Setting | Meaning |
+|---|---|
+| Folder | Which folder. INBOX when empty. Sent, Drafts, Archive, Junk, and Trash find those folders whatever the server calls them, so `Sent` finds `[Gmail]/Sent Mail` |
+| From, To | The sender's or a recipient's name or address contains this |
+| Subject | The subject contains this |
+| Text | These words appear anywhere in the message |
+| Since, Before | Dates such as `2026-11-01`. Since includes that day, Before doesn't |
+| Unread | On for unread mail only, off for read mail only. Leave it out for both |
+| Limit | How many to return, up to 50. 20 by default |
+
+**Read email** takes an ID from Search email and returns that message: its headers, its text up to 20 KB, and its attachments by name, size, and type. A message with only HTML comes back as the HTML's text. `truncated` says when the text was cut.
+
+Both open the folder read-only, so nothing is marked read. They never ask before running, in any mode. An ID stops working when the server renumbers the folder; search again for a new one.
+
 Sending isn't retried automatically after an unclear failure. Each node run sends with its own fixed Message-ID, so a repeat is easy to spot. Gmail files a copy of sent mail in Sent Mail by itself; other providers may not.
 
 Anyone can send you email, and anyone can write a convincing one. Workflows pass email to AI nodes as data, never as instructions, but filter on the sender with From contains or a condition before a workflow acts on what an email asks for.
+
+## From a chat
+
+Ask the assistant about your mail, such as "did Jo email me about the invoice?". It searches with Search email and opens a message with Read email, without asking first.
+
+When it sends an email from a chat, Sling watches your inbox for 10 minutes for a bounce that names the message. The chat shows "No bounce after 10 minutes" once that's over. If one comes back, the email is marked failed with the reason, such as "mailbox not found", and the assistant tells you. Sling reads delivery reports from mail servers, and the older notices from `MAILER-DAEMON` and `postmaster`.
+
+A bounce is only seen when it reaches the inbox. If your provider files bounces elsewhere, such as in spam, Sling won't see them.

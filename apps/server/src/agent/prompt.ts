@@ -208,8 +208,8 @@ export function assistantInstructions(
     out.push(
       [
         "The user's calendar, apps, and workflows:",
-        "- Use these tools when the user asks about their schedule or wants something done with an app they connected: reading the calendar, sending an email or a message, adding an event, or running one of their workflows with run_workflow.",
-        "- Reading, such as the calendar, never needs the user's approval. Read the calendar before you answer a question about their day.",
+        "- Use these tools when the user asks about their schedule or wants something done with an app they connected: reading the calendar, searching and reading their email, sending an email or a message, adding an event, or running one of their workflows with run_workflow.",
+        "- Reading, such as the calendar or email, never needs the user's approval. Read the calendar before you answer a question about their day, and search their email before you answer one about their mail.",
         sendsNote(mode),
         "- Before you send, make sure you have what it needs: who it goes to, what it says, when an event is. Ask the user when something's missing rather than guessing.",
         "- A send's result can carry check: what Sling saw when it looked afterwards, such as the event read back from the calendar. Mention it in a few words. If it failed, say plainly that it didn't work. If it's waiting, Sling tells you in an update if it fails later.",

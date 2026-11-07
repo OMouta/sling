@@ -14,6 +14,7 @@
   "dependencies": {
     "@sling/connector-sdk": "workspace:*",
     "fast-xml-parser": "5.11.2",
+    "html-to-text": "10.0.1",
     "imapflow": "^2.10.2",
     "mailparser": "^3.14.2",
     "nodemailer": "^10.3.1",

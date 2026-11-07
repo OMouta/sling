@@ -3,6 +3,7 @@
  * `pnpm --filter @sling/integration-email test:integration`
  */
 import type {
+  AnyNodeSpec,
   Installation,
   NodeContext,
   NodeLogger,
@@ -16,7 +17,14 @@ import nodemailer from "nodemailer";
 import { GenericContainer, type StartedTestContainer, Wait } from "testcontainers";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { connector, type Email, type EmailConfig, type EmailCredentials } from "../src/index.ts";
-import { emailReceived, messageIdFor, type ReceivedConfig, sendEmail } from "../src/nodes.ts";
+import {
+  emailReceived,
+  messageIdFor,
+  type ReceivedConfig,
+  readEmail,
+  searchEmail,
+  sendEmail,
+} from "../src/nodes.ts";
 import { parseEmail } from "../src/parse.ts";
 import { createEmailSource, type EmailSourceOptions, markKey } from "../src/source.ts";
 
@@ -31,6 +39,8 @@ const USERS = [
   "filters",
   "folders",
   "poll",
+  "searcher",
+  "bouncer",
 ];
 
 const silentLog: NodeLogger = { info() {}, warn() {}, error() {} };
@@ -257,7 +267,10 @@ describe("email.send", () => {
     });
 
     const expectedId = messageIdFor("run_1:n_send:0", "outbox@example.com");
-    expect(result).toEqual({ exec: "next", outputs: { messageId: expectedId } });
+    expect(result).toEqual({
+      exec: "next",
+      outputs: { messageId: expectedId, sentAt: expect.stringMatching(/^\d{4}-\d\d-\d\dT/) },
+    });
 
     const received = await withImap("recipient", async (client) => {
       await client.mailboxOpen("INBOX");
@@ -274,6 +287,287 @@ describe("email.send", () => {
       inReplyTo: "<earlier@example.com>",
     });
     expect(received.text.trim()).toBe("The body, from the text input.");
+  });
+});
+
+/** A node context whose one installation is `user`'s mailbox. */
+function nodeContext(user: string, overrides: Partial<NodeContext> = {}): NodeContext {
+  const installation: Installation = {
+    id: "inst_mail",
+    connectorId: "email",
+    name: "Mailbox",
+    credentials: creds(user),
+    config: { folders: ["INBOX"] },
+  };
+  return {
+    runId: "chat:conv_1",
+    nodeId: "email_send",
+    nodeRunId: "call_1",
+    workflowId: "",
+    workspaceId: "ws_1",
+    ownerId: "user_1",
+    iteration: 0,
+    attempt: 1,
+    idempotencyKey: "chat:call_1",
+    signal: new AbortController().signal,
+    log: silentLog,
+    installation: async () => installation,
+    services: undefined,
+    ...overrides,
+  } as unknown as NodeContext;
+}
+
+/** Runs a node's `run` and hands back its outputs. */
+async function outputsOf<T>(
+  spec: AnyNodeSpec,
+  ctx: NodeContext,
+  config: Record<string, unknown>,
+): Promise<T> {
+  const out = await spec.run?.(ctx, { inputs: {}, config });
+  if (!out || !("exec" in out)) throw new Error(`${spec.type} returned no outputs`);
+  return out.outputs as T;
+}
+
+async function append(user: string, folder: string, raw: string, flags: string[] = []) {
+  await withImap(user, (client) => client.append(folder, raw, flags));
+}
+
+describe("email.search and email.read", () => {
+  beforeAll(async () => {
+    await withImap("searcher", (client) => client.mailboxCreate("Archive"));
+    const msg = (from: string, subject: string, date: string, body: string) =>
+      [
+        `From: ${from}`,
+        "To: searcher@example.com",
+        `Subject: ${subject}`,
+        `Date: ${date}`,
+        `Message-ID: <${subject.replace(/\W+/g, "-").toLowerCase()}@example.com>`,
+        "",
+        body,
+        "",
+      ].join("\r\n");
+    await append(
+      "searcher",
+      "INBOX",
+      msg(
+        "Jo Silva <jo@silva.pt>",
+        "Invoice for October",
+        "Mon, 2 Nov 2026 09:00:00 +0000",
+        "Hi, the invoice is attached. It's 120 euros.",
+      ),
+      ["\\Seen"],
+    );
+    await append(
+      "searcher",
+      "INBOX",
+      msg(
+        "Ana <ana@example.com>",
+        "Lunch on Friday?",
+        "Wed, 4 Nov 2026 12:00:00 +0000",
+        "Are you free for lunch?",
+      ),
+    );
+    await append(
+      "searcher",
+      "INBOX",
+      [
+        "From: Jo Silva <jo@silva.pt>",
+        "To: searcher@example.com",
+        "Subject: Invoice paid?",
+        "Date: Fri, 6 Nov 2026 16:30:00 +0000",
+        "Message-ID: <invoice-paid@silva.pt>",
+        "MIME-Version: 1.0",
+        'Content-Type: multipart/mixed; boundary="mix"',
+        "",
+        "--mix",
+        "Content-Type: text/html; charset=utf-8",
+        "",
+        "<html><body><p>Did the <b>invoice</b> go through?</p><p>Jo</p></body></html>",
+        "--mix",
+        'Content-Type: application/pdf; name="invoice-2026-10.pdf"',
+        'Content-Disposition: attachment; filename="invoice-2026-10.pdf"',
+        "Content-Transfer-Encoding: base64",
+        "",
+        Buffer.from("%PDF-1.4 fake invoice").toString("base64"),
+        "--mix--",
+        "",
+      ].join("\r\n"),
+    );
+    await append(
+      "searcher",
+      "Archive",
+      msg(
+        "Jo Silva <jo@silva.pt>",
+        "Old invoice",
+        "Thu, 1 Oct 2026 09:00:00 +0000",
+        "Last month's invoice.",
+      ),
+    );
+  });
+
+  const search = (config: Record<string, unknown>) =>
+    outputsOf<{ messages: Record<string, unknown>[]; total: number }>(
+      searchEmail,
+      nodeContext("searcher"),
+      { installationId: "inst_mail", ...config },
+    );
+
+  it("finds messages by sender and words, newest first, with a snippet of each", async () => {
+    const found = await search({ from: "jo@silva.pt", text: "invoice" });
+    expect(found.total).toBe(2);
+    expect(found.messages.map((m) => m.subject)).toEqual(["Invoice paid?", "Invoice for October"]);
+    const [paid, october] = found.messages;
+    expect(paid).toMatchObject({
+      id: expect.stringMatching(/^INBOX:\d+:3$/),
+      messageId: "<invoice-paid@silva.pt>",
+      from: { name: "Jo Silva", address: "jo@silva.pt" },
+      to: [{ name: null, address: "searcher@example.com" }],
+      date: "2026-11-06T16:30:00.000Z",
+      unread: true,
+      snippet: "Did the invoice go through? Jo",
+    });
+    expect(october).toMatchObject({
+      unread: false,
+      snippet: "Hi, the invoice is attached. It's 120 euros.",
+    });
+  });
+
+  it("narrows by subject, dates, and whether it's been read", async () => {
+    expect((await search({ subject: "lunch" })).messages.map((m) => m.subject)).toEqual([
+      "Lunch on Friday?",
+    ]);
+    expect((await search({ unread: false })).messages.map((m) => m.subject)).toEqual([
+      "Invoice for October",
+    ]);
+    expect((await search({ unread: true })).total).toBe(2);
+    expect((await search({ text: "nothing-like-this" })).messages).toEqual([]);
+    expect((await search({ limit: 1 })).messages.map((m) => m.subject)).toEqual(["Invoice paid?"]);
+  });
+
+  it("searches another folder, and says which ones there are when it can't find one", async () => {
+    expect((await search({ folder: "archive" })).messages.map((m) => m.subject)).toEqual([
+      "Old invoice",
+    ]);
+    await expect(search({ folder: "Bills" })).rejects.toThrow(
+      /There's no folder called Bills\. Folders: .*Archive/,
+    );
+  });
+
+  it("reads a message's text from its HTML, with its attachments by name and size", async () => {
+    const [paid] = (await search({ subject: "paid" })).messages;
+    const { message } = await outputsOf<{ message: Record<string, unknown> }>(
+      readEmail,
+      nodeContext("searcher"),
+      { installationId: "inst_mail", id: paid?.id },
+    );
+    expect(message).toMatchObject({
+      id: paid?.id,
+      messageId: "<invoice-paid@silva.pt>",
+      folder: "INBOX",
+      from: { name: "Jo Silva", address: "jo@silva.pt" },
+      subject: "Invoice paid?",
+      unread: true,
+      truncated: false,
+      attachments: [{ name: "invoice-2026-10.pdf", size: 21, contentType: "application/pdf" }],
+    });
+    expect(String(message.text).replace(/\s+/g, " ").trim()).toBe("Did the invoice go through? Jo");
+    // Reading it from chat leaves it unread.
+    expect((await search({ subject: "paid" })).messages[0]?.unread).toBe(true);
+  });
+
+  it("refuses an ID that doesn't point at a message", async () => {
+    const read = (id: string) =>
+      outputsOf(readEmail, nodeContext("searcher"), { installationId: "inst_mail", id });
+    const [any] = (await search({})).messages;
+    const validity = String(any?.id).split(":")[1];
+    await expect(read(`INBOX:${validity}:999`)).rejects.toThrow(/There's no message/);
+    await expect(read("INBOX:1:1")).rejects.toThrow(/renumbered INBOX/);
+  });
+});
+
+describe("email.send's check", () => {
+  /** Sends a message from the bouncer's mailbox through the node, the way chat does. */
+  async function send(key: string, to: string) {
+    return outputsOf<{ messageId: string; sentAt: string }>(
+      sendEmail,
+      nodeContext("bouncer", { idempotencyKey: key }),
+      { installationId: "inst_mail", to, subject: "Invoice", text: "Here it is." },
+    );
+  }
+  const verify = (outputs: Record<string, unknown>, to: string, attempt = 1) =>
+    sendEmail.verify?.(nodeContext("bouncer", { attempt }), {
+      inputs: {},
+      config: { installationId: "inst_mail", to, subject: "Invoice", text: "Here it is." },
+      outputs,
+    });
+
+  it("waits while nothing has bounced, ignoring the message itself in the inbox", async () => {
+    const sent = await send("chat:call_self", "bouncer@example.com");
+    // The copy sent to its own mailbox holds the same Message-ID, and isn't a bounce.
+    await until(async () =>
+      withImap("bouncer", async (c) => {
+        const status = await c.status("INBOX", { messages: true });
+        return status !== false && status.messages === 1;
+      }),
+    );
+    expect(await verify(sent, "bouncer@example.com")).toEqual({
+      state: "waiting",
+      message: "Watching for a bounce",
+      retryAfterSeconds: 30,
+    });
+  });
+
+  it("fails when a bounce naming it arrives, and passes after the watch with none", async () => {
+    const sent = await send("chat:call_bounce", "jo@silva.invalid");
+    await append(
+      "bouncer",
+      "INBOX",
+      [
+        "From: Mail Delivery System <MAILER-DAEMON@mx.example.com>",
+        "To: bouncer@example.com",
+        "Subject: Undelivered Mail Returned to Sender",
+        "MIME-Version: 1.0",
+        'Content-Type: multipart/report; report-type=delivery-status; boundary="r"',
+        "",
+        "--r",
+        "Content-Type: text/plain",
+        "",
+        "This is the mail system. Your message could not be delivered.",
+        "",
+        "--r",
+        "Content-Type: message/delivery-status",
+        "",
+        "Reporting-MTA: dns; mx.example.com",
+        "",
+        "Final-Recipient: rfc822; jo@silva.invalid",
+        "Action: failed",
+        "Status: 5.1.1",
+        "Diagnostic-Code: smtp; 550 5.1.1 <jo@silva.invalid>: Recipient address rejected",
+        "",
+        "--r",
+        "Content-Type: text/rfc822-headers",
+        "",
+        "From: bouncer@example.com",
+        "To: jo@silva.invalid",
+        "Subject: Invoice",
+        `Message-ID: ${sent.messageId}`,
+        "",
+        "--r--",
+        "",
+      ].join("\r\n"),
+    );
+    expect(await verify(sent, "jo@silva.invalid", 2)).toEqual({
+      state: "failed",
+      message: "Bounced: mailbox not found",
+    });
+
+    // Another send, sent long enough ago that the watch is over, with no bounce of its own.
+    const quiet = await send("chat:call_quiet", "ana@example.com");
+    const earlier = new Date(Date.parse(quiet.sentAt) - 11 * 60_000).toISOString();
+    expect(await verify({ ...quiet, sentAt: earlier }, "ana@example.com", 9)).toEqual({
+      state: "passed",
+      message: "No bounce after 10 minutes",
+    });
   });
 });
 
