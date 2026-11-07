@@ -158,7 +158,7 @@ export const sendEmail: NodeSpec<SendConfig> = {
   execInput: true,
   execOutputs: [{ name: "next" }],
   idempotent: false,
-  assistant: { sends: true, summary: "Email {to}: {subject}" },
+  assistant: { sends: true, summary: "Email {to}: {subject}", ruleFields: ["to"] },
 
   async run(ctx, { inputs, config: rawConfig }) {
     const parsed = sendConfigSchema.safeParse(rawConfig);
