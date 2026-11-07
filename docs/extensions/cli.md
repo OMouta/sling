@@ -108,7 +108,7 @@ Kinds: connector
 
 Permissions
   Connect to ntfy.sh
-  Connect to the host in each installation's "server" setting
+  Connect to the address in its "server" setting
 
 Package: 4 files, 209.0 kB unpacked. The bundle described itself in 36 ms.
 
@@ -174,7 +174,7 @@ Files: 4, 198.2 kB unpacked, 57.5 kB packed
 Digest: sha256:5cbf8e4082b51a0ec8684b01c122680337fec9e4d29079d9f18303e00a609e38
 SDK: ^1.0.0 (this sling-ext has 1.0.0)
 Permissions:
-  Connect to the host in each installation's "url" setting
+  Connect to the address in its "url" setting
 Signature: good, by Acme
 Fingerprint: 7c30 8f1e d548 0a05 (key ID 7c308f1ed5480a05)
 ```

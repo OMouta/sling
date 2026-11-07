@@ -45,13 +45,13 @@ Set the host to `tcp://<host>:2376` and paste the three PEM files from the daemo
 
 The daemon should run with `--tlsverify`, so it refuses clients without a certificate it trusts. Docker's guide [Protect the Docker daemon socket](https://docs.docker.com/engine/security/protect-access/) shows how to make the certificates. The daemon's certificate has to name the host you put in the URL.
 
-A `tcp://` host without certificates connects over plain HTTP. **Test** passes but warns, because anyone on the network path could read sandbox secrets and drive the daemon. Use it only on a network nobody else is on, such as a socket proxy inside the same compose project.
+A `tcp://` host without certificates connects over plain HTTP. The form warns, because anyone on the network path could read sandbox secrets and drive the daemon. Use it only on a network nobody else is on, such as a socket proxy inside the same compose project.
 
 ## Let sandboxes reach Sling
 
-The **Control plane URL** is the address a sandbox uses to reach Sling. Left empty, it's `SLING_PUBLIC_URL`. Which one works depends on where Sling runs:
+**Sling's address for sandboxes** is the address a sandbox uses to reach Sling. Left empty, it's `SLING_PUBLIC_URL`. Which one works depends on where Sling runs:
 
-| Sling runs | Network | Control plane URL |
+| Sling runs | Network | Sling's address for sandboxes |
 |---|---|---|
 | In compose, with the override | `sling-sandboxes` | `http://sling:8080` |
 | On the Docker host itself | `bridge` | `http://host.docker.internal:8080` |
@@ -65,21 +65,20 @@ The network can't be `host` or `container:<name>`. Either one would put a sandbo
 
 ## Add it to Sling
 
-Under **Connectors**, add Docker:
+Under **Connectors**, add Docker. The form checks the host as soon as it opens and says which Docker answered, or why it didn't, and whether the image is there. The default host, `unix:///var/run/docker.sock`, is the Docker on Sling's own machine; use `tcp://<host>:2376` for a remote daemon. Everything else is under **More settings**:
 
 | Field | What to put |
 |---|---|
-| Host | `unix:///var/run/docker.sock`, or `tcp://<host>:2376` for a remote daemon |
 | CA certificate, client certificate, client key | The PEM files, for a TLS host. Leave them empty for a socket |
 | Registry username, registry password | Only if the image is in a private registry. They're sent with each pull |
 | Image | `sling-sandbox:latest` unless you built or pushed another |
-| Control plane URL | See the table above |
-| CPUs, memory in MB | Limits for each sandbox. Empty means no limit. Swap is off, so the memory limit is hard |
+| Sling's address for sandboxes | See the table above |
+| CPUs, memory per sandbox | Empty means no limit. Swap is off, so the memory limit is hard |
 | Network | `bridge`, or `sling-sandboxes` with the compose override |
-| Pull policy | `missing` pulls only when the image isn't on the host. `always` pulls before every sandbox, which picks up a new `latest`. `never` uses what's there and fails without it |
+| Pull the image | **When missing** pulls only when the image isn't on the host. **Always** pulls before every sandbox, which picks up a new `latest`. **Never** uses what's there and fails without it |
 | Extra environment | Variables every sandbox gets, such as `HTTPS_PROXY`. They show in plain text, so don't put secrets here. They can't replace the `SLING_*` or API key variables |
 
-**Test** pings the daemon, reports its version, checks that the network exists, and says whether the image is on the host. A missing image still passes, since it gets pulled when the first sandbox starts, unless the pull policy is `never`.
+**Add** pings the daemon, checks that the network exists, and checks the image before saving. A missing image still passes, since it gets pulled when the first sandbox starts, unless pulling is set to **Never**.
 
 Then store an API key for the coding agent and a GitHub token under **Settings**, **Sandboxes**, and turn on **Allow in sandboxes** for each repo a sandbox may clone.
 

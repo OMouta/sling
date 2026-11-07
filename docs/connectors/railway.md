@@ -33,7 +33,7 @@ docker buildx build --platform linux/amd64,linux/arm64 -f deploy/sandbox/Dockerf
   -t ghcr.io/you/sling-sandbox:latest --push .
 ```
 
-Turn on **Check in a test sandbox** and run **Test** to see the architecture a sandbox reports.
+Turn on **Start a test sandbox when checking** and press **Test** on the connector to see the architecture a sandbox reports.
 
 A public image needs nothing else. For a private one, set **Registry username** and **Registry password**. Use a token that can only read packages. On GitHub that's a classic token with just `read:packages`. Sling logs in for the pull alone, in a Docker config it deletes straight after, and passes the password to `docker login` on stdin.
 
@@ -44,16 +44,21 @@ Under **Connectors**, add Railway:
 | Field | What to put |
 |---|---|
 | API token | The token from step 3 |
-| Token type | `account` for an account or workspace token, `project` for a project token |
 | Environment ID | From step 2 |
-| Registry username, registry password | Only for a private image |
 | Image | The image you pushed, such as `ghcr.io/you/sling-sandbox:latest` |
-| Control plane URL | Sling's public HTTPS URL, usually the same as `SLING_PUBLIC_URL`. `http://` is refused |
-| CPUs, memory in MB | Size of each sandbox. Empty uses your workspace's sandbox default. Sling converts MB to Railway's GB, so 4096 asks for 4 GB |
-| Idle timeout in minutes | How long Railway keeps a sandbox after its container stops, before destroying it. 5 by default, which every plan allows |
-| Check in a test sandbox | Off by default. See below |
+| Sling's public address | Sling's HTTPS URL, usually the same as `SLING_PUBLIC_URL`. `http://` is refused |
 
-**Test** lists the environment's sandboxes. That's the cheapest call that needs both a valid token and access to the environment. With **Check in a test sandbox** on, it also starts a sandbox with 1 vCPU and 1 GB, waits for Docker, checks that Docker can find the image on its registry, reports the CPU architecture, and destroys the sandbox. That takes a minute or two, and Railway bills for it.
+Under **More settings**:
+
+| Field | What to put |
+|---|---|
+| Token type | **Account or workspace**, or **Project** for a project token |
+| Registry username, registry password | Only for a private image |
+| vCPUs, memory per sandbox | Empty uses your workspace's sandbox default. Sling converts MB to Railway's GB, so 4096 asks for 4 GB |
+| Keep a stopped sandbox for | How long Railway keeps a sandbox after its container stops, before destroying it. 5 minutes by default, which every plan allows |
+| Start a test sandbox when checking | Off by default. See below |
+
+**Add** lists the environment's sandboxes before saving. That's the cheapest call that needs both a valid token and access to the environment. With **Start a test sandbox when checking** on, it also starts a sandbox with 1 vCPU and 1 GB, waits for Docker, checks that Docker can find the image on its registry, reports the CPU architecture, and destroys the sandbox. That takes a minute or two, and Railway bills for it. **Test** on the connector's card does the same later.
 
 Then store an API key for the coding agent and a GitHub token under **Settings**, **Sandboxes**, and turn on **Allow in sandboxes** for each repo a sandbox may clone.
 
@@ -93,7 +98,7 @@ Railway bills a sandbox per second for memory, CPU, and outbound traffic, from c
 
 - **"Railway rejected the API token."** The token was revoked or pasted wrong, or **Token type** doesn't match the kind of token.
 - **"Railway has no environment ... that this token can reach."** The environment ID is wrong, or a project token belongs to a different environment.
-- **"... must be an https:// URL."** Set **Control plane URL** to Sling's public HTTPS address.
+- **"... must be an https:// URL."** Set **Sling's public address** to its HTTPS address.
 - **"Starting the sandbox image failed (exit 1): ... pull access denied."** The image is private and the registry login is missing or wrong, or the name has a typo.
 - **"Couldn't connect to the sandbox to run a command."** Sling's server can't reach `ssh.railway.com` on port 2226.
 - **"Docker didn't start in the Railway sandbox within a minute."** Check Railway's status page, then try again.

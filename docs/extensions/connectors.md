@@ -21,10 +21,11 @@ import { defineConnector, defineExtension } from "@sling/connector-sdk";
 import { z } from "zod";
 
 const credentialsSchema = z.object({
-  apiKey: z.string().min(1).describe("API key from Settings > API in Acme"),
+  apiKey: z.string().min(1).meta({ title: "API key", lookup: true }),
 });
 const configSchema = z.object({
-  baseUrl: z.url().default("https://api.acme.test").describe("Your Acme API"),
+  baseUrl: z.url().default("https://api.acme.test").meta({ title: "Server", advanced: true }),
+  pipeline: z.string().default("").meta({ title: "Pipeline", picker: true }),
 });
 type Credentials = z.infer<typeof credentialsSchema>;
 type Config = z.infer<typeof configSchema>;
@@ -69,11 +70,59 @@ Each installation of a connector has two parts, and both are zod schemas:
 - **Credentials** are stored encrypted and never sent back to the browser. List the keys to show as password fields in `secretFields`.
 - **Config** holds plain settings, such as a server URL or a default channel. It's visible in the web app.
 
-Sling renders the installation form from the JSON Schema of each. Give every field a `.describe()`, which becomes its help text, and a `.meta({ title })` when the key doesn't read well as a label. A form sends an empty string for an empty field, so allow `""` on optional strings, or give them a default.
+Sling renders the installation form from the JSON Schema of both, credentials first, as one list. Set how each field shows with zod's `.meta()`:
 
-A config field that holds a URL can let the extension reach that URL's host. Name the field in the manifest's `network.configHosts`. See [manifest.md](manifest.md#network).
+| Key | What it does |
+|---|---|
+| `title` | The label. Give every field one |
+| `description` | One short line under the field. Only when people would otherwise get it wrong |
+| `placeholder` | Shown in an empty field. For a picker, the label of the empty choice |
+| `advanced` | Kept under **More settings**, closed, unless the setup lookup reveals it |
+| `lookup` | Changing it runs the setup lookup again |
+| `showWhen` | Shown only while another field has one of these values, such as `{ kind: "account" }` |
+| `picker` | Hidden until the setup lookup offers choices for it, then shown as a picker |
+| `emptyMeansAll` | A list where nothing picked means everything |
+| `allowOther` | A picker that also takes a typed value |
+| `order` | Where it goes in the form, lower first |
+| `hidden` | Filled in by the setup lookup, never shown |
+| `widget` | `segmented` for a short choice as buttons, `textarea` for long text |
 
-`test` runs when someone presses **Test** on an installation. It gets that installation's credentials and config, and has 30 seconds. Return `{ ok: true, detail }` or `{ ok: false, error }` with a message that says what to fix. Don't throw for an expected failure such as a wrong password.
+A union of literals with titles, such as `z.union([z.literal("a").meta({ title: "Account" }), z.literal("b").meta({ title: "Link" })])`, shows each choice by its title. A form sends an empty string for an empty field, so allow `""` on optional strings, or give them a default. The form has no name field: Sling names the installation from the setup lookup, or after the connector.
+
+A config field that holds a URL can let the extension reachA config field that holds a URL can let the extension reach that URL's host. Name the field in the manifest's `network.configHosts`. See [manifest.md](manifest.md#network).
+
+`test` runs before an installation is added or its credentials change, and when someone presses **Test** on it. It gets the installation's credentials and config, and has 30 seconds. Return `{ ok: true, detail }` or `{ ok: false, error }` with a message that says what to fix. Don't throw for an expected failure such as a wrong password. When it fails, the form shows the error and offers **Add anyway**.
+
+### The setup lookup
+
+Ask only for what the connector can't find out itself. `setup` runs as soon as the form opens and again after each change to a `lookup` field, with whatever has been typed so far, unchecked, and has 15 seconds:
+
+```ts
+async setup({ credentials, config, signal }) {
+  if (!credentials.apiKey) {
+    return { notes: [{ field: "apiKey", tone: "info", text: "Make one under Settings > API.", link: { label: "Open Acme", url: "https://acme.test/settings/api" } }] };
+  }
+  const me = await acmeMe(credentials.apiKey, config.baseUrl, signal);
+  if (!me) return { notes: [{ field: "apiKey", tone: "error", text: "Acme doesn't accept this key." }] };
+  return {
+    name: me.workspace,
+    options: { pipeline: me.pipelines.map((p) => ({ value: p.id, label: p.name })) },
+    config: { pipeline: me.pipelines[0]?.id ?? "" },
+    notes: [{ field: "apiKey", tone: "ok", text: `Connected to ${me.workspace}` }],
+  };
+},
+```
+
+It returns any of these:
+
+- `credentials` and `config`: values it worked out. They fill fields the person hasn't typed in. Sling never passes a secret field back to the browser.
+- `options`: choices for fields, by key. A string field becomes a picker, a list a checklist.
+- `name`: what to call the installation, such as the account's address.
+- `notes`: short lines under a field, or above the form without one, each with a tone (`info`, `ok`, `warn`, `error`) and an optional link.
+- `reveal`: `advanced` fields to show, because the lookup couldn't fill them.
+- `retryAfterMs`: run again after this long, 2 to 60 seconds, while the form is open. Use it while waiting on something done elsewhere, such as an invite.
+
+When someone edits an installation, Sling fills in its stored credentials before calling `setup`. A connector without `setup` shows `setupHelp` behind a **Where to find these** link instead.
 
 ## Nodes
 

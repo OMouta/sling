@@ -10,16 +10,15 @@ Anyone who knows a topic's name can read and write it. Pick long names nobody wi
 
 ## Add it to Sling
 
-Under **Connectors**, add ntfy:
+Installing ntfy opens its setup. The form suggests a long, random **Topic** and links to it, so you can subscribe in the ntfy app on your phone; it's the topic **Publish to ntfy** uses when a node doesn't name one. Under **More settings**:
 
 | Field | What to put |
 |---|---|
 | Access token | Optional. An ntfy access token (`tk_...`) for reserved topics or a server that requires login |
 | Server | `https://ntfy.sh`, or your own server's URL |
-| Topics to watch | Topics whose messages can start workflows |
-| Default topic | The topic **Publish to ntfy** uses when the node doesn't name one |
+| Topics that start workflows | Topics whose messages can start workflows |
 
-**Test** calls `/v1/health` on the server, and `/v1/account` with the token when there is one.
+**Add** calls `/v1/health` on the server, and `/v1/account` with the token when there is one, before saving.
 
 ## Nodes
 
@@ -52,7 +51,7 @@ Each time it reconnects, it asks ntfy for messages since the last one it handed 
 | Permission | Why |
 |---|---|
 | Connect to ntfy.sh | The default server |
-| Connect to the host in each installation's "server" setting | Your own server |
+| Connect to the address in its "server" setting | Your own server |
 
 A server on your local network, such as `http://ntfy.lan`, needs the local network permission, which this package doesn't ask for. Give your server a public HTTPS name, or build your own copy of this extension with `localNetwork: true`.
 

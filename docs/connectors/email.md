@@ -2,53 +2,31 @@
 
 The email connector works with any mailbox that offers IMAP and SMTP. Workflows can start on new mail in a folder and send plain text email from your address.
 
-It logs in with a password. Most providers want an app password for this rather than your normal one.
+## Adding a mailbox
 
-## Settings
+Type your address and password. Sling finds the IMAP and SMTP servers itself:
 
-| Field | What to put |
-|---|---|
-| IMAP host, port | Your provider's IMAP server. Port 993 with TLS on |
-| IMAP TLS | On for port 993. Off only for port 143, which then upgrades with STARTTLS |
-| SMTP host, port | Your provider's SMTP server. Port 465 with TLS on |
-| SMTP TLS | On for port 465. Off for port 587, which then upgrades with STARTTLS |
-| Username | Usually your full email address |
-| Password | An app password. The provider sections below say where to get one |
-| From address | The address mail is sent from, like `you@example.com`. Write `Sling <you@example.com>` to set a display name |
-| Folders | Folders to watch. `INBOX` by default |
+1. Gmail, Google Workspace, iCloud, Fastmail and Yahoo it knows already.
+2. For other domains it asks Thunderbird's provider database (`autoconfig.thunderbird.net`), which knows most mail hosts.
+3. Failing that, it looks up who handles the domain's mail (its MX records) and asks the database about them.
 
-**Test** logs in to IMAP, checks that each folder exists, then logs in to SMTP.
+The form says which provider it found, and links to where that provider makes app passwords. Most providers want an app password here rather than your normal one. If nothing knows the domain, the server fields show up for you to fill in. Ports, TLS, the login and the folders to watch are under **More settings**.
+
+**Add** logs in to IMAP, checks the folders, and logs in to SMTP before saving. If that fails, the form says why and offers **Add anyway**.
+
+Outlook.com and Microsoft 365 mailboxes no longer accept passwords over IMAP and SMTP, so the form says they can't be added.
 
 ## Gmail
 
 1. Turn on 2-Step Verification for the Google account. App passwords need it.
-2. Create an app password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). Copy the 16 characters; spaces don't matter.
-3. If your Gmail settings still have **Forwarding and POP/IMAP**, make sure IMAP is enabled there.
+2. Make an app password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) and paste its 16 characters; spaces don't matter.
+3. If your Gmail settings still have **Forwarding and POP/IMAP**, make sure IMAP is on there.
 
-| Field | Value |
-|---|---|
-| IMAP | `imap.gmail.com`, port 993, TLS on |
-| SMTP | `smtp.gmail.com`, port 465, TLS on |
-| Username | Your Gmail address |
+Gmail labels appear as folders, for example `[Gmail]/Sent Mail`. Google Workspace admins can turn app passwords off; if you can't make one, ask your admin.
 
-Gmail labels appear as folders, for example `[Gmail]/Sent Mail`. Google Workspace admins can turn app passwords off; if you can't create one, ask your admin.
+## Servers, by hand
 
-## Fastmail
-
-1. In Fastmail, open **Settings**, **Privacy & Security**, and create a new app password under app passwords.
-2. Give it mail access over IMAP and SMTP, and copy it.
-
-| Field | Value |
-|---|---|
-| IMAP | `imap.fastmail.com`, port 993, TLS on |
-| SMTP | `smtp.fastmail.com`, port 465, TLS on |
-| Username | Your Fastmail address |
-
-## Other providers
-
-Look for your provider's "IMAP and SMTP settings" page. Prefer port 993 for IMAP and 465 for SMTP, both with TLS on. If the provider only offers 587 for SMTP, use it with SMTP TLS off; the connection upgrades with STARTTLS.
-
-Outlook.com and Microsoft 365 mailboxes no longer accept passwords over IMAP and SMTP, so they don't work with this connector.
+Under **More settings**, prefer port 993 for IMAP and 465 for SMTP, both with TLS on. If the provider only offers 587 for SMTP, use it with SMTP over TLS off; the connection upgrades with STARTTLS. The address you type is also the From address; write `Sling <you@example.com>` to set a display name.
 
 ## How new mail is picked up
 

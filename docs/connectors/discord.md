@@ -7,43 +7,28 @@ The bot connects out to Discord's gateway, so Sling needs no public URL for it.
 ## Create the bot
 
 1. Open the [Discord developer portal](https://discord.com/developers/applications) and click **New Application**. The name is what people see, for example "Sling".
-2. Open **Bot**. Click **Reset Token**, then copy the token. Discord shows it once. You'll paste it into Sling.
-3. On the same page, under **Privileged Gateway Intents**, turn on **Message Content Intent** and save. Without it the bot sees messages but not their text, and the connection test fails. The other two privileged intents aren't needed.
+2. Open **Bot**. Click **Reset Token**, then copy the token. Discord shows it once.
+3. On the same page, under **Privileged Gateway Intents**, turn on **Message Content Intent** and save. Without it the bot sees messages but not their text. The other two privileged intents aren't needed.
 4. You can also turn off **Public Bot**, so nobody else can add it to their server.
-
-## Invite it to a server
-
-Discord only lets a bot DM people it shares a server with, so invite it to at least one server you're in, even if you only plan to use DMs.
-
-1. In the developer portal, open **OAuth2**, then **URL Generator**.
-2. Under scopes, tick `bot`.
-3. Under bot permissions, tick **View Channels**, **Send Messages**, and **Read Message History**.
-4. Open the generated URL and pick the server.
-
-For DMs, that server's privacy settings must allow direct messages from server members. Right-click the server and open **Privacy Settings** to check.
-
-## Find user and channel IDs
-
-Sling identifies people and channels by Discord ID, not by name.
-
-1. In Discord, open **User Settings**, **Advanced**, and turn on **Developer Mode**.
-2. Right-click a user, yourself included, and choose **Copy User ID**.
-3. Right-click a channel and choose **Copy Channel ID**.
-
-IDs are long numbers such as `123456789012345678`.
 
 ## Add it to Sling
 
-Under **Connectors**, add Discord:
+Under **Connectors**, add Discord and paste the bot token. The form takes it from there:
 
-| Field | What to put |
-|---|---|
-| Bot token | The token from step 2 above |
-| Allowed users | User IDs whose messages reach your workflows. Messages from anyone else are dropped before any trigger sees them |
-| Approvers | User IDs that may press Approve or Reject. Usually just you |
-| Default channel | Optional. Where **Send Discord message** posts when the node names no channel or user |
+- It says which bot the token belongs to, or that Discord doesn't accept it.
+- If **Message Content Intent** is off, it links to the bot's settings page.
+- If the bot isn't in a server yet, it links to an invite with the permissions it needs: View Channels, Send Messages and Read Message History. Discord only lets a bot DM people it shares a server with, so invite it to a server you're in, even for DMs only. The form notices the invite by itself.
+- **Who can message it** starts with you, the bot's owner, or your team when a team owns it. Messages from anyone else are dropped before any trigger sees them. Add someone else by their user ID.
+- **Default channel** lists the channels the bot can post to. It's where **Send Discord message** posts when the node names no channel or user.
+- **Who can approve**, under **More settings**, is who may press Approve or Reject. It starts with you too.
 
-**Test** checks that Discord accepts the token and that the Message Content intent is on.
+**Add** checks the token and the Message Content intent before saving.
+
+For DMs, the server's privacy settings must allow direct messages from server members. Right-click the server and open **Privacy Settings** to check.
+
+## User and channel IDs
+
+Nodes still name people and channels by Discord ID. Turn on **Developer Mode** under **User Settings**, **Advanced**, then right-click a user or channel and choose **Copy User ID** or **Copy Channel ID**. IDs are long numbers such as `123456789012345678`.
 
 ## Nodes
 

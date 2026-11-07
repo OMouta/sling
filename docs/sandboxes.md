@@ -59,7 +59,7 @@ Add a provider on the **Connectors** page, the same way as Discord or email: Doc
 Every provider has two settings worth knowing:
 
 - **Image**: what the sandbox runs. The default is `sling-sandbox:latest`, or the server's `SLING_SANDBOX_IMAGE` when it's set. A custom image needs `sling-runner`, `git`, and the coding agents on `PATH`, and must start with `sling-runner sandbox`.
-- **Control plane URL**: how the sandbox reaches Sling. It defaults to `SLING_PUBLIC_URL`. A sandbox on another host or in the cloud needs an address it can actually reach.
+- **Sling's address for sandboxes**: how the sandbox reaches Sling. It defaults to `SLING_PUBLIC_URL`. A sandbox on another host or in the cloud needs an address it can actually reach.
 
 Give each Sling server its own provider. Every minute Sling removes sandboxes the provider still runs that Sling no longer knows about, so two servers sharing one Docker host or Railway environment would remove each other's.
 

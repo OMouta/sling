@@ -21,20 +21,25 @@ Installing it grants the **sandboxes** permission. A sandbox provider starts the
 
 ## Add it to Sling
 
-Under **Connectors**, add Fly Machines:
+Installing Fly Machines opens its setup:
 
 | Field | What to put |
 |---|---|
 | API token | The token from step 3 |
 | App | `sling-sandboxes` |
-| Region | Optional, such as `iad` or `fra`. Empty lets Fly pick |
 | Image | `registry.fly.io/sling-sandboxes:sandbox` |
-| Control plane URL | Sling's public HTTPS URL. Empty uses `SLING_PUBLIC_URL`. If Sling runs on Fly in the same organization, its `.internal` or `.flycast` address works too |
-| CPU kind | `shared` (the default) or `performance` |
-| CPUs, Memory in MB | Optional. Defaults to the workspace's sandbox settings, or 2 CPUs and 4096 MB |
+
+Under **More settings**:
+
+| Field | What to put |
+|---|---|
+| Region | Optional, such as `iad` or `fra`. Empty lets Fly pick |
+| Sling's address for sandboxes | Sling's public HTTPS URL. Empty uses `SLING_PUBLIC_URL`. If Sling runs on Fly in the same organization, its `.internal` or `.flycast` address works too |
+| CPU kind | **Shared** (the default) or **Performance** |
+| CPUs, memory per sandbox | Optional. Defaults to the workspace's sandbox settings, or 2 CPUs and 4096 MB |
 | Machines API URL | Leave it as `https://api.machines.dev`. Tests point it at a fake |
 
-**Test** checks that Fly accepts the token and the app exists.
+**Add** checks that Fly accepts the token and the app exists before saving.
 
 ## How it works
 
@@ -55,7 +60,7 @@ Fly runs its own init as process 1, so processes the agents leave behind are rea
 | Permission | Why |
 |---|---|
 | Connect to api.machines.dev | The Fly Machines API |
-| Connect to the host in each installation's "apiUrl" setting | Only differs from the above in tests |
+| Connect to the address in its "apiUrl" setting | Only differs from the above in tests |
 | Start sandboxes, and receive each sandbox's secrets | It's a sandbox provider |
 
 ## Develop

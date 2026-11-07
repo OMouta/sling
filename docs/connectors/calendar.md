@@ -7,37 +7,23 @@ The calendar connector reads your events, and adds new ones. It works two ways:
 
 It runs inside the Sling server, like the email connector. Google's own API needs a Google Cloud project and OAuth, so Sling reads Google through the iCal address instead.
 
-## Settings
+## Adding a calendar
 
-Set **Kind** first. The rest of the fields depend on it.
+Pick **Account** for CalDAV or **iCal link** for read-only links.
 
-| Field | Kind | What to put |
-|---|---|---|
-| Kind | both | `caldav` or `ics` |
-| Server URL | caldav | The server, such as `https://caldav.fastmail.com`. A calendar's own URL works too, and then that's the only calendar |
-| Username | caldav | Your login, usually your email address |
-| Password | caldav | An app password. Stored encrypted and never shown again |
-| Calendars | caldav | The calendars to read, by name. Empty reads all of them |
-| Default calendar | caldav | Where new events go when a node doesn't say. Empty uses the first one |
-| iCal links | ics | One to five private iCal addresses. `webcal://` links work. Stored encrypted, like a password |
-| Feed names | ics | A name for each link, in the same order, such as `Work` or `Family`. Without one a link is called Calendar 1, Calendar 2, and so on |
+**Account** asks for your email and an app password:
 
-**Test** logs in to CalDAV and lists the calendars it finds ("Found 3 calendars: Home, Work, Family"), and checks that the calendars you named are there. For iCal links it fetches and parses each one ("142 events").
+- iCloud, Fastmail and Yahoo servers are known already, and the form links to where each makes app passwords.
+- For other domains, Sling looks up the domain's CalDAV server in DNS (`_caldavs._tcp`), the way calendar apps do. If there's none, a **Server** field shows up, such as `https://<your server>/remote.php/dav` for Nextcloud. A calendar's own URL works too, and then that's the only calendar.
+- Once the password works, your calendars show up as checkboxes, all ticked, and **New events go to** picks where nodes add events. A login that fails says so under the password.
 
-## iCloud
+**iCal link** takes one to five private addresses; `webcal://` links work. Each is named after the calendar it serves, and the form says if one can't be read.
 
-1. Sign in at [account.apple.com](https://account.apple.com), open **Sign-In and Security**, then **App-Specific Passwords**, and create one.
-2. Use server URL `https://caldav.icloud.com`, your Apple ID email as the username, and the app-specific password.
-
-## Fastmail
-
-1. In Fastmail, open **Settings**, **Privacy & Security**, and create an app password with CalDAV access.
-2. Use server URL `https://caldav.fastmail.com` and your Fastmail address.
+**Add** checks it all again before saving, and offers **Add anyway** if that fails.
 
 ## Nextcloud
 
-1. In Nextcloud, open **Personal settings**, **Security**, and create an app password.
-2. Use server URL `https://<your server>/remote.php/dav`.
+In Nextcloud, open **Personal settings**, **Security**, and make an app password. If the form can't find the server, use `https://<your server>/remote.php/dav`.
 
 ## Google Calendar and Outlook
 
@@ -46,7 +32,7 @@ These are read-only, from the calendar's private address:
 - **Google Calendar:** on the web, open **Settings**, pick the calendar under **Settings for my calendars**, then **Integrate calendar**, and copy **Secret address in iCal format**. Each calendar has its own address.
 - **Outlook:** open **Settings**, **Calendar**, **Shared calendars**, and under **Publish a calendar** pick the calendar and **Can view all details**. Copy the ICS link.
 
-Anyone who has the address can read the calendar, which is why Sling stores it with the credentials. If one leaks, reset it in Google or Outlook and paste the new one.
+Typing a Google or Outlook address under **Account** points you here. Anyone who has the address can read the calendar, which is why Sling stores it with the credentials. If one leaks, reset it in Google or Outlook and paste the new one.
 
 ## Time zones
 

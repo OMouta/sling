@@ -87,7 +87,7 @@ Everything else is a permission. The install dialog lists each one in plain word
 | Permission | Install dialog says | Grants |
 |---|---|---|
 | `network.hosts` | "Connect to ntfy.sh" | `fetch` and `WebSocket` to these hosts |
-| `network.configHosts` | "Connect to the host in each installation's "server" setting" | The host of the URL in these config fields, for every installation of the extension's connectors |
+| `network.configHosts` | "Connect to the address in its "server" setting" | The host of the URL in these config fields, for every installation of the extension's connectors |
 | `network.localNetwork` | "Connect to addresses on your local network, including this server" (high) | Loopback and private addresses, and plain `http` and `ws` to them |
 | `approvals` | "Approve or reject pending approvals, for people its installation allows" (high) | `approvals.decide` in event sources, as the Discord connector's buttons do |
 | `sandboxes` | "Start sandboxes, and receive each sandbox's secrets: API keys, the GitHub token, and its pairing code" (high) | Acting as a sandbox provider, see [providers.md](providers.md) |
