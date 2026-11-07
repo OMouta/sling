@@ -31,7 +31,7 @@ Live: 15 real chat turns, all on Claude Code with Haiku 5.5 or Codex with GPT-6-
 | `search_sources` over 50 sources of 300 pages, p95 | 32.6 ms |
 | Extra prompt for a personality with 50 sources | Under 3 KB, asserted |
 | Image shrinking | A 3200×2400 PNG to a 2048×1536 JPEG of 75 KB |
-| Web bundle growth, gzipped | About 14 KB across the four workstreams |
+| Web bundle growth, gzipped | 13.9 KB, from 459.7 to 473.6 KB for every JS and CSS file at `gzip -9` |
 
 Found and fixed during integration:
 - **Existing Research and Travel personalities** still said they couldn't look anything up. Migration `0014` swaps those lines where they're unchanged.
