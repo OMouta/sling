@@ -1,9 +1,9 @@
 /*
  * Sling's service worker. It shows push notifications, opens the right page
- * when one is tapped, and, when registered with ?cache=1 as production builds
- * do, starts the app from cache: built assets cache first, the app shell
- * stale while it revalidates. The API, the socket, and Vite's dev server are
- * never cached.
+ * when one is tapped, and answers Allow and Deny on the ones that have them.
+ * When registered with ?cache=1, as production builds do, it starts the app
+ * from cache: built assets cache first, the app shell stale while it
+ * revalidates. The API, the socket, and Vite's dev server are never cached.
  */
 
 const params = new URL(self.location.href).searchParams;
@@ -12,6 +12,8 @@ const CACHING = params.get("cache") === "1";
 const BUILD = params.get("v") || "dev";
 const SHELL = "sling-shell";
 const ASSETS = "sling-assets-";
+const ICON = "/icons/icon-192.png";
+const BADGE = "/icons/badge-96.png";
 /** Paths that always go to the network: the API, the Runner, hooks, installers, and Vite's dev paths. */
 const NEVER = /^\/(api|runner|hooks|healthz|install\.(sh|ps1)|@|src\/|node_modules\/|__)/;
 
@@ -87,12 +89,24 @@ self.addEventListener("push", (event) => {
   const text = (v) => (typeof v === "string" ? v : "");
   const tag = text(p.tag);
   const url = text(p.url).startsWith("/") ? p.url : "/";
+  const a = p.answer;
+  const answer =
+    a && text(a.approvalId) && text(a.token) ? { id: a.approvalId, token: a.token } : null;
   event.waitUntil(
     self.registration.showNotification(text(p.title) || "Sling", {
       body: text(p.body),
-      icon: "/icons/icon-192.png",
-      badge: "/icons/badge-96.png",
-      data: { url },
+      icon: ICON,
+      badge: BADGE,
+      data: { url, answer },
+      // Only a send, or a task's push and PR, comes with a token to answer it.
+      ...(answer
+        ? {
+            actions: [
+              { action: "allow", title: "Allow" },
+              { action: "deny", title: "Deny" },
+            ],
+          }
+        : {}),
       // A newer push about the same approval, task, or chat replaces the
       // older one, and still alerts, since it says something new.
       ...(tag ? { tag, renotify: true } : {}),
@@ -100,9 +114,48 @@ self.addEventListener("push", (event) => {
   );
 });
 
+const OUTCOMES = {
+  allowed: "Allowed",
+  denied: "Denied",
+  already_answered: "Already answered",
+  expired: "Expired",
+};
+
+/** Posts the answer, then shows how it went in the question's place. A tap on that opens the page. */
+async function sendAnswer(n, choice) {
+  const { url, answer: a } = n.data;
+  let title = "Couldn't answer";
+  try {
+    const res = await fetch(`/api/approvals/${encodeURIComponent(a.id)}/notification-answer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: a.token, answer: choice }),
+      // The token is the only credential it needs.
+      credentials: "omit",
+    });
+    if (res.ok) title = OUTCOMES[(await res.json()).outcome] || title;
+  } catch {
+    // Offline, or the server is down. The tap still opens Sling.
+  }
+  if (!n.tag) n.close();
+  await self.registration.showNotification(title, {
+    body: n.body,
+    icon: ICON,
+    badge: BADGE,
+    data: { url },
+    silent: true,
+    ...(n.tag ? { tag: n.tag } : {}),
+  });
+}
+
 self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const url = event.notification.data?.url || "/";
+  const n = event.notification;
+  if ((event.action === "allow" || event.action === "deny") && n.data?.answer) {
+    event.waitUntil(sendAnswer(n, event.action));
+    return;
+  }
+  n.close();
+  const url = n.data?.url || "/";
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
