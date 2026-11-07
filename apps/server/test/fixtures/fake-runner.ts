@@ -22,6 +22,7 @@ import {
   authPayload,
   type ChatEventSchema,
   type ChatTurn,
+  CiCheckSchema,
   create,
   decodeEnvelope,
   type Envelope,
@@ -91,6 +92,8 @@ export interface FakeRunnerOptions {
   prUrl?: (taskId: string) => string;
   /** False leaves every RepoAction unanswered, as a machine that went quiet. */
   answerRepoActions?: boolean;
+  /** What `gh pr checks` says about a PR here. Without it, the machine can't read CI. */
+  ci?: (prUrl: string) => { checks: { name: string; bucket: string }[] } | { error: string };
 }
 
 /** What a task does: finish with a commit, fail, or wait to be cancelled. */
@@ -511,7 +514,10 @@ export class FakeRunner {
     return git(wt, "rev-parse", "HEAD");
   }
 
-  #result(r: Omit<RepoActionResult, "$typeName" | "$unknown">) {
+  #result(
+    r: Omit<RepoActionResult, "$typeName" | "$unknown" | "ciChecks"> &
+      Partial<Pick<RepoActionResult, "ciChecks">>,
+  ) {
     const value = create(RepoActionResultSchema, r);
     this.unacked.set(r.requestId, value);
     if (this.holdNextResult) {
@@ -528,6 +534,24 @@ export class FakeRunner {
       this.#result({ ...base, outcome: RepoActionResult_Outcome.REFUSED, message });
     const repo = this.options.repos.find((r) => r.name === a.repo);
     if (!repo) return refuse(`No repo named ${a.repo} on this machine.`);
+    if (a.kind === RepoAction_Kind.CI) {
+      // Reading CI changes nothing, so deploys off doesn't refuse it.
+      const ci = this.options.ci?.(a.prUrl);
+      if (!ci) return refuse("Unknown repo action.");
+      if ("error" in ci) {
+        return this.#result({
+          ...base,
+          outcome: RepoActionResult_Outcome.FAILED,
+          message: ci.error,
+        });
+      }
+      return this.#result({
+        ...base,
+        outcome: RepoActionResult_Outcome.SUCCEEDED,
+        message: "",
+        ciChecks: ci.checks.map((c) => create(CiCheckSchema, c)),
+      });
+    }
     if (this.options.deploys === false) {
       return refuse("Merges and deploys are off on this machine (deploys off).");
     }

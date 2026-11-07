@@ -68,6 +68,8 @@ const BENCH_REMOTE = "https://git.sling.invalid/acme/bench.git";
 const BENCH_KEY = "git.sling.invalid/acme/bench";
 /** A sandbox repo whose PRs live on the fake GitHub. */
 const APP_KEY = "github.com/acme/app";
+/** The commit the sandbox's PR is at, as the fake GitHub has it. */
+const PR_HEAD = "1111111111111111111111111111111111111111";
 
 // ---------------------------------------------------------------- mock model
 
@@ -592,10 +594,24 @@ async function githubHandler(req: IncomingMessage, res: ServerResponse) {
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify(value));
   };
+  const authorized = req.headers.authorization === `Bearer ${GIT_TOKEN}`;
+  // The PR's CI: one check that passed, on the commit the PR is at.
+  const ci = /^\/repos\/acme\/app\/commits\/(\w+)\/(check-runs|status)(\?.*)?$/.exec(req.url ?? "");
+  if (ci) {
+    if (!authorized) return json(401, { message: "Bad credentials" });
+    if (ci[1] !== PR_HEAD) return json(404, { message: "Not Found" });
+    return ci[2] === "status"
+      ? json(200, { state: "success", statuses: [] })
+      : json(200, { check_runs: [{ name: "test", status: "completed", conclusion: "success" }] });
+  }
   const m = /^\/repos\/acme\/app\/pulls\/(\d+)(\/merge)?$/.exec(req.url ?? "");
   const pr = m ? github.pulls.get(Number(m[1])) : undefined;
+  // GitHub knows the PR as soon as it's open; the test learns its branch later.
+  if (m && !m[2] && !pr && m[1] === "7" && authorized) {
+    return json(200, { state: "open", merged: false, head: { ref: "", sha: PR_HEAD }, base: { ref: "main" } });
+  }
   if (!m || !pr) return json(404, { message: "Not Found" });
-  if (req.headers.authorization !== `Bearer ${GIT_TOKEN}`) {
+  if (!authorized) {
     return json(401, { message: "Bad credentials" });
   }
   if (!m[2]) {
@@ -603,7 +619,7 @@ async function githubHandler(req: IncomingMessage, res: ServerResponse) {
       state: pr.merged ? "closed" : "open",
       merged: pr.merged,
       merge_commit_sha: pr.sha,
-      head: { ref: pr.head },
+      head: { ref: pr.head, sha: PR_HEAD },
       base: { ref: "main" },
     });
   }
@@ -1344,6 +1360,11 @@ describe("sandbox tasks", () => {
       message: "Merged on GitHub (squash).",
     });
     expect(step(done, "verify")).toMatchObject({ state: "succeeded" });
+    // The PR's CI, read through GitHub's API since the sandbox is gone, shows on its step.
+    expect(step(done, "open_pr")?.check).toMatchObject({
+      state: "passed",
+      message: "CI passed: 1 check",
+    });
     expect(github.merges).toEqual([
       {
         path: "/repos/acme/app/pulls/7/merge",
@@ -1357,15 +1378,18 @@ describe("sandbox tasks", () => {
 // ---------------------------------------------------------------- the alert
 
 describe("the Site down alert", () => {
-  it("installs, validates, and pushes when a target goes down and comes back", async () => {
+  it("installs, validates, and pushes once when a site check goes down and comes back", async () => {
     const wf = await api<{ id: string; activeVersion: number }>("POST", "/api/workflows", {
       templateKey: "site-down-alert",
     });
     expect(wf.activeVersion).toBe(1);
     expect(await api("POST", `/api/workflows/${wf.id}/validate`)).toEqual({ issues: [] });
+    await api("PATCH", `/api/workflows/${wf.id}`, { enabled: true });
 
-    const notified: { payload: { title: string; body: string; url: string }; urgency?: string }[] =
-      [];
+    const notified: {
+      payload: { title: string; body: string; url: string; tag: string };
+      urgency?: string;
+    }[] = [];
     const notify = server.ctx.push.notify;
     server.ctx.push.notify = async (_w, _u, payload, opts = {}) => {
       notified.push({ payload, ...(opts.urgency ? { urgency: opts.urgency } : {}) });
@@ -1376,38 +1400,24 @@ describe("the Site down alert", () => {
     await api("PATCH", `/api/deploy-targets/${website.id}`, {
       checks: [{ url: `${site.url}/status` }],
     });
+    const runs = async () =>
+      (
+        await server.ctx.db
+          .select({ status: schema.workflowRuns.status })
+          .from(schema.workflowRuns)
+          .where(eq(schema.workflowRuns.workflowId, wf.id))
+      ).filter((r) => r.status === "succeeded").length;
     try {
-      const [row] = await server.ctx.db
-        .select()
-        .from(schema.workflows)
-        .where(eq(schema.workflows.id, wf.id));
-      const run = async () => {
-        if (!row?.activeVersionId) throw new Error("no version");
-        const r = await server.ctx.engine.startRun({
-          workflowId: wf.id,
-          workspaceId: row.workspaceId,
-          ownerId: row.ownerId,
-          versionId: row.activeVersionId,
-          triggerNodeId: "everyMinute",
-          outputs: { firedAt: new Date().toISOString() },
-        });
-        await until("run finished", async () => {
-          const [x] = await server.ctx.db
-            .select({ status: schema.workflowRuns.status })
-            .from(schema.workflowRuns)
-            .where(eq(schema.workflowRuns.id, r?.id ?? ""));
-          if (x?.status === "failed") throw new Error("the run failed");
-          return x?.status === "succeeded";
-        });
-      };
-      await run();
+      await check();
       expect(notified).toEqual([]);
 
       site.statusDown = true;
-      await run();
+      await check();
       expect(notified).toEqual([]);
-      await run();
-      expect(notified).toHaveLength(1);
+      // The second failure in a row is down: the workflow runs and pushes, and Sling doesn't push too.
+      await check();
+      await until("the alert workflow ran", async () => (await runs()) === 1);
+      await until("pushed", async () => notified.length === 1);
       const down = notified[0];
       expect(down?.urgency).toBe("high");
       expect(down?.payload.title).toBe("Website is down: 503");
@@ -1417,20 +1427,36 @@ describe("the Site down alert", () => {
       expect(url.searchParams.get("draft")).toMatch(
         /^Website is down \(503 since \d\d:\d\d\)\. Find out why and fix it\.$/,
       );
-      await run();
-      expect(notified).toHaveLength(1);
+      await check();
+      expect(await runs()).toBe(1);
 
       site.statusDown = false;
-      await run();
-      expect(notified).toHaveLength(2);
-      expect(notified[1]?.payload).toMatchObject({ title: "Website is back up", url: "/deploys" });
+      await check();
+      await until("pushed again", async () => notified.length === 2);
+      expect(notified[1]?.payload).toMatchObject({ title: "Website is back up", url: "/checks" });
       expect(notified[1]?.urgency).toBe("normal");
+
+      // With the workflow off, the check pushes for itself.
+      await api("PATCH", `/api/workflows/${wf.id}`, { enabled: false });
+      site.statusDown = true;
+      await check();
+      await check();
+      await until("Sling's own push", async () => notified.length === 3);
+      expect(notified[2]?.payload).toMatchObject({
+        title: "Website is down: 503",
+        tag: expect.stringMatching(/^check:chk_/),
+      });
     } finally {
       site.statusDown = false;
+      await check().catch(() => {});
       server.ctx.push.notify = notify;
       await api("PATCH", `/api/deploy-targets/${website.id}`, {
         checks: [{ url: `${site.url}/health` }],
       });
+    }
+
+    async function check() {
+      return api<DeployTargetView>("POST", `/api/deploy-targets/${website.id}/check`);
     }
   });
 });

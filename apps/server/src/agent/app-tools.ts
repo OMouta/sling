@@ -18,6 +18,7 @@ import { type Tool, tool } from "ai";
 import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { audit } from "../audit.ts";
+import { checkToolCall } from "../checks/actions.ts";
 import type { AppContext } from "../context.ts";
 import { type RuleSubject, ruleAnswer } from "../rules/answer.ts";
 import { workspaceTimeZone } from "../timezone.ts";
@@ -519,10 +520,19 @@ function connectorAction(
         details,
       });
       if (!result.ok) return { installation: chosen.name, error: result.error };
+      const check = await checkToolCall(ctx, scope, options.toolCallId, {
+        spec,
+        installationId: chosen.id,
+        config: settings,
+        inputs,
+        outputs: result.outputs,
+        summary,
+      });
       return {
         installation: chosen.name,
         ...(result.exec !== "next" ? { outcome: result.exec } : {}),
         output: result.outputs,
+        ...(check ? { check } : {}),
       };
     },
   });

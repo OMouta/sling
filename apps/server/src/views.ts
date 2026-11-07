@@ -1,4 +1,5 @@
 import type {
+  ActionCheckView,
   ActionView,
   ApprovalView,
   ConversationView,
@@ -13,6 +14,7 @@ import type {
 import { isHarness, remoteKey } from "@sling/core";
 import { schema } from "@sling/db";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { actionCheckViews } from "./checks/action-views.ts";
 import type { AppContext } from "./context.ts";
 import { stepRuleOffer } from "./rules/steps.ts";
 import { effectiveLabels } from "./runners/labels.ts";
@@ -102,6 +104,8 @@ export async function runnerView(ctx: AppContext, runnerId: string): Promise<Run
 export interface ActionNames {
   targetName?: string | null;
   runnerName?: string | null;
+  /** What checks the step, such as a PR's CI. */
+  check?: ActionCheckView | null;
 }
 
 export function toActionView(
@@ -126,6 +130,7 @@ export function toActionView(
     commitSha: a.commitSha,
     output: a.output,
     verify: a.detail ?? null,
+    ...(names.check ? { check: names.check } : {}),
   };
 }
 
@@ -151,7 +156,7 @@ async function actionsFor(ctx: AppContext, taskIds: string[]): Promise<Map<strin
   const approvalByAction = new Map(approvals.map((a) => [a.actionId, a.id]));
   const targetIds = [...new Set(rows.flatMap((r) => (r.targetId ? [r.targetId] : [])))];
   const runnerIds = [...new Set(rows.flatMap((r) => (r.runnerId ? [r.runnerId] : [])))];
-  const [targets, runners] = await Promise.all([
+  const [targets, runners, checks] = await Promise.all([
     targetIds.length
       ? ctx.db
           .select({ id: schema.deployTargets.id, name: schema.deployTargets.name })
@@ -164,6 +169,10 @@ async function actionsFor(ctx: AppContext, taskIds: string[]): Promise<Map<strin
           .from(schema.runners)
           .where(inArray(schema.runners.id, runnerIds))
       : [],
+    actionCheckViews(
+      ctx,
+      rows.filter((r) => r.kind === "open_pr").map((r) => r.id),
+    ),
   ]);
   const targetName = new Map(targets.map((t) => [t.id, t.name]));
   const runnerName = new Map(runners.map((r) => [r.id, r.name]));
@@ -173,6 +182,7 @@ async function actionsFor(ctx: AppContext, taskIds: string[]): Promise<Map<strin
       toActionView(row, approvalByAction.get(row.id) ?? null, {
         targetName: row.targetId ? (targetName.get(row.targetId) ?? null) : null,
         runnerName: row.runnerId ? (runnerName.get(row.runnerId) ?? null) : null,
+        check: checks.get(row.id) ?? null,
       }),
     );
     out.set(row.taskId, list);

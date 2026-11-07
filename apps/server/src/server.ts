@@ -162,7 +162,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     await ctx.workflows.ensureBuiltIns();
     await ctx.engine.start(boss, { concurrency: opts.runConcurrency ?? 10 });
     await ctx.deploys.start(boss);
-    await ctx.checks.start(boss);
+    await ctx.checks.start(boss, { schedules: opts.jobs !== false });
 
     await registerRoutes(app, ctx);
     await app.listen({ host: config.host, port: config.port });

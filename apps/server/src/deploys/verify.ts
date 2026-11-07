@@ -3,6 +3,7 @@ import { schema } from "@sling/db";
 import { and, eq, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import { audit } from "../audit.ts";
+import { siteMessage } from "../checks/state.ts";
 import type { AppContext } from "../context.ts";
 import { describeResult, probe, runChecks, showsCommit, statusMatches } from "./checks.ts";
 import type { DeployService, TargetRow } from "./service.ts";
@@ -77,7 +78,7 @@ export function afterRound(opts: {
 
 /** One round: every check and the version URL, all at once. */
 export async function verifyRound(
-  target: Pick<TargetRow, "checks" | "versionUrl">,
+  target: { checks: TargetRow["checks"]; versionUrl: string | null },
   sha: string,
 ): Promise<Round> {
   const [checks, version] = await Promise.all([
@@ -197,7 +198,7 @@ export class Verifier {
       return;
     }
     const roundStartedAt = Date.now();
-    const round = await verifyRound(target, sha);
+    const round = await verifyRound(await this.#targets.site(target), sha);
     const now = Date.now();
     const next = afterRound({
       passed: roundPassed(round),
@@ -215,6 +216,14 @@ export class Verifier {
     };
     if (next.kind !== "again") {
       const passed = next.kind === "passed";
+      // Verify ran the site's check, so its last round is the check's latest run.
+      await this.#ctx.checks.recordVerify(target.checkId, {
+        passed: round.checks.every((c) => c.ok),
+        counted: true,
+        message: siteMessage(round.checks, round.versionSeen),
+        ms: Math.max(0, ...round.checks.map((c) => c.ms)),
+        detail: { kind: "site", checks: round.checks, versionSeen: round.versionSeen },
+      });
       await this.#finish(action, passed, detail, verifyMessage(detail, passed, sha));
       return;
     }

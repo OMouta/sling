@@ -2,10 +2,12 @@ import {
   type ActionState,
   DEPLOY_METHODS,
   type DeployCheck,
+  type DeployMethod,
   type DeployTargetView,
   MERGE_METHODS,
+  type MergeMethod,
   newId,
-  type VerifyDetail,
+  type SiteCheckConfig,
 } from "@sling/core";
 import { type DeployHook, type DeployLastCheck, schema } from "@sling/db";
 import type { RepoActionOutput, RepoActionResult } from "@sling/runner-protocol";
@@ -13,16 +15,17 @@ import { and, asc, desc, eq, inArray, isNull, notInArray, or, sql } from "drizzl
 import type { PgBoss } from "pg-boss";
 import { z } from "zod";
 import { audit } from "../audit.ts";
+import { ciAnswer } from "../checks/ci.ts";
 import type { AppContext } from "../context.ts";
 import { decryptSecret, encryptSecret, SECRET_KEY_VERSION } from "../crypto.ts";
 import type { Actor } from "../http/session.ts";
 import { keyFromInput } from "../routing/router.ts";
 import type { RunnerSession } from "../runners/gateway.ts";
-import { runChecks } from "./checks.ts";
 import { DeploySteps } from "./steps.ts";
 import { Verifier } from "./verify.ts";
 
 export type TargetRow = typeof schema.deployTargets.$inferSelect;
+type CheckRow = typeof schema.checks.$inferSelect;
 type TaskRow = typeof schema.tasks.$inferSelect;
 type ActionRow = typeof schema.actions.$inferSelect;
 
@@ -136,31 +139,11 @@ function mergeHook(
   return out;
 }
 
-function lastCheckView(c: DeployLastCheck | null): DeployTargetView["lastCheck"] {
-  return c ? { at: c.at, up: c.up, failures: c.failures, results: c.results } : null;
-}
-
-/**
- * What the target looked like most recently: its own last check, or a verify
- * that finished after it. Verify doesn't write `lastCheck`, which the site
- * down alert compares against, but the page shouldn't show a result older
- * than the one verify just saw.
- */
-function newestCheck(
-  c: DeployLastCheck | null,
-  d: { kind: string; state: string; detail: VerifyDetail | null } | undefined,
-): DeployTargetView["lastCheck"] {
-  const v = d?.kind === "verify" ? d.detail : null;
-  if (!v?.finishedAt || v.checks.length === 0 || (c && c.at >= v.finishedAt)) {
-    return lastCheckView(c);
-  }
-  const up = d?.state === "succeeded";
-  return {
-    at: v.finishedAt,
-    up,
-    failures: up ? 0 : Math.max(1, c?.failures ?? 0),
-    results: v.checks,
-  };
+/** What a target's site check saw last, as the deploy target view shows it. */
+function lastCheckOf(c: CheckRow | undefined): DeployTargetView["lastCheck"] {
+  const r = c?.lastResult;
+  if (!c || !r || r.detail.kind !== "site") return null;
+  return { at: r.at, up: r.passed, failures: c.failures, results: r.detail.checks };
 }
 
 function isUniqueViolation(err: unknown): boolean {
@@ -213,8 +196,9 @@ export class DeployService {
     return this.steps.output(session, out);
   }
 
-  /** A machine's answer to a merge or deploy. */
-  repoActionResult(session: RunnerSession, result: RepoActionResult): Promise<void> {
+  /** A machine's answer to a merge or deploy, or to a read of a PR's CI. */
+  async repoActionResult(session: RunnerSession, result: RepoActionResult): Promise<void> {
+    if (ciAnswer(session, result)) return;
     return this.steps.result(session, result);
   }
 
@@ -294,11 +278,16 @@ export class DeployService {
     return view ?? null;
   }
 
-  /** Views for several targets, with three queries whatever their number. */
-  async views(rows: TargetRow[]): Promise<DeployTargetView[]> {
+  /**
+   * Views for several targets, with a few queries whatever their number. Their
+   * URLs and last check come from their site checks, which callers that have
+   * them pass in.
+   */
+  async views(rows: TargetRow[], checks?: Map<string, CheckRow>): Promise<DeployTargetView[]> {
     if (rows.length === 0) return [];
     const runnerIds = [...new Set(rows.flatMap((r) => (r.runnerId ? [r.runnerId] : [])))];
-    const [runners, deploys] = await Promise.all([
+    const missing = rows.flatMap((r) => (r.checkId && !checks?.has(r.checkId) ? [r.checkId] : []));
+    const [runners, deploys, loaded] = await Promise.all([
       runnerIds.length
         ? this.#db
             .select({
@@ -321,8 +310,6 @@ export class DeployService {
           taskTitle: schema.tasks.title,
           commitSha: schema.actions.commitSha,
           state: schema.actions.state,
-          kind: schema.actions.kind,
-          detail: schema.actions.detail,
           finishedAt: schema.actions.finishedAt,
           sentAt: schema.actions.sentAt,
           createdAt: schema.actions.createdAt,
@@ -343,11 +330,18 @@ export class DeployService {
           desc(schema.actions.createdAt),
           desc(schema.actions.position),
         ),
+      missing.length
+        ? this.#db.select().from(schema.checks).where(inArray(schema.checks.id, missing))
+        : [],
     ]);
+    const checkOf = new Map(checks);
+    for (const c of loaded) checkOf.set(c.id, c);
     const lastDeploy = new Map(deploys.map((d) => [d.targetId, d]));
     return rows.map((t) => {
       const machine = runners.filter((r) => r.id === t.runnerId);
       const d = lastDeploy.get(t.id);
+      const check = t.checkId ? checkOf.get(t.checkId) : undefined;
+      const site = check?.config.kind === "site" ? check.config : null;
       return {
         id: t.id,
         name: t.name,
@@ -368,11 +362,11 @@ export class DeployService {
                 hasHeader: t.hookHasHeader,
               }
             : null,
-        checks: t.checks,
-        versionUrl: t.versionUrl,
+        checks: site?.checks ?? t.checks,
+        versionUrl: site ? site.versionUrl : t.versionUrl,
         settleSeconds: t.settleSeconds,
         timeoutSeconds: t.timeoutSeconds,
-        lastCheck: newestCheck(t.lastCheck, d),
+        lastCheck: lastCheckOf(check),
         lastDeploy: d
           ? {
               taskId: d.taskId,
@@ -513,9 +507,20 @@ export class DeployService {
     return remote;
   }
 
-  async create(actor: Actor, input: TargetInput): Promise<DeployTargetView> {
+  /**
+   * Gives a site check a deploy: a target row for the repo, pointing at the
+   * check, with a copy of its URLs. Throws DeployInputError for one that
+   * can't exist.
+   */
+  async attach(
+    actor: Actor,
+    checkId: string,
+    name: string,
+    site: SiteCheckConfig,
+    input: DeployFields,
+  ): Promise<TargetRow> {
     const remote = this.#remote(input.remoteKey);
-    await this.#checkUnique(actor.workspaceId, input.name, remote);
+    await this.#checkUnique(actor.workspaceId, name, remote);
     if (input.method === "command") await this.#checkRunner(actor.workspaceId, input.runnerId);
     let hook: DeployHook | null = null;
     if (input.method === "hook") {
@@ -528,25 +533,31 @@ export class DeployService {
     const credentialId = hook
       ? await this.#writeHook({ workspaceId: actor.workspaceId, ownerId: actor.userId }, null, hook)
       : null;
+    let row: TargetRow | undefined;
     try {
-      await this.#db.insert(schema.deployTargets).values({
-        id,
-        workspaceId: actor.workspaceId,
-        ownerId: actor.userId,
-        name: input.name,
-        remoteKey: remote,
-        method: input.method,
-        mergeMethod: input.mergeMethod ?? "squash",
-        runnerId: input.method === "command" ? (input.runnerId ?? null) : null,
-        hookCredentialId: credentialId,
-        hookHost: hook ? new URL(hook.url).host : null,
-        hookMethod: hook?.httpMethod ?? null,
-        hookHasHeader: Boolean(hook?.headerName),
-        checks: normalizeChecks(input.checks),
-        versionUrl: input.versionUrl ?? null,
-        settleSeconds: input.settleSeconds ?? (input.method === "merge" ? MERGE_SETTLE_SECONDS : 0),
-        timeoutSeconds: input.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS,
-      });
+      [row] = await this.#db
+        .insert(schema.deployTargets)
+        .values({
+          id,
+          workspaceId: actor.workspaceId,
+          ownerId: actor.userId,
+          name,
+          remoteKey: remote,
+          method: input.method,
+          mergeMethod: input.mergeMethod ?? "squash",
+          runnerId: input.method === "command" ? (input.runnerId ?? null) : null,
+          hookCredentialId: credentialId,
+          hookHost: hook ? new URL(hook.url).host : null,
+          hookMethod: hook?.httpMethod ?? null,
+          hookHasHeader: Boolean(hook?.headerName),
+          checkId,
+          checks: site.checks,
+          versionUrl: site.versionUrl,
+          settleSeconds:
+            input.settleSeconds ?? (input.method === "merge" ? MERGE_SETTLE_SECONDS : 0),
+          timeoutSeconds: input.timeoutSeconds ?? DEFAULT_TIMEOUT_SECONDS,
+        })
+        .returning();
     } catch (err) {
       await this.#dropHook(credentialId);
       if (isUniqueViolation(err)) {
@@ -554,6 +565,7 @@ export class DeployService {
       }
       throw err;
     }
+    if (!row) throw new Error("deploy target not saved");
     await audit(this.#ctx, {
       workspaceId: actor.workspaceId,
       actorType: "user",
@@ -561,18 +573,19 @@ export class DeployService {
       verb: "deploy_target.created",
       subjectType: "deploy_target",
       subjectId: id,
-      details: { name: input.name, remoteKey: remote, method: input.method },
+      details: { name, remoteKey: remote, method: input.method, checkId },
     });
-    const view = await this.view(actor.workspaceId, id);
-    if (!view) throw new Error("deploy target vanished");
-    this.#ctx.hub.publish(actor.workspaceId, { type: "deploy_target.updated", target: view });
-    return view;
+    return row;
   }
 
-  async update(actor: Actor, id: string, patch: TargetPatch): Promise<DeployTargetView> {
-    const row = await this.row(actor.workspaceId, id);
-    if (!row) throw new DeployInputError("No such deploy target.", 404);
-    const name = patch.name ?? row.name;
+  /** Changes how a site check deploys. Parts the patch leaves out stay. */
+  async patchDeploy(
+    actor: Actor,
+    row: TargetRow,
+    name: string,
+    site: SiteCheckConfig,
+    patch: Partial<DeployFields>,
+  ): Promise<TargetRow> {
     const remote = patch.remoteKey !== undefined ? this.#remote(patch.remoteKey) : row.remoteKey;
     if (name !== row.name || remote !== row.remoteKey) {
       await this.#checkUnique(actor.workspaceId, name, remote, row.id);
@@ -612,12 +625,11 @@ export class DeployService {
         hookHasHeader: false,
       };
     }
-
-    const changed: string[] = Object.keys(patch).filter(
-      (k) => patch[k as keyof TargetPatch] !== undefined,
-    );
+    const changed = Object.keys(patch).filter((k) => patch[k as keyof DeployFields] !== undefined);
+    if (name !== row.name) changed.unshift("name");
+    let saved: TargetRow | undefined;
     try {
-      await this.#db
+      [saved] = await this.#db
         .update(schema.deployTargets)
         .set({
           name,
@@ -625,15 +637,14 @@ export class DeployService {
           method,
           runnerId,
           ...hookFields,
+          checks: site.checks,
+          versionUrl: site.versionUrl,
           ...(patch.mergeMethod ? { mergeMethod: patch.mergeMethod } : {}),
-          ...(patch.checks ? { checks: normalizeChecks(patch.checks) } : {}),
-          ...(patch.versionUrl !== undefined ? { versionUrl: patch.versionUrl } : {}),
           ...(patch.settleSeconds !== undefined ? { settleSeconds: patch.settleSeconds } : {}),
           ...(patch.timeoutSeconds !== undefined ? { timeoutSeconds: patch.timeoutSeconds } : {}),
-          // A different repo or different checks make the last check meaningless.
-          ...(patch.checks || remote !== row.remoteKey ? { lastCheck: null } : {}),
         })
-        .where(eq(schema.deployTargets.id, row.id));
+        .where(eq(schema.deployTargets.id, row.id))
+        .returning();
     } catch (err) {
       if (isUniqueViolation(err)) {
         throw new DeployInputError("A deploy target with that name or repo already exists.", 409);
@@ -650,77 +661,163 @@ export class DeployService {
       subjectId: row.id,
       details: { name, remoteKey: remote, method, changed },
     });
-    const view = await this.view(actor.workspaceId, row.id);
-    if (!view) throw new Error("deploy target vanished");
-    this.#ctx.hub.publish(actor.workspaceId, { type: "deploy_target.updated", target: view });
-    return view;
+    return saved ?? row;
   }
 
-  async remove(actor: Actor, id: string): Promise<boolean> {
-    const [row] = await this.#db
+  /** Keeps a target's name and its copy of the URLs in step with its check. */
+  async syncFromCheck(row: TargetRow, name: string, site: SiteCheckConfig): Promise<void> {
+    if (name !== row.name) await this.#checkUnique(row.workspaceId, name, row.remoteKey, row.id);
+    await this.#db
+      .update(schema.deployTargets)
+      .set({ name, checks: site.checks, versionUrl: site.versionUrl })
+      .where(eq(schema.deployTargets.id, row.id));
+  }
+
+  /** Stops a site check deploying: its target and the hook's secret go. */
+  async detach(actor: Actor, row: TargetRow): Promise<void> {
+    const [gone] = await this.#db
       .delete(schema.deployTargets)
-      .where(
-        and(
-          eq(schema.deployTargets.id, id),
-          eq(schema.deployTargets.workspaceId, actor.workspaceId),
-        ),
-      )
+      .where(eq(schema.deployTargets.id, row.id))
       .returning();
-    if (!row) return false;
-    await this.#dropHook(row.hookCredentialId);
+    if (!gone) return;
+    await this.#dropHook(gone.hookCredentialId);
     await audit(this.#ctx, {
       workspaceId: actor.workspaceId,
       actorType: "user",
       actorId: actor.userId,
       verb: "deploy_target.removed",
       subjectType: "deploy_target",
-      subjectId: row.id,
-      details: { name: row.name, remoteKey: row.remoteKey, method: row.method },
+      subjectId: gone.id,
+      details: { name: gone.name, remoteKey: gone.remoteKey, method: gone.method },
     });
-    this.#ctx.hub.publish(actor.workspaceId, { type: "deploy_target.removed", id: row.id });
+    this.#ctx.hub.publish(actor.workspaceId, { type: "deploy_target.removed", id: gone.id });
+  }
+
+  // ------------------------------------------------------------- the old API, on checks
+
+  /** Adds a target: a site check with its URLs, that deploys the repo. */
+  async create(actor: Actor, input: TargetInput): Promise<DeployTargetView> {
+    const check = await this.#ctx.checks.create(actor, {
+      name: input.name,
+      config: {
+        kind: "site",
+        checks: normalizeChecks(input.checks),
+        versionUrl: input.versionUrl ?? null,
+      },
+      deploy: deployFields(input),
+    });
+    if (!check.deploy) throw new Error("deploy target vanished");
+    const view = await this.view(actor.workspaceId, check.deploy.id);
+    if (!view) throw new Error("deploy target vanished");
+    return view;
+  }
+
+  async update(actor: Actor, id: string, patch: TargetPatch): Promise<DeployTargetView> {
+    const row = await this.row(actor.workspaceId, id);
+    if (!row?.checkId) throw new DeployInputError("No such deploy target.", 404);
+    const check = await this.#ctx.checks.row(actor.workspaceId, row.checkId);
+    if (check?.config.kind !== "site") throw new DeployInputError("No such deploy target.", 404);
+    const site: SiteCheckConfig = {
+      kind: "site",
+      checks: patch.checks ? normalizeChecks(patch.checks) : check.config.checks,
+      versionUrl: patch.versionUrl !== undefined ? patch.versionUrl : check.config.versionUrl,
+    };
+    const name = patch.name ?? row.name;
+    // The deploy part first, which says what it refuses about the name and repo.
+    const saved = await this.patchDeploy(actor, row, name, site, deployFields(patch));
+    if (name !== check.name || patch.checks || patch.versionUrl !== undefined) {
+      await this.#ctx.checks.update(actor, check.id, {
+        name,
+        ...(patch.checks || patch.versionUrl !== undefined ? { config: site } : {}),
+      });
+    } else {
+      await this.publish(saved.id);
+    }
+    const view = await this.view(actor.workspaceId, row.id);
+    if (!view) throw new Error("deploy target vanished");
+    return view;
+  }
+
+  /** Removes a target and the site check it deploys through. */
+  async remove(actor: Actor, id: string): Promise<boolean> {
+    const row = await this.row(actor.workspaceId, id);
+    if (!row) return false;
+    if (row.checkId) return this.#ctx.checks.remove(actor, row.checkId);
+    await this.detach(actor, row);
     return true;
   }
 
   // ------------------------------------------------------------- checks
 
+  /** The URLs and version URL a target's site check has now. */
+  async site(target: TargetRow): Promise<SiteCheckConfig> {
+    if (target.checkId) {
+      const [c] = await this.#db
+        .select({ config: schema.checks.config })
+        .from(schema.checks)
+        .where(eq(schema.checks.id, target.checkId));
+      if (c?.config.kind === "site") return c.config;
+    }
+    return { kind: "site", checks: target.checks, versionUrl: target.versionUrl };
+  }
+
   /**
-   * Runs a target's checks now and saves what they saw: up when every check
-   * passed, and how many checks in a row failed.
+   * Runs a target's site check now. What `deploys.check` reports as a change
+   * is against what it saw itself last time, which it keeps on the target.
    */
   async checkTarget(target: TargetRow): Promise<CheckOutcome> {
-    const results = await runChecks(target.checks);
-    const up = results.every((r) => r.ok);
-    return this.#db.transaction(async (tx) => {
-      const [current] = await tx
-        .select({ lastCheck: schema.deployTargets.lastCheck })
-        .from(schema.deployTargets)
-        .where(eq(schema.deployTargets.id, target.id))
-        .for("update");
-      const before = current?.lastCheck ?? null;
-      const at = new Date().toISOString();
-      const after: DeployLastCheck = {
-        at,
-        up,
-        failures: up ? 0 : (before?.failures ?? 0) + 1,
-        results,
-        since: before && before.up === up && before.since ? before.since : at,
-      };
-      await tx
-        .update(schema.deployTargets)
-        // A check isn't a change to the target, so updatedAt stays.
-        .set({ lastCheck: after, updatedAt: sql`${schema.deployTargets.updatedAt}` })
-        .where(eq(schema.deployTargets.id, target.id));
-      return { target: { ...target, lastCheck: after }, before, after };
-    });
+    const view = target.checkId
+      ? await this.#ctx.checks.run(target.workspaceId, target.checkId)
+      : null;
+    const result = view?.lastResult;
+    const at = result?.at ?? new Date().toISOString();
+    const results = result?.detail.kind === "site" ? result.detail.checks : [];
+    const after: DeployLastCheck = {
+      at,
+      up: result?.passed ?? false,
+      failures: view?.failures ?? 0,
+      results,
+      since: view?.stateSince ?? at,
+    };
+    const before = target.lastCheck;
+    await this.#db
+      .update(schema.deployTargets)
+      // A check isn't a change to the target, so updatedAt stays.
+      .set({ lastCheck: after, updatedAt: sql`${schema.deployTargets.updatedAt}` })
+      .where(eq(schema.deployTargets.id, target.id));
+    return { target: { ...target, lastCheck: after }, before, after };
   }
 
   /** Runs a target's checks now, saves what they saw, and returns the target. */
   async check(workspaceId: string, targetId: string): Promise<DeployTargetView | null> {
     const row = await this.row(workspaceId, targetId);
-    if (!row) return null;
-    const { target } = await this.checkTarget(row);
-    const [view] = await this.views([target]);
-    if (view) this.#ctx.hub.publish(workspaceId, { type: "deploy_target.updated", target: view });
-    return view ?? null;
+    if (!row?.checkId) return null;
+    await this.#ctx.checks.run(workspaceId, row.checkId);
+    return this.view(workspaceId, targetId);
   }
+}
+
+/** How a target deploys, as a site check's deploy section takes it. */
+export interface DeployFields {
+  remoteKey: string;
+  method: DeployMethod;
+  mergeMethod?: MergeMethod | undefined;
+  runnerId?: string | null | undefined;
+  hook?: z.infer<typeof HookInput> | null | undefined;
+  settleSeconds?: number | undefined;
+  timeoutSeconds?: number | undefined;
+}
+
+function deployFields(input: TargetInput): DeployFields;
+function deployFields(input: TargetPatch): Partial<DeployFields>;
+function deployFields(input: TargetPatch): Partial<DeployFields> {
+  const out: Partial<DeployFields> = {};
+  if (input.remoteKey !== undefined) out.remoteKey = input.remoteKey;
+  if (input.method !== undefined) out.method = input.method;
+  if (input.mergeMethod !== undefined) out.mergeMethod = input.mergeMethod;
+  if (input.runnerId !== undefined) out.runnerId = input.runnerId;
+  if (input.hook !== undefined) out.hook = input.hook;
+  if (input.settleSeconds !== undefined) out.settleSeconds = input.settleSeconds;
+  if (input.timeoutSeconds !== undefined) out.timeoutSeconds = input.timeoutSeconds;
+  return out;
 }

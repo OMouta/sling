@@ -58,7 +58,7 @@ export const deploysCheckNode = defineNode({
   type: "deploys.check",
   version: 1,
   title: "Check deploy targets",
-  description: `Runs the health checks of every deploy target, or of the one named, and saves what they saw. Outputs the targets whose state changed: down after ${DOWN_AFTER_FAILURES} failed checks in a row, back up after one pass.`,
+  description: `Runs the site check of every deploy target, or of the one named, now. Outputs the targets that went down or came back up since this step last ran: down after ${DOWN_AFTER_FAILURES} failed checks in a row, back up after one pass. Sling runs checks on its own, so a new workflow starts from Check changed instead.`,
   category: "action",
   configSchema: z.object({
     target: z

@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
+import { CheckInputError } from "../checks/service.ts";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import { DeployLaterError } from "../tasks/service.ts";
@@ -10,7 +11,9 @@ import { DeployInputError, TargetInput, TargetPatch } from "./service.ts";
 const Id = z.object({ id: z.string().min(1).max(100) });
 
 function sendError(reply: FastifyReply, err: unknown) {
-  if (err instanceof DeployInputError) return reply.code(err.status).send({ error: err.message });
+  if (err instanceof DeployInputError || err instanceof CheckInputError) {
+    return reply.code(err.status).send({ error: err.message });
+  }
   throw err;
 }
 
