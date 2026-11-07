@@ -65,6 +65,7 @@ export class TraceRecorder {
   readonly #conversationId: string;
   /** Text since the last step: the answer, unless more work follows it. */
   #text = "";
+  #finished = false;
   /** Changes to tool calls that haven't been recorded yet. */
   readonly #early = new Map<string, Partial<ToolStep>>();
 
@@ -113,7 +114,7 @@ export class TraceRecorder {
    * or when a tool drops a value from its recorded input. A tool can start
    * before its call is recorded, so a change that comes first waits for it.
    */
-  toolUpdate(id: string, patch: Pick<Partial<ToolStep>, "approval" | "input">) {
+  toolUpdate(id: string, patch: Pick<Partial<ToolStep>, "approval" | "input" | "memory">) {
     const step = this.#tool(id);
     if (!step) {
       this.#early.set(id, { ...this.#early.get(id), ...patch });
@@ -132,6 +133,11 @@ export class TraceRecorder {
     this.#emit(step);
   }
 
+  /** Whether the reply is done: a change now wouldn't be saved with it. */
+  get finished(): boolean {
+    return this.#finished;
+  }
+
   /** The reply so far, for a chat opened while it's being written. */
   snapshot(): LiveReplyView {
     return { text: this.#text, steps: structuredClone(this.#steps), startedAt: this.#started };
@@ -146,6 +152,7 @@ export class TraceRecorder {
    * step. With none, the last text step stands in, and then `fallback`.
    */
   finish(fallback: string): { answer: string; trace: ReplyTrace | null } {
+    this.#finished = true;
     let answer = this.#text.trim();
     if (!answer) {
       const i = this.#steps.findLastIndex((s) => s.kind === "text");
