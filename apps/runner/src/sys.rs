@@ -31,12 +31,7 @@ pub fn home_dir() -> Option<std::path::PathBuf> {
 }
 
 pub fn os() -> &'static str {
-    match std::env::consts::OS {
-        "macos" => "macos",
-        "windows" => "windows",
-        "linux" => "linux",
-        other => other,
-    }
+    std::env::consts::OS
 }
 
 pub fn now_ms() -> i64 {

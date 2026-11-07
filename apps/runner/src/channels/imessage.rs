@@ -446,7 +446,7 @@ fn explain(stderr: &str) -> String {
     format!("Messages refused it: {line}")
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub mod testdb {
     //! A database with the Messages schema, for tests. Never the real one.
 

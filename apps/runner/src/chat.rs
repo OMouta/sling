@@ -38,7 +38,7 @@ impl Chats {
         self.running.lock().unwrap().len()
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub fn set_mcp_command(&self, path: PathBuf) {
         *self.mcp_command.lock().unwrap() = Some(path);
     }
@@ -71,12 +71,15 @@ impl TurnDir {
         getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("no randomness: {e}"))?;
         let name: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
         let path = root.join(name);
-        let mut builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
-        {
+        let builder = {
             use std::os::unix::fs::DirBuilderExt;
+            let mut builder = std::fs::DirBuilder::new();
             builder.mode(0o700);
-        }
+            builder
+        };
+        #[cfg(not(unix))]
+        let builder = std::fs::DirBuilder::new();
         builder
             .create(&path)
             .with_context(|| format!("creating {}", path.display()))?;
