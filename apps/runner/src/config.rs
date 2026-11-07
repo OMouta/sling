@@ -5,7 +5,8 @@
 //! too, and while `remote_repos` is on, Sling may also add repos the Runner
 //! found on this machine itself, or remove repos. `commands` decides whether
 //! the assistant may run shell commands here at all, and `deploys` whether
-//! Sling may merge and deploy here. Deploy commands are set only here.
+//! Sling may merge and deploy here. Deploy commands are set only here, and
+//! so are the folders Sling may search and read.
 
 use std::path::{Path, PathBuf};
 
@@ -162,12 +163,18 @@ pub struct Config {
     /// Let Sling merge task branches and run repos' deploy commands here.
     #[serde(default = "default_deploys")]
     pub deploys: bool,
+    /// Let the assistant search and read the shared folders.
+    #[serde(default = "default_files")]
+    pub files: bool,
     /// Where to look for git repos to offer Sling. Defaults to the home
     /// directory.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scan_roots: Vec<PathBuf>,
     #[serde(default)]
     pub repos: Vec<RepoEntry>,
+    /// Folders shared with Sling. Only `sling-runner folder add` adds one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub folders: Vec<crate::files::FolderEntry>,
 }
 
 fn default_remote_repos() -> bool {
@@ -179,6 +186,10 @@ fn default_commands() -> bool {
 }
 
 fn default_deploys() -> bool {
+    true
+}
+
+fn default_files() -> bool {
     true
 }
 
@@ -207,8 +218,10 @@ impl Default for Config {
             remote_repos: default_remote_repos(),
             commands: default_commands(),
             deploys: default_deploys(),
+            files: default_files(),
             scan_roots: Vec::new(),
             repos: Vec::new(),
+            folders: Vec::new(),
         }
     }
 }

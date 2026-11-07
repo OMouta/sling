@@ -60,6 +60,12 @@ enum Command {
         #[command(subcommand)]
         command: RepoCommand,
     },
+    /// Manage the folders the assistant may search and read. Only this
+    /// machine can share one.
+    Folder {
+        #[command(subcommand)]
+        command: files::FolderCommand,
+    },
     /// Show or change local settings.
     Config {
         #[command(subcommand)]
@@ -131,8 +137,8 @@ enum ConfigCommand {
     Show,
     /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, claude-bin, gh-bin,
     /// worktree-root, remote-repos (on or off), commands (on or off), deploys (on or off),
-    /// scan-roots (comma-separated directories; "" means your home), server-url (Sling's new
-    /// address, keeping the pairing).
+    /// files (on or off), scan-roots (comma-separated directories; "" means your home),
+    /// server-url (Sling's new address, keeping the pairing).
     Set {
         key: String,
         value: String,
@@ -273,6 +279,7 @@ async fn real_main(cli: Cli) -> Result<()> {
                 println!("A running Runner picks this up within a minute.");
             }
         },
+        Command::Folder { command } => files::run_command(&paths, command)?,
         Command::Config { command } => match command {
             ConfigCommand::Show => {
                 let cfg = Config::load(&paths)?;
@@ -280,6 +287,7 @@ async fn real_main(cli: Cli) -> Result<()> {
                 println!("labels sent:  {}", cfg.all_labels().join(", "));
                 println!("remote repos: {}", remote_repos_summary(&cfg));
                 println!("deploys:      {}", deploys_summary(&cfg));
+                println!("files:        {}", files::summary(&cfg));
                 println!("{}", toml::to_string_pretty(&cfg)?);
             }
             ConfigCommand::Set { key, value } => {
@@ -302,6 +310,7 @@ async fn real_main(cli: Cli) -> Result<()> {
                     "remote-repos" => cfg.remote_repos = config::parse_on_off(&value)?,
                     "commands" => cfg.commands = config::parse_on_off(&value)?,
                     "deploys" => cfg.deploys = config::parse_on_off(&value)?,
+                    "files" => cfg.files = config::parse_on_off(&value)?,
                     "scan-roots" => cfg.scan_roots = config::parse_scan_roots(&value)?,
                     // Only from this machine: the control plane can't move a Runner elsewhere.
                     "server-url" => {
@@ -423,6 +432,7 @@ async fn doctor(paths: &Paths) -> Result<()> {
         remote_repos_summary(&cfg)
     );
     println!("     {:<18} {}", "deploys", deploys_summary(&cfg));
+    println!("     {:<18} {}", "files", files::summary(&cfg));
     Ok(())
 }
 
