@@ -73,7 +73,10 @@ export function toMessageView(row: MessageRow): MessageView | null {
   };
 }
 
-/** A reply with no steps still has a trace worth showing when it cites sources or suggests follow-ups. */
+/**
+ * A reply with no steps still has a trace worth showing when it cites
+ * sources, suggests follow-ups, or says which personality wrote it.
+ */
 function hasExtras(trace: MessageRow["trace"]): boolean {
-  return Boolean(trace?.sources?.length || trace?.followUps?.length);
+  return Boolean(trace?.sources?.length || trace?.followUps?.length || trace?.personality);
 }

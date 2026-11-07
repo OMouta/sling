@@ -16,7 +16,6 @@ import { SLING_EVENTS } from "@sling/workflow";
 import { isStepCount, type LanguageModel, type ModelMessage, streamText } from "ai";
 import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
-import { conversationPersonality } from "../personalities/service.ts";
 import { personalityTemplate } from "../personalities/templates.ts";
 import { workspaceSettings } from "../sandboxes/settings.ts";
 import { toSourceView } from "../sources/views.ts";
@@ -25,7 +24,6 @@ import { workspaceTimeZone } from "../timezone.ts";
 import { taskView, taskWhere, toConversationView } from "../views.ts";
 import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
 import { appTools } from "./app-tools.ts";
-import { effectiveChat } from "./chat-settings.ts";
 import { NoChatMachine } from "./cli-chat.ts";
 import { deployOutcome, stepLine } from "./deploy-update.ts";
 import { textOf, toMessageView, toModelMessages, UPDATE_PREFIX } from "./history.ts";
@@ -33,6 +31,7 @@ import { NoModelConfigured, resolveAssistant, webTools } from "./models.ts";
 import { assistantInstructions } from "./prompt.ts";
 import { agentTools, allowedTools, type ToolScope } from "./tools.ts";
 import { TraceRecorder } from "./trace.ts";
+import { replyLabels, turnChat, turnPersonality, turnSession } from "./turn-personality.ts";
 import {
   ProviderWebSteps,
   RESEARCH_MAX_STEPS,
@@ -287,7 +286,8 @@ export class Agent {
     this.#live.set(conv.id, trace);
     trace.publicOrigin = ctx.config.publicUrl.origin;
     try {
-      const row = await conversationPersonality(ctx.db, conv);
+      const turn = await turnPersonality(ctx.db, conv, rows);
+      const row = turn.row;
       const personality = row ?? FALLBACK_PERSONALITY;
       if (row) trace.personality = { id: row.id, revision: row.revision };
       const scope: ToolScope = {
@@ -297,7 +297,7 @@ export class Agent {
         trace,
       };
       const [chat, agents, apps, timeZone, memory] = await Promise.all([
-        effectiveChat(ctx, conv.workspaceId, conv.id),
+        turnChat(ctx, conv, turn),
         personality.tools.includes("coding")
           ? codingAgentsNote(ctx, conv.workspaceId)
           : Promise.resolve(""),
@@ -318,9 +318,9 @@ export class Agent {
       const allowed = allowedTools(personality.tools);
       for (const name of appNames) allowed.add(name);
       // A scripted test model stands in for the workspace default, but not for a
-      // CLI the conversation picked itself.
+      // CLI the conversation or its personality picked.
       const cli = chat.assistant && isCliProvider(chat.assistant.provider);
-      if (cli && chat.assistant && (!this.#model || conv.settings?.assistant)) {
+      if (cli && chat.assistant && (!this.#model || chat.picked)) {
         const reply = await this.#cliTurn(conv, chat.assistant, rows, {
           instructions: assistantInstructions(personality, conv.mode, new Date(), {
             cli: true,
@@ -335,6 +335,7 @@ export class Agent {
           trace,
           web,
           research,
+          session: turnSession(conv.agentSession, turn),
           ...(opts.signal ? { signal: opts.signal } : {}),
         });
         this.#setStatus(conv.workspaceId, conv.id, "idle");
@@ -447,6 +448,8 @@ export class Agent {
       /** The turn's tools for the user's apps, built for this conversation. */
       appTools: Record<string, unknown>;
       trace: TraceRecorder;
+      /** The session to resume, when it answered as this turn's personality. */
+      session: (typeof schema.conversations.$inferSelect)["agentSession"];
       signal?: AbortSignal;
       web: boolean;
       research: boolean;
@@ -455,7 +458,9 @@ export class Agent {
     const { trace, signal } = turn;
     const ctx = this.#ctx;
     const harness = choice.provider as Harness;
-    const transcript = cliTranscript(rows);
+    const personalityId = trace.personality?.id ?? null;
+    const labels = await replyLabels(ctx.db, conv.workspaceId, rows, personalityId);
+    const transcript = cliTranscript(rows, labels);
     const { history } = transcript;
     // In the message rather than the instructions, which a resumed Codex
     // session keeps from its start.
@@ -473,7 +478,7 @@ export class Agent {
       appTools: turn.appTools,
       prompt,
       history,
-      session: conv.agentSession ?? null,
+      session: turn.session,
       ...(signal ? { signal } : {}),
       onDelta: (text) => trace.text(text),
       trace,
@@ -483,7 +488,14 @@ export class Agent {
     if (result.sessionId) {
       await ctx.db
         .update(schema.conversations)
-        .set({ agentSession: { harness, runnerId: result.runnerId, sessionId: result.sessionId } })
+        .set({
+          agentSession: {
+            harness,
+            runnerId: result.runnerId,
+            sessionId: result.sessionId,
+            personalityId,
+          },
+        })
         .where(eq(schema.conversations.id, conv.id));
     }
     // Only the answer is kept as the reply. Text before the agent's last tool
@@ -501,8 +513,14 @@ export class Agent {
   }
 }
 
-/** The latest messages to answer, and everything before them as text. */
-export function cliTranscript(rows: (typeof schema.messages.$inferSelect)[]): {
+/**
+ * The latest messages to answer, and everything before them as text. With
+ * `labels`, a reply goes by the name of the personality that wrote it.
+ */
+export function cliTranscript(
+  rows: (typeof schema.messages.$inferSelect)[],
+  labels?: ReadonlyMap<string, string> | null,
+): {
   prompt: string;
   history: string;
 } {
@@ -510,7 +528,8 @@ export function cliTranscript(rows: (typeof schema.messages.$inferSelect)[]): {
     const text = textOf((r.content as ModelMessage).content).trim();
     if (!text) return "";
     if (r.role === "system") return `${UPDATE_PREFIX} ${text}`;
-    return r.role === "assistant" ? `Assistant: ${text}` : r.role === "user" ? `User: ${text}` : "";
+    if (r.role === "assistant") return `${labels?.get(r.id) ?? "Assistant"}: ${text}`;
+    return r.role === "user" ? `User: ${text}` : "";
   };
   let lastAnswer = -1;
   for (let i = rows.length - 1; i >= 0; i--) {
