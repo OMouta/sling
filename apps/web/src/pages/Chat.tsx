@@ -192,7 +192,10 @@ export function ChatPage() {
   const tokens = usage.inputTokens + usage.outputTokens;
 
   const assistant: AssistantChoice | null =
-    conversation.settings?.assistant ?? catalog.data?.defaults.assistant ?? null;
+    conversation.settings?.assistant ??
+    personality?.assistant ??
+    catalog.data?.defaults.assistant ??
+    null;
   const researchable = canResearch(personality, assistant);
   const researching =
     thinking && detail.data.messages.findLast((m) => m.role === "user")?.research === true;

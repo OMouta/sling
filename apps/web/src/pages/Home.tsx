@@ -60,7 +60,8 @@ export function HomePage() {
     window.addEventListener(NEW_CHAT_EVENT, focus);
     return () => window.removeEventListener(NEW_CHAT_EVENT, focus);
   }, []);
-  // Unset means "the workspace default", so a default changed elsewhere still applies.
+  // Unset means the personality's model, else the workspace default, so a
+  // change made elsewhere still applies. A pick here goes in the chat's settings.
   const [assistant, setAssistant] = useState<AssistantChoice | undefined>();
   const [mode, setMode] = useState<PermissionMode | undefined>();
   const modeChange = useModeChange(setMode);
@@ -77,6 +78,7 @@ export function HomePage() {
     if (!picked || p.id === picked.id) return;
     setDirection(list.indexOf(p) > index ? 1 : -1);
     setPickedId(p.id);
+    setAssistant(undefined);
     rememberPersonality(p.id);
   };
   const prev = () => {
@@ -105,6 +107,7 @@ export function HomePage() {
     if (p) {
       setDirection(0);
       setPickedId(p.id);
+      setAssistant(undefined);
     }
     setWanted(null);
   }, [wanted, list]);
@@ -258,7 +261,9 @@ export function HomePage() {
             controls={
               <ChatControls
                 catalog={catalog.data}
-                assistant={assistant ?? catalog.data?.defaults.assistant ?? null}
+                assistant={
+                  assistant ?? picked?.assistant ?? catalog.data?.defaults.assistant ?? null
+                }
                 onAssistant={setAssistant}
                 // The mode only limits tools, so a personality without any has no use for it.
                 {...(hasTools

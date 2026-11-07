@@ -208,6 +208,7 @@ describe("new personality", () => {
       tools: ["commands", "deploys"],
       color: "green",
       shape: "ripple",
+      assistant: null,
       templateKey: "ops",
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

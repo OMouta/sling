@@ -35,6 +35,7 @@ import {
 import { type FormEvent, type ReactNode, useMemo, useRef, useState } from "react";
 import { Glyph } from "../components/Glyph.tsx";
 import { Page, Toolbar } from "../components/Page.tsx";
+import { PersonalityModel, sameChoice } from "../components/PersonalityModel.tsx";
 import {
   Badge,
   Button,
@@ -67,7 +68,7 @@ import { personalityRoute } from "../router.tsx";
 
 type Draft = Pick<
   PersonalityView,
-  "name" | "description" | "instructions" | "tools" | "color" | "shape"
+  "name" | "description" | "instructions" | "tools" | "color" | "shape" | "assistant"
 >;
 
 const TOOL_ICONS: Record<PersonalityTool, typeof Terminal> = {
@@ -152,6 +153,7 @@ const fromTemplate = (t: PersonalityTemplateView): Draft => ({
   tools: t.tools,
   color: t.color,
   shape: t.shape,
+  assistant: null,
 });
 
 /**
@@ -477,6 +479,7 @@ function PersonalityCard({
         tools: p.tools,
         color: p.color,
         shape: p.shape,
+        assistant: p.assistant,
       }),
     onSuccess: (copy) => {
       void refresh();
@@ -605,6 +608,7 @@ function blankDraft(list: PersonalityView[]): Draft {
     tools: [],
     color: PERSONALITY_COLORS.find((c) => !usedColors.has(c)) ?? "violet",
     shape: GLYPH_SHAPES.find((s) => !usedShapes.has(s)) ?? "bloom",
+    assistant: null,
   };
 }
 
@@ -615,7 +619,8 @@ function sameDraft(a: Draft, b: Draft): boolean {
     a.instructions === b.instructions &&
     a.tools.join() === b.tools.join() &&
     a.color === b.color &&
-    a.shape === b.shape
+    a.shape === b.shape &&
+    sameChoice(a.assistant, b.assistant)
   );
 }
 
@@ -626,6 +631,7 @@ const pickDraft = (p: PersonalityView): Draft => ({
   tools: p.tools,
   color: p.color,
   shape: p.shape,
+  assistant: p.assistant,
 });
 
 export function PersonalityEditorPage() {
@@ -795,6 +801,8 @@ export function PersonalityEditorPage() {
               })}
             </Card>
           </section>
+
+          <PersonalityModel value={draft.assistant} onChange={(a) => set("assistant", a)} />
 
           <section className="space-y-3">
             <SectionHead title="Instructions" />

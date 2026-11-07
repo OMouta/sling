@@ -39,6 +39,8 @@ export interface PickerProps {
   onAssistant: (choice: AssistantChoice) => void;
   mode?: PermissionMode;
   onMode?: (mode: PermissionMode) => void;
+  /** Offers "Workspace default" first, for a choice that can be no model of its own. */
+  onDefault?: () => void;
 }
 
 interface Row {
@@ -62,8 +64,14 @@ function usable(catalog: ModelCatalogView | undefined) {
   });
 }
 
-export function modelLabel(catalog: ModelCatalogView | undefined, choice: AssistantChoice | null) {
-  if (!choice) return "Pick a model";
+const WORKSPACE_DEFAULT = "Workspace default";
+
+export function modelLabel(
+  catalog: ModelCatalogView | undefined,
+  choice: AssistantChoice | null,
+  orDefault = false,
+) {
+  if (!choice) return orDefault ? WORKSPACE_DEFAULT : "Pick a model";
   const m = findAssistantModel(catalog, choice);
   if (m) return shortLabel(m.label);
   if (!choice.model) {
@@ -127,7 +135,9 @@ export function ChatControls(props: PickerProps & { className?: string }) {
   const popover = useRef<HTMLDivElement>(null);
   const { catalog, assistant, mode, onMode } = props;
   const current = findAssistantModel(catalog, assistant);
-  const label = modelLabel(catalog, assistant);
+  const label = modelLabel(catalog, assistant, Boolean(props.onDefault));
+  // The default shows as what it is now.
+  const icon = assistant?.provider ?? (props.onDefault && catalog?.defaults.assistant?.provider);
   const effort = assistant?.effort ?? current?.defaultEffort ?? null;
   const style = useAnchoredStyle(open, button, popover);
 
@@ -152,7 +162,7 @@ export function ChatControls(props: PickerProps & { className?: string }) {
         onClick={() => setOpen((o) => !o)}
         className="pressable flex h-[30px] min-w-0 cursor-pointer items-center gap-2 rounded-full px-2.5 text-[13px] transition-colors duration-150 hover:bg-surface-3 aria-expanded:bg-surface-3"
       >
-        {assistant && <ProviderIcon provider={assistant.provider} size={15} />}
+        {icon && <ProviderIcon provider={icon} size={15} />}
         <span className="truncate font-medium text-text">{label}</span>
         {effort && <span className="shrink-0 text-muted">{effortLabel(effort)}</span>}
         {assistant?.fast && (
@@ -236,6 +246,7 @@ export function ModelPicker({
   catalog,
   assistant,
   onAssistant,
+  onDefault,
   onClose,
   ref,
   style,
@@ -283,6 +294,11 @@ export function ModelPicker({
       : all.filter((r) => r.provider === rail);
   }, [all, rail, query, favorites]);
 
+  const typed = query.trim().toLowerCase();
+  // The workspace default comes first, unless a search leaves it out.
+  const lead = onDefault && (!typed || WORKSPACE_DEFAULT.toLowerCase().includes(typed)) ? 1 : 0;
+  const fallback = catalog?.defaults.assistant ?? null;
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset the cursor when the list changes.
   useEffect(() => setCursor(0), [rail, query]);
   useEffect(() => {
@@ -307,13 +323,16 @@ export function ModelPicker({
       onClose();
     } else if (e.key === "ArrowDown") {
       e.preventDefault();
-      setCursor((c) => Math.min(c + 1, rows.length - 1));
+      setCursor((c) => Math.min(c + 1, rows.length + lead - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setCursor((c) => Math.max(c - 1, 0));
-    } else if (e.key === "Enter" && rows[cursor]) {
+    } else if (e.key === "Enter" && lead && cursor === 0) {
       e.preventDefault();
-      pick(rows[cursor]);
+      onDefault?.();
+    } else if (e.key === "Enter" && rows[cursor - lead]) {
+      e.preventDefault();
+      pick(rows[cursor - lead] as Row);
     } else if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) {
       const target = all.find((r) => r.key === favorites[Number(e.key) - 1]);
       if (target) {
@@ -419,16 +438,50 @@ export function ModelPicker({
             aria-label="Models"
             className="min-h-0 flex-1 overflow-y-auto p-1.5"
           >
+            {lead > 0 && (
+              <div
+                data-index={0}
+                role="option"
+                aria-selected={!assistant}
+                tabIndex={-1}
+                onMouseMove={() => setCursor(0)}
+                onClick={() => onDefault?.()}
+                onKeyDown={() => {}}
+                className={cx(
+                  "flex h-[38px] cursor-pointer items-center gap-3 rounded-lg px-2.5 text-sm",
+                  cursor === 0 ? "bg-surface-3 text-text" : "text-soft",
+                )}
+              >
+                {fallback ? (
+                  <ProviderIcon provider={fallback.provider} size={17} />
+                ) : (
+                  <span className="size-[17px] shrink-0" />
+                )}
+                <span className="min-w-0 truncate">{WORKSPACE_DEFAULT}</span>
+                {!assistant && (
+                  <Check aria-label="Selected" size={15} className="shrink-0 text-text" />
+                )}
+                <span className="flex-1" />
+                {fallback && (
+                  <span className="truncate text-xs text-subtle">
+                    {modelLabel(catalog, fallback)}
+                  </span>
+                )}
+              </div>
+            )}
             {providers.length === 0 ? (
               <NoProvider />
             ) : rows.length === 0 ? (
-              <p className="px-3 py-10 text-center text-[13px] text-muted">
-                {rail === "favorites" && !query
-                  ? "Star a model to keep it here."
-                  : "No models match."}
-              </p>
+              lead > 0 && typed ? null : (
+                <p className="px-3 py-10 text-center text-[13px] text-muted">
+                  {rail === "favorites" && !query
+                    ? "Star a model to keep it here."
+                    : "No models match."}
+                </p>
+              )
             ) : (
-              rows.map((r, i) => {
+              rows.map((r, n) => {
+                const i = n + lead;
                 const fav = favorites.indexOf(r.key);
                 const selected =
                   assistant?.provider === r.provider && assistant.model === r.model.id;
@@ -483,16 +536,18 @@ export function ModelPicker({
         <div className="hidden min-w-0 flex-col border-l border-border sm:flex">
           <div className="mx-3 flex h-11 items-center justify-between gap-2 border-b border-border">
             <span className="text-sm text-soft">Reasoning</span>
-            <span className="truncate text-[13px] text-subtle">
-              {modelLabel(catalog, assistant)}
-            </span>
+            {(assistant || !onDefault) && (
+              <span className="truncate text-[13px] text-subtle">
+                {modelLabel(catalog, assistant)}
+              </span>
+            )}
           </div>
           <div
             role="radiogroup"
             aria-label="Reasoning"
             className="min-h-0 flex-1 overflow-y-auto p-1.5"
           >
-            {efforts.length === 0 ? (
+            {!assistant && onDefault ? null : efforts.length === 0 ? (
               <p className="px-2.5 py-3 text-xs leading-4 text-subtle">
                 This model doesn't take a reasoning level.
               </p>
