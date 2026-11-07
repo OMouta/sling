@@ -61,10 +61,7 @@ export function SandboxFallbackCard({ approval }: { approval: ApprovalView }) {
                 <span className="font-medium">{p.providerName}</span> and run{" "}
                 {HARNESS_LABELS[p.harness]}.
               </p>
-              <p className="mt-1 text-xs text-muted">
-                Only the remote is cloned, so nothing on your machines moves. Rejecting cancels the
-                task.
-              </p>
+              <p className="mt-1 text-xs text-muted">Rejecting cancels the task.</p>
             </div>
           </>
         ) : (

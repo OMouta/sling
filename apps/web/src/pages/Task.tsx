@@ -114,9 +114,7 @@ export function TaskPage() {
             <h2 className="section-label">Timeline</h2>
             {events.length === 0 ? (
               <Card>
-                <Empty icon={ScrollText} title="No events yet" className="py-10">
-                  The machine's progress shows up here as it works.
-                </Empty>
+                <Empty icon={ScrollText} title="No events yet" className="py-10" />
               </Card>
             ) : (
               <Timeline events={events} harness={task.harness} />

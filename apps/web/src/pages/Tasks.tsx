@@ -161,11 +161,7 @@ export function TasksPage() {
               </Button>
             )
           }
-        >
-          {all.length === 0
-            ? "Ask the assistant for a change and it starts a task on one of your machines."
-            : "Try another tab or filter."}
-        </Empty>
+        />
       ) : (
         <Table className="border-t border-border">
           <thead>

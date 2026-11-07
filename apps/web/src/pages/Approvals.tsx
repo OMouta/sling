@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { DeployPlanText } from "../components/DeployBits.tsx";
-import { Content, Page, Toolbar, ToolbarText } from "../components/Page.tsx";
+import { Content, Page } from "../components/Page.tsx";
 import { SandboxFallbackCard } from "../components/SandboxFallbackCard.tsx";
 import {
   Badge,
@@ -81,18 +81,11 @@ export function ApprovalsPage() {
           ]}
         />
       }
-      toolbar={
-        <Toolbar>
-          <ToolbarText>Steps waiting for you. They expire after 24 hours.</ToolbarText>
-        </Toolbar>
-      }
     >
       {approvals.data?.length === 0 ? (
-        <Empty fill icon={ShieldCheck} title="Nothing waiting">
-          You're all caught up.
-        </Empty>
+        <Empty fill icon={ShieldCheck} title="Nothing waiting" />
       ) : (
-        <Content className="space-y-4 pt-2">
+        <Content className="space-y-4">
           {approvals.isPending && <Skeleton className="h-40 w-full rounded-xl" />}
           <ErrorText error={approvals.error} />
           {show("sandboxes") &&
