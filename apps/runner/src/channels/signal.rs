@@ -179,9 +179,9 @@ async fn run_once(
 fn why_stopped(stderr: &str, code: Option<i32>) -> String {
     let last = stderr.lines().map(str::trim).rfind(|l| !l.is_empty());
     match last {
-        Some(l) if l.contains("not registered") || l.contains("not linked") => format!(
-            "signal-cli isn't linked to this account. Run `signal-cli link -n Sling` and scan the code in Signal on your phone. ({l})"
-        ),
+        Some(l) if l.contains("not registered") || l.contains("not linked") => {
+            "signal-cli isn't linked to this account. Run `signal-cli link -n Sling` and scan the code in Signal on your phone.".into()
+        }
         Some(l) => l.chars().take(240).collect(),
         None => match code {
             Some(c) => format!("signal-cli exited with code {c}"),

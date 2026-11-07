@@ -428,7 +428,7 @@ async fn doctor(paths: &Paths) -> Result<()> {
             "repo", r.name, r.default_branch
         );
     }
-    for line in channels::doctor(&inv.channels) {
+    for line in channels::doctor(&cfg).await {
         println!("{line}");
     }
     println!("     {:<18} {}", "max mode", cfg.max_mode.as_str());

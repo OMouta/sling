@@ -201,16 +201,35 @@ struct Health {
 /// built from the config alone, so the workers report here.
 static HEALTH: LazyLock<Mutex<HashMap<String, Health>>> = LazyLock::new(Default::default);
 
+/// Wakes the connection to send a fresh inventory when a channel's health
+/// changes, so Sling doesn't show the old one for a minute.
+static CHANGED: LazyLock<tokio::sync::Notify> = LazyLock::new(Default::default);
+
 fn set_health(name: &str, ready: bool, missing: impl Into<String>) {
     let missing = if ready { String::new() } else { missing.into() };
-    HEALTH
+    let next = Health { ready, missing };
+    let old = HEALTH
         .lock()
         .unwrap()
-        .insert(name.to_string(), Health { ready, missing });
+        .insert(name.to_string(), next.clone());
+    if old.as_ref() != Some(&next) {
+        CHANGED.notify_one();
+    }
 }
 
 fn clear_health(name: &str) {
-    HEALTH.lock().unwrap().remove(name);
+    if HEALTH.lock().unwrap().remove(name).is_some() {
+        CHANGED.notify_one();
+    }
+}
+
+/// Waits for the next inventory refresh: the interval's tick, or sooner when
+/// a channel's health changed.
+pub async fn refresh_due(interval: &mut tokio::time::Interval) {
+    tokio::select! {
+        _ = interval.tick() => {}
+        _ = CHANGED.notified() => {}
+    }
 }
 
 fn health(name: &str) -> Option<Health> {
@@ -227,7 +246,7 @@ pub fn inventory(cfg: &Config) -> Vec<Channel> {
             } else {
                 Health {
                     ready: false,
-                    missing: "Off on this machine: sling-runner config set channels on".into(),
+                    missing: "Off on this machine. Turn them on with `sling-runner config set channels on`.".into(),
                 }
             };
             Channel {
@@ -242,31 +261,71 @@ pub fn inventory(cfg: &Config) -> Vec<Channel> {
 }
 
 /// A line per channel for `sling-runner doctor`.
-pub fn doctor(channels: &[Channel]) -> Vec<String> {
-    channels
-        .iter()
-        .map(|c| {
-            let (mark, detail) = if c.ready {
-                ("ok  ", format!("{} senders allowed", c.allowed_senders))
-            } else {
-                ("FAIL", c.missing.clone())
-            };
-            format!("{mark} {:<18} {} ({}): {detail}", "channel", c.name, c.kind)
-        })
-        .collect()
+/// A line per channel for `sling-runner doctor`, after checking each the
+/// way it runs: reading the Messages database, or asking signal-cli whether
+/// it's linked.
+pub async fn doctor(cfg: &Config) -> Vec<String> {
+    let mut out = Vec::new();
+    for e in &cfg.channel_entries {
+        let problem = if !cfg.channels {
+            Some("off: sling-runner config set channels on".to_string())
+        } else {
+            match e.kind {
+                Kind::Imessage => {
+                    let h = first_look(e);
+                    (!h.ready).then_some(h.missing)
+                }
+                Kind::Signal => {
+                    let account = e.account.clone().unwrap_or_default();
+                    match signal::linked(&e.bin(), &account).await {
+                        Ok(true) => None,
+                        Ok(false) => Some(format!(
+                            "signal-cli isn't linked to {account}. Run `signal-cli link -n Sling`."
+                        )),
+                        Err(err) => Some(err),
+                    }
+                }
+            }
+        };
+        let (mark, detail) = match problem {
+            Some(p) => ("FAIL", p),
+            None if e.allowed_senders.is_empty() => (
+                "ok  ",
+                format!(
+                    "allows no one yet: sling-runner channel allow {} <number>",
+                    e.name
+                ),
+            ),
+            None if e.allowed_senders.len() == 1 => ("ok  ", "allows 1 sender".to_string()),
+            None => (
+                "ok  ",
+                format!("allows {} senders", e.allowed_senders.len()),
+            ),
+        };
+        out.push(format!(
+            "{mark} {:<18} {} ({}): {detail}",
+            "channel",
+            e.name,
+            e.kind.label()
+        ));
+    }
+    out
 }
 
 /// What can be told without running the channel: whether the Messages
-/// database can be opened, or signal-cli found.
+/// database can be opened, or signal-cli found. Signal counts as ready only
+/// once signal-cli has stayed up.
 fn first_look(e: &ChannelEntry) -> Health {
     let problem = match e.kind {
         Kind::Imessage => e
             .messages_db()
             .map(|db| imessage::can_open(&db).err())
             .unwrap_or_else(|| Some("No home folder to find Messages in.".into())),
-        Kind::Signal => find_program(&e.bin())
-            .is_none()
-            .then(|| signal::NOT_INSTALLED.to_string()),
+        Kind::Signal => Some(if find_program(&e.bin()).is_none() {
+            signal::NOT_INSTALLED.to_string()
+        } else {
+            "Starting signal-cli".to_string()
+        }),
     };
     match problem {
         Some(missing) => Health {

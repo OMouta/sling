@@ -829,10 +829,11 @@ async fn restarts_signal_cli_when_it_stops() {
     reconcile(&mgr);
     let missing = until("signal-cli to fail", || {
         let inv = inventory(&mgr.config());
-        (!inv[0].ready && !inv[0].missing.is_empty()).then(|| inv[0].missing.clone())
+        (!inv[0].ready && inv[0].missing.contains("signal-cli link"))
+            .then(|| inv[0].missing.clone())
     })
     .await;
-    assert!(missing.contains("signal-cli link"), "{missing}");
+    assert!(missing.contains("isn't linked"), "{missing}");
     let r = send(&mgr, "sig-crash", JO, "hi").await;
     assert!(!r.ok);
 

@@ -220,7 +220,7 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                 }
                 send(&mut sink, Body::Heartbeat(Heartbeat { running_tasks: mgr.running_count() as u32 })).await?;
             }
-            _ = refresh.tick() => {
+            _ = crate::channels::refresh_due(&mut refresh) => {
                 if let Some(next) = refresh_inventory(mgr, &inv).await {
                     ready = inventory::ready_harnesses(&next);
                     send(&mut sink, Body::Inventory(next.clone())).await?;
