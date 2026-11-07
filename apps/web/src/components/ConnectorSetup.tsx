@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { ApiError, api } from "../lib/api.ts";
 import { defaultsFor, type FormField, formFields, type Primitive } from "../lib/schemaForm.ts";
+import { connectUrl, signInFor } from "../lib/signIn.ts";
 import { qk } from "../lib/workflowApi.ts";
 import { SchemaField } from "./SchemaForm.tsx";
 import { Button, cx, Field, Input } from "./ui.tsx";
@@ -142,6 +143,17 @@ export function ConnectorSetupDialog({
   };
   const visible = (f: FormField): boolean =>
     applies(f) && !(f.meta.picker && !(found.options?.[f.key]?.length ?? 0));
+  // Ends on the provider's consent page, so what's only known after it, such as
+  // the account's calendars, isn't asked for now.
+  const withDefaults = Object.fromEntries(
+    rows.map((r) => [r.field.key, current(r.field.key) ?? r.field.default]),
+  );
+  const signIn = signInFor(connector, withDefaults);
+  const signingIn = signIn !== null && !editing;
+  const required = (r: Row) =>
+    r.field.required ||
+    (signIn !== null && r.source === "credentials" && signIn.fields.includes(r.field.key));
+  const [redirecting, setRedirecting] = useState(false);
   const filled = (r: Row) =>
     !isEmpty(rowValue(r)) || (r.source === "credentials" && credentialsStored);
   // An advanced field comes up front when the lookup couldn't fill it, or, for a
@@ -150,7 +162,7 @@ export function ConnectorSetupDialog({
   const upFront = (r: Row) =>
     !r.field.meta.advanced ||
     revealed.has(r.field.key) ||
-    (!connector.hasSetup && r.field.required && !filled(r));
+    (!connector.hasSetup && required(r) && !filled(r));
 
   // ---------------------------------------------------------------- setup lookup
   const lookupKeys = rows.filter((r) => r.field.meta.lookup).map((r) => r.field.key);
@@ -206,6 +218,7 @@ export function ConnectorSetupDialog({
   // steps don't change count, or Add turn into Continue, while you type.
   const waiting = (r: Row) =>
     Boolean(connector.hasSetup) &&
+    !signingIn &&
     r.field.meta.picker &&
     !r.field.meta.advanced &&
     applies(r.field) &&
@@ -268,7 +281,7 @@ export function ConnectorSetupDialog({
       ...rs.filter((r) => visible(r.field) && !upFront(r)),
       ...(i === stepGroups.length - 1 ? tucked : []),
     ];
-    const missing = front.some((r) => r.field.required && r.field.kind !== "boolean" && !filled(r));
+    const missing = front.some((r) => required(r) && r.field.kind !== "boolean" && !filled(r));
     const wrong = front.some((r) => notesFor(r.field.key).some((n) => n.tone === "error"));
     const looksUp = front.some((r) => r.field.meta.lookup) || rs.some(waiting);
     // One field under a heading that asks for it needs no label of its own.
@@ -309,7 +322,8 @@ export function ConnectorSetupDialog({
           ...(found.name ? { name: found.name } : {}),
           credentials,
           config,
-          check: !force,
+          // Nothing can be checked before the consent; the sign-in is the check.
+          check: !force && !signingIn,
         });
       }
       const body: Record<string, unknown> = {};
@@ -347,7 +361,12 @@ export function ConnectorSetupDialog({
 
   const finish = async (force: boolean) => {
     try {
-      await save.mutateAsync(force);
+      const saved = await save.mutateAsync(force);
+      if (signIn && signingIn && saved && typeof saved === "object" && "id" in saved) {
+        setRedirecting(true);
+        window.location.assign(connectUrl(signIn, saved.id));
+        return false;
+      }
       return true;
     } catch {
       return false;
@@ -385,7 +404,7 @@ export function ConnectorSetupDialog({
     : undefined;
 
   const okNotes = notes.filter((n) => n.tone === "ok");
-  const action = editing ? "Save" : "Add";
+  const action = editing ? "Save" : signingIn ? "Connect" : "Add";
   const problem: ReactNode = failed ?? (save.error instanceof Error ? save.error.message : null);
 
   return (
@@ -398,7 +417,7 @@ export function ConnectorSetupDialog({
         force.current = false;
         return finish(anyway);
       }}
-      finishing={save.isPending}
+      finishing={save.isPending || redirecting}
       error={problem}
       secondary={
         failed

@@ -1,11 +1,12 @@
 import type { ConnectorView, InstallationView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ArrowRight,
   CalendarDays,
   Container,
   FlaskConical,
+  LogIn,
   type LucideIcon,
   Mail,
   MessagesSquare,
@@ -16,7 +17,7 @@ import {
   TrainFront,
   Trash2,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ConnectorSetupDialog } from "../components/ConnectorSetup.tsx";
 import { ExtensionIcon } from "../components/extensions/ExtensionBits.tsx";
 import { Content, Page } from "../components/Page.tsx";
@@ -24,6 +25,14 @@ import { Button, Card, cx, Dialog, Dot, ErrorText, Skeleton, Switch } from "../c
 import { api } from "../lib/api.ts";
 import { isProviderConnector } from "../lib/sandbox.ts";
 import { useSandboxRepos, useSandboxSettings } from "../lib/sandboxApi.ts";
+import {
+  connectUrl,
+  oauthConnectionsKey,
+  type SignInReturn,
+  signInFor,
+  signInReturn,
+  useOAuthConnections,
+} from "../lib/signIn.ts";
 import { qk, useConnectors, useInstallations } from "../lib/workflowApi.ts";
 
 type TestResult = { ok: true; detail?: string } | { ok: false; error: string };
@@ -103,6 +112,12 @@ export function ConnectorsPage() {
     const connector = byId.get(i.connectorId);
     if (connector) setForm({ connector, installation: i });
   };
+  const connections = useOAuthConnections(
+    (connectors.data ?? []).some((c) => c.signIn) ||
+      (installations.data ?? []).some((i) => signInFor(byId.get(i.connectorId), i.config)),
+  );
+  const connected = new Set((connections.data ?? []).map((c) => c.installationId));
+  const back = useSignInReturn();
 
   return (
     <Page
@@ -114,6 +129,11 @@ export function ConnectorsPage() {
       }
     >
       <Content className="max-w-5xl space-y-9 pt-2">
+        {back?.outcome === "failed" && !back.installationId && (
+          <p role="alert" className="text-xs text-danger">
+            {back.error ?? "Connecting didn't finish."}
+          </p>
+        )}
         {(installations.isPending || installations.error || (installed?.length ?? 0) > 0) && (
           <Group id="installed" title="Added">
             {installations.isPending && <Skeleton className="h-24 w-full rounded-xl" />}
@@ -125,6 +145,8 @@ export function ConnectorsPage() {
                   installation={i}
                   connector={byId.get(i.connectorId)}
                   onEdit={() => edit(i)}
+                  connected={connections.data ? connected.has(i.id) : undefined}
+                  back={back?.installationId === i.id ? back : null}
                 />
               ))}
             </div>
@@ -237,15 +259,30 @@ function InstallationCard({
   installation: i,
   connector,
   onEdit,
+  connected,
+  back = null,
 }: {
   installation: InstallationView;
   connector: ConnectorView | undefined;
   onEdit: () => void;
+  /** For an account that signs in: whether it has. Unknown while loading. */
+  connected?: boolean | undefined;
+  /** What came back from the consent page for this account. */
+  back?: SignInReturn | null;
 }) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState(false);
-  // A connector that never listens for events, such as the calendar, has no status to show.
-  const status = connector?.hasSource !== false && i.enabled ? STATUS[i.status] : undefined;
+  const signIn = signInFor(connector, i.config);
+  // A connector that never listens for events, such as the calendar, has no status to show,
+  // except whether an account that signs in has.
+  const status =
+    signIn && connected !== undefined
+      ? connected
+        ? STATUS.connected
+        : { label: "Not connected", tone: "warn" as const }
+      : connector?.hasSource !== false && i.enabled
+        ? STATUS[i.status]
+        : undefined;
   const update = (next: InstallationView) =>
     qc.setQueryData<InstallationView[]>(qk.installations(), (list) =>
       list?.map((x) => (x.id === next.id ? next : x)),
@@ -260,6 +297,13 @@ function InstallationCard({
   const test = useMutation({
     mutationFn: () => api.post<TestResult>(`/api/installations/${i.id}/test`),
   });
+  // Back from the consent page: check the account at once, so a problem shows here.
+  const tested = useRef(false);
+  useEffect(() => {
+    if (back?.outcome !== "connected" || tested.current) return;
+    tested.current = true;
+    test.mutate();
+  }, [back, test]);
   const del = useMutation({
     mutationFn: () => api.del(`/api/installations/${i.id}`),
     onSuccess: () => {
@@ -292,8 +336,17 @@ function InstallationCard({
             onChange={(enabled) => toggle.mutate(enabled)}
           />
         </div>
-        {((i.status === "error" && i.statusDetail) || test.data || toggle.error || test.error) && (
+        {((i.status === "error" && i.statusDetail) ||
+          test.data ||
+          toggle.error ||
+          test.error ||
+          back?.outcome === "failed") && (
           <div className="space-y-1.5 px-4 pb-3 pl-16 text-xs">
+            {back?.outcome === "failed" && (
+              <p role="alert" className="text-danger">
+                {back.error ?? "Connecting didn't finish."}
+              </p>
+            )}
             {i.status === "error" && i.statusDetail && (
               <p className="text-danger">{i.statusDetail}</p>
             )}
@@ -308,6 +361,16 @@ function InstallationCard({
           </div>
         )}
         <div className="flex flex-wrap gap-2 border-t border-border px-4 py-2.5">
+          {signIn && connected === false && (
+            <Button
+              size="sm"
+              variant="primary"
+              icon={LogIn}
+              onClick={() => window.location.assign(connectUrl(signIn, i.id))}
+            >
+              Connect
+            </Button>
+          )}
           <Button size="sm" icon={FlaskConical} busy={test.isPending} onClick={() => test.mutate()}>
             Test
           </Button>
@@ -346,4 +409,21 @@ function InstallationCard({
       </Card>
     </article>
   );
+}
+
+/**
+ * Where a consent page sent the browser back to, read once. The address is
+ * then cleaned up, so a reload doesn't say it again.
+ */
+function useSignInReturn(): SignInReturn | null {
+  const search = useRouterState({ select: (s) => s.location.search as Record<string, unknown> });
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [back] = useState(() => signInReturn(search));
+  useEffect(() => {
+    if (!back) return;
+    void qc.invalidateQueries({ queryKey: oauthConnectionsKey });
+    void navigate({ to: "/connectors", search: {}, replace: true });
+  }, [back, navigate, qc]);
+  return back;
 }
