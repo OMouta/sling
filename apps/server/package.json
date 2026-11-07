@@ -22,6 +22,7 @@
     "@sling/integration-docker": "workspace:*",
     "@sling/integration-email": "workspace:*",
     "@sling/integration-railway": "workspace:*",
+    "@sling/integration-telegram": "workspace:*",
     "@sling/runner-protocol": "workspace:*",
     "@sling/workflow": "workspace:*",
     "ai": "^7.0.162",

@@ -69,6 +69,27 @@ export const NAMED_TYPES: Record<string, NamedType> = {
       required: ["id", "channelId", "isDM", "author", "content"],
     },
   },
+  "telegram.message": {
+    name: "telegram.message",
+    description: "A Telegram message the bot received",
+    schema: {
+      type: "object",
+      properties: {
+        id: str,
+        chatId: str,
+        chatType: str,
+        chatName: str,
+        from: {
+          type: "object",
+          properties: { id: str, username: nullableStr, name: str },
+          required: ["id", "name"],
+        },
+        text: str,
+        date: str,
+      },
+      required: ["id", "chatId", "chatType", "from", "text", "date"],
+    },
+  },
   conversation: {
     name: "conversation",
     description: "A Sling conversation",

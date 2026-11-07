@@ -21,6 +21,7 @@ COPY integrations/email/package.json integrations/email/
 COPY integrations/calendar/package.json integrations/calendar/
 COPY integrations/docker/package.json integrations/docker/
 COPY integrations/railway/package.json integrations/railway/
+COPY integrations/telegram/package.json integrations/telegram/
 COPY extensions/ntfy/package.json extensions/ntfy/
 COPY extensions/fly-machines/package.json extensions/fly-machines/
 COPY extensions/task-alerts/package.json extensions/task-alerts/

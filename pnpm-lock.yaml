@@ -235,6 +235,9 @@ importers:
       '@sling/integration-railway':
         specifier: workspace:*
         version: link:../../integrations/railway
+      '@sling/integration-telegram':
+        specifier: workspace:*
+        version: link:../../integrations/telegram
       '@sling/runner-protocol':
         specifier: workspace:*
         version: link:../../packages/runner-protocol
@@ -511,6 +514,15 @@ importers:
       railway:
         specifier: 3.16.0
         version: 3.16.0
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+
+  integrations/telegram:
+    dependencies:
+      '@sling/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
       zod:
         specifier: ^4.6.7
         version: 4.6.7
