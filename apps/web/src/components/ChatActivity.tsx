@@ -30,6 +30,8 @@ import { useMadeRule } from "../lib/rules.ts";
 import { useNow } from "../lib/useNow.ts";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
 import { RuleQuestion } from "./RuleQuestion.tsx";
+import { RememberStep } from "./MemoryStep.tsx";
+import { memoryFileLabel } from "./stepLabels.ts";
 import { TaskCard } from "./TaskCard.tsx";
 import { Button, cx, ErrorText, Input, Spinner } from "./ui.tsx";
 import { OpenInEditor, WorkflowSteps } from "./WorkflowSteps.tsx";
@@ -89,6 +91,8 @@ function failedStep(step: ToolStep): boolean {
 }
 
 export function toolLabel(step: ToolStep): string {
+  const own = memoryFileLabel(step);
+  if (own) return own;
   const [running, done, failed] = TOOLS[step.name] ?? [
     `Running ${step.name}`,
     `Ran ${step.name}`,
@@ -165,6 +169,8 @@ export function ReplySteps({
               <ChangeStep step={s} approval={s.approval} change={s.approval.change} ctx={ctx} />
             ) : s.name === "delegate_coding_task" ? (
               <TaskStep step={s} ctx={ctx} />
+            ) : s.name === "remember" ? (
+              <RememberStep step={s} />
             ) : (
               <ToolRow step={s} />
             )}
