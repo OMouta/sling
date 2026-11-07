@@ -269,13 +269,19 @@ export class Agent {
         conversationId: conv.id,
         trace,
       };
-      const [chat, agents, apps, timeZone] = await Promise.all([
+      const [chat, agents, apps, timeZone, memory] = await Promise.all([
         effectiveChat(ctx, conv.workspaceId, conv.id),
         personality.tools.includes("coding")
           ? codingAgentsNote(ctx, conv.workspaceId)
           : Promise.resolve(""),
         personality.tools.includes("apps") ? appTools(ctx, scope) : Promise.resolve({}),
         workspaceTimeZone(ctx, conv.workspaceId),
+        personality.tools.includes("memory")
+          ? ctx.memory.promptBlock(
+              { workspaceId: conv.workspaceId, userId: conv.ownerId },
+              row?.id ?? null,
+            )
+          : Promise.resolve(""),
       ]);
       const appNames = Object.keys(apps);
       const allowed = allowedTools(personality.tools);
@@ -290,6 +296,7 @@ export class Agent {
             agents,
             timeZone,
             apps: appNames,
+            memory,
           }),
           tools: [...allowed],
           appTools: apps,
@@ -309,6 +316,7 @@ export class Agent {
           agents,
           timeZone,
           apps: appNames,
+          memory,
         }),
         messages: toModelMessages(rows),
         tools: { ...agentTools(ctx, scope, allowed), ...apps },

@@ -1,5 +1,7 @@
 import { MODE_POLICY, type PermissionMode, type PersonalityTool } from "@sling/core";
 import { RULES_NOTE } from "../rules/tool.ts";
+import { filesSection } from "../files/prompt.ts";
+import { memorySection } from "../memory/prompt.ts";
 import { deploysSection } from "./deploy-prompt.ts";
 import { allowedTools, isBuiltTool } from "./tools.ts";
 
@@ -103,6 +105,8 @@ export function assistantInstructions(
     timeZone?: string;
     /** Names of this turn's tools for the user's apps. */
     apps?: readonly string[];
+    /** What's remembered about the user, for a personality with memory. */
+    memory?: string;
   } = {},
 ): string {
   const commands = personality.tools.includes("commands");
@@ -110,7 +114,11 @@ export function assistantInstructions(
   const apps = personality.tools.includes("apps");
   const deploys = personality.tools.includes("deploys");
   const setup = personality.tools.includes("setup");
-  const any = commands || coding || apps || deploys || setup;
+  const remembers = personality.tools.includes("memory");
+  const files = personality.tools.includes("files");
+  // Memory holds only what the user told Sling: it reaches nothing of theirs.
+  const reaches = commands || coding || apps || deploys || setup || files;
+  const any = reaches || remembers;
   const policy = MODE_POLICY[mode];
   const out: string[] = [personality.instructions.trim()];
 
@@ -119,9 +127,9 @@ export function assistantInstructions(
     "- The chat shows Markdown. Use it where it helps: short paragraphs, lists, a table to compare things, code blocks for code and commands.",
     "- You can't browse the web. When something needs current information you don't have, say so instead of guessing.",
   ];
-  if (!any) {
+  if (!reaches) {
     chat.push(
-      "- You have no tools in this chat. You can't see or change anything on the user's machines, files, or repos. If they ask for that, say you can't do it here, and that a chat with a personality that reaches their machines can.",
+      `- You have no tools in this chat${remembers ? " besides your memory of the user" : ""}. You can't see or change anything on the user's machines, files, or repos. If they ask for that, say you can't do it here, and that a chat with a personality that reaches their machines can.`,
     );
   } else {
     if (commands || coding) {
@@ -142,6 +150,11 @@ export function assistantInstructions(
         "- You can change Sling's own setup for the user: deploy targets, app accounts, workflows, personalities, and settings.",
       );
     }
+    if (files) {
+      chat.push(
+        "- You can search and read the files in the folders the user shares from their machines.",
+      );
+    }
     const depends =
       commands || coding
         ? `the user's machines, files, repos, ${apps ? "tasks, calendar, or apps" : "or tasks"}`
@@ -149,7 +162,9 @@ export function assistantInstructions(
           ? `the user's calendar${deploys ? ", apps, or sites" : " or apps"}`
           : deploys
             ? "the user's sites"
-            : "how Sling is set up";
+            : setup
+              ? "how Sling is set up"
+              : "the files they share";
     chat.push(
       `- Answer directly from what you know when you can. Use a tool only when the answer depends on ${depends}, or when they want something done.`,
     );
@@ -203,6 +218,8 @@ export function assistantInstructions(
   }
 
   if (deploys) out.push(deploysSection(mode));
+  if (remembers) out.push(memorySection());
+  if (files) out.push(filesSection());
 
   if (setup) {
     out.push(
@@ -225,6 +242,7 @@ export function assistantInstructions(
     );
     if (opts.cli) out.push(cliNote(personality.tools, opts.apps ?? []));
   }
+  if (remembers && opts.memory) out.push(opts.memory);
   out.push(dateLine(now, opts.timeZone ?? "UTC"));
   if (coding && opts.agents) out.push(opts.agents);
   return out.join("\n\n");
@@ -245,6 +263,12 @@ function cliNote(tools: readonly PersonalityTool[], apps: readonly string[]): st
       : []),
     ...(tools.includes("apps") ? ["the app tools are how you reach their calendar and apps"] : []),
     ...(tools.includes("setup") ? ["the setup tools are how Sling's own setup changes"] : []),
+    ...(tools.includes("files")
+      ? ["search_files and read_file are how you read the folders they share"]
+      : []),
+    ...(tools.includes("memory")
+      ? ["remember and recall are how you keep and find what you know about them"]
+      : []),
   ].join(", and ");
   return `You're running inside a coding agent's CLI on one of the user's machines, for Sling. Your only tools are Sling's, from the MCP server named "sling": ${names.join(", ")}. You have no file, shell, or web tools of your own here: ${how}.`;
 }

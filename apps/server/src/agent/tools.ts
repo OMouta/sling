@@ -14,6 +14,8 @@ import { and, eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
+import { fileTools } from "../files/tools.ts";
+import { memoryTools } from "../memory/tools.ts";
 import { ENVIRONMENTS } from "../routing/router.ts";
 import { type CreatedTask, TaskInputError, TaskRoutingError } from "../tasks/service.ts";
 import { runnerViews, taskPlace, taskView } from "../views.ts";
@@ -545,5 +547,7 @@ function allTools(ctx: AppContext, scope: ToolScope, canDeploy: boolean) {
     }),
 
     ...setupTools(ctx, scope),
+    ...memoryTools(ctx, scope),
+    ...fileTools(ctx, scope),
   };
 }
