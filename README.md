@@ -10,7 +10,7 @@ Sling coordinates. The coding agent writes the code. The control plane never edi
 
 Around that sits a workflow engine with a visual editor. Workflows react to email, Discord messages, schedules, webhooks, and Sling's own events, and they can summarize with a model, ask for approval, or hand work to a coding agent. The chat assistant is itself a workflow, so the web app and Discord talk to the same one.
 
-This repo is at **Stage 6** of the plan in [`plan/`](plan/): an assistant that remembers what you tell it, writes workflows from chat, answers under rules you set, checks that what it did happened, and talks to you over Telegram, iMessage, and Signal. Stage 5 brought fixes that Sling merges, deploys, and checks once you approve, a calendar, and the web app on your phone's home screen with push notifications. Stage 4 brought extensions that other people write and you install, as signed packages that run in their own restricted processes. Stage 3 brought routing across machines, Docker and Railway sandboxes, and Claude Code next to Codex. Workflows, the editor, and the Discord and email connectors came in Stage 2.
+This repo is at **Stage 7** of the plan in [`plan/`](plan/): personalities that search the web and cite it, answer from files you give them, read the files and photos you attach, run on a model of their own, and hand a question to each other with an @mention, with retry, edit, follow-ups, read aloud, and feedback on every reply. Stage 6 brought an assistant that remembers what you tell it, writes workflows from chat, answers under rules you set, checks that what it did happened, and talks to you over Telegram, iMessage, and Signal. Stage 5 brought fixes that Sling merges, deploys, and checks once you approve, a calendar, and the web app on your phone's home screen with push notifications. Stage 4 brought extensions that other people write and you install, as signed packages that run in their own restricted processes. Stage 3 brought routing across machines, Docker and Railway sandboxes, and Claude Code next to Codex. Workflows, the editor, and the Discord and email connectors came in Stage 2.
 
 ## How it fits together
 
@@ -56,6 +56,14 @@ Add your site under **Checks**: a URL that says it works, and, if Sling should d
 
 Add your calendar under **Connectors**: iCloud, Fastmail, Nextcloud, or any CalDAV account, Google Calendar through your own OAuth client, or the private iCal link of an Outlook calendar. The assistant then answers "what's on tomorrow?" and adds events, and the **Morning briefing** template writes you a briefing each morning. It can also search and read your email, send email, Discord, and Telegram messages, and run your workflows from chat. Reading never asks; anything that goes out asks you in the chat first, except in Full access.
 
+## The web, sources, and files
+
+Give a personality **Web search** and it searches and reads pages with the model's own search, on your Claude or ChatGPT subscription when it runs on Claude Code or Codex. Replies cite what they used as small numbered links, with the sources listed underneath. **+ → Deep research** turns one message into a longer search that ends in a report.
+
+A personality's page takes **Sources**: PDFs, Word files, text, and links it answers from, and a citation opens the PDF at the page. In any chat, drop, paste, or attach files and photos to a message, and the assistant reads them. See [docs/sources.md](docs/sources.md).
+
+Each personality can run on its own model, picked on its page, which a chat starts on and can still change. Type `@` in the composer to hand one message to another personality. Replies have copy, read aloud, retry, thumbs up and down, and follow-ups to tap, and the downvotes on a personality can suggest better instructions. Personalities export to a file and import from one. See [docs/personalities.md](docs/personalities.md).
+
 ## Memory and your files
 
 Tell the assistant something about yourself and it remembers: the chat shows "Remembered: Vegetarian" with **Undo**, and every chat after that knows it, whichever personality answers. **Memory** lists what it knows, with the chat each fact came from, to edit or delete. It never keeps passwords or card numbers. To let it read your notes, share a folder on the machine that has them with `sling-runner folder add ~/Notes`; it searches and reads them there and never uploads the folder. See [docs/memory.md](docs/memory.md).
@@ -98,6 +106,7 @@ Each conversation has a mode, and each machine can cap the mode it accepts. Deta
 - [Reach Sling from your phone, at home or away](docs/remote-access.md)
 - [Permission modes and what enforces them](docs/modes.md)
 - [Personalities: who answers, and what it may use](docs/personalities.md)
+- [Sources, files in chat, and the web](docs/sources.md)
 - [Memory, and the folders your machines share](docs/memory.md)
 - [Rules: standing answers, and work that starts on its own](docs/rules.md)
 - [Checks: watch sites, commands, and replies, and deploy a fix](docs/checks.md)
