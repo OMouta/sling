@@ -18,7 +18,7 @@ export const EXTENSION_STATUS: Record<
   stopped: { tone: "neutral", label: "idle", hint: "Its process starts the next time it's used." },
   error: {
     tone: "danger",
-    label: "error",
+    label: "Error",
     hint: "It kept crashing, so it's stopped. Turn it off and on to try again.",
   },
   disabled: {
@@ -26,7 +26,7 @@ export const EXTENSION_STATUS: Record<
     label: "disabled",
     hint: "Turned off. Its nodes fail until you turn it on.",
   },
-  unsupported: { tone: "warn", label: "unsupported", hint: "This server can't run its code." },
+  unsupported: { tone: "warn", label: "Can't run here", hint: "This server can't run its code." },
 };
 
 export const KIND_LABEL: Record<ExtensionKind, string> = {
@@ -61,7 +61,14 @@ export function nodeSummary(nodes: ExtensionContents["nodes"]): string {
 
 /** One short line for a card: the riskiest permission, and how many more. */
 export function permissionSummary(lines: PermissionLine[]): { text: string; more: number } {
-  const first = lines.find((l) => l.risk === "high") ?? lines[0];
+  // A high-risk line is too long for a card; the install dialog spells it out.
+  if (lines.some((l) => l.risk === "high")) {
+    return {
+      text: `High risk · ${lines.length === 1 ? "1 permission" : `${lines.length} permissions`}`,
+      more: 0,
+    };
+  }
+  const first = lines[0];
   if (!first) return { text: "Needs no permissions", more: 0 };
   return { text: first.text, more: lines.length - 1 };
 }

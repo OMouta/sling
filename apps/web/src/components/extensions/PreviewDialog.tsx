@@ -1,4 +1,4 @@
-import type { DiscoverEntryView, ExtensionPreview } from "@sling/core";
+import type { DiscoverEntryView, ExtensionPreview, ExtensionView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, KeyRound, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -29,7 +29,16 @@ import {
  * requirement can be installed from here, after which the original package
  * is previewed again.
  */
-export function PreviewDialog({ source, onClose }: { source: PreviewSource; onClose: () => void }) {
+export function PreviewDialog({
+  source,
+  onClose,
+  onInstalled,
+}: {
+  source: PreviewSource;
+  onClose: () => void;
+  /** After a new install, not an update or a requirement installed on the way. */
+  onInstalled?: (ext: ExtensionView) => void;
+}) {
   const qc = useQueryClient();
   const [stack, setStack] = useState<PreviewSource[]>([source]);
   const top = stack[stack.length - 1] ?? source;
@@ -54,7 +63,10 @@ export function PreviewDialog({ source, onClose }: { source: PreviewSource; onCl
       else void qc.invalidateQueries({ queryKey: qk.extensions() });
       if (needsTrust) void qc.invalidateQueries({ queryKey: qk.publishers() });
       if (nested) pop();
-      else onClose();
+      else {
+        onClose();
+        if (!update && isExtensionView(ext)) onInstalled?.(ext);
+      }
     },
   });
 
@@ -231,8 +243,7 @@ function PreviewBody({
 
       {!p.signed && p.source !== "included" && (
         <p className="text-xs leading-4 text-muted">
-          Nobody signed this package, so Sling can't tell who made it. Install it only if you built
-          it or trust where it came from.
+          Unsigned. Install it only if you trust where it came from.
         </p>
       )}
 
@@ -267,11 +278,6 @@ function PreviewBody({
           <section>
             <SectionHeading>Adds</SectionHeading>
             <Adds contents={p.contents} />
-            {!runsCode(p.contents) && (
-              <p className="mt-3 text-xs leading-4 text-muted">
-                Templates only. It runs no code and needs no permissions.
-              </p>
-            )}
           </section>
           {runsCode(p.contents) && (
             <section>
@@ -281,10 +287,6 @@ function PreviewBody({
               ) : (
                 <p className="text-[13px] text-muted">None.</p>
               )}
-              <p className="mt-3 text-xs leading-4 text-muted">
-                It runs in its own process, with no access to files, other credentials, or your
-                machines.
-              </p>
             </section>
           )}
         </>
@@ -298,8 +300,7 @@ function PreviewBody({
         <section className="rounded-xl bg-surface-2 p-3 shadow-raised">
           <p className="text-[13px] font-medium">Trust {p.publisher.name}?</p>
           <p className="mt-1 text-xs leading-4 text-muted">
-            You haven't installed anything signed with this key before. Check the fingerprint with
-            the publisher. Trusting it lets you install and update their packages.
+            A key you haven't trusted before. Check its fingerprint with the publisher.
           </p>
           <p className="mt-2.5 flex items-center gap-2">
             <KeyRound aria-hidden="true" size={14} className="text-subtle" />

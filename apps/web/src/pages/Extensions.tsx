@@ -1,4 +1,11 @@
-import type { DiscoverEntryView, ExtensionKind, ExtensionView } from "@sling/core";
+import type {
+  ConnectorView,
+  DiscoverEntryView,
+  ExtensionKind,
+  ExtensionView,
+  InstallationView,
+} from "@sling/core";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowUpCircle,
@@ -14,6 +21,7 @@ import {
   Upload,
 } from "lucide-react";
 import { type ReactNode, useMemo, useRef, useState } from "react";
+import { ConnectorSetupDialog } from "../components/ConnectorSetup.tsx";
 import { DetailsDialog } from "../components/extensions/DetailsDialog.tsx";
 import {
   Adds,
@@ -25,7 +33,7 @@ import {
 import { PreviewDialog } from "../components/extensions/PreviewDialog.tsx";
 import { RemoveDialog } from "../components/extensions/RemoveDialog.tsx";
 import { AddCatalogDialog, Sources } from "../components/extensions/Sources.tsx";
-import { Page, Toolbar, ToolbarText } from "../components/Page.tsx";
+import { Page, Toolbar } from "../components/Page.tsx";
 import {
   Badge,
   Button,
@@ -38,6 +46,7 @@ import {
   Switch,
   Tabs,
 } from "../components/ui.tsx";
+import { api } from "../lib/api.ts";
 import {
   type PreviewSource,
   useDiscover,
@@ -52,6 +61,7 @@ import {
   permissionSummary,
 } from "../lib/extensions.ts";
 import { plural } from "../lib/format.ts";
+import { qk } from "../lib/workflowApi.ts";
 import { type ExtensionsTab, extensionsRoute } from "../router.tsx";
 
 type Kind = ExtensionKind | "all";
@@ -75,6 +85,21 @@ export function ExtensionsPage() {
   const [details, setDetails] = useState<string | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
   const [addingCatalog, setAddingCatalog] = useState(false);
+  const [setting, setSetting] = useState<ConnectorView | null>(null);
+  const qc = useQueryClient();
+  // A new connector goes straight to its setup, unless the workspace has one already.
+  const setUp = async (x: ExtensionView) => {
+    const first = x.contents.connectors[0];
+    if (!first) return;
+    const [installations, connectors] = await Promise.all([
+      api.get<InstallationView[]>("/api/installations"),
+      api.get<ConnectorView[]>("/api/connectors"),
+    ]);
+    qc.setQueryData(qk.connectors(), connectors);
+    if (installations.some((i) => i.connectorId === first.id)) return;
+    const connector = connectors.find((c) => c.id === first.id);
+    if (connector) setSetting(connector);
+  };
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<Kind>("all");
   // Dialogs follow the live list, and close if the extension goes away.
@@ -160,17 +185,9 @@ export function ExtensionsPage() {
                 Add catalog
               </Button>
             }
-          >
-            <ToolbarText>
-              Catalogs list extensions you can install. Publishers are the signing keys you trust.
-            </ToolbarText>
-          </Toolbar>
+          />
         ) : (
-          <Toolbar actions={upload}>
-            <ToolbarText>
-              Each extension runs in its own process, with only the permissions you approved.
-            </ToolbarText>
-          </Toolbar>
+          <Toolbar actions={upload} />
         )
       }
     >
@@ -208,7 +225,20 @@ export function ExtensionsPage() {
       )}
       {tab === "sources" && <Sources installed={list} />}
 
-      {preview && <PreviewDialog source={preview} onClose={() => setPreview(null)} />}
+      {preview && (
+        <PreviewDialog
+          source={preview}
+          onClose={() => setPreview(null)}
+          onInstalled={(x) => void setUp(x)}
+        />
+      )}
+      {setting && (
+        <ConnectorSetupDialog
+          connector={setting}
+          title={`Set up ${setting.name}`}
+          onClose={() => setSetting(null)}
+        />
+      )}
       {detailsExt && <DetailsDialog ext={detailsExt} onClose={() => setDetails(null)} />}
       {removingExt && <RemoveDialog ext={removingExt} onClose={() => setRemoving(null)} />}
       {addingCatalog && <AddCatalogDialog onClose={() => setAddingCatalog(false)} />}
@@ -272,10 +302,7 @@ function Installed({
             Browse extensions
           </Button>
         }
-      >
-        Add connectors, sandbox providers, and workflow packages from a catalog, or upload a .slx
-        file.
-      </Empty>
+      />
     );
   }
   return (

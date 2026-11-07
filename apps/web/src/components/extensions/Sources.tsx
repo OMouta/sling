@@ -44,7 +44,7 @@ function Catalogs() {
     (a, b) => Number(b.included) - Number(a.included) || a.name.localeCompare(b.name),
   );
   return (
-    <Section title="Catalogs" description="Sling checks each one every 6 hours for new versions.">
+    <Section title="Catalogs">
       {catalogs.isPending && <Skeleton className="h-[146px] w-full rounded-xl" />}
       <ErrorText error={catalogs.error} />
       {catalogs.data && (
@@ -93,9 +93,7 @@ function CatalogRow({ catalog: c }: { catalog: CatalogView }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-[13px] font-medium">{c.name}</p>
         {c.included ? (
-          <p className="truncate text-xs text-subtle">
-            Ships with this server, so it can't be removed
-          </p>
+          <p className="truncate text-xs text-subtle">Built in</p>
         ) : (
           <p className="truncate font-mono text-[11.5px] text-subtle" title={c.url ?? undefined}>
             {c.url}
@@ -220,18 +218,13 @@ function Publishers({ installed }: { installed: ExtensionView[] }) {
   const publishers = usePublishers();
   const names = new Map(installed.map((x) => [x.id, x.name]));
   return (
-    <Section
-      title="Trusted publishers"
-      description="Keys you trusted when you installed something they signed."
-    >
+    <Section title="Trusted publishers">
       {publishers.isPending && <Skeleton className="h-[74px] w-full rounded-xl" />}
       <ErrorText error={publishers.error} />
       {publishers.data && (
         <Card>
           {publishers.data.length === 0 ? (
-            <Empty icon={KeyRound} title="No trusted publishers" className="py-10">
-              Installing a signed extension asks you to trust its publisher's key.
-            </Empty>
+            <Empty icon={KeyRound} title="No trusted publishers" className="py-10" />
           ) : (
             <ul aria-label="Trusted publishers" className="divide-y divide-border">
               {publishers.data.map((p) => (

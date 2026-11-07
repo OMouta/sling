@@ -372,7 +372,8 @@ describe("installed extensions", () => {
     const ntfy = await card("ntfy");
     expect(ntfy.getByText("1.0.0")).toBeTruthy();
     expect(ntfy.getByText("Included with Sling")).toBeTruthy();
-    expect(ntfy.getByText("running")).toBeTruthy();
+    // A healthy extension shows no process status.
+    expect(ntfy.queryByText(/running|idle/)).toBeNull();
     expect(ntfy.getByText("ntfy connector")).toBeTruthy();
     expect(ntfy.getByText("1 action and 1 trigger")).toBeTruthy();
     expect(ntfy.queryByRole("button", { name: /Update to/ })).toBeNull();
@@ -384,17 +385,14 @@ describe("installed extensions", () => {
     const acme = await card("Acme CRM");
     expect(acme.getByText("Acme")).toBeTruthy();
     expect(acme.getByText("(trusted)")).toBeTruthy();
-    expect(acme.getByText("idle")).toBeTruthy();
     expect(acme.getByRole("button", { name: "Update to 1.1.0" })).toBeTruthy();
 
-    // A workflow package runs no code, so it has no process status.
     const alerts = await card("Task alerts");
     expect(alerts.getByText("Notify when a task finishes template")).toBeTruthy();
-    expect(alerts.queryByText("idle")).toBeNull();
 
     const weather = await card("Weather");
     expect(weather.getByText("Unsigned")).toBeTruthy();
-    expect(weather.getByText("unsupported")).toBeTruthy();
+    expect(weather.getByText("Can't run here")).toBeTruthy();
     expect(weather.getByText("Needs Node 26 to run extension code.")).toBeTruthy();
 
     expect(screen.getByRole("tab", { name: /Installed/ }).textContent).toContain("4");
@@ -418,7 +416,9 @@ describe("installed extensions", () => {
       `Its catalog revoked version 1.0.0: ${reason}`,
     );
     expect(acme.getAllByText(new RegExp(reason))).toHaveLength(1);
-    expect(acme.getByText("disabled")).toBeTruthy();
+    expect(acme.getByRole("switch", { name: "Enable Acme CRM" }).getAttribute("aria-checked")).toBe(
+      "false",
+    );
   });
 
   it("turns an extension off", async () => {
@@ -427,10 +427,9 @@ describe("installed extensions", () => {
     fireEvent.click(ntfy.getByRole("switch", { name: "Disable ntfy" }));
     await waitFor(() => expect(callsTo("PATCH", "/api/extensions/ntfy")).toHaveLength(1));
     expect(callsTo("PATCH", "/api/extensions/ntfy")[0]?.body).toEqual({ enabled: false });
-    expect(await ntfy.findByText("disabled")).toBeTruthy();
-    expect(ntfy.getByRole("switch", { name: "Enable ntfy" }).getAttribute("aria-checked")).toBe(
-      "false",
-    );
+    expect(
+      (await ntfy.findByRole("switch", { name: "Enable ntfy" })).getAttribute("aria-checked"),
+    ).toBe("false");
   });
 
   it("points an empty list at Discover", async () => {
@@ -497,9 +496,8 @@ describe("discover", () => {
     renderAt("/extensions?tab=discover");
     const fly = await card("Fly Machines");
     expect(fly.getByText("Included with Sling")).toBeTruthy();
-    // The riskiest permission leads the summary.
-    expect(fly.getByText(/^Start sandboxes, and receive each sandbox's secrets/)).toBeTruthy();
-    expect(fly.getByText("+1 more")).toBeTruthy();
+    // A high-risk permission is too long for the card, so it says how many there are.
+    expect(fly.getByText("High risk · 2 permissions")).toBeTruthy();
     expect(fly.getByRole("button", { name: "Install Fly Machines" })).toBeTruthy();
 
     expect((await card("ntfy")).getByText("Installed")).toBeTruthy();
@@ -567,11 +565,6 @@ describe("installing", () => {
       .closest("li");
     expect(high && within(high).getByText("High risk")).toBeTruthy();
     expect(within(perms).getAllByText("High risk")).toHaveLength(1);
-    expect(
-      d.getByText(
-        "It runs in its own process, with no access to files, other credentials, or your machines.",
-      ),
-    ).toBeTruthy();
     expect(d.queryByText(/Trust/)).toBeNull();
 
     fireEvent.click(d.getByRole("button", { name: "Install" }));
@@ -689,8 +682,7 @@ describe("installing", () => {
     expect(upload?.contentType).toBe("application/octet-stream");
     expect(upload?.body).toBeInstanceOf(Blob);
     expect(d.getByText("Unsigned")).toBeTruthy();
-    expect(d.getByText(/Nobody signed this package/)).toBeTruthy();
-    expect(d.getByText("Templates only. It runs no code and needs no permissions.")).toBeTruthy();
+    expect(d.getByText(/^Unsigned\./)).toBeTruthy();
     expect(d.queryByRole("list", { name: "Permissions" })).toBeNull();
 
     const missing = d.getByRole("list", { name: "Missing requirements" });
@@ -762,7 +754,7 @@ describe("sources", () => {
     const list = within(await screen.findByRole("list", { name: "Catalogs" }));
     const rows = list.getAllByRole("listitem");
     expect(rows[0]?.textContent).toContain("Included with Sling");
-    expect(rows[0]?.textContent).toContain("Ships with this server, so it can't be removed");
+    expect(rows[0]?.textContent).toContain("Built in");
     expect(within(rows[0] as HTMLElement).queryByRole("button")).toBeNull();
     const acme = within(rows[1] as HTMLElement);
     expect(acme.getByText("https://extensions.acme.test/catalog.json")).toBeTruthy();
@@ -832,9 +824,9 @@ describe("realtime", () => {
   it("patches a card's status, adds new extensions, and drops removed ones", async () => {
     renderAt("/extensions");
     const acme = await card("Acme CRM");
-    expect(acme.getByText("idle")).toBeTruthy();
-    emit({ type: "extension.updated", extension: { ...acmeExtension, status: "running" } });
-    expect(await acme.findByText("running")).toBeTruthy();
+    expect(acme.queryByText("Error")).toBeNull();
+    emit({ type: "extension.updated", extension: { ...acmeExtension, status: "error" } });
+    expect(await acme.findByText("Error")).toBeTruthy();
 
     emit({
       type: "extension.updated",
@@ -925,5 +917,38 @@ describe("elsewhere", () => {
     });
     await waitFor(() => expect(saved).toEqual(["important-email-1.0.0.slx"]));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+});
+
+describe("setting up what an extension adds", () => {
+  it("goes straight to the provider's setup after installing it", async () => {
+    connectors = [
+      ...connectors,
+      {
+        id: "fly-machines",
+        name: "Fly Machines",
+        description: "Run coding tasks in fresh Fly Machines.",
+        setupHelp: "1. Make an app",
+        credentialsSchema: {
+          type: "object",
+          properties: { apiToken: { type: "string", title: "API token" } },
+          required: ["apiToken"],
+        },
+        secretFields: ["apiToken"],
+        configSchema: { type: "object", properties: {} },
+        nodeTypes: [],
+        isExecutionProvider: true,
+        extension: { id: "fly-machines", name: "Fly Machines", version: "1.0.0", hasIcon: false },
+      },
+    ];
+    renderAt("/extensions?tab=discover");
+    fireEvent.click(
+      (await card("Fly Machines")).getByRole("button", { name: "Install Fly Machines" }),
+    );
+    const d = await dialog();
+    await d.findByText("Fly Machines sandbox provider");
+    fireEvent.click(d.getByRole("button", { name: "Install" }));
+    const setup = within(await screen.findByRole("dialog", { name: "Set up Fly Machines" }));
+    expect(setup.getByLabelText(/API token/)).toBeTruthy();
   });
 });

@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { extensionIconUrl } from "../../lib/extensionApi.ts";
-import { EXTENSION_STATUS, nodeSummary, runsCode } from "../../lib/extensions.ts";
+import { EXTENSION_STATUS, nodeSummary } from "../../lib/extensions.ts";
 import { plural } from "../../lib/format.ts";
 import { Badge, cx, Dot } from "../ui.tsx";
 
@@ -130,11 +130,11 @@ export function PublisherLabel({
 
 export function StatusLabel({ ext }: { ext: Pick<ExtensionView, "status" | "contents"> }) {
   const s = EXTENSION_STATUS[ext.status];
-  // A workflow package has no process, so only "disabled" means anything for it.
-  if (!runsCode(ext.contents) && ext.status !== "disabled") return null;
+  // Running, idle and starting are the process's business. Only what needs you shows.
+  if (ext.status !== "error" && ext.status !== "unsupported") return null;
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-soft" title={s.hint}>
-      <Dot tone={s.tone} pulse={ext.status === "starting"} />
+      <Dot tone={s.tone} />
       {s.label}
     </span>
   );
@@ -237,7 +237,6 @@ export function PermissionList({
 export function AssistantNodes({ nodes }: { nodes: ExtensionContents["nodes"] }) {
   const usable = nodes.filter((n) => n.assistant);
   if (usable.length === 0) return null;
-  const sends = usable.some((n) => n.assistant?.sends);
   return (
     <section>
       <SectionHeading>The assistant can use</SectionHeading>
@@ -253,11 +252,6 @@ export function AssistantNodes({ nodes }: { nodes: ExtensionContents["nodes"] })
           );
         })}
       </ul>
-      <p className="mt-3 text-xs leading-4 text-muted">
-        {sends
-          ? "From chat, for personalities with Apps and workflows. What sends asks you first, except in Full access."
-          : "From chat, for personalities with Apps and workflows. None of these send anything."}
-      </p>
     </section>
   );
 }

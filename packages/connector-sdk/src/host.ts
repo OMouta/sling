@@ -50,7 +50,7 @@ export function describePermissions(p: ExtensionPermissions): PermissionLine[] {
   for (const field of network.configHosts) {
     lines.push({
       key: `configHost:${field}`,
-      text: `Connect to the host in each installation's "${field}" setting`,
+      text: `Connect to the address in its "${field}" setting`,
       risk: "normal",
     });
   }

@@ -3,7 +3,7 @@
   "id": "ntfy",
   "name": "ntfy",
   "version": "1.2.0",
-  "description": "Push notifications through ntfy.sh or your own ntfy server. Publish from a workflow, and start workflows from messages on the topics you watch.",
+  "description": "Push notifications to your phone through ntfy.",
   "publisher": "Sling",
   "sdk": "^1.2.0",
   "main": "extension.mjs",

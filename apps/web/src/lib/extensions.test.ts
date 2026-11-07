@@ -54,7 +54,7 @@ describe("extension helpers", () => {
       more: 1,
     });
     const fly = discoverEntries.find((e) => e.id === "fly-machines")?.latest?.permissions ?? [];
-    expect(permissionSummary(fly).text).toMatch(/^Start sandboxes/);
+    expect(permissionSummary(fly)).toEqual({ text: "High risk · 2 permissions", more: 0 });
   });
 });
 

@@ -141,7 +141,6 @@ describe("extension dialogs", () => {
     const list = within(await screen.findByRole("list", { name: "The assistant can use" }));
     const items = list.getAllByRole("listitem").map((li) => li.textContent);
     expect(items).toEqual(["List agenda items", "Add an agenda itemSends"]);
-    expect(screen.getByText(/What sends asks you first, except in Full access/)).toBeTruthy();
   });
 
   it("says so in the update dialog when a new version lets the assistant use a node", async () => {
