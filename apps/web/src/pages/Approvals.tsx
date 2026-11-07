@@ -11,9 +11,10 @@ import {
   Upload,
   Workflow,
 } from "lucide-react";
-import { useState } from "react";
 import { DeployPlanText } from "../components/DeployBits.tsx";
 import { Content, Page } from "../components/Page.tsx";
+import { RuleQuestion } from "../components/RuleQuestion.tsx";
+import { RulesList } from "../components/RulesList.tsx";
 import { SandboxFallbackCard } from "../components/SandboxFallbackCard.tsx";
 import {
   Badge,
@@ -39,6 +40,7 @@ import {
 import { ago, plural } from "../lib/format.ts";
 import type { TaskDetail } from "../lib/types.ts";
 import { useRun } from "../lib/workflowApi.ts";
+import { type ApprovalsTab, approvalsRoute } from "../router.tsx";
 
 const LABEL = {
   push: "Push branch",
@@ -55,7 +57,11 @@ export function ApprovalsPage() {
   });
   const { byTask, workflow, fallback, decisions } = groupApprovals(approvals.data ?? []);
 
-  const [tab, setTab] = useState<"all" | "tasks" | "workflows" | "sandboxes">("all");
+  const search = approvalsRoute.useSearch();
+  const navigate = approvalsRoute.useNavigate();
+  const tab: ApprovalsTab = search.tab ?? "all";
+  const setTab = (t: ApprovalsTab) =>
+    void navigate({ search: t === "all" ? {} : { tab: t }, replace: true });
   const total = decisions;
   const show = (t: typeof tab) => tab === "all" || tab === t;
 
@@ -78,11 +84,14 @@ export function ApprovalsPage() {
             { id: "tasks", label: "Tasks", count: byTask.size },
             { id: "workflows", label: "Workflows", count: workflow.length },
             { id: "sandboxes", label: "Sandboxes", count: fallback.length },
+            { id: "rules", label: "Rules" },
           ]}
         />
       }
     >
-      {approvals.data?.length === 0 ? (
+      {tab === "rules" ? (
+        <RulesList />
+      ) : approvals.data?.length === 0 ? (
         <Empty fill icon={ShieldCheck} title="Nothing waiting" />
       ) : (
         <Content className="space-y-4">
@@ -240,7 +249,7 @@ function DeployApprovalGroup({ taskId, approvals }: { taskId: string; approvals:
 
 function PullRequestGroup({ taskId, approvals }: { taskId: string; approvals: ApprovalView[] }) {
   const first = approvals[0];
-  const decide = useTaskDecision(taskId);
+  const qc = useQueryClient();
   if (!first?.task) return null;
   const t = first.task;
   const pr = approvals.find((a) => a.actionKind === "open_pr");
@@ -277,7 +286,19 @@ function PullRequestGroup({ taskId, approvals }: { taskId: string; approvals: Ap
           </div>
         )}
       </div>
-      <DecisionFooter decide={decide} />
+      <RuleQuestion
+        offers={approvals.flatMap((a) => (a.ruleOffer ? [a.ruleOffer] : []))}
+        approvalId={null}
+        approve="Approve"
+        deny="Reject"
+        onDecide={async (allow) => {
+          await api.post(`/api/tasks/${taskId}/approval`, {
+            decision: allow ? "approve" : "reject",
+          });
+          await qc.invalidateQueries({ queryKey: ["approvals"] });
+        }}
+        className="px-4 py-2.5"
+      />
     </Card>
   );
 }

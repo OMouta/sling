@@ -83,9 +83,16 @@ const deploysRoute = createRoute({
     throw redirect({ to: "/checks", replace: true });
   },
 });
-const approvalsRoute = createRoute({
+export type ApprovalsTab = "all" | "tasks" | "workflows" | "sandboxes" | "rules";
+const APPROVALS_TABS: readonly string[] = ["tasks", "workflows", "sandboxes", "rules"];
+export const approvalsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/approvals",
+  // `tab` opens one tab, such as Rules from a chat a rule started.
+  validateSearch: (search: Record<string, unknown>): { tab?: ApprovalsTab } =>
+    typeof search.tab === "string" && APPROVALS_TABS.includes(search.tab)
+      ? { tab: search.tab as ApprovalsTab }
+      : {},
   component: ApprovalsPage,
 });
 const settingsRoute = createRoute({
