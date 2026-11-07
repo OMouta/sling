@@ -6,17 +6,17 @@ A new workspace has one, Sling: the default, with every tool. **New personality*
 
 | Group | Personality | Tools | For |
 |---|---|---|---|
-| Your machines | Sling | Every group | Your machines, repos, coding agents, apps, deploys, and Sling's own setup |
-| | Ops | Commands | Disk, memory, processes, services, and logs, without touching code |
-| | Incident | Commands, coding tasks | Finding why something broke, then handing the fix to a coding agent |
-| Thinking | Research | None | Explaining a topic and comparing options |
-| | Planner | None | Turning a goal into steps and a schedule |
-| Words | Writer | None | Drafting and editing emails, posts, and docs |
-| | Tutor | None | Teaching a subject step by step |
-| Everyday | Finance | None | Budgets, spending, and money questions |
-| | Travel | None | Trips around your dates and budget |
-| | Chef | None | Recipes from what's in your kitchen |
-| | Language coach | None | Practice in a language you're learning |
+| Your machines | Sling | Every group | Your machines, repos, coding agents, apps, deploys, shared folders, and Sling's own setup |
+| | Ops | Commands, memory | Disk, memory, processes, services, and logs, without touching code |
+| | Incident | Commands, coding tasks, deploys, memory | Finding why something broke, then handing the fix to a coding agent |
+| Thinking | Research | Memory | Explaining a topic and comparing options |
+| | Planner | Apps and workflows, memory | Turning a goal into steps and a schedule |
+| Words | Writer | Memory | Drafting and editing emails, posts, and docs |
+| | Tutor | Memory | Teaching a subject step by step |
+| Everyday | Finance | Memory | Budgets, spending, and money questions |
+| | Travel | Memory | Trips around your dates and budget |
+| | Chef | Memory | Recipes from what's in your kitchen |
+| | Language coach | Memory | Practice in a language you're learning |
 
 With only one personality there's nothing to pick, so the new chat screen shows no row until you add another.
 
@@ -34,7 +34,11 @@ Chats from before personalities, and chats a workflow starts (Discord, for examp
 | Coding tasks | `list_machines`, `delegate_coding_task`, `get_task`, and `cancel_task` |
 | Apps and workflows | `run_workflow`, and a tool for each connector action that's open to the assistant and has an enabled installation, such as `calendar_list_events`, `calendar_create_event`, `email_send`, and `discord_send_message`. At most 30 |
 | Deploys | `list_machines`, `run_check`, and `deploy_task` |
-| Change Sling's setup | `read_setup`, `save_deploy_target`, `save_app_account`, `add_workflow`, `change_workflow`, `save_personality`, `change_settings`, and `save_rule` |
+| Change Sling's setup | `read_setup`, `save_deploy_target`, `save_app_account`, `add_workflow`, `change_workflow`, `create_workflow`, `workflow_nodes`, `save_personality`, `change_settings`, and `save_rule` |
+| Memory | `remember`, `forget`, and `recall`, and what it knows about you in its prompt. See [memory.md](memory.md) |
+| Files on your machines | `search_files` and `read_file`, in the folders your machines share. See [runner.md](runner.md#folders) |
+
+Memory and Files never ask, in any mode, Read-only included: memory reads and writes only Sling's own data, and files are only read.
 
 With Apps and workflows, reading, such as the calendar, never asks. Anything that sends or creates something outside Sling, or a workflow that does, is refused in Read-only, asks you in the chat first in Supervised and Auto, and runs at once in Full access. If you decline, or don't answer within 5 minutes, nothing is sent. Every call is in the audit log as `assistant.action`. Values the assistant passes are used as they are, never as `={{ }}` expressions.
 
