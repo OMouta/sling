@@ -550,7 +550,7 @@ describe("chat on a coding agent's CLI", () => {
     await api("POST", `/api/conversations/${conv.id}/messages`, { text: "[fake:tool] machines?" });
     const r = await reply(conv.id, 0);
     expect(r.text).toBe(
-      "Tools: list_machines, delegate_coding_task, get_task, run_command, check_deploy_target, deploy_task, cancel_task, read_setup, save_deploy_target, save_app_account, add_workflow, change_workflow, save_personality, change_settings. Machines: devbox.",
+      "Tools: list_machines, delegate_coding_task, get_task, run_command, run_check, deploy_task, cancel_task, read_setup, save_deploy_target, save_app_account, add_workflow, change_workflow, save_personality, change_settings. Machines: devbox.",
     );
     // The reply keeps its thinking and the tool call Sling served, in order.
     const { messages } = await api<{ messages: { role: string; trace: ReplyTrace | null }[] }>(

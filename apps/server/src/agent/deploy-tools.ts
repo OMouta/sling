@@ -21,7 +21,7 @@ export async function deployTargetNames(
 }
 
 /** Runs a target's checks now. The assistant names a target; it never gives a URL. */
-export function checkDeployTargetTool(ctx: AppContext, scope: ToolScope) {
+export function runCheckTool(ctx: AppContext, scope: ToolScope) {
   return tool({
     description:
       "Run a deploy target's health checks now. Returns what each check answered, whether the site is up, the target's last deploy, and how it deploys. Name the target as the user or list_machines does. You can't check a URL of your own.",

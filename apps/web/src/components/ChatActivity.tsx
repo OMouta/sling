@@ -37,6 +37,8 @@ const TOOLS: Record<string, [string, string, string]> = {
   get_task: ["Checking a task", "Checked a task", "Couldn't check a task"],
   cancel_task: ["Cancelling a task", "Cancelled a task", "Couldn't cancel a task"],
   run_command: ["Running a command", "Ran a command", "Couldn't run a command"],
+  run_check: ["Checking the site", "Checked the site", "Couldn't check the site"],
+  // Its name in replies saved before it was renamed.
   check_deploy_target: ["Checking the site", "Checked the site", "Couldn't check the site"],
   deploy_task: ["Starting a deploy", "Started a deploy", "Couldn't start the deploy"],
   run_workflow: ["Running a workflow", "Ran a workflow", "Couldn't run the workflow"],

@@ -796,7 +796,7 @@ function flows(m: Machine) {
       toolResults.length = 0;
       const conv = await newConversation("auto");
       script.push(
-        { tool: "check_deploy_target", input: { target: "website" } },
+        { tool: "run_check", input: { target: "website" } },
         {
           tool: "delegate_coding_task",
           input: {
@@ -814,7 +814,7 @@ function flows(m: Machine) {
       const delegated = await until("delegated", async () =>
         toolResults.find((r) => r.toolName === "delegate_coding_task"),
       );
-      const checked = toolResults.find((r) => r.toolName === "check_deploy_target");
+      const checked = toolResults.find((r) => r.toolName === "run_check");
       expect(checked?.value).toMatchObject({
         target: "Website",
         method,

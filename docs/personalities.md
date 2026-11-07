@@ -33,7 +33,7 @@ Chats from before personalities, and chats a workflow starts (Discord, for examp
 | Commands on your machines | `list_machines` and `run_command` |
 | Coding tasks | `list_machines`, `delegate_coding_task`, `get_task`, and `cancel_task` |
 | Apps and workflows | `run_workflow`, and a tool for each connector action that's open to the assistant and has an enabled installation, such as `calendar_list_events`, `calendar_create_event`, `email_send`, and `discord_send_message`. At most 30 |
-| Deploys | `list_machines`, `check_deploy_target`, and `deploy_task` |
+| Deploys | `list_machines`, `run_check`, and `deploy_task` |
 | Change Sling's setup | `read_setup`, `save_deploy_target`, `save_app_account`, `add_workflow`, `change_workflow`, `save_personality`, and `change_settings` |
 
 With Apps and workflows, reading, such as the calendar, never asks. Anything that sends or creates something outside Sling, or a workflow that does, is refused in Read-only, asks you in the chat first in Supervised and Auto, and runs at once in Full access. If you decline, or don't answer within 5 minutes, nothing is sent. Every call is in the audit log as `assistant.action`. Values the assistant passes are used as they are, never as `={{ }}` expressions.

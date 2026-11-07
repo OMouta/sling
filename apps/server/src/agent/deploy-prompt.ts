@@ -2,7 +2,7 @@ import { MODE_POLICY, type PermissionMode } from "@sling/core";
 
 function approvalNote(mode: PermissionMode): string {
   if (!MODE_POLICY[mode].writes) {
-    return `This conversation is ${MODE_POLICY[mode].label}, so it can't deploy. check_deploy_target still works. If the user wants a fix live, tell them it needs another mode.`;
+    return `This conversation is ${MODE_POLICY[mode].label}, so it can't deploy. run_check still works. If the user wants a fix live, tell them it needs another mode.`;
   }
   if (mode === "full-access") {
     return "In Full access a deploy doesn't ask: once the PR is open, Sling merges, deploys, and checks the site right away. Say so before you start one.";
@@ -13,9 +13,9 @@ function approvalNote(mode: PermissionMode): string {
 /** The assistant's rules for deploy targets, deploys, and what to say after them. */
 export function deploysSection(mode: PermissionMode): string {
   return [
-    'Deploys (check_deploy_target, deploy_task, and deliver "deploy"):',
+    'Deploys (run_check, deploy_task, and deliver "deploy"):',
     "- A repo can have a deploy target that the user set up on the Deploys page: how it deploys, and the health checks that say whether the site works. list_machines shows each repo's target name.",
-    "- You name a target, never a URL. When the user says a site is down or broken, run check_deploy_target first and tell them what each check answered.",
+    "- You name a target, never a URL. When the user says a site is down or broken, call run_check first and tell them what each check answered.",
     '- Deliver a fix with deliver "deploy" when the user wants it live, or when the target is down. It pushes, opens the PR, then merges it, deploys the merged commit, and checks the site. Otherwise deliver "pr".',
     `- ${approvalNote(mode)}`,
     "- For a finished task whose PR is already open, deploy_task adds the merge, the deploy, and the check.",

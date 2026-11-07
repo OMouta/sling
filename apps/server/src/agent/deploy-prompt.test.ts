@@ -13,7 +13,7 @@ if (!incident || !sling) throw new Error("personality templates missing");
 describe("the Deploys part of the prompt", () => {
   it("is there only for a personality with the deploys group", () => {
     const p = assistantInstructions(incident, "auto", now);
-    expect(p).toContain('Deploys (check_deploy_target, deploy_task, and deliver "deploy"):');
+    expect(p).toContain('Deploys (run_check, deploy_task, and deliver "deploy"):');
     expect(p).toContain("You name a target, never a URL.");
     expect(p).toContain('"Approve deployment?"');
     expect(p).toContain("offer a revert task");
@@ -22,7 +22,7 @@ describe("the Deploys part of the prompt", () => {
       "auto",
       now,
     );
-    expect(plain).not.toContain("check_deploy_target");
+    expect(plain).not.toContain("run_check");
     expect(plain).not.toContain("Approve deployment?");
   });
 
@@ -36,11 +36,7 @@ describe("the Deploys part of the prompt", () => {
   });
 
   it("offers the deploy tools and delivery only with the group", () => {
-    expect([...allowedTools(["deploys"])]).toEqual([
-      "list_machines",
-      "check_deploy_target",
-      "deploy_task",
-    ]);
+    expect([...allowedTools(["deploys"])]).toEqual(["list_machines", "run_check", "deploy_task"]);
     const scope = { workspaceId: "w", ownerId: "u", conversationId: "c" };
     const ctx = {} as never;
     const coding = agentTools(ctx, scope, allowedTools(["coding"]));
@@ -53,7 +49,7 @@ describe("the Deploys part of the prompt", () => {
     };
     expect(deliveries(coding)).toEqual(["local", "push", "pr"]);
     expect(deliveries(both)).toEqual(["local", "push", "pr", "deploy"]);
-    expect(Object.keys(coding)).not.toContain("check_deploy_target");
+    expect(Object.keys(coding)).not.toContain("run_check");
     expect(Object.keys(both)).toContain("deploy_task");
   });
 });

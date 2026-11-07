@@ -18,7 +18,7 @@ import { ENVIRONMENTS } from "../routing/router.ts";
 import { type CreatedTask, TaskInputError, TaskRoutingError } from "../tasks/service.ts";
 import { runnerViews, taskPlace, taskView } from "../views.ts";
 import { APPROVAL_WAIT_MS, type CommandResult } from "./commands.ts";
-import { checkDeployTargetTool, deployTargetNames, deployTaskTool } from "./deploy-tools.ts";
+import { deployTargetNames, deployTaskTool, runCheckTool } from "./deploy-tools.ts";
 import { SETUP_TOOLS, setupTools } from "./setup-tools.ts";
 import type { TraceRecorder } from "./trace.ts";
 
@@ -173,7 +173,7 @@ export const TOOLS_BY_GROUP: Record<PersonalityTool, readonly string[]> = {
   coding: ["list_machines", "delegate_coding_task", "get_task", "cancel_task"],
   // Also every connector action flagged for the assistant, added per turn.
   apps: ["run_workflow"],
-  deploys: ["list_machines", "check_deploy_target", "deploy_task"],
+  deploys: ["list_machines", "run_check", "deploy_task"],
   setup: [...SETUP_TOOLS, "create_workflow", "workflow_nodes", "save_rule", "save_check"],
   memory: ["remember", "forget", "recall"],
   files: ["search_files", "read_file"],
@@ -532,7 +532,7 @@ function allTools(ctx: AppContext, scope: ToolScope, canDeploy: boolean) {
       },
     }),
 
-    check_deploy_target: checkDeployTargetTool(ctx, scope),
+    run_check: runCheckTool(ctx, scope),
     deploy_task: deployTaskTool(ctx, scope),
 
     cancel_task: tool({
