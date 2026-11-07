@@ -1,14 +1,5 @@
-import {
-  GLYPH_SHAPES,
-  newId,
-  PERSONALITY_COLORS,
-  PERSONALITY_DESCRIPTION_MAX,
-  PERSONALITY_INSTRUCTIONS_MAX,
-  PERSONALITY_NAME_MAX,
-  PERSONALITY_TOOLS,
-} from "@sling/core";
 import { schema } from "@sling/db";
-import { and, eq, isNull, max, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
@@ -16,37 +7,27 @@ import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import {
+  createPersonality,
   fromTemplate,
+  insertPersonality,
   listPersonalities,
+  PersonalityFields,
+  PersonalityPatch,
   type PersonalityRow,
+  publishPersonality,
   toPersonalityView,
+  updatePersonality,
   usablePersonality,
 } from "./service.ts";
 import { PERSONALITY_TEMPLATES, personalityTemplate } from "./templates.ts";
 
 const Id = z.object({ id: z.string() });
 
-const Fields = z.object({
-  name: z.string().trim().min(1).max(PERSONALITY_NAME_MAX),
-  description: z.string().trim().max(PERSONALITY_DESCRIPTION_MAX).default(""),
-  instructions: z.string().trim().min(1).max(PERSONALITY_INSTRUCTIONS_MAX),
-  tools: z
-    .array(z.enum(PERSONALITY_TOOLS))
-    .max(PERSONALITY_TOOLS.length)
-    .transform((t) => PERSONALITY_TOOLS.filter((g) => t.includes(g))),
-  color: z.enum(PERSONALITY_COLORS),
-  shape: z.enum(GLYPH_SHAPES),
-});
-
 export async function personalityRoutes(app: FastifyInstance, ctx: AppContext) {
   const r = app.withTypeProvider<ZodTypeProvider>();
   r.addHook("preHandler", requireActor(ctx));
 
-  const publish = (row: PersonalityRow) =>
-    ctx.hub.publish(row.workspaceId, {
-      type: "personality.updated",
-      personality: toPersonalityView(row),
-    });
+  const publish = (row: PersonalityRow) => publishPersonality(ctx, row);
 
   r.get("/api/personalities", async (request) => {
     const actor = actorOf(request);
@@ -75,7 +56,7 @@ export async function personalityRoutes(app: FastifyInstance, ctx: AppContext) {
         )
         .limit(1);
       if (existing) return toPersonalityView(existing);
-      const row = await insertPersonality(actor, fromTemplate(t));
+      const row = await insertPersonality(ctx, actor, fromTemplate(t));
       await audit(ctx, {
         workspaceId: actor.workspaceId,
         actorType: "user",
@@ -90,81 +71,20 @@ export async function personalityRoutes(app: FastifyInstance, ctx: AppContext) {
     },
   );
 
-  /** A new personality, last in the switcher. */
-  async function insertPersonality(
-    actor: { workspaceId: string; userId: string },
-    fields: z.infer<typeof Fields> & { templateKey?: string },
-  ): Promise<PersonalityRow> {
-    const [last] = await ctx.db
-      .select({ position: max(schema.personalities.position) })
-      .from(schema.personalities)
-      .where(eq(schema.personalities.workspaceId, actor.workspaceId));
-    const [row] = await ctx.db
-      .insert(schema.personalities)
-      .values({
-        id: newId("prs"),
-        workspaceId: actor.workspaceId,
-        ownerId: actor.userId,
-        ...fields,
-        position: (last?.position ?? -1) + 1,
-      })
-      .returning();
-    if (!row) throw new Error("insert failed");
-    return row;
-  }
-
-  r.post("/api/personalities", { schema: { body: Fields } }, async (request) => {
-    const actor = actorOf(request);
-    const row = await insertPersonality(actor, request.body);
-    await audit(ctx, {
-      workspaceId: actor.workspaceId,
-      actorType: "user",
-      actorId: actor.userId,
-      verb: "personality.created",
-      subjectType: "personality",
-      subjectId: row.id,
-      details: { name: row.name, tools: row.tools },
-    });
-    publish(row);
+  r.post("/api/personalities", { schema: { body: PersonalityFields } }, async (request) => {
+    const row = await createPersonality(ctx, actorOf(request), request.body);
     return toPersonalityView(row);
   });
 
   r.patch(
     "/api/personalities/:id",
-    { schema: { params: Id, body: Fields.partial() } },
+    { schema: { params: Id, body: PersonalityPatch } },
     async (request, reply) => {
       const actor = actorOf(request);
       const row = await usablePersonality(ctx.db, actor.workspaceId, request.params.id);
       if (!row) return reply.code(404).send({ error: "not found" });
-      const b = request.body;
-      // What the assistant is told or may do changed, so later replies say so.
-      const changesPrompt =
-        (b.name !== undefined && b.name !== row.name) ||
-        (b.instructions !== undefined && b.instructions !== row.instructions) ||
-        (b.tools !== undefined && b.tools.join() !== row.tools.join());
-      const [updated] = await ctx.db
-        .update(schema.personalities)
-        .set({ ...b, ...(changesPrompt ? { revision: row.revision + 1 } : {}) })
-        .where(eq(schema.personalities.id, row.id))
-        .returning();
+      const updated = await updatePersonality(ctx, actor, row, request.body);
       if (!updated) return reply.code(404).send({ error: "not found" });
-      if (changesPrompt) {
-        await audit(ctx, {
-          workspaceId: actor.workspaceId,
-          actorType: "user",
-          actorId: actor.userId,
-          verb: "personality.updated",
-          subjectType: "personality",
-          subjectId: row.id,
-          details: {
-            revision: updated.revision,
-            ...(b.tools !== undefined && b.tools.join() !== row.tools.join()
-              ? { tools: { from: row.tools, to: updated.tools } }
-              : {}),
-          },
-        });
-      }
-      publish(updated);
       return toPersonalityView(updated);
     },
   );

@@ -1,9 +1,8 @@
-import type { AnyConnector, SetupResult, TestResult } from "@sling/connector-sdk";
+import type { SetupResult } from "@sling/connector-sdk";
 import type { ConnectorView } from "@sling/core";
-import { newId } from "@sling/core";
 import { schema } from "@sling/db";
-import { and, asc, eq } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import { asc, eq } from "drizzle-orm";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { audit } from "../../audit.ts";
@@ -12,11 +11,18 @@ import { actorOf, requireActor } from "../../http/session.ts";
 import { liveSandboxCount } from "../../sandboxes/routes.ts";
 import { toJsonSchema } from "../registry.ts";
 import { toInstallationView } from "../views.ts";
-import { readCredentials, writeCredentials } from "./installations.ts";
+import { readCredentials } from "./installations.ts";
+import {
+  connectorLog,
+  createInstallation,
+  InstallationError,
+  ownedInstallation,
+  testConnection,
+  updateInstallation,
+} from "./manage.ts";
 import { runSetup } from "./setup.ts";
 
 const Id = z.object({ id: z.string() });
-const TEST_TIMEOUT_MS = 30_000;
 
 /** Fields typed into the form. Blank ones mean "keep what's stored". */
 function nonEmpty(value: Record<string, unknown>): Record<string, unknown> {
@@ -25,10 +31,13 @@ function nonEmpty(value: Record<string, unknown>): Record<string, unknown> {
   );
 }
 
-function issuesOf(error: z.ZodError): string {
-  return error.issues
-    .map((i) => `${i.path.map(String).join(".") || "value"}: ${i.message}`)
-    .join("; ");
+function sendError(reply: FastifyReply, err: unknown) {
+  if (err instanceof InstallationError) {
+    return reply
+      .code(err.status)
+      .send({ error: err.message, ...(err.check ? { check: err.check } : {}) });
+  }
+  throw err;
 }
 
 export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
@@ -58,69 +67,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
       ),
   );
 
-  async function owned(workspaceId: string, id: string) {
-    const [row] = await ctx.db
-      .select()
-      .from(schema.connectorInstallations)
-      .where(
-        and(
-          eq(schema.connectorInstallations.id, id),
-          eq(schema.connectorInstallations.workspaceId, workspaceId),
-        ),
-      );
-    return row ?? null;
-  }
-
-  function logFor(connectorId: string, installationId?: string) {
-    const log = ctx.log.child({
-      connector: connectorId,
-      ...(installationId ? { installationId } : {}),
-    });
-    return {
-      info: (m: string, d?: Record<string, unknown>) => log.info(d ?? {}, m),
-      warn: (m: string, d?: Record<string, unknown>) => log.warn(d ?? {}, m),
-      error: (m: string, d?: Record<string, unknown>) => log.error(d ?? {}, m),
-    };
-  }
-
-  /** Runs the connector's connection test. Never throws. */
-  async function check(
-    connector: AnyConnector,
-    credentials: unknown,
-    config: unknown,
-    installationId?: string,
-  ): Promise<TestResult> {
-    try {
-      return await connector.test({
-        credentials,
-        config,
-        log: logFor(connector.id, installationId),
-        signal: AbortSignal.timeout(TEST_TIMEOUT_MS),
-      });
-    } catch (err) {
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
-    }
-  }
-
-  /** The connector's name, or "Name 2" and so on when the workspace already has one by that name. */
-  async function freeName(workspaceId: string, base: string): Promise<string> {
-    const rows = await ctx.db
-      .select({ name: schema.connectorInstallations.name })
-      .from(schema.connectorInstallations)
-      .where(eq(schema.connectorInstallations.workspaceId, workspaceId));
-    const taken = new Set(rows.map((r) => r.name.toLowerCase()));
-    if (!taken.has(base.toLowerCase())) return base;
-    for (let n = 2; ; n++) {
-      const name = `${base} ${n}`;
-      if (!taken.has(name.toLowerCase())) return name;
-    }
-  }
-
-  function publish(row: typeof schema.connectorInstallations.$inferSelect) {
-    const view = toInstallationView(row);
-    ctx.hub.publish(row.workspaceId, { type: "installation.updated", installation: view });
-    return view;
-  }
+  const owned = (workspaceId: string, id: string) => ownedInstallation(ctx, workspaceId, id);
 
   r.get("/api/installations", async (request) => {
     const actor = actorOf(request);
@@ -149,62 +96,11 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
       },
     },
     async (request, reply) => {
-      const actor = actorOf(request);
-      const body = request.body;
-      const connector = ctx.registry.connector(body.connectorId);
-      if (!connector)
-        return reply.code(400).send({ error: `Unknown connector ${body.connectorId}` });
-      const creds = connector.credentialsSchema.safeParse(body.credentials);
-      if (!creds.success)
-        return reply.code(400).send({ error: `Credentials: ${issuesOf(creds.error)}` });
-      const config = connector.configSchema.safeParse(body.config);
-      if (!config.success)
-        return reply.code(400).send({ error: `Config: ${issuesOf(config.error)}` });
-      if (body.check) {
-        const result = await check(connector, creds.data, config.data);
-        if (!result.ok) return reply.code(422).send({ error: result.error, check: "failed" });
+      try {
+        return await createInstallation(ctx, actorOf(request), request.body);
+      } catch (err) {
+        return sendError(reply, err);
       }
-      const name = body.name ?? (await freeName(actor.workspaceId, connector.name));
-      const id = newId("ins");
-      const row = await ctx.db.transaction(async (tx) => {
-        const credentialId = await writeCredentials(
-          ctx,
-          tx,
-          { workspaceId: actor.workspaceId, ownerId: actor.userId },
-          null,
-          creds.data as Record<string, unknown>,
-        );
-        const [created] = await tx
-          .insert(schema.connectorInstallations)
-          .values({
-            id,
-            workspaceId: actor.workspaceId,
-            ownerId: actor.userId,
-            connectorId: connector.id,
-            name,
-            credentialId,
-            config: config.data as Record<string, unknown>,
-            enabled: body.enabled,
-            status: body.enabled ? "idle" : "disabled",
-          })
-          .returning();
-        return created;
-      });
-      if (!row) throw new Error("insert failed");
-      await audit(ctx, {
-        workspaceId: actor.workspaceId,
-        actorType: "user",
-        actorId: actor.userId,
-        verb: "installation.created",
-        subjectType: "installation",
-        subjectId: id,
-        details: { connectorId: connector.id, name },
-      });
-      // Before the source starts, so it may already reach the host in its config.
-      await ctx.extensions.installationsChanged(connector.id);
-      await ctx.connectors.reconcile(actor.workspaceId);
-      const fresh = (await owned(actor.workspaceId, id)) ?? row;
-      return publish(fresh);
     },
   );
 
@@ -228,74 +124,11 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
       const actor = actorOf(request);
       const row = await owned(actor.workspaceId, request.params.id);
       if (!row) return reply.code(404).send({ error: "not found" });
-      const connector = ctx.registry.connector(row.connectorId);
-      if (!connector)
-        return reply.code(409).send({ error: `Connector ${row.connectorId} isn't available` });
-      const body = request.body;
-      let creds: Record<string, unknown> | null = null;
-      if (body.credentials) {
-        const merged = { ...(await readCredentials(ctx, row)), ...body.credentials };
-        const parsed = connector.credentialsSchema.safeParse(merged);
-        if (!parsed.success)
-          return reply.code(400).send({ error: `Credentials: ${issuesOf(parsed.error)}` });
-        creds = parsed.data as Record<string, unknown>;
+      try {
+        return await updateInstallation(ctx, actor, row, request.body);
+      } catch (err) {
+        return sendError(reply, err);
       }
-      let config: Record<string, unknown> | null = null;
-      if (body.config) {
-        const parsed = connector.configSchema.safeParse(body.config);
-        if (!parsed.success)
-          return reply.code(400).send({ error: `Config: ${issuesOf(parsed.error)}` });
-        config = parsed.data as Record<string, unknown>;
-      }
-      if (body.check && (creds || config)) {
-        const result = await check(
-          connector,
-          creds ?? connector.credentialsSchema.parse(await readCredentials(ctx, row)),
-          config ?? connector.configSchema.parse(row.config),
-          row.id,
-        );
-        if (!result.ok) return reply.code(422).send({ error: result.error, check: "failed" });
-      }
-      await ctx.db.transaction(async (tx) => {
-        const credentialId = creds
-          ? await writeCredentials(
-              ctx,
-              tx,
-              { workspaceId: row.workspaceId, ownerId: row.ownerId },
-              row.credentialId,
-              creds,
-            )
-          : row.credentialId;
-        await tx
-          .update(schema.connectorInstallations)
-          .set({
-            ...(body.name ? { name: body.name } : {}),
-            ...(config ? { config } : {}),
-            ...(body.enabled !== undefined
-              ? { enabled: body.enabled, status: body.enabled ? "idle" : "disabled" }
-              : {}),
-            credentialId,
-          })
-          .where(eq(schema.connectorInstallations.id, row.id));
-      });
-      await audit(ctx, {
-        workspaceId: actor.workspaceId,
-        actorType: "user",
-        actorId: actor.userId,
-        verb: "installation.updated",
-        subjectType: "installation",
-        subjectId: row.id,
-        details: {
-          fields: Object.keys(body).filter((k) => k !== "credentials"),
-          credentialsChanged: Boolean(creds),
-        },
-      });
-      if (config) await ctx.extensions.installationsChanged(row.connectorId);
-      // New credentials or config only take effect in a fresh source.
-      if (creds || config || body.enabled !== undefined) await ctx.connectors.restart(row.id);
-      const fresh = await owned(actor.workspaceId, row.id);
-      if (!fresh) return reply.code(404).send({ error: "not found" });
-      return publish(fresh);
     },
   );
 
@@ -308,7 +141,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
     try {
       const config = connector.configSchema.parse(row.config);
       const credentials = connector.credentialsSchema.parse(await readCredentials(ctx, row));
-      return await check(connector, credentials, config, row.id);
+      return await testConnection(ctx, connector, credentials, config, row.id);
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -344,7 +177,7 @@ export async function connectorRoutes(app: FastifyInstance, ctx: AppContext) {
       const result = await runSetup(connector, {
         credentials,
         config: body.config,
-        log: logFor(connector.id, body.installationId),
+        log: connectorLog(ctx, connector.id, body.installationId),
       });
       // Credentials are write-only: a lookup may suggest new ones, never echo a secret or a stored value.
       if (result.credentials) {

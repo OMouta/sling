@@ -498,6 +498,21 @@ export class DeployService {
     await this.#db.delete(schema.credentials).where(eq(schema.credentials.id, credentialId));
   }
 
+  /**
+   * Checks what `create` or `update` would refuse about a target's name, repo,
+   * and machine, without saving anything. Returns the normalized repo.
+   */
+  async precheck(
+    workspaceId: string,
+    input: { name: string; remoteKey: string; method: string; runnerId?: string | null },
+    except?: string,
+  ): Promise<string> {
+    const remote = this.#remote(input.remoteKey);
+    await this.#checkUnique(workspaceId, input.name, remote, except);
+    if (input.method === "command") await this.#checkRunner(workspaceId, input.runnerId);
+    return remote;
+  }
+
   async create(actor: Actor, input: TargetInput): Promise<DeployTargetView> {
     const remote = this.#remote(input.remoteKey);
     await this.#checkUnique(actor.workspaceId, input.name, remote);

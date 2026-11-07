@@ -351,16 +351,53 @@ export interface MessageView {
   trace: ReplyTrace | null;
 }
 
-/** A command or a send waiting on the user in a chat, or what they decided. */
+/** One line of a change to Sling's setup: a value as it would be, and as it was when editing. */
+export interface SetupChangeRow {
+  label: string;
+  /** What it is now. Absent for something new. */
+  before?: string;
+  after: string;
+}
+
+/** A password, token, or secret URL the user types on the approval card, never in the chat. */
+export interface SetupSecretField {
+  key: string;
+  label: string;
+  placeholder?: string;
+  /** Where to get one, such as a provider's app password page. */
+  link?: { label: string; url: string };
+  /** Required ones must be filled in before Apply. Optional ones keep what's stored when blank. */
+  required: boolean;
+}
+
+/** A change to Sling's own setup that the assistant proposes, as the user sees it. */
+export interface SetupChangeView {
+  /** The question, for example "Add deploy target Website?". */
+  title: string;
+  /** While it applies, for example "Adding Website". */
+  doing: string;
+  /** Once applied, for example "Added Website". */
+  done: string;
+  rows: SetupChangeRow[];
+  /** Inputs the card shows. Their values go from the card to the server, never to the model. */
+  secrets: SetupSecretField[];
+}
+
+/** A command, a send, or a setup change waiting on the user in a chat, or what they decided. */
 export interface CommandApprovalView {
   id: string;
-  /** `command`: a command that wants to leave the sandbox. `send`: something that leaves Sling. */
-  kind: "command" | "send";
+  /**
+   * `command`: a command that wants to leave the sandbox. `send`: something
+   * that leaves Sling. `change`: a change to Sling's own setup.
+   */
+  kind: "command" | "send" | "change";
   state: "pending" | "approved" | "denied" | "expired";
-  /** Commands: the machine it would run on. Sends: empty. */
+  /** Commands: the machine it would run on. Otherwise empty. */
   machine: string;
-  /** Sends: what would go out, for example "Email ana@example.com: Lunch moved". */
+  /** Sends: what would go out, for example "Email ana@example.com: Lunch moved". Changes: the title. */
   summary: string;
+  /** Changes: what would change, and the secrets to type in. */
+  change?: SetupChangeView;
 }
 
 /** A tool call the assistant made while replying. */
@@ -373,7 +410,7 @@ export interface ToolStep {
   status: "running" | "done" | "error";
   /** The result as text, shortened. */
   output: string | null;
-  /** For a command that needs the user's approval to leave the sandbox. */
+  /** For a command, a send, or a setup change that needs the user's approval. */
   approval?: CommandApprovalView;
 }
 
@@ -807,4 +844,6 @@ export type ServerEvent =
   | { type: "personality.updated"; personality: PersonalityView }
   | { type: "personality.removed"; id: string }
   | { type: "deploy_target.updated"; target: DeployTargetView }
-  | { type: "deploy_target.removed"; id: string };
+  | { type: "deploy_target.removed"; id: string }
+  /** Workspace or notification settings changed: open settings pages load them again. */
+  | { type: "settings.updated" };

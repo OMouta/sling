@@ -6,7 +6,7 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { clearModelCache, modelCatalog } from "../agent/catalog.ts";
-import { ChatSettingsPatch, chatDefaults, mergeSettings } from "../agent/chat-settings.ts";
+import { ChatSettingsPatch } from "../agent/chat-settings.ts";
 import {
   defaultModelConfig,
   MODEL_PROVIDERS,
@@ -18,8 +18,14 @@ import type { AppContext } from "../context.ts";
 import { encryptSecret, SECRET_KEY_VERSION } from "../crypto.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import { notificationSettings } from "../push/payloads.ts";
-import { isTimeZone } from "../timezone.ts";
-import { followWorkspaceZone } from "../workflows/triggers.ts";
+import {
+  NotificationsPatch,
+  SettingsInputError,
+  setChatDefaults,
+  setDefaultMode,
+  setNotifications,
+  setTimeZone,
+} from "../settings.ts";
 
 const ModelInput = z.object({
   provider: z.enum(["openai", "anthropic", "openai-compatible"]),
@@ -85,22 +91,9 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
     "/api/settings/mode",
     { schema: { body: z.object({ defaultMode: z.enum(PERMISSION_MODES) }) } },
     async (request) => {
-      const actor = actorOf(request);
       const mode = request.body.defaultMode;
       if (!isPermissionMode(mode)) throw new Error("bad mode");
-      await ctx.db
-        .update(schema.workspaces)
-        .set({ defaultMode: mode })
-        .where(eq(schema.workspaces.id, actor.workspaceId));
-      await audit(ctx, {
-        workspaceId: actor.workspaceId,
-        actorType: "user",
-        actorId: actor.userId,
-        verb: "settings.default_mode_changed",
-        subjectType: "workspace",
-        subjectId: actor.workspaceId,
-        details: { mode },
-      });
+      await setDefaultMode(ctx, actorOf(request), mode);
       return { ok: true };
     },
   );
@@ -109,53 +102,19 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
     "/api/settings/time-zone",
     { schema: { body: z.object({ timeZone: z.string().min(1).max(64) }) } },
     async (request, reply) => {
-      const actor = actorOf(request);
-      const { timeZone } = request.body;
-      if (!isTimeZone(timeZone)) {
-        return reply.code(400).send({ error: `${timeZone} isn't a time zone this server knows.` });
+      try {
+        await setTimeZone(ctx, actorOf(request), request.body.timeZone);
+      } catch (err) {
+        if (err instanceof SettingsInputError) return reply.code(400).send({ error: err.message });
+        throw err;
       }
-      await ctx.db
-        .update(schema.workspaces)
-        .set({ timeZone })
-        .where(eq(schema.workspaces.id, actor.workspaceId));
-      await audit(ctx, {
-        workspaceId: actor.workspaceId,
-        actorType: "user",
-        actorId: actor.userId,
-        verb: "settings.time_zone_changed",
-        subjectType: "workspace",
-        subjectId: actor.workspaceId,
-        details: { timeZone },
-      });
-      await followWorkspaceZone(ctx, actor.workspaceId);
       return { ok: true };
     },
   );
 
   /** Which pushes the signed-in user gets. Categories left out keep their setting. */
-  r.put(
-    "/api/settings/notifications",
-    {
-      schema: {
-        body: z.object({
-          approvals: z.boolean().optional(),
-          tasks: z.boolean().optional(),
-          replies: z.boolean().optional(),
-        }),
-      },
-    },
-    async (request) => {
-      const actor = actorOf(request);
-      const m = schema.workspaceMembers;
-      const where = and(eq(m.workspaceId, actor.workspaceId), eq(m.userId, actor.userId));
-      const [member] = await ctx.db.select({ notifications: m.notifications }).from(m).where(where);
-      const next = notificationSettings({
-        ...notificationSettings(member?.notifications),
-        ...request.body,
-      });
-      await ctx.db.update(m).set({ notifications: next }).where(where);
-      return next;
-    },
+  r.put("/api/settings/notifications", { schema: { body: NotificationsPatch } }, async (request) =>
+    setNotifications(ctx, actorOf(request), request.body),
   );
 
   r.put("/api/settings/model", { schema: { body: ModelInput } }, async (request, reply) => {
@@ -380,23 +339,9 @@ export async function settingsRoutes(app: FastifyInstance, ctx: AppContext) {
   );
 
   /** What new conversations start with. */
-  r.put("/api/settings/chat-defaults", { schema: { body: ChatSettingsPatch } }, async (request) => {
-    const actor = actorOf(request);
-    const [ws] = await ctx.db
-      .select({ chatDefaults: schema.workspaces.chatDefaults })
-      .from(schema.workspaces)
-      .where(eq(schema.workspaces.id, actor.workspaceId));
-    const next = mergeSettings(ws?.chatDefaults, request.body);
-    await ctx.db
-      .update(schema.workspaces)
-      .set({
-        chatDefaults: next,
-        // The sandbox settings show the same default agent.
-        ...(next.agent ? { defaultHarness: next.agent.harness } : {}),
-      })
-      .where(eq(schema.workspaces.id, actor.workspaceId));
-    return chatDefaults(ctx, actor.workspaceId);
-  });
+  r.put("/api/settings/chat-defaults", { schema: { body: ChatSettingsPatch } }, async (request) =>
+    setChatDefaults(ctx, actorOf(request), request.body),
+  );
 
   r.post("/api/settings/model/test", async (request) => {
     const actor = actorOf(request);

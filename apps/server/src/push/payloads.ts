@@ -155,16 +155,18 @@ export function workflowApprovalPayload(a: {
 export function chatApprovalPayload(a: {
   conversationId: string;
   conversationTitle: string;
-  kind: "command" | "send";
+  kind: "command" | "send" | "change";
   machine: string;
   summary: string;
 }): PushPayload {
   const title =
-    a.kind === "send"
-      ? `Approve: ${a.summary || "send a message"}?`
-      : a.machine
-        ? `Run a command on ${a.machine}?`
-        : "Run a command?";
+    a.kind === "change"
+      ? a.summary || "Change Sling's setup?"
+      : a.kind === "send"
+        ? `Approve: ${a.summary || "send a message"}?`
+        : a.machine
+          ? `Run a command on ${a.machine}?`
+          : "Run a command?";
   return {
     title,
     body: a.conversationTitle,

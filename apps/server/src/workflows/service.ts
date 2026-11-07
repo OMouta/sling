@@ -247,7 +247,12 @@ export class WorkflowService {
    * Installs a template: placeholders are bound to installations, version 1
    * is published, and built-in templates are enabled.
    */
-  async install(actor: Actor, key: string, bindings: Record<string, string>): Promise<WorkflowRow> {
+  async install(
+    actor: Actor,
+    key: string,
+    bindings: Record<string, string>,
+    opts: { name?: string } = {},
+  ): Promise<WorkflowRow> {
     const t = this.templates().find((x) => x.view.key === key);
     if (!t) throw new WorkflowInputError(`No template ${key}`, 404);
     const reason = this.unavailableReason(key);
@@ -275,7 +280,11 @@ export class WorkflowService {
       map[b.placeholder] = id;
     }
     const definition = applyBindings(t.definition, map);
-    const created = await this.create(actor, { definition, templateKey: key });
+    const created = await this.create(actor, {
+      definition,
+      templateKey: key,
+      ...(opts.name ? { name: opts.name } : {}),
+    });
     const result = await this.publish(actor, created, "Installed from template");
     const row = (await this.get(actor.workspaceId, created.id)) ?? created;
     if (result.ok && t.view.builtIn) return (await this.setEnabled(actor, row, true)) ?? row;

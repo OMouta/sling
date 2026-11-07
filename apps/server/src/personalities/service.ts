@@ -1,12 +1,136 @@
-import { newId, type PersonalityTemplateView, type PersonalityView } from "@sling/core";
+import {
+  GLYPH_SHAPES,
+  newId,
+  PERSONALITY_COLORS,
+  PERSONALITY_DESCRIPTION_MAX,
+  PERSONALITY_INSTRUCTIONS_MAX,
+  PERSONALITY_NAME_MAX,
+  PERSONALITY_TOOLS,
+  type PersonalityTemplateView,
+  type PersonalityView,
+} from "@sling/core";
 import { schema } from "@sling/db";
-import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, max, sql } from "drizzle-orm";
+import { z } from "zod";
+import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import { workspaceOwner } from "../workflows/connectors/installations.ts";
 import { INSTALLED_TEMPLATES, personalityTemplate } from "./templates.ts";
 
 export type PersonalityRow = typeof schema.personalities.$inferSelect;
 type Db = AppContext["db"];
+
+/** What a personality is made of, as the routes and the assistant's setup tools take it. */
+export const PersonalityFields = z.object({
+  name: z.string().trim().min(1).max(PERSONALITY_NAME_MAX),
+  description: z.string().trim().max(PERSONALITY_DESCRIPTION_MAX).default(""),
+  instructions: z.string().trim().min(1).max(PERSONALITY_INSTRUCTIONS_MAX),
+  tools: z
+    .array(z.enum(PERSONALITY_TOOLS))
+    .max(PERSONALITY_TOOLS.length)
+    .transform((t) => PERSONALITY_TOOLS.filter((g) => t.includes(g))),
+  color: z.enum(PERSONALITY_COLORS),
+  shape: z.enum(GLYPH_SHAPES),
+});
+export type PersonalityFields = z.infer<typeof PersonalityFields>;
+export const PersonalityPatch = PersonalityFields.partial();
+export type PersonalityPatch = z.infer<typeof PersonalityPatch>;
+
+interface Owner {
+  workspaceId: string;
+  userId: string;
+}
+
+export function publishPersonality(ctx: Pick<AppContext, "hub">, row: PersonalityRow) {
+  ctx.hub.publish(row.workspaceId, {
+    type: "personality.updated",
+    personality: toPersonalityView(row),
+  });
+}
+
+/** A new personality, last in the switcher. */
+export async function insertPersonality(
+  ctx: Pick<AppContext, "db">,
+  actor: Owner,
+  fields: PersonalityFields & { templateKey?: string },
+): Promise<PersonalityRow> {
+  const [last] = await ctx.db
+    .select({ position: max(schema.personalities.position) })
+    .from(schema.personalities)
+    .where(eq(schema.personalities.workspaceId, actor.workspaceId));
+  const [row] = await ctx.db
+    .insert(schema.personalities)
+    .values({
+      id: newId("prs"),
+      workspaceId: actor.workspaceId,
+      ownerId: actor.userId,
+      ...fields,
+      position: (last?.position ?? -1) + 1,
+    })
+    .returning();
+  if (!row) throw new Error("insert failed");
+  return row;
+}
+
+/** Adds a personality, audits it, and tells open pages. */
+export async function createPersonality(
+  ctx: AppContext,
+  actor: Owner,
+  fields: PersonalityFields,
+): Promise<PersonalityRow> {
+  const row = await insertPersonality(ctx, actor, fields);
+  await audit(ctx, {
+    workspaceId: actor.workspaceId,
+    actorType: "user",
+    actorId: actor.userId,
+    verb: "personality.created",
+    subjectType: "personality",
+    subjectId: row.id,
+    details: { name: row.name, tools: row.tools },
+  });
+  publishPersonality(ctx, row);
+  return row;
+}
+
+/**
+ * Changes a personality. A change to what the assistant is told or may do
+ * bumps its revision, so later replies say which one wrote them.
+ */
+export async function updatePersonality(
+  ctx: AppContext,
+  actor: Owner,
+  row: PersonalityRow,
+  b: PersonalityPatch,
+): Promise<PersonalityRow | null> {
+  const changesPrompt =
+    (b.name !== undefined && b.name !== row.name) ||
+    (b.instructions !== undefined && b.instructions !== row.instructions) ||
+    (b.tools !== undefined && b.tools.join() !== row.tools.join());
+  const [updated] = await ctx.db
+    .update(schema.personalities)
+    .set({ ...b, ...(changesPrompt ? { revision: row.revision + 1 } : {}) })
+    .where(eq(schema.personalities.id, row.id))
+    .returning();
+  if (!updated) return null;
+  if (changesPrompt) {
+    await audit(ctx, {
+      workspaceId: actor.workspaceId,
+      actorType: "user",
+      actorId: actor.userId,
+      verb: "personality.updated",
+      subjectType: "personality",
+      subjectId: row.id,
+      details: {
+        revision: updated.revision,
+        ...(b.tools !== undefined && b.tools.join() !== row.tools.join()
+          ? { tools: { from: row.tools, to: updated.tools } }
+          : {}),
+      },
+    });
+  }
+  publishPersonality(ctx, updated);
+  return updated;
+}
 
 /** The columns a personality made from a template starts with. */
 export function fromTemplate(t: PersonalityTemplateView) {
