@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use sling_harness_claude_code::{Access, Event, Run, RunOptions, build_prompt, detect};
 use sling_runner_protocol::{file_change, task_event::Kind};
 use tokio::sync::mpsc;
@@ -154,6 +152,9 @@ async fn a_crash_has_no_result() {
     );
 }
 
+// SIGINT alone stops it. Windows has no SIGINT for a process: there cancel
+// waits out the grace period, then kills it.
+#[cfg(unix)]
 #[tokio::test]
 async fn cancel_stops_a_hanging_run() {
     let dir = tempfile::tempdir().unwrap();
@@ -169,9 +170,9 @@ async fn cancel_stops_a_hanging_run() {
     }
     tokio::spawn(collect(rx));
     let started = std::time::Instant::now();
-    run.cancel(Duration::from_secs(5)).await;
+    run.cancel(std::time::Duration::from_secs(5)).await;
     assert!(
-        started.elapsed() < Duration::from_secs(4),
+        started.elapsed() < std::time::Duration::from_secs(4),
         "SIGINT was enough"
     );
     let code = run.wait().await.unwrap();
@@ -310,6 +311,8 @@ mod chat {
         assert!(err.to_string().contains("refusing session ID"), "{err}");
     }
 
+    // SIGINT alone ends it; see cancel_stops_a_hanging_run.
+    #[cfg(unix)]
     #[tokio::test]
     async fn cancel_ends_a_turn() {
         let dir = tempfile::tempdir().unwrap();

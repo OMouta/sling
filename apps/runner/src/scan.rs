@@ -226,7 +226,13 @@ mod tests {
     fn rel(root: &Path, found: &[PathBuf]) -> Vec<String> {
         found
             .iter()
-            .map(|p| p.strip_prefix(root).unwrap().display().to_string())
+            .map(|p| {
+                p.strip_prefix(root)
+                    .unwrap()
+                    .display()
+                    .to_string()
+                    .replace('\\', "/")
+            })
             .collect()
     }
 

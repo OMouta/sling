@@ -574,9 +574,10 @@ mod tests {
     #[test]
     fn scan_roots_are_absolute() {
         let home = crate::sys::home_dir().unwrap();
+        let other = if cfg!(windows) { r"D:\git" } else { "/srv/git" };
         assert_eq!(
-            parse_scan_roots("~/code, /srv/git,~/code").unwrap(),
-            vec![home.join("code"), PathBuf::from("/srv/git")]
+            parse_scan_roots(&format!("~/code, {other},~/code")).unwrap(),
+            vec![home.join("code"), PathBuf::from(other)]
         );
         assert_eq!(parse_scan_roots("~").unwrap(), vec![home.clone()]);
         assert!(parse_scan_roots("").unwrap().is_empty());

@@ -728,14 +728,14 @@ mod tests {
             .rev()
             .map(String::as_str)
             .collect();
-        assert_eq!(
-            tail,
-            [
-                "--image=/data/chat/abc/image-1.png",
-                "--image=/data/chat/abc/image-2.jpg",
-                "-"
-            ]
-        );
+        let image = |name: &str| {
+            format!(
+                "--image={}",
+                Path::new("/data/chat/abc").join(name).display()
+            )
+        };
+        let (one, two) = (image("image-1.png"), image("image-2.jpg"));
+        assert_eq!(tail, [one.as_str(), two.as_str(), "-"]);
         o.resume = Some("6f1b2c3d-1111-4222-8333-444455556666".into());
         let args = chat_args(&o);
         let at = args.iter().position(|a| a == "resume").unwrap();
@@ -744,14 +744,16 @@ mod tests {
             [
                 "resume",
                 "6f1b2c3d-1111-4222-8333-444455556666",
-                "--image=/data/chat/abc/image-1.png",
-                "--image=/data/chat/abc/image-2.jpg",
+                one.as_str(),
+                two.as_str(),
                 "-"
             ]
         );
         assert!(!chat_args(&opts()).iter().any(|a| a.starts_with("--image")));
     }
 
+    // /bin/cat stands in for Codex.
+    #[cfg(unix)]
     #[tokio::test]
     async fn writes_the_images_before_codex_starts() {
         let dir = tempfile::tempdir().unwrap();

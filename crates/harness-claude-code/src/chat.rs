@@ -593,9 +593,10 @@ mod tests {
         );
         assert!(args.windows(2).any(|w| w == ["--tools", ""]));
         assert!(args.contains(&"--strict-mcp-config".to_string()));
+        let at = |name: &str| file_arg(Path::new("/data/chat/abc"), name);
         assert!(
             args.windows(2)
-                .any(|w| w == ["--mcp-config", "/data/chat/abc/sling-mcp.json"])
+                .any(|w| w == ["--mcp-config", at(MCP_CONFIG_FILE).as_str()])
         );
         assert!(
             args.windows(2)
@@ -606,11 +607,10 @@ mod tests {
                 .any(|w| w == ["--allowedTools", "mcp__sling"])
         );
         assert!(args.contains(&"--disable-slash-commands".to_string()));
-        assert!(args.windows(2).any(|w| w
-            == [
-                "--system-prompt-file",
-                "/data/chat/abc/sling-instructions.md"
-            ]));
+        assert!(
+            args.windows(2)
+                .any(|w| w == ["--system-prompt-file", at(INSTRUCTIONS_FILE).as_str()])
+        );
         assert!(
             !args
                 .iter()

@@ -824,7 +824,14 @@ mod tests {
     fn checks_repos() {
         let ok = |json: &str| parse_repos(json).is_ok();
         assert!(ok(r#"[{"name":"a","cloneUrl":"file:///srv/a.git"}]"#));
-        assert!(ok(r#"[{"name":"a","cloneUrl":"/srv/a.git"}]"#));
+        let local = if cfg!(windows) {
+            r"C:\srv\a.git"
+        } else {
+            "/srv/a.git"
+        };
+        assert!(ok(
+            &serde_json::json!([{ "name": "a", "cloneUrl": local }]).to_string()
+        ));
         assert!(ok(
             r#"[{"name":"a","cloneUrl":"git@github.com:acme/a.git"}]"#
         ));
