@@ -571,10 +571,10 @@ describe("chat replies", () => {
     fireEvent.click(added);
     expect(screen.getByText("github.com/acme/Website")).toBeTruthy();
     expect(
-      within(screen.getByRole("button", { name: "Add deploy target Api" })).getByText("Cancelled"),
+      within(screen.getByRole("button", { name: "Add deploy target Api" })).getByText("cancelled"),
     ).toBeTruthy();
     expect(
-      within(screen.getByRole("button", { name: "Add deploy target Docs" })).getByText("Expired"),
+      within(screen.getByRole("button", { name: "Add deploy target Docs" })).getByText("expired"),
     ).toBeTruthy();
     expect(screen.getByText("There's already a deploy target called Blog.")).toBeTruthy();
     // Nothing decided asks again, or keeps an input.

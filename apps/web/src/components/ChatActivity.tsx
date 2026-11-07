@@ -628,12 +628,15 @@ function ChangeStep({
         </span>
         {stopped && (
           <span className="shrink-0 text-[11.5px] text-subtle">
-            {approval.state === "denied" ? "Cancelled" : "Expired"}
+            {approval.state === "denied" ? "cancelled" : "expired"}
           </span>
         )}
       </Disclosure>
-      {(waiting || open) && <ChangeRows rows={change.rows} />}
-      {waiting && <ChangeApproval approvalId={approval.id} change={change} ctx={ctx} />}
+      {waiting ? (
+        <ChangeApproval approvalId={approval.id} change={change} ctx={ctx} />
+      ) : (
+        open && <ChangeRows rows={change.rows} />
+      )}
       {failed && error && (
         <p className="border-t border-border px-2.5 py-1.5 text-xs text-danger">{error}</p>
       )}
@@ -641,27 +644,35 @@ function ChangeStep({
   );
 }
 
-/** What a change sets, one line each: label, then the new value, after the old one for an edit. */
-function ChangeRows({ rows }: { rows: SetupChangeRow[] }) {
-  if (rows.length === 0) return null;
+/**
+ * What a change sets, one line each: label, then the new value, after the
+ * old one for an edit. Inputs passed as children line up with the rows.
+ */
+function ChangeRows({ rows, children }: { rows: SetupChangeRow[]; children?: ReactNode }) {
+  if (rows.length === 0 && !children) return null;
   return (
-    <dl className="grid max-h-64 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 overflow-auto border-t border-border px-2.5 py-2 text-xs leading-[18px]">
-      {rows.map((r, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: rows don't change once shown.
-        <div key={i} className="contents">
-          <dt className="text-muted">{r.label}</dt>
-          <dd className="whitespace-pre-wrap break-words text-soft">
-            {r.before !== undefined && (
-              <>
-                <span className="text-muted">{r.before}</span>
-                <span className="text-subtle"> → </span>
-              </>
-            )}
-            {r.after}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 text-xs leading-[18px]">
+      {rows.length > 0 && (
+        <dl className="col-span-2 grid max-h-64 grid-cols-subgrid gap-y-1 overflow-auto border-t border-border px-2.5 py-2">
+          {rows.map((r, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: rows don't change once shown.
+            <div key={i} className="contents">
+              <dt className="text-muted">{r.label}</dt>
+              <dd className="whitespace-pre-wrap break-words text-soft">
+                {r.before !== undefined && (
+                  <>
+                    <span className="text-muted">{r.before}</span>
+                    <span className="text-subtle"> → </span>
+                  </>
+                )}
+                {r.after}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {children}
+    </div>
   );
 }
 
@@ -699,40 +710,43 @@ function ChangeApproval({
   };
   return (
     <form onSubmit={submit}>
-      {change.secrets.length > 0 && (
-        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-t border-border px-2.5 py-2 text-xs">
-          {change.secrets.map((f) => (
-            <div key={f.key} className="contents">
-              <label htmlFor={`${base}-${f.key}`} className="text-muted">
-                {f.label}
-                {f.link && (
-                  <a
-                    href={f.link.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="ml-2 text-accent-text hover:underline"
-                  >
-                    {f.link.label}
-                  </a>
-                )}
-              </label>
-              <Input
-                id={`${base}-${f.key}`}
-                type="password"
-                autoComplete="new-password"
-                spellCheck={false}
-                required={f.required}
-                placeholder={f.placeholder ?? (f.required ? "" : "Keep the current one")}
-                value={values[f.key] ?? ""}
-                onChange={(e) => {
-                  const v = e.currentTarget.value;
-                  setValues((old) => ({ ...old, [f.key]: v }));
-                }}
-              />
-            </div>
-          ))}
-        </div>
-      )}
+      <ChangeRows rows={change.rows}>
+        {change.secrets.length > 0 && (
+          <div className="col-span-2 grid grid-cols-subgrid items-center gap-y-1.5 border-t border-border px-2.5 py-2">
+            {change.secrets.map((f) => (
+              <div key={f.key} className="contents">
+                <label htmlFor={`${base}-${f.key}`} className="text-muted max-sm:col-span-2">
+                  {f.label}
+                  {f.link && (
+                    <a
+                      href={f.link.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-2 text-accent-text hover:underline"
+                    >
+                      {f.link.label}
+                    </a>
+                  )}
+                </label>
+                <Input
+                  id={`${base}-${f.key}`}
+                  type="password"
+                  autoComplete="new-password"
+                  spellCheck={false}
+                  required={f.required}
+                  placeholder={f.placeholder ?? (f.required ? "" : "Keep the current one")}
+                  value={values[f.key] ?? ""}
+                  onChange={(e) => {
+                    const v = e.currentTarget.value;
+                    setValues((old) => ({ ...old, [f.key]: v }));
+                  }}
+                  className="max-sm:col-span-2"
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </ChangeRows>
       <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-border bg-surface px-2.5 py-2">
         <div className="mr-auto min-w-0">
           <ErrorText error={decide.error} />
