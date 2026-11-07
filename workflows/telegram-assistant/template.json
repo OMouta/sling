@@ -1,0 +1,7 @@
+{
+  "key": "telegram-assistant",
+  "name": "Telegram assistant",
+  "description": "Chat with Sling in Telegram, and hear back there when tasks finish.",
+  "builtIn": false,
+  "bindings": [{ "placeholder": "$telegram", "connectorId": "telegram", "label": "Telegram bot" }]
+}
