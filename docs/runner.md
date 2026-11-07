@@ -96,13 +96,14 @@ sling-runner config set gh-bin /opt/homebrew/bin/gh
 sling-runner config set remote-repos off         # on | off
 sling-runner config set commands off             # on | off
 sling-runner config set deploys off              # on | off
+sling-runner config set files off                # on | off
 sling-runner config set scan-roots ~/code,~/work # "" means your home directory
 sling-runner config set server-url https://sling.tail1234.ts.net
 ```
 
 `server-url` is for when Sling moves to a new address, for example onto a tunnel. The machine keeps its pairing and connects to the new address after you restart the Runner. Only you can change it, here on the machine. To pair with a different Sling, use `sling-runner pair` instead.
 
-`max-mode` is the highest permission mode this machine accepts. A task above it is refused here, whatever the control plane says. Below Full access, the assistant's commands also stay in the read-only sandbox, and at Read-only the machine doesn't merge or deploy. `commands` decides whether the assistant may run commands here at all. See [Commands](#commands). `deploys` decides whether Sling may merge and deploy here. See [Merges and deploys](#merges-and-deploys).
+`max-mode` is the highest permission mode this machine accepts. A task above it is refused here, whatever the control plane says. Below Full access, the assistant's commands also stay in the read-only sandbox, and at Read-only the machine doesn't merge or deploy. `commands` decides whether the assistant may run commands here at all. See [Commands](#commands). `deploys` decides whether Sling may merge and deploy here. See [Merges and deploys](#merges-and-deploys). `files` decides whether the assistant may search and read the shared folders. See [Folders](#folders).
 
 ## Labels
 
@@ -185,6 +186,33 @@ Commands run in a read-only sandbox unless the conversation's mode lets them out
 - On Linux, bubblewrap with the whole filesystem read-only, empty `/tmp` and `/run`, and no network, IPC, or other processes. Without bubblewrap there's no sandbox, and the inventory says so.
 
 A command leaves the sandbox only when the machine's `max-mode` is Full access and the conversation isn't Read-only. Sling asks you in the chat first outside Full access. [modes.md](modes.md#commands) has the table. `sling-runner config set commands off` refuses every command, and the Machines page shows it.
+
+## Folders
+
+Share a folder, and the assistant can search and read the text files in it with `search_files` and `read_file`. "What did I write about the boiler?" searches your notes and quotes the one it finds. Only this machine can share a folder. Sling can't add one.
+
+```sh
+sling-runner folder add ~/Notes                 # named after the folder
+sling-runner folder add ~/Documents/Recipes --name Recipes
+sling-runner folder list
+sling-runner folder remove Notes
+sling-runner config set files off               # refuse every search and read
+```
+
+Sling sees each folder's name only, on the Machines page and in the assistant's tools. Paths stay on the machine, and nothing is uploaded or indexed: each search and read runs here, when the assistant asks. A removed folder, and everything after `files off`, is refused from the next request on. The Machines page catches up within a minute.
+
+A search looks for the text as written, ignoring case, and skips hidden files and folders, `.git`, `node_modules`, what `.gitignore` and `.ignore` leave out, files over 2 MB, binary files, and symlinks. It returns at most 50 lines, at most 5 from one file, each with its path, line number, and up to 200 characters of the line, and stops after 2 seconds with what it has. A read returns up to 256 KB of a text file, and says when it's cut. A path that's a folder lists what's in it.
+
+### What the Runner refuses
+
+- A path that leaves the folder once `..` and symlinks are resolved, and an absolute path
+- A folder that wasn't shared, or was removed
+- Hidden files and folders, whose names start with `.`
+- The Runner's own files, such as `runner.key`, even inside a shared folder
+- Binary files
+- Everything, with `files off`
+
+Sharing refuses the whole disk, a folder inside the Runner's own directory, a folder already shared, and a folder inside or around one that is.
 
 ## Merges and deploys
 
@@ -279,7 +307,7 @@ On Linux, `loginctl enable-linger $USER` keeps the service running while you're 
 
 | Path (macOS and Linux) | Contents |
 |---|---|
-| `~/.config/sling/runner.toml` | Settings and repos |
+| `~/.config/sling/runner.toml` | Settings, repos, and shared folders |
 | `~/.config/sling/runner.key` | The machine's private key, readable only by you |
 | `~/.local/share/sling/spool/` | Task events not yet acknowledged by the server |
 | `~/.local/share/sling/worktrees/` | One git worktree per task |
