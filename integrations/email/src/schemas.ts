@@ -1,9 +1,17 @@
 import { z } from "zod";
 
-const port = (fallback: number, title: string) =>
-  z.coerce.number().int().min(1).max(65535).default(fallback).meta({ title, advanced: true });
+const SERVERS = { step: "Mail servers" } as const;
 
-const SERVER = { advanced: true, lookup: true } as const;
+const port = (fallback: number, title: string) =>
+  z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(65535)
+    .default(fallback)
+    .meta({ ...SERVERS, title, advanced: true });
+
+const SERVER = { ...SERVERS, advanced: true, lookup: true } as const;
 
 export const credentialsSchema = z.object({
   imapHost: z
@@ -14,7 +22,13 @@ export const credentialsSchema = z.object({
   imapSecure: z
     .boolean()
     .default(true)
-    .meta({ title: "IMAP over TLS", description: "Off for STARTTLS", advanced: true, order: 12 }),
+    .meta({
+      ...SERVERS,
+      title: "IMAP over TLS",
+      description: "Off for STARTTLS",
+      advanced: true,
+      order: 12,
+    }),
   smtpHost: z
     .string()
     .min(1)
@@ -23,13 +37,25 @@ export const credentialsSchema = z.object({
   smtpSecure: z
     .boolean()
     .default(true)
-    .meta({ title: "SMTP over TLS", description: "Off for STARTTLS", advanced: true, order: 15 }),
-  username: z.string().min(1).meta({ title: "Login", advanced: true, order: 16 }),
-  password: z.string().min(1).meta({ title: "Password", order: 1 }),
-  fromAddress: z
+    .meta({
+      ...SERVERS,
+      title: "SMTP over TLS",
+      description: "Off for STARTTLS",
+      advanced: true,
+      order: 15,
+    }),
+  username: z
     .string()
-    .min(3)
-    .meta({ title: "Email address", placeholder: "you@example.com", lookup: true, order: 0 }),
+    .min(1)
+    .meta({ ...SERVERS, title: "Login", advanced: true, order: 16 }),
+  password: z.string().min(1).meta({ step: "Password", title: "Password", order: 1 }),
+  fromAddress: z.string().min(3).meta({
+    step: "Your email address",
+    title: "Email address",
+    placeholder: "you@example.com",
+    lookup: true,
+    order: 0,
+  }),
 });
 
 export type EmailCredentials = z.infer<typeof credentialsSchema>;
@@ -39,7 +65,7 @@ export const configSchema = z.object({
     .array(z.string().min(1))
     .min(1)
     .default(["INBOX"])
-    .meta({ title: "Folders to watch", advanced: true }),
+    .meta({ ...SERVERS, title: "Folders to watch", advanced: true }),
 });
 
 export type EmailConfig = z.infer<typeof configSchema>;

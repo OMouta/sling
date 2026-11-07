@@ -63,8 +63,17 @@ export interface FieldMeta {
     order?: number;
     /** Filled in by the setup lookup, never shown. */
     hidden?: boolean;
-    /** `segmented` shows a short choice as buttons; `textarea` a long text. */
-    widget?: "segmented" | "textarea";
+    /**
+     * The setup step it's asked in, as that step's heading, such as "Your email address".
+     * Fields with the same step are asked together, in `order`. Without one, a field
+     * goes in a single "Details" step.
+     */
+    step?: string;
+    /**
+     * `segmented` shows a short choice as buttons, `cards` as large options with
+     * each choice's description; `textarea` is for long text.
+     */
+    widget?: "segmented" | "cards" | "textarea";
 }
 /** One choice for a field, offered by the setup lookup. */
 export interface SetupOption {

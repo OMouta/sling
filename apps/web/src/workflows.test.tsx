@@ -481,9 +481,16 @@ describe("connectors", () => {
     const card = (await screen.findByText("Sling bot")).closest("article") as HTMLElement;
     fireEvent.click(within(card).getByText("Edit"));
     const dialog = await screen.findByRole("dialog");
+    // Editing opens on what's set, and a secret only says it's stored.
+    const settings = within(dialog).getByRole("list", { name: "Settings" });
+    expect(within(settings).getByText("Bot token").closest("button")?.textContent).toContain(
+      "Stored",
+    );
+    fireEvent.click(within(settings).getByText("Bot token"));
     const token = within(dialog).getByLabelText(/Bot token/) as HTMLInputElement;
     expect(token.value).toBe("");
     expect(token.placeholder).toBe("Stored (hidden)");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Back" }));
     fireEvent.change(within(dialog).getByDisplayValue("Sling bot"), {
       target: { value: "Home bot" },
     });
@@ -527,6 +534,61 @@ describe("connectors", () => {
     } finally {
       connectors.pop();
       installations.pop();
+    }
+  });
+
+  it("asks one step at a time, and says it's connected", async () => {
+    connectors.push({
+      id: "mailish",
+      name: "Mailish",
+      description: "Mail.",
+      setupHelp: null,
+      credentialsSchema: {
+        type: "object",
+        properties: {
+          address: { type: "string", title: "Email address", step: "Your email address" },
+          password: { type: "string", title: "Password", step: "Password" },
+          host: { type: "string", title: "Server", step: "Server", advanced: true, default: "mx" },
+        },
+        required: ["address", "password", "host"],
+      },
+      secretFields: ["password"],
+      configSchema: { type: "object", properties: {} },
+      nodeTypes: [],
+      hasSource: false,
+      extension: null,
+    });
+    try {
+      renderAt("/connectors");
+      fireEvent.click(await screen.findByRole("button", { name: "Add Mailish" }));
+      const d = within(await screen.findByRole("dialog"));
+      expect(d.getByRole("heading", { name: "Your email address" })).toBeTruthy();
+      expect(
+        d.getAllByRole("listitem").filter((li) => li.getAttribute("aria-current")),
+      ).toHaveLength(1);
+      const next = d.getByRole("button", { name: "Continue" }) as HTMLButtonElement;
+      expect(next.disabled).toBe(true);
+      fireEvent.change(d.getByLabelText("Email address"), { target: { value: "a@b.co" } });
+      fireEvent.click(next);
+      // The server step has its answer already, so it waits under More settings.
+      expect(await d.findByRole("heading", { name: "Password" })).toBeTruthy();
+      expect(d.getByRole("button", { name: "More settings" })).toBeTruthy();
+      expect(d.queryByText("*")).toBeNull();
+      fireEvent.click(d.getByRole("button", { name: "Back" }));
+      expect((d.getByLabelText("Email address") as HTMLInputElement).value).toBe("a@b.co");
+      fireEvent.click(d.getByRole("button", { name: "Continue" }));
+      fireEvent.change(await d.findByLabelText("Password"), { target: { value: "pw" } });
+      fireEvent.click(d.getByRole("button", { name: "Add" }));
+      expect(await d.findByText("mailish is connected")).toBeTruthy();
+      expect(callsTo("POST", "/api/installations").at(-1)?.body).toMatchObject({
+        connectorId: "mailish",
+        credentials: { address: "a@b.co", password: "pw", host: "mx" },
+        check: true,
+      });
+      fireEvent.click(d.getByRole("button", { name: "Done" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    } finally {
+      connectors.pop();
     }
   });
 

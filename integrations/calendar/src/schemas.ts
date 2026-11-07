@@ -3,8 +3,9 @@ import { z } from "zod";
 export const CONNECTOR_ID = "calendar";
 export const MAX_FEEDS = 5;
 
-const ACCOUNT = { showWhen: { kind: "caldav" } } as const;
-const LINKS = { showWhen: { kind: "ics" } } as const;
+const ACCOUNT = { showWhen: { kind: "caldav" }, step: "Sign in" } as const;
+const PICKED = { showWhen: { kind: "caldav" }, step: "Your calendars" } as const;
+const LINKS = { showWhen: { kind: "ics" }, step: "Your iCal links" } as const;
 
 /**
  * Stored encrypted and never sent back. A private iCal address works as a
@@ -28,11 +29,23 @@ export const configSchema = z
   .object({
     kind: z
       .union([
-        z.literal("caldav").meta({ title: "Account" }),
-        z.literal("ics").meta({ title: "iCal link" }),
+        z.literal("caldav").meta({
+          title: "Calendar account",
+          description: "Reads and adds events. iCloud, Fastmail, Nextcloud and most others.",
+        }),
+        z.literal("ics").meta({
+          title: "iCal link",
+          description: "Reads only. Google Calendar and Outlook.",
+        }),
       ])
       .default("caldav")
-      .meta({ title: "Connect with", widget: "segmented", lookup: true, order: 0 }),
+      .meta({
+        step: "How do you want to connect?",
+        title: "Connect with",
+        widget: "cards",
+        lookup: true,
+        order: 0,
+      }),
     username: z
       .string()
       .default("")
@@ -51,11 +64,11 @@ export const configSchema = z
     calendars: z
       .array(z.string().min(1))
       .default([])
-      .meta({ ...ACCOUNT, title: "Calendars", picker: true, emptyMeansAll: true, order: 4 }),
+      .meta({ ...PICKED, title: "Calendars", picker: true, emptyMeansAll: true, order: 4 }),
     defaultCalendar: z
       .string()
       .default("")
-      .meta({ ...ACCOUNT, title: "New events go to", picker: true, order: 5 }),
+      .meta({ ...PICKED, title: "New events go to", picker: true, order: 5 }),
     feedNames: z
       .array(z.string().min(1))
       .default([])

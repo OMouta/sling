@@ -26,6 +26,8 @@ export interface FieldMeta {
   order: number | null;
   /** Filled in by the setup lookup, never shown. */
   hidden: boolean;
+  /** The setup step it's asked in, by heading. */
+  step: string | null;
 }
 
 interface FieldBase {
@@ -49,7 +51,7 @@ export type FormField = FieldBase &
     | { kind: "json" }
     | { kind: "number"; integer: boolean; min?: number; max?: number }
     | { kind: "boolean" }
-    | { kind: "enum"; options: { value: Primitive; label: string }[] }
+    | { kind: "enum"; options: { value: Primitive; label: string; detail?: string }[] }
     | { kind: "stringList" }
     | { kind: "objectList"; fields: FormField[] }
     | { kind: "object"; fields: FormField[] }
@@ -108,6 +110,9 @@ function normalize(input: Schema): { schema: Schema; nullable: boolean } {
           ...rest,
           enum: nonNull.map((v) => v.const),
           enumLabels: nonNull.map((v) => (typeof v.title === "string" ? v.title : null)),
+          enumDetails: nonNull.map((v) =>
+            typeof v.description === "string" ? v.description : null,
+          ),
         },
         nullable,
       };
@@ -144,6 +149,7 @@ function metaOf(s: Schema): FieldMeta {
     allowOther: s.allowOther === true,
     order: typeof s.order === "number" ? s.order : null,
     hidden: s.hidden === true,
+    step: typeof s.step === "string" && s.step.trim() ? s.step : null,
   };
 }
 
@@ -171,12 +177,14 @@ export function fieldFor(key: string, raw: Schema, required: boolean, depth = 0)
       : null;
   if (enumValues?.every(isPrimitive)) {
     const labels = Array.isArray(schema.enumLabels) ? schema.enumLabels : [];
+    const details = Array.isArray(schema.enumDetails) ? schema.enumDetails : [];
     return {
       ...base,
       kind: "enum",
       options: enumValues.map((value, i) => ({
         value,
         label: typeof labels[i] === "string" ? (labels[i] as string) : String(value),
+        ...(typeof details[i] === "string" ? { detail: details[i] as string } : {}),
       })),
     };
   }

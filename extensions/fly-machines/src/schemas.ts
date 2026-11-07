@@ -28,7 +28,8 @@ export function reachableFromFly(value: string): boolean {
   }
 }
 
-const MORE = { advanced: true } as const;
+const APP = { step: "App and image" } as const;
+const MORE = { ...APP, advanced: true } as const;
 
 export const credentialsSchema = z.object({
   apiToken: z.string().trim().min(1).meta({
@@ -44,12 +45,12 @@ export const configSchema = z.object({
     .string()
     .trim()
     .regex(/^[a-z0-9][a-z0-9-]{0,62}$/, "Use the app's name: lowercase letters, digits, and -")
-    .meta({ title: "App", placeholder: "an empty app, just for sandboxes" }),
+    .meta({ ...APP, title: "App", placeholder: "an empty app, just for sandboxes" }),
   image: z
     .string()
     .trim()
     .min(1)
-    .meta({ title: "Image", placeholder: "registry.fly.io/<app>:latest" }),
+    .meta({ ...APP, title: "Image", placeholder: "registry.fly.io/<app>:latest" }),
   region: z
     .string()
     .trim()

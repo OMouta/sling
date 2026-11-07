@@ -28,6 +28,10 @@ export interface SchemaFormProps {
   compact?: boolean;
   /** Choices for a field, by key. A string field becomes a picker, a list a checklist. */
   options?: Record<string, SetupOptionView[]>;
+  /** The heading above already asks for it, so the label is for screen readers only. */
+  bareLabel?: boolean;
+  /** No required markers, for forms that say what's missing another way. */
+  hideRequired?: boolean;
 }
 
 /** A form generated from JSON Schema fields. */
@@ -106,15 +110,23 @@ function FieldRow({
   const labelFor =
     field.kind === "boolean" ||
     field.kind === "stringList" ||
-    (field.kind === "enum" && field.widget === "segmented")
+    (field.kind === "enum" && (field.widget === "segmented" || field.widget === "cards"))
       ? undefined
       : id;
   return (
     <div className="space-y-1.5" data-field={field.key}>
-      <div className="flex items-center justify-between gap-2">
-        <label htmlFor={labelFor} className="text-xs font-medium text-soft">
+      <div
+        className={cx(
+          "flex items-center justify-between gap-2",
+          form.bareLabel && !custom?.accessory && "sr-only",
+        )}
+      >
+        <label
+          htmlFor={labelFor}
+          className={cx("text-xs font-medium text-soft", form.bareLabel && "sr-only")}
+        >
           {field.label}
-          {field.required && (
+          {field.required && !form.hideRequired && (
             <span className="ml-0.5 text-danger" title="Required">
               *
             </span>
@@ -177,6 +189,22 @@ function Control({
         placeholder={field.meta.placeholder ?? undefined}
         disabled={disabled}
         onChange={set}
+      />
+    );
+  }
+  if (field.kind === "enum" && field.widget === "cards") {
+    const current = value === undefined ? field.default : value;
+    return (
+      <OptionCards
+        label={field.label}
+        options={field.options.map((o) => ({
+          value: String(o.value),
+          label: o.label,
+          detail: o.detail,
+        }))}
+        value={String(current)}
+        disabled={disabled}
+        onChange={(v) => set(field.options.find((o) => String(o.value) === v)?.value)}
       />
     );
   }
@@ -443,6 +471,84 @@ function CheckList({
         </li>
       )}
     </ul>
+  );
+}
+
+/** A choice as large options, each with a line saying what it means. Arrow keys move between them. */
+export function OptionCards({
+  label,
+  options,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  options: { value: string; label: string; detail?: string; icon?: ReactNode }[];
+  value: string;
+  disabled?: boolean;
+  onChange: (v: string) => void;
+}) {
+  const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const move = (from: number, by: number) => {
+    const next = (from + by + options.length) % options.length;
+    const o = options[next];
+    if (!o) return;
+    onChange(o.value);
+    refs.current[next]?.focus();
+  };
+  return (
+    <div role="radiogroup" aria-label={label} className="grid gap-2">
+      {options.map((o, i) => {
+        const on = value === o.value;
+        return (
+          // biome-ignore lint/a11y/useSemanticElements: styled radios inside a radiogroup.
+          <button
+            key={o.value}
+            ref={(el) => {
+              refs.current[i] = el;
+            }}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            tabIndex={on || (!options.some((x) => x.value === value) && i === 0) ? 0 : -1}
+            disabled={disabled}
+            onClick={() => onChange(o.value)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+                e.preventDefault();
+                move(i, 1);
+              } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+                e.preventDefault();
+                move(i, -1);
+              }
+            }}
+            className={cx(
+              "flex cursor-pointer items-start gap-3 rounded-xl p-3.5 text-left transition-shadow duration-150 focus-visible:shadow-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+              on
+                ? "bg-surface-2 shadow-[inset_0_0_0_1.5px_var(--color-accent)]"
+                : "bg-field shadow-field hover:shadow-field-hover",
+            )}
+          >
+            {o.icon && <span className="mt-0.5 shrink-0 text-icon">{o.icon}</span>}
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium text-text">{o.label}</span>
+              {o.detail && (
+                <span className="mt-0.5 block text-xs leading-4 text-muted">{o.detail}</span>
+              )}
+            </span>
+            <span
+              aria-hidden="true"
+              className={cx(
+                "mt-0.5 grid size-4 shrink-0 place-items-center rounded-full transition-colors duration-150",
+                on ? "bg-accent" : "shadow-[inset_0_0_0_1.5px_var(--color-line-strong)]",
+              )}
+            >
+              {on && <span className="size-1.5 rounded-full bg-white" />}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

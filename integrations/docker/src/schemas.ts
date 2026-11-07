@@ -27,7 +27,8 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-const MORE = { advanced: true } as const;
+const STEP = { step: "Docker host" } as const;
+const MORE = { ...STEP, advanced: true } as const;
 
 export const credentialsSchema = z.object({
   host: z
@@ -35,7 +36,7 @@ export const credentialsSchema = z.object({
     .trim()
     .regex(HOST, "Use unix:///path/to/docker.sock or tcp://host:port")
     .default(DEFAULT_HOST)
-    .meta({ title: "Docker host", lookup: true, placeholder: DEFAULT_HOST }),
+    .meta({ ...STEP, title: "Docker host", lookup: true, placeholder: DEFAULT_HOST }),
   tlsCa: pem("The CA certificate").meta({
     ...MORE,
     title: "CA certificate",

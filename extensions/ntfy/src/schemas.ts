@@ -18,7 +18,8 @@ function isHttpUrl(value: string): boolean {
   }
 }
 
-const MORE = { advanced: true } as const;
+const TOPIC_STEP = { step: "Pick a topic" } as const;
+const MORE = { ...TOPIC_STEP, advanced: true } as const;
 
 export const credentialsSchema = z.object({
   accessToken: z
@@ -40,7 +41,7 @@ export const configSchema = z.object({
     .trim()
     .regex(/^([-_A-Za-z0-9]{1,64})?$/, TOPIC_HELP)
     .optional()
-    .meta({ title: "Topic", lookup: true, order: 0 }),
+    .meta({ ...TOPIC_STEP, title: "Topic", lookup: true, order: 0 }),
   server: z
     .string()
     .trim()

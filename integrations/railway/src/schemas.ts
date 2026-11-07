@@ -13,21 +13,28 @@ function isHttpsUrl(value: string): boolean {
   }
 }
 
-const MORE = { advanced: true } as const;
+const TOKEN = { step: "Railway token" } as const;
+const IMAGE = { step: "Sandbox image" } as const;
+const MORE = { ...IMAGE, advanced: true } as const;
 
 export const credentialsSchema = z.object({
   apiToken: z
     .string()
     .trim()
     .min(1)
-    .meta({ title: "API token", description: "From Account Settings → Tokens", order: 0 }),
+    .meta({
+      ...TOKEN,
+      title: "API token",
+      description: "From Account Settings → Tokens",
+      order: 0,
+    }),
   tokenType: z
     .union([
       z.literal("account").meta({ title: "Account or workspace" }),
       z.literal("project").meta({ title: "Project" }),
     ])
     .default("account")
-    .meta({ ...MORE, title: "Token type", widget: "segmented" }),
+    .meta({ ...TOKEN, advanced: true, title: "Token type", widget: "segmented" }),
   environmentId: z.string().trim().min(1).meta({
     title: "Environment ID",
     description: "Cmd+K or Ctrl+K in an empty project copies it",
@@ -56,7 +63,7 @@ export const configSchema = z.object({
     .string()
     .trim()
     .refine(isHttpsUrl, "Railway sandboxes reach Sling over the internet: use an https:// URL")
-    .meta({ title: "Sling's public address", placeholder: "https://sling.example.com" }),
+    .meta({ ...IMAGE, title: "Sling's public address", placeholder: "https://sling.example.com" }),
   cpus: z
     .number()
     .positive()

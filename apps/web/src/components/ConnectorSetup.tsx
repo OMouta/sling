@@ -1,23 +1,28 @@
 import type { ConnectorView, InstallationView, SetupNoteView, SetupResultView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, ChevronRight, CircleAlert, CircleCheck, Info } from "lucide-react";
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { ApiError, api } from "../lib/api.ts";
 import { defaultsFor, type FormField, formFields, type Primitive } from "../lib/schemaForm.ts";
 import { qk } from "../lib/workflowApi.ts";
 import { SchemaField } from "./SchemaForm.tsx";
-import { Button, cx, Dialog, ErrorText, Field, Input } from "./ui.tsx";
+import { Button, cx, Field, Input } from "./ui.tsx";
+import { type ReviewRow, Wizard, type WizardStep } from "./Wizard.tsx";
 
 type Source = "credentials" | "config";
 interface Row {
   field: FormField;
   source: Source;
+  rank: number;
 }
+
+/** The step heading for fields that don't name one. */
+const DETAILS = "Details";
 
 /** Credentials and settings in one list: by `order`, then credentials before config. */
 function rowsOf(connector: ConnectorView): Row[] {
-  const rows: (Row & { rank: number })[] = [
+  const rows: Row[] = [
     ...formFields(connector.credentialsSchema).map((field, i) => ({
       field,
       source: "credentials" as const,
@@ -29,7 +34,7 @@ function rowsOf(connector: ConnectorView): Row[] {
       rank: field.meta.order ?? 1000 + i,
     })),
   ];
-  return rows.sort((a, b) => a.rank - b.rank).map(({ field, source }) => ({ field, source }));
+  return rows.sort((a, b) => a.rank - b.rank);
 }
 
 function isEmpty(v: unknown): boolean {
@@ -69,10 +74,21 @@ function Note({ note }: { note: SetupNoteView }) {
   );
 }
 
+function Notes({ notes }: { notes: SetupNoteView[] }) {
+  if (notes.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      {notes.map((n) => (
+        <Note key={`${n.tone}.${n.text}`} note={n} />
+      ))}
+    </div>
+  );
+}
+
 /**
- * Adds or edits a connector installation. Asks only for what the connector
- * can't work out itself: its setup lookup fills in servers, offers pickers,
- * and points at where to get a password, as you type.
+ * Adds or edits a connector installation, one step at a time. Asks only for
+ * what the connector can't work out itself: its setup lookup fills in
+ * servers, offers pickers, and points at where to get a password, as you type.
  */
 export function ConnectorSetupDialog({
   connector,
@@ -102,8 +118,9 @@ export function ConnectorSetupDialog({
   const [config, setConfig] = useState<Record<string, unknown>>(initialConfig);
   const touched = useRef(new Set<string>());
   const [found, setFound] = useState<SetupResultView>({});
-  const [more, setMore] = useState(false);
+  const [lookingUp, setLookingUp] = useState(Boolean(connector.hasSetup));
   const [failed, setFailed] = useState<string | null>(null);
+  const [saved, setSaved] = useState<InstallationView | null>(null);
   const [retry, setRetry] = useState(0);
   // Once shown, a field stays put, even after a later lookup fills it.
   const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set());
@@ -111,6 +128,7 @@ export function ConnectorSetupDialog({
 
   const current = (key: string): unknown =>
     key in config ? config[key] : key in credentials ? credentials[key] : undefined;
+  const rowValue = (r: Row) => (r.source === "credentials" ? credentials : config)[r.field.key];
   const visible = (f: FormField): boolean => {
     for (const [key, allowed] of Object.entries(f.meta.showWhen ?? {})) {
       const row = rows.find((r) => r.field.key === key);
@@ -121,9 +139,15 @@ export function ConnectorSetupDialog({
     if (f.meta.picker && !(found.options?.[f.key]?.length ?? 0)) return false;
     return true;
   };
-  const shown = rows.filter((r) => visible(r.field));
-  const main = shown.filter((r) => !r.field.meta.advanced || revealed.has(r.field.key));
-  const advanced = shown.filter((r) => r.field.meta.advanced && !revealed.has(r.field.key));
+  const filled = (r: Row) =>
+    !isEmpty(rowValue(r)) || (r.source === "credentials" && credentialsStored);
+  // An advanced field comes up front when the lookup couldn't fill it, or, for a
+  // connector without a lookup, while it's required and empty. Nothing that still
+  // needs an answer waits under More settings.
+  const upFront = (r: Row) =>
+    !r.field.meta.advanced ||
+    revealed.has(r.field.key) ||
+    (!connector.hasSetup && r.field.required && !filled(r));
 
   // ---------------------------------------------------------------- setup lookup
   const lookupKeys = rows.filter((r) => r.field.meta.lookup).map((r) => r.field.key);
@@ -138,6 +162,7 @@ export function ConnectorSetupDialog({
     const n = ++seq.current;
     const delay = first.current ? 0 : 450;
     first.current = false;
+    setLookingUp(true);
     const timer = setTimeout(async () => {
       try {
         const result = await api.post<SetupResultView>(`/api/connectors/${connector.id}/setup`, {
@@ -160,6 +185,8 @@ export function ConnectorSetupDialog({
         }
       } catch {
         // The form works without the lookup.
+      } finally {
+        if (n === seq.current) setLookingUp(false);
       }
     }, delay);
     return () => clearTimeout(timer);
@@ -170,13 +197,90 @@ export function ConnectorSetupDialog({
     return () => clearTimeout(t);
   }, [found]);
 
-  // ---------------------------------------------------------------- saving
-  const missing = shown.filter((r) => {
-    if (!r.field.required || r.field.kind === "boolean") return false;
-    if (r.source === "credentials" && credentialsStored) return false;
-    return isEmpty(r.source === "credentials" ? credentials[r.field.key] : config[r.field.key]);
+  // ---------------------------------------------------------------- steps
+  const shown = rows.filter((r) => visible(r.field));
+  const groups = new Map<string, Row[]>();
+  for (const r of shown) {
+    const key = r.field.meta.step ?? DETAILS;
+    groups.set(key, [...(groups.get(key) ?? []), r]);
+  }
+  const ordered = [...groups.entries()].sort(
+    (a, b) => Math.min(...a[1].map((r) => r.rank)) - Math.min(...b[1].map((r) => r.rank)),
+  );
+  // A step is asked only when it has something to ask; the rest of its fields
+  // wait under the last step's More settings.
+  const asked = ordered.filter(([, rs]) => rs.some(upFront));
+  const tucked = ordered.filter(([, rs]) => !rs.some(upFront)).flatMap(([, rs]) => rs);
+  const stepGroups: [string, Row[]][] = asked.length > 0 ? asked : [[DETAILS, []]];
+
+  const notes = found.notes ?? [];
+  const shownKeys = new Set(shown.map((r) => r.field.key));
+  const notesFor = (key: string) => notes.filter((n) => n.field === key);
+  const general = notes.filter((n) => !n.field || !shownKeys.has(n.field));
+
+  const edit = (source: Source) => (next: Record<string, unknown>, key: string) => {
+    touched.current.add(key);
+    setFailed(null);
+    if (source === "credentials") setCredentials(next);
+    else setConfig(next);
+  };
+
+  const renderRow = (r: Row, bare: boolean) => (
+    <SchemaField
+      key={`${r.source}.${r.field.key}`}
+      field={r.field}
+      value={r.source === "credentials" ? credentials : config}
+      onChange={edit(r.source)}
+      form={{
+        secretFields: r.source === "credentials" ? connector.secretFields : undefined,
+        placeholder: r.source === "credentials" && credentialsStored ? "Stored" : undefined,
+        secretPlaceholder: credentialsStored ? "Stored (hidden)" : undefined,
+        options: found.options,
+        bareLabel: bare,
+        hideRequired: true,
+        override: () => {
+          const own = notesFor(r.field.key);
+          return own.length > 0 ? { after: <Notes notes={own} /> } : null;
+        },
+      }}
+    />
+  );
+
+  const steps: WizardStep[] = stepGroups.map(([heading, rs], i) => {
+    const front = rs.filter(upFront);
+    const more = [...rs.filter((r) => !upFront(r)), ...(i === stepGroups.length - 1 ? tucked : [])];
+    const missing = front.some((r) => r.field.required && r.field.kind !== "boolean" && !filled(r));
+    const wrong = front.some((r) => notesFor(r.field.key).some((n) => n.tone === "error"));
+    const looksUp = front.some((r) => r.field.meta.lookup);
+    // One field under a heading that asks for it needs no label of its own.
+    const bare = front.length === 1 && heading !== DETAILS;
+    return {
+      id: heading,
+      title: heading === DETAILS ? `Connect ${connector.name}` : heading,
+      blocked: missing || wrong,
+      busy: looksUp && lookingUp,
+      content: (
+        <>
+          <Notes notes={general} />
+          {front.map((r) => renderRow(r, bare))}
+          {more.length > 0 && (
+            <Disclosure label="More settings" open={editing}>
+              {more.map((r) => renderRow(r, false))}
+            </Disclosure>
+          )}
+          {i === 0 && connector.setupHelp && !connector.hasSetup && (
+            <Disclosure label="Where to find these">
+              <div className="prose-chat rounded-lg bg-surface-2 p-3 text-xs leading-5 text-muted shadow-raised">
+                <Markdown>{connector.setupHelp}</Markdown>
+              </div>
+            </Disclosure>
+          )}
+        </>
+      ),
+    };
   });
 
+  // ---------------------------------------------------------------- saving
   const save = useMutation({
     mutationFn: async (force: boolean) => {
       setFailed(null);
@@ -206,10 +310,10 @@ export function ConnectorSetupDialog({
             ? list.map((x) => (x.id === res.id ? res : x))
             : [...list, res];
         });
+        setSaved(res);
         onSaved?.(res);
       }
       void qc.invalidateQueries({ queryKey: qk.installations() });
-      onClose();
     },
     onError: (err) => {
       if (
@@ -222,133 +326,104 @@ export function ConnectorSetupDialog({
     },
   });
 
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (missing.length === 0) save.mutate(failed !== null);
+  const finish = async (force: boolean) => {
+    try {
+      await save.mutateAsync(force);
+      return true;
+    } catch {
+      return false;
+    }
   };
 
-  const edit = (source: Source) => (next: Record<string, unknown>, key: string) => {
-    touched.current.add(key);
-    setFailed(null);
-    if (source === "credentials") setCredentials(next);
-    else setConfig(next);
+  // ---------------------------------------------------------------- review, for editing
+  const shownValue = (r: Row): string => {
+    const v = rowValue(r);
+    if (r.source === "credentials" && connector.secretFields.includes(r.field.key)) {
+      if (!isEmpty(v)) return "Changed";
+      return credentialsStored ? "Stored" : "Not set";
+    }
+    if (r.source === "credentials" && credentialsStored && isEmpty(v)) return "Stored";
+    if (typeof v === "boolean") return v ? "On" : "Off";
+    const options = found.options?.[r.field.key];
+    const named = (x: unknown) => options?.find((o) => o.value === x)?.label ?? String(x);
+    if (Array.isArray(v)) {
+      if (v.length === 0) return r.field.meta.emptyMeansAll ? "All" : "None";
+      return v.map(named).join(", ");
+    }
+    if (r.field.kind === "enum") {
+      return r.field.options.find((o) => o.value === v)?.label ?? String(v ?? "");
+    }
+    return isEmpty(v) ? "Not set" : named(v);
   };
+  const review: ReviewRow[] | undefined = editing
+    ? steps.flatMap((s, i) => {
+        const rs = stepGroups[i]?.[1] ?? [];
+        const all = [...rs, ...(i === steps.length - 1 ? tucked : [])];
+        return all.map((r) => ({ stepId: s.id, label: r.field.label, value: shownValue(r) }));
+      })
+    : undefined;
 
-  const notesFor = (key?: string) =>
-    (found.notes ?? []).filter((n) => (key ? n.field === key : !n.field || !shownKey(n.field)));
-  const shownKey = (key: string) =>
-    main.some((r) => r.field.key === key) || (more && advanced.some((r) => r.field.key === key));
-
-  const renderRow = (r: Row) => {
-    const value = r.source === "credentials" ? credentials : config;
-    const notes = notesFor(r.field.key);
-    return (
-      <SchemaField
-        key={`${r.source}.${r.field.key}`}
-        field={r.field}
-        value={value}
-        onChange={edit(r.source)}
-        form={{
-          secretFields: r.source === "credentials" ? connector.secretFields : undefined,
-          placeholder: r.source === "credentials" && credentialsStored ? "Stored" : undefined,
-          secretPlaceholder: credentialsStored ? "Stored (hidden)" : undefined,
-          options: found.options,
-          override: () =>
-            notes.length > 0
-              ? {
-                  after: (
-                    <div className="space-y-1">
-                      {notes.map((n) => (
-                        <Note key={n.text} note={n} />
-                      ))}
-                    </div>
-                  ),
-                }
-              : null,
-        }}
-      />
-    );
-  };
-
-  const general = notesFor();
+  const okNotes = notes.filter((n) => n.tone === "ok");
   const action = editing ? "Save" : "Add";
+  const problem: ReactNode = failed ?? (save.error instanceof Error ? save.error.message : null);
 
   return (
-    <Dialog
+    <Wizard
       title={title ?? (editing ? `Edit ${installation.name}` : `Add ${connector.name}`)}
-      description={connector.description}
-      onClose={onClose}
-      footer={
-        <>
-          {missing.length > 0 && !failed && (
-            <p className="mr-auto text-xs text-muted">
-              Still needed: {missing.map((r) => r.field.label).join(", ")}
-            </p>
-          )}
-          {!failed && <ErrorText error={save.error} />}
-          <Button onClick={onClose}>Cancel</Button>
+      steps={steps}
+      finishLabel={action}
+      onFinish={() => finish(false)}
+      finishing={save.isPending}
+      error={problem}
+      secondary={
+        failed ? (
           <Button
-            variant="primary"
-            type="submit"
-            form="connector-setup"
             busy={save.isPending}
-            disabled={missing.length > 0 || (editing && !name.trim())}
+            onClick={() =>
+              void finish(true).then((ok) => {
+                if (ok && editing) onClose();
+              })
+            }
           >
-            {failed ? `${action} anyway` : action}
+            {action} anyway
           </Button>
-        </>
+        ) : null
       }
-    >
-      <form id="connector-setup" onSubmit={submit} className="space-y-4">
-        {general.length > 0 && (
-          <div className="space-y-1">
-            {general.map((n) => (
-              <Note key={n.text} note={n} />
-            ))}
-          </div>
-        )}
-        {editing && (
+      review={review}
+      reviewTop={
+        editing ? (
           <Field label="Name">
             <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
           </Field>
-        )}
-        {main.map(renderRow)}
-        {advanced.length > 0 && (
-          <div>
-            <button
-              type="button"
-              aria-expanded={more}
-              onClick={() => setMore((v) => !v)}
-              className="-ml-1 inline-flex h-7 cursor-pointer items-center gap-1 rounded-md px-1 text-xs text-muted transition-colors duration-150 hover:text-text"
-            >
-              <ChevronRight
-                aria-hidden="true"
-                size={14}
-                className={cx("transition-transform duration-150", more && "rotate-90")}
-              />
-              More settings
-            </button>
-            {more && <div className="mt-3 space-y-4">{advanced.map(renderRow)}</div>}
-          </div>
-        )}
-        {connector.setupHelp && !connector.hasSetup && <SetupHelp text={connector.setupHelp} />}
-        {failed && (
-          <p
-            role="alert"
-            className="flex items-start gap-1.5 rounded-lg bg-danger/10 px-3 py-2 text-xs leading-4 text-danger"
-          >
-            <CircleAlert aria-hidden="true" size={13} className="mt-px shrink-0" />
-            <span className="min-w-0">{failed}</span>
-          </p>
-        )}
-      </form>
-    </Dialog>
+        ) : undefined
+      }
+      done={
+        editing ? undefined : (
+          <>
+            <p className="text-sm font-medium">{saved?.name ?? connector.name} is connected</p>
+            {okNotes.length > 0 && (
+              <p className="mt-1 text-xs leading-4 text-muted">
+                {okNotes.map((n) => n.text).join(" · ")}
+              </p>
+            )}
+          </>
+        )
+      }
+      onClose={onClose}
+    />
   );
 }
 
-/** An extension's own setup steps, closed until asked for. */
-function SetupHelp({ text }: { text: string }) {
-  const [open, setOpen] = useState(false);
+function Disclosure({
+  label,
+  open: initial = false,
+  children,
+}: {
+  label: string;
+  open?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(initial);
   return (
     <div>
       <button
@@ -362,13 +437,9 @@ function SetupHelp({ text }: { text: string }) {
           size={14}
           className={cx("transition-transform duration-150", open && "rotate-90")}
         />
-        Where to find these
+        {label}
       </button>
-      {open && (
-        <div className="prose-chat mt-2 rounded-lg bg-surface-2 p-3 text-xs leading-5 text-muted shadow-raised">
-          <Markdown>{text}</Markdown>
-        </div>
-      )}
+      {open && <div className="mt-3 space-y-4">{children}</div>}
     </div>
   );
 }

@@ -6,19 +6,21 @@ export const SNOWFLAKE = /^\d{15,22}$/;
 const snowflake = z.string().regex(SNOWFLAKE, "Discord IDs are 15 to 22 digits");
 
 export const credentialsSchema = z.object({
-  botToken: z.string().min(1).meta({ title: "Bot token", lookup: true }),
+  botToken: z.string().min(1).meta({ step: "Bot token", title: "Bot token", lookup: true }),
 });
 
 export type DiscordCredentials = z.infer<typeof credentialsSchema>;
 
 export const configSchema = z.object({
   allowedUserIds: z.array(snowflake).default([]).meta({
+    step: "Who and where",
     title: "Who can message it",
     picker: true,
     allowOther: true,
     placeholder: "Add a user ID",
   }),
   approverUserIds: z.array(snowflake).default([]).meta({
+    step: "Who and where",
     title: "Who can approve",
     picker: true,
     allowOther: true,
@@ -29,7 +31,7 @@ export const configSchema = z.object({
     .string()
     .regex(/^(\d{15,22})?$/, "Discord IDs are 15 to 22 digits")
     .optional()
-    .meta({ title: "Default channel", picker: true, placeholder: "None" }),
+    .meta({ step: "Who and where", title: "Default channel", picker: true, placeholder: "None" }),
 });
 
 export type DiscordConfig = z.infer<typeof configSchema>;
