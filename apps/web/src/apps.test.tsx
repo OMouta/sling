@@ -103,16 +103,18 @@ function openPreview(source: PreviewSource) {
 }
 
 describe("personality tool groups", () => {
-  it("offers apps and deploys, with what each lets it do", async () => {
+  it("offers apps, deploys, and setup, with what each lets it do", async () => {
     renderAt("/personalities/new");
     const apps = await screen.findByRole("switch", { name: "Apps and workflows" });
     const deploys = screen.getByRole("switch", { name: "Deploys" });
+    expect(screen.getByRole("switch", { name: "Change Sling's setup" })).toBeTruthy();
     expect(screen.getByText(PERSONALITY_TOOL_INFO.apps.description)).toBeTruthy();
     expect(screen.getByText(PERSONALITY_TOOL_INFO.deploys.description)).toBeTruthy();
+    expect(screen.getByText(PERSONALITY_TOOL_INFO.setup.description)).toBeTruthy();
     expect(screen.getAllByRole("switch").map((s) => s.getAttribute("aria-label"))).toEqual(
       PERSONALITY_TOOLS.map((t) => PERSONALITY_TOOL_INFO[t].label),
     );
-    expect(PERSONALITY_TOOLS.slice(-2)).toEqual(["apps", "deploys"]);
+    expect(PERSONALITY_TOOLS.slice(-3)).toEqual(["apps", "deploys", "setup"]);
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "On call" } });
     fireEvent.change(screen.getByLabelText("Instructions"), {

@@ -368,6 +368,11 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
     case "deploy_target.removed":
       applyDeployTargetEvent(qc, ev);
       return;
+    case "settings.updated":
+      for (const queryKey of [["settings"], qk.sandboxSettings(), qk.sandboxRepos(), modelsKey]) {
+        void qc.invalidateQueries({ queryKey });
+      }
+      return;
   }
 }
 

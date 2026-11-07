@@ -25,6 +25,7 @@ import {
   LayoutTemplate,
   Plus,
   Rocket,
+  SlidersHorizontal,
   Star,
   Terminal,
   Trash2,
@@ -72,6 +73,7 @@ const TOOL_ICONS: Record<PersonalityTool, typeof Terminal> = {
   coding: Wrench,
   apps: LayoutGrid,
   deploys: Rocket,
+  setup: SlidersHorizontal,
 };
 
 const TOOL_SHORT: Record<PersonalityTool, string> = {
@@ -79,6 +81,7 @@ const TOOL_SHORT: Record<PersonalityTool, string> = {
   coding: "Coding tasks",
   apps: "Apps",
   deploys: "Deploys",
+  setup: "Setup",
 };
 
 function toolsLine(tools: PersonalityTool[]): string {

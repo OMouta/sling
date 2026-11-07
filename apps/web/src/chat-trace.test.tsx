@@ -372,6 +372,216 @@ describe("chat replies", () => {
     expect(screen.getByText(/"created": true/)).toBeTruthy();
   });
 
+  it("shows a setup change with its rows, and sends the password with Apply", async () => {
+    agentStatus = "thinking";
+    open();
+    await screen.findAllByText("Thinking");
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "thinking" });
+    emit({
+      type: "agent.tool",
+      conversationId: "cnv_1",
+      step: {
+        kind: "tool",
+        id: "t4",
+        name: "save_app_account",
+        input: { connector: "email", credentials: { fromAddress: "ana@fastmail.com" } },
+        status: "running",
+        output: null,
+        approval: {
+          id: "cap_9",
+          kind: "change",
+          state: "pending",
+          machine: "",
+          summary: "Connect ana@fastmail.com?",
+          change: {
+            title: "Connect ana@fastmail.com?",
+            doing: "Connecting ana@fastmail.com",
+            done: "Connected ana@fastmail.com",
+            rows: [
+              { label: "App", after: "Email" },
+              { label: "IMAP server", after: "imap.fastmail.com" },
+              { label: "Folders", before: "INBOX", after: "INBOX, Work" },
+            ],
+            secrets: [
+              {
+                key: "password",
+                label: "Password",
+                required: true,
+                placeholder: "Fastmail needs an app password.",
+                link: { label: "Make one", url: "https://app.fastmail.com/settings/security/apps" },
+              },
+            ],
+          },
+        },
+      },
+    });
+    expect(screen.getByText("Connect ana@fastmail.com?")).toBeTruthy();
+    expect(screen.getByText("imap.fastmail.com")).toBeTruthy();
+    // An edit shows what it was, then what it becomes.
+    expect(screen.getByText("INBOX")).toBeTruthy();
+    expect(screen.getByText("INBOX, Work")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Make one" }).getAttribute("href")).toBe(
+      "https://app.fastmail.com/settings/security/apps",
+    );
+    const password = screen.getByLabelText(/^Password/) as HTMLInputElement;
+    expect(password.type).toBe("password");
+    const apply = screen.getByRole("button", { name: "Apply" }) as HTMLButtonElement;
+    expect(apply.disabled).toBe(true);
+    fireEvent.change(password, { target: { value: "app-pass-1234" } });
+    expect(apply.disabled).toBe(false);
+    fireEvent.click(apply);
+    await waitFor(() =>
+      expect(posts).toContainEqual({
+        path: "/api/conversations/cnv_1/commands/cap_9",
+        body: { decision: "approve", secrets: { password: "app-pass-1234" } },
+      }),
+    );
+    // Nothing typed stays in the page once it's sent.
+    await waitFor(() => expect(password.value).toBe(""));
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "idle" });
+  });
+
+  it("cancels a change without sending anything typed", async () => {
+    agentStatus = "thinking";
+    open();
+    await screen.findAllByText("Thinking");
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "thinking" });
+    emit({
+      type: "agent.tool",
+      conversationId: "cnv_1",
+      step: {
+        kind: "tool",
+        id: "t5",
+        name: "save_deploy_target",
+        input: {},
+        status: "running",
+        output: null,
+        approval: {
+          id: "cap_10",
+          kind: "change",
+          state: "pending",
+          machine: "",
+          summary: "Add deploy target Website?",
+          change: {
+            title: "Add deploy target Website?",
+            doing: "Adding Website",
+            done: "Added Website",
+            rows: [{ label: "Deploys", after: "Deploy hook" }],
+            secrets: [{ key: "hookUrl", label: "Deploy hook URL", required: true }],
+          },
+        },
+      },
+    });
+    fireEvent.change(screen.getByLabelText("Deploy hook URL"), {
+      target: { value: "https://hooks.example/abc" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(posts).toContainEqual({
+        path: "/api/conversations/cnv_1/commands/cap_10",
+        body: { decision: "deny" },
+      }),
+    );
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "idle" });
+  });
+
+  it("applies a change with nothing to type at once, and shows it applying", async () => {
+    agentStatus = "thinking";
+    open();
+    await screen.findAllByText("Thinking");
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "thinking" });
+    const step = (state: "pending" | "approved") => ({
+      kind: "tool" as const,
+      id: "t6",
+      name: "change_settings",
+      input: { timeZone: "Europe/Lisbon" },
+      status: "running" as const,
+      output: null,
+      approval: {
+        id: "cap_11",
+        kind: "change" as const,
+        state,
+        machine: "",
+        summary: "Change settings?",
+        change: {
+          title: "Change settings?",
+          doing: "Changing settings",
+          done: "Changed settings",
+          rows: [{ label: "Time zone", before: "UTC", after: "Europe/Lisbon" }],
+          secrets: [],
+        },
+      },
+    });
+    emit({ type: "agent.tool", conversationId: "cnv_1", step: step("pending") });
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(posts).toContainEqual({
+        path: "/api/conversations/cnv_1/commands/cap_11",
+        body: { decision: "approve" },
+      }),
+    );
+    emit({ type: "agent.tool", conversationId: "cnv_1", step: step("approved") });
+    expect(screen.getByText("Changing settings")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "idle" });
+  });
+
+  it("keeps a decided change to one line, with what changed on a click", async () => {
+    const change = (id: string, state: "approved" | "denied" | "expired", output: string) => ({
+      kind: "tool" as const,
+      id,
+      name: "save_deploy_target",
+      input: {},
+      status: "done" as const,
+      output,
+      approval: {
+        id: `cap_${id}`,
+        kind: "change" as const,
+        state,
+        machine: "",
+        summary: `Add deploy target ${id}?`,
+        change: {
+          title: `Add deploy target ${id}?`,
+          doing: `Adding ${id}`,
+          done: `Added ${id}`,
+          rows: [{ label: "Repo", after: `github.com/acme/${id}` }],
+          secrets: [{ key: "hookUrl", label: "Deploy hook URL", required: true }],
+        },
+      },
+    });
+    messages = [
+      {
+        ...reply,
+        text: "Done.",
+        trace: {
+          ms: 800,
+          steps: [
+            change("Website", "approved", '{"applied":true}'),
+            change("Api", "denied", '{"error":"The user cancelled."}'),
+            change("Docs", "expired", '{"error":"No answer."}'),
+            change("Blog", "approved", '{"error":"There\'s already a deploy target called Blog."}'),
+          ],
+        },
+      },
+    ];
+    open();
+    const added = await screen.findByRole("button", { name: "Added Website" });
+    expect(screen.queryByText("github.com/acme/Website")).toBeNull();
+    fireEvent.click(added);
+    expect(screen.getByText("github.com/acme/Website")).toBeTruthy();
+    expect(
+      within(screen.getByRole("button", { name: "Add deploy target Api" })).getByText("Cancelled"),
+    ).toBeTruthy();
+    expect(
+      within(screen.getByRole("button", { name: "Add deploy target Docs" })).getByText("Expired"),
+    ).toBeTruthy();
+    expect(screen.getByText("There's already a deploy target called Blog.")).toBeTruthy();
+    // Nothing decided asks again, or keeps an input.
+    expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
+    expect(screen.queryByLabelText("Deploy hook URL")).toBeNull();
+  });
+
   it("shows a task inside the reply that started it, once", async () => {
     tasks = [{ ...machineTask, conversationId: "cnv_1", title: "List Desktop items" }];
     messages = [

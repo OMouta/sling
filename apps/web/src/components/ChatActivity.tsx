@@ -1,6 +1,8 @@
 import type {
   CommandApprovalView,
   PermissionMode,
+  SetupChangeRow,
+  SetupChangeView,
   TaskView,
   ToolStep,
   TraceStep,
@@ -15,17 +17,18 @@ import {
   Send,
   ShieldAlert,
   ShieldCheck,
+  SlidersHorizontal,
   SquareTerminal,
   Wrench,
   X,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { api } from "../lib/api.ts";
 import { duration, readableLocalDate } from "../lib/format.ts";
 import { useNow } from "../lib/useNow.ts";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
 import { TaskCard } from "./TaskCard.tsx";
-import { Button, cx, ErrorText, Spinner } from "./ui.tsx";
+import { Button, cx, ErrorText, Input, Spinner } from "./ui.tsx";
 
 /** What each of Sling's tools is doing, has done, and failed to do. */
 const TOOLS: Record<string, [string, string, string]> = {
@@ -49,6 +52,21 @@ const TOOLS: Record<string, [string, string, string]> = {
     "Sent a Discord message",
     "Couldn't send the Discord message",
   ],
+  read_setup: ["Looking at your setup", "Looked at your setup", "Couldn't read your setup"],
+  save_deploy_target: [
+    "Setting up a deploy target",
+    "Set up a deploy target",
+    "Couldn't set up the deploy target",
+  ],
+  save_app_account: ["Connecting an app", "Connected an app", "Couldn't connect the app"],
+  add_workflow: ["Adding a workflow", "Added a workflow", "Couldn't add the workflow"],
+  change_workflow: ["Changing a workflow", "Changed a workflow", "Couldn't change the workflow"],
+  save_personality: [
+    "Saving a personality",
+    "Saved a personality",
+    "Couldn't save the personality",
+  ],
+  change_settings: ["Changing settings", "Changed settings", "Couldn't change settings"],
 };
 
 export function toolLabel(step: ToolStep): string {
@@ -124,6 +142,8 @@ export function ReplySteps({
               <CommandStep step={s} ctx={ctx} />
             ) : s.approval?.kind === "send" ? (
               <SendStep step={s} approval={s.approval} ctx={ctx} />
+            ) : s.approval?.kind === "change" && s.approval.change ? (
+              <ChangeStep step={s} approval={s.approval} change={s.approval.change} ctx={ctx} />
             ) : s.name === "delegate_coding_task" ? (
               <TaskStep step={s} ctx={ctx} />
             ) : (
@@ -537,6 +557,202 @@ function SendValues({ input }: { input: unknown }) {
         <pre className="font-mono whitespace-pre-wrap break-words text-soft">{String(input)}</pre>
       )}
     </div>
+  );
+}
+
+/**
+ * A change to Sling's own setup that the assistant proposes: what would
+ * change, an input for each password or token it needs, and Apply. What's
+ * typed there goes to the server with the Apply, never into the chat.
+ * Once decided, it's one line.
+ */
+function ChangeStep({
+  step,
+  approval,
+  change,
+  ctx,
+}: {
+  step: ToolStep;
+  approval: CommandApprovalView;
+  change: SetupChangeView;
+  ctx: ActivityContext;
+}) {
+  const [open, setOpen] = useState(false);
+  const waiting = approval.state === "pending";
+  const stopped = approval.state === "denied" || approval.state === "expired";
+  const applying = approval.state === "approved" && step.status === "running";
+  const res = parse<{ error?: string }>(step.output);
+  const error = res?.error ?? (step.status === "error" ? step.output : null);
+  const failed = approval.state === "approved" && !applying && Boolean(error);
+  const subject = change.title.replace(/\?$/, "");
+  const line = waiting
+    ? change.title
+    : applying
+      ? change.doing
+      : failed || stopped
+        ? subject
+        : change.done;
+
+  return (
+    <div
+      className={cx(
+        "overflow-hidden rounded-lg bg-field shadow-field",
+        waiting && "shadow-[inset_0_0_0_1px_var(--tag-amber-border)]",
+      )}
+    >
+      <Disclosure
+        open={open}
+        onToggle={() => setOpen((o) => !o)}
+        disabled={waiting || applying || change.rows.length === 0}
+        className="px-2.5 py-1.5 hover:bg-hover"
+        label={line}
+      >
+        {applying ? (
+          <Spinner className="size-3.5" />
+        ) : waiting ? (
+          <ShieldAlert aria-hidden="true" size={14} className="shrink-0 text-warn" />
+        ) : failed ? (
+          <X aria-hidden="true" size={14} className="shrink-0 text-danger" />
+        ) : (
+          <SlidersHorizontal aria-hidden="true" size={14} className="shrink-0 text-subtle" />
+        )}
+        <span
+          className={cx(
+            "min-w-0 flex-1 truncate text-[13px]",
+            stopped ? "text-muted" : "text-soft",
+            failed && "text-danger",
+            applying && "text-shimmer",
+          )}
+        >
+          {line}
+        </span>
+        {stopped && (
+          <span className="shrink-0 text-[11.5px] text-subtle">
+            {approval.state === "denied" ? "Cancelled" : "Expired"}
+          </span>
+        )}
+      </Disclosure>
+      {(waiting || open) && <ChangeRows rows={change.rows} />}
+      {waiting && <ChangeApproval approvalId={approval.id} change={change} ctx={ctx} />}
+      {failed && error && (
+        <p className="border-t border-border px-2.5 py-1.5 text-xs text-danger">{error}</p>
+      )}
+    </div>
+  );
+}
+
+/** What a change sets, one line each: label, then the new value, after the old one for an edit. */
+function ChangeRows({ rows }: { rows: SetupChangeRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <dl className="grid max-h-64 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 overflow-auto border-t border-border px-2.5 py-2 text-xs leading-[18px]">
+      {rows.map((r, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: rows don't change once shown.
+        <div key={i} className="contents">
+          <dt className="text-muted">{r.label}</dt>
+          <dd className="whitespace-pre-wrap break-words text-soft">
+            {r.before !== undefined && (
+              <>
+                <span className="text-muted">{r.before}</span>
+                <span className="text-subtle"> → </span>
+              </>
+            )}
+            {r.after}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** Cancel or apply a change, with what it needs typed in. Apply waits for the required ones. */
+function ChangeApproval({
+  approvalId,
+  change,
+  ctx,
+}: {
+  approvalId: string;
+  change: SetupChangeView;
+  ctx: ActivityContext;
+}) {
+  const base = useId();
+  const [values, setValues] = useState<Record<string, string>>({});
+  const decide = useMutation({
+    mutationFn: (decision: "approve" | "deny") =>
+      api.post(`/api/conversations/${ctx.conversationId}/commands/${approvalId}`, {
+        decision,
+        ...(decision === "approve" && change.secrets.length > 0
+          ? {
+              secrets: Object.fromEntries(
+                change.secrets.flatMap((f) => (values[f.key] ? [[f.key, values[f.key]]] : [])),
+              ),
+            }
+          : {}),
+      }),
+    // Nothing typed stays in the page once it's sent.
+    onSuccess: () => setValues({}),
+  });
+  const ready = change.secrets.every((f) => !f.required || (values[f.key] ?? "").trim() !== "");
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (ready && !decide.isPending) decide.mutate("approve");
+  };
+  return (
+    <form onSubmit={submit}>
+      {change.secrets.length > 0 && (
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1.5 border-t border-border px-2.5 py-2 text-xs">
+          {change.secrets.map((f) => (
+            <div key={f.key} className="contents">
+              <label htmlFor={`${base}-${f.key}`} className="text-muted">
+                {f.label}
+                {f.link && (
+                  <a
+                    href={f.link.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-2 text-accent-text hover:underline"
+                  >
+                    {f.link.label}
+                  </a>
+                )}
+              </label>
+              <Input
+                id={`${base}-${f.key}`}
+                type="password"
+                autoComplete="new-password"
+                spellCheck={false}
+                required={f.required}
+                placeholder={f.placeholder ?? (f.required ? "" : "Keep the current one")}
+                value={values[f.key] ?? ""}
+                onChange={(e) => {
+                  const v = e.currentTarget.value;
+                  setValues((old) => ({ ...old, [f.key]: v }));
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-border bg-surface px-2.5 py-2">
+        <div className="mr-auto min-w-0">
+          <ErrorText error={decide.error} />
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("deny")}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            type="submit"
+            variant="primary"
+            busy={decide.isPending}
+            disabled={!ready}
+          >
+            Apply
+          </Button>
+        </div>
+      </div>
+    </form>
   );
 }
 
