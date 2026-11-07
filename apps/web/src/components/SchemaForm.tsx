@@ -483,7 +483,7 @@ export function OptionCards({
   onChange,
 }: {
   label: string;
-  options: { value: string; label: string; detail?: string; icon?: ReactNode }[];
+  options: { value: string; label: ReactNode; detail?: ReactNode; icon?: ReactNode }[];
   value: string;
   disabled?: boolean;
   onChange: (v: string) => void;

@@ -83,7 +83,7 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 
 ## Templates
 
-**New from template** installs a ready-made workflow. You pick a connector installation for each placeholder, and it lands as an ordinary workflow you can edit.
+**New workflow** starts from a blank canvas or a template. A template asks for a connector installation for each placeholder, one step each, and you can add a missing one from that step. Then you name it, and it opens in the editor as an ordinary workflow you can edit.
 
 | Template | Does |
 |---|---|

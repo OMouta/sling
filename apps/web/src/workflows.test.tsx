@@ -84,6 +84,8 @@ function route(method: string, path: string, body: unknown): unknown {
         createdAt: "2026-11-05T12:00:00.000Z",
         updatedAt: "2026-11-05T12:00:00.000Z",
       };
+      // Listed from then on, like the server; afterEach drops it again.
+      installations.push(created);
       return created;
     }
     case "PATCH /api/installations/ins_discord":
@@ -162,6 +164,9 @@ beforeEach(() => {
 
 afterEach(async () => {
   cleanup();
+  for (let i = installations.length - 1; i >= 0; i--) {
+    if (installations[i]?.id === "ins_new") installations.splice(i, 1);
+  }
   // Closing the editor saves pending changes; let that reach the mocked fetch.
   await new Promise((r) => setTimeout(r, 0));
   vi.unstubAllGlobals();
@@ -214,31 +219,89 @@ describe("workflows list", () => {
     await screen.findByRole("switch", { name: "Enable Important email to Discord" });
   });
 
-  it("creates a workflow from a template with an installation for each binding", async () => {
+  it("creates a workflow from a template a step at a time: template, accounts, name", async () => {
     renderAt("/workflows");
-    fireEvent.click(await screen.findByText("From template"));
-    fireEvent.click(
-      await screen.findByText("Summarizes mail from allowlisted senders and DMs you."),
-    );
-    const create = await screen.findByText("Create workflow");
-    await waitFor(() =>
-      expect((create.closest("button") as HTMLButtonElement).disabled).toBe(false),
-    );
-    fireEvent.click(create);
+    fireEvent.click(await screen.findByRole("button", { name: "New workflow" }));
+    const d = within(await screen.findByRole("dialog", { name: "New workflow" }));
+    expect(d.getByRole("heading", { name: "What should it start from?" })).toBeTruthy();
+    const next = () => d.getByRole("button", { name: /^(Continue|Create)$/ }) as HTMLButtonElement;
+    // Nothing picked yet.
+    expect(next().disabled).toBe(true);
+    const card = await d.findByRole("radio", { name: /Important email to Discord/ });
+    expect(card.textContent).toContain("Needs Mailbox, Discord bot");
+    fireEvent.click(card);
+    fireEvent.click(next());
+
+    // One account per binding, each picked for you when it's the only one.
+    expect(d.getByRole("heading", { name: "Which Email account should it use?" })).toBeTruthy();
+    expect(d.getByRole("radio", { name: "Work mail" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(next());
+    expect(d.getByRole("heading", { name: "Which Discord account should it use?" })).toBeTruthy();
+    expect(d.getByRole("radio", { name: /Sling bot/ }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(next());
+
+    // The template's name to start with.
+    expect(d.getByRole("heading", { name: "What should it be called?" })).toBeTruthy();
+    const name = d.getByLabelText("Name") as HTMLInputElement;
+    expect(name.value).toBe("Important email to Discord");
+    fireEvent.change(name, { target: { value: "VIP mail" } });
+    expect(next().textContent).toBe("Create");
+    fireEvent.click(next());
     await waitFor(() => expect(callsTo("POST", "/api/workflows")).toHaveLength(1));
     expect(callsTo("POST", "/api/workflows")[0]?.body).toEqual({
       templateKey: "important-email-to-discord",
       bindings: { $email: "ins_email", $discord: "ins_discord" },
+      name: "VIP mail",
     });
+    // Then the editor.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("adds a missing account in place and picks it", async () => {
+    const at = installations.findIndex((i) => i.id === "ins_discord");
+    const [discord] = installations.splice(at, 1);
+    try {
+      renderAt("/workflows");
+      fireEvent.click(await screen.findByRole("button", { name: "New workflow" }));
+      const d = within(await screen.findByRole("dialog", { name: "New workflow" }));
+      fireEvent.click(await d.findByRole("radio", { name: /Important email to Discord/ }));
+      fireEvent.click(d.getByRole("button", { name: "Continue" }));
+      fireEvent.click(d.getByRole("button", { name: "Continue" }));
+      expect(d.getByText("No Discord account yet.")).toBeTruthy();
+      expect((d.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(
+        true,
+      );
+
+      fireEvent.click(d.getByRole("button", { name: "Add Discord" }));
+      const setup = within(await screen.findByRole("dialog", { name: "Add Discord" }));
+      fireEvent.change(setup.getByLabelText(/Bot token/), { target: { value: "secret-token" } });
+      fireEvent.click(setup.getByRole("button", { name: "Add" }));
+      await waitFor(() => expect(callsTo("POST", "/api/installations")).toHaveLength(1));
+
+      // Back on the step, with the new account picked.
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Add Discord" })).toBeNull());
+      expect(d.getByRole("radio", { name: "discord" }).getAttribute("aria-checked")).toBe("true");
+      fireEvent.click(d.getByRole("button", { name: "Continue" }));
+      fireEvent.click(d.getByRole("button", { name: "Create" }));
+      await waitFor(() => expect(callsTo("POST", "/api/workflows")).toHaveLength(1));
+      expect(callsTo("POST", "/api/workflows")[0]?.body).toMatchObject({
+        bindings: { $email: "ins_email", $discord: "ins_new" },
+      });
+    } finally {
+      if (discord) installations.splice(at, 0, discord);
+    }
   });
 
   it("creates a blank workflow", async () => {
     renderAt("/workflows");
-    fireEvent.click(await screen.findByText("New workflow"));
-    fireEvent.change(await screen.findByPlaceholderText("Website health monitor"), {
-      target: { value: "Ping" },
-    });
-    fireEvent.click(screen.getByText("Create"));
+    fireEvent.click(await screen.findByRole("button", { name: "New workflow" }));
+    const d = within(await screen.findByRole("dialog", { name: "New workflow" }));
+    fireEvent.click(await d.findByRole("radio", { name: /Blank/ }));
+    fireEvent.click(d.getByRole("button", { name: "Continue" }));
+    const create = d.getByRole("button", { name: "Create" }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    fireEvent.change(d.getByLabelText("Name"), { target: { value: "Ping" } });
+    fireEvent.click(create);
     await waitFor(() => expect(callsTo("POST", "/api/workflows")).toHaveLength(1));
     expect(callsTo("POST", "/api/workflows")[0]?.body).toEqual({ name: "Ping" });
   });

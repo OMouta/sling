@@ -1,23 +1,17 @@
-import type { InstallationView, WorkflowSummaryView } from "@sling/core";
-import type { TemplateView, WorkflowDetailView } from "@sling/workflow";
+import type { WorkflowSummaryView } from "@sling/core";
+import type { WorkflowDetailView } from "@sling/workflow";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ChevronRight, LayoutTemplate, Plus, Puzzle, Upload, Workflow, Zap } from "lucide-react";
-import { type FormEvent, useRef, useState } from "react";
-import { ExtensionIcon } from "../components/extensions/ExtensionBits.tsx";
+import { ChevronRight, Plus, Upload, Workflow, Zap } from "lucide-react";
+import { useRef, useState } from "react";
 import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
 import { RunStatusBadge } from "../components/StatusBadge.tsx";
 import {
   Badge,
   Button,
-  Dialog,
   Empty,
   ErrorText,
-  Field,
-  Input,
-  Select,
   Skeleton,
-  Spinner,
   Switch,
   Table,
   Tabs,
@@ -25,23 +19,16 @@ import {
   Th,
   Tr,
 } from "../components/ui.tsx";
+import { NewWorkflowDialog } from "../components/workflow/NewWorkflowDialog.tsx";
 import { api } from "../lib/api.ts";
 import { ago } from "../lib/format.ts";
-import {
-  qk,
-  useCatalog,
-  useInstallations,
-  useTemplates,
-  useWorkflows,
-  workflowApi,
-  workflowIdOf,
-} from "../lib/workflowApi.ts";
+import { qk, useCatalog, useWorkflows, workflowApi, workflowIdOf } from "../lib/workflowApi.ts";
 
 type Created = WorkflowDetailView | WorkflowSummaryView | { workflow: { id: string } };
 
 export function WorkflowsPage() {
   const workflows = useWorkflows();
-  const [dialog, setDialog] = useState<"blank" | "template" | null>(null);
+  const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const file = useRef<HTMLInputElement>(null);
@@ -112,10 +99,7 @@ export function WorkflowsPage() {
               >
                 Import
               </Button>
-              <Button icon={LayoutTemplate} onClick={() => setDialog("template")}>
-                From template
-              </Button>
-              <Button variant="primary" icon={Plus} onClick={() => setDialog("blank")}>
+              <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
                 New workflow
               </Button>
             </>
@@ -152,18 +136,7 @@ export function WorkflowsPage() {
         </div>
       )}
       <ErrorText error={workflows.error} />
-      {workflows.data?.length === 0 && (
-        <Empty
-          fill
-          icon={Workflow}
-          title="No workflows yet"
-          action={
-            <Button icon={LayoutTemplate} onClick={() => setDialog("template")}>
-              Browse templates
-            </Button>
-          }
-        />
-      )}
+      {workflows.data?.length === 0 && <Empty fill icon={Workflow} title="No workflows yet" />}
       {sorted.length > 0 && (
         <Table className="border-t border-border">
           <thead>
@@ -182,8 +155,7 @@ export function WorkflowsPage() {
           </tbody>
         </Table>
       )}
-      {dialog === "blank" && <NewBlankDialog onClose={() => setDialog(null)} />}
-      {dialog === "template" && <TemplateDialog onClose={() => setDialog(null)} />}
+      {creating && <NewWorkflowDialog onClose={() => setCreating(false)} />}
     </Page>
   );
 }
@@ -275,217 +247,5 @@ function WorkflowRow({ workflow: w }: { workflow: WorkflowSummaryView }) {
         </span>
       </Td>
     </Tr>
-  );
-}
-
-function NewBlankDialog({ onClose }: { onClose: () => void }) {
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const [name, setName] = useState("");
-  const create = useMutation({
-    mutationFn: () => api.post<Created>("/api/workflows", { name: name.trim() }),
-    onSuccess: (res) => {
-      void qc.invalidateQueries({ queryKey: qk.workflows() });
-      void navigate({ to: "/workflows/$id", params: { id: workflowIdOf(res) } });
-    },
-  });
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (name.trim()) create.mutate();
-  };
-  return (
-    <Dialog
-      title="New workflow"
-      onClose={onClose}
-      footer={
-        <>
-          <ErrorText error={create.error} />
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            type="submit"
-            form="new-workflow"
-            busy={create.isPending}
-            disabled={!name.trim()}
-          >
-            Create
-          </Button>
-        </>
-      }
-    >
-      <form id="new-workflow" onSubmit={submit}>
-        <Field label="Name">
-          <Input
-            value={name}
-            maxLength={120}
-            placeholder="Website health monitor"
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Field>
-      </form>
-    </Dialog>
-  );
-}
-
-function TemplateDialog({ onClose }: { onClose: () => void }) {
-  const templates = useTemplates();
-  const [picked, setPicked] = useState<TemplateView | null>(null);
-  return (
-    <Dialog
-      title={picked ? picked.name : "New from template"}
-      onClose={onClose}
-      footer={
-        picked ? undefined : (
-          <Button onClick={onClose} data-autofocus>
-            Cancel
-          </Button>
-        )
-      }
-    >
-      {picked ? (
-        <TemplateBindings template={picked} onBack={() => setPicked(null)} onClose={onClose} />
-      ) : (
-        <>
-          {templates.isPending && <Spinner />}
-          <ErrorText error={templates.error} />
-          {templates.data?.length === 0 && <p className="text-[13px] text-muted">No templates.</p>}
-          <ul className="space-y-2">
-            {templates.data?.map((t) => (
-              <li key={t.key}>
-                <button
-                  type="button"
-                  onClick={() => setPicked(t)}
-                  className="pressable group flex w-full cursor-pointer items-start gap-3 rounded-xl bg-surface-2 p-3 text-left shadow-raised hover:shadow-raised-hover"
-                >
-                  {t.extension ? (
-                    <ExtensionIcon ext={t.extension} fallback={LayoutTemplate} size="sm" flat />
-                  ) : (
-                    <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-3 text-icon">
-                      <LayoutTemplate aria-hidden="true" />
-                    </span>
-                  )}
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2 text-[13px] font-medium">
-                      {t.name}
-                      {t.builtIn && <Badge>built in</Badge>}
-                    </span>
-                    <span className="mt-0.5 block text-xs leading-4 text-muted">
-                      {t.description}
-                    </span>
-                    {t.bindings.length > 0 && (
-                      <span className="mt-1.5 block text-xs text-subtle">
-                        Needs {t.bindings.map((b) => b.label).join(", ")}
-                      </span>
-                    )}
-                    {t.extension && (
-                      <span className="mt-1.5 flex items-center gap-1.5 text-xs text-subtle">
-                        <Puzzle aria-hidden="true" size={12} className="shrink-0" />
-                        From {t.extension.name}
-                      </span>
-                    )}
-                  </span>
-                  <ChevronRight
-                    aria-hidden="true"
-                    className="mt-2 shrink-0 text-faint transition-colors duration-150 group-hover:text-soft"
-                  />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-    </Dialog>
-  );
-}
-
-function TemplateBindings({
-  template,
-  onBack,
-  onClose,
-}: {
-  template: TemplateView;
-  onBack: () => void;
-  onClose: () => void;
-}) {
-  const qc = useQueryClient();
-  const navigate = useNavigate();
-  const installations = useInstallations();
-  const [bindings, setBindings] = useState<Record<string, string>>({});
-  const options = (connectorId: string) =>
-    (installations.data ?? []).filter((i: InstallationView) => i.connectorId === connectorId);
-
-  // Preselect the only installation for a binding.
-  const value = (placeholder: string, connectorId: string) => {
-    const set = bindings[placeholder];
-    if (set !== undefined) return set;
-    const only = options(connectorId);
-    return only.length === 1 && only[0] ? only[0].id : "";
-  };
-  const complete = template.bindings.every((b) => value(b.placeholder, b.connectorId));
-
-  const create = useMutation({
-    mutationFn: () =>
-      api.post<Created>("/api/workflows", {
-        templateKey: template.key,
-        bindings: Object.fromEntries(
-          template.bindings.map((b) => [b.placeholder, value(b.placeholder, b.connectorId)]),
-        ),
-      }),
-    onSuccess: (res) => {
-      void qc.invalidateQueries({ queryKey: qk.workflows() });
-      onClose();
-      void navigate({ to: "/workflows/$id", params: { id: workflowIdOf(res) } });
-    },
-  });
-
-  return (
-    <div className="space-y-4">
-      <p className="text-[13px] leading-5 text-muted">{template.description}</p>
-      {installations.isPending && <Spinner />}
-      {template.bindings.map((b) => {
-        const list = options(b.connectorId);
-        return (
-          <Field key={b.placeholder} label={b.label}>
-            {list.length === 0 ? (
-              <span className="block rounded-lg bg-surface-2 p-3 text-xs text-muted shadow-raised">
-                No {b.connectorId} installation yet.{" "}
-                <Link
-                  to="/connectors"
-                  className="text-accent-text hover:underline"
-                  onClick={onClose}
-                >
-                  Add one under Connectors
-                </Link>
-                .
-              </span>
-            ) : (
-              <Select
-                value={value(b.placeholder, b.connectorId)}
-                onChange={(e) => setBindings((s) => ({ ...s, [b.placeholder]: e.target.value }))}
-              >
-                <option value="">Choose an installation</option>
-                {list.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-        );
-      })}
-      <ErrorText error={create.error} />
-      <div className="flex justify-end gap-2">
-        <Button onClick={onBack}>Back</Button>
-        <Button
-          variant="primary"
-          busy={create.isPending}
-          disabled={!complete}
-          onClick={() => create.mutate()}
-        >
-          Create workflow
-        </Button>
-      </div>
-    </div>
   );
 }

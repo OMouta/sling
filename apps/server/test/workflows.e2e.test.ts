@@ -224,6 +224,7 @@ const def = (name: string, nodes: Node[], edges: unknown[]) => ({
 
 interface Detail {
   id: string;
+  name: string;
   enabled: boolean;
   activeVersion: number | null;
   webhooks: { nodeId: string; url: string }[];
@@ -1302,7 +1303,9 @@ describe("assistant", () => {
     const wf = await c.call<Detail>("POST", "/api/workflows", {
       templateKey: "discord-assistant",
       bindings: { $discord: inst.id },
+      name: "Help desk",
     });
+    expect(wf.name).toBe("Help desk");
     expect(wf.activeVersion).toBe(1);
     expect(wf.enabled).toBe(false);
     const trigger = wf.draft.nodes.find((x) => x.type === "discord.message_received");

@@ -874,7 +874,7 @@ describe("elsewhere", () => {
 
   it("shows which package a template came from", async () => {
     renderAt("/workflows");
-    fireEvent.click(await screen.findByRole("button", { name: "From template" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New workflow" }));
     const d = await dialog();
     expect(await d.findByText("From Task alerts")).toBeTruthy();
     expect(d.getAllByText(/^From /)).toHaveLength(1);

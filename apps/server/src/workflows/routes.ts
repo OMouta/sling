@@ -77,7 +77,9 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
       const body = request.body;
       try {
         if (body.templateKey) {
-          const row = await wfs.install(actor, body.templateKey, body.bindings);
+          const row = await wfs.install(actor, body.templateKey, body.bindings, {
+            ...(body.name ? { name: body.name } : {}),
+          });
           return wfs.detail(row);
         }
         let definition: WorkflowDefinition | undefined;

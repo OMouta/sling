@@ -245,7 +245,8 @@ export class WorkflowService {
 
   /**
    * Installs a template: placeholders are bound to installations, version 1
-   * is published, and built-in templates are enabled.
+   * is published, and built-in templates are enabled. A name replaces the
+   * template's own.
    */
   async install(
     actor: Actor,

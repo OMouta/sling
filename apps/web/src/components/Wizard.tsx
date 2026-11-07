@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, ChevronRight } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Button, cx, Dialog } from "./ui.tsx";
 
 export interface WizardStep {
@@ -66,6 +66,8 @@ export function Wizard({
   const [at, setAt] = useState<number | "review" | "done">(editing ? "review" : 0);
   const [advancing, setAdvancing] = useState(false);
   const body = useRef<HTMLDivElement>(null);
+  // Its own, so a wizard opened over another one submits its own step.
+  const formId = `wizard-step${useId()}`;
 
   // A step that disappears (its fields no longer apply) can't strand you past the end.
   const index = typeof at === "number" ? Math.min(at, Math.max(steps.length - 1, 0)) : at;
@@ -133,7 +135,7 @@ export function Wizard({
         <Button
           variant="primary"
           type="submit"
-          form="wizard-step"
+          form={formId}
           busy={advancing || step?.busy || (last && !editing && finishing)}
           disabled={step?.blocked}
         >
@@ -200,7 +202,7 @@ export function Wizard({
         </div>
       ) : step ? (
         <form
-          id="wizard-step"
+          id={formId}
           noValidate
           onSubmit={(e) => {
             e.preventDefault();
