@@ -15,7 +15,7 @@ Do this on every device you want notified. Notifications go to all of them at on
 
 A device drops out of the list by itself when its push service says the subscription is gone, for example after you clear the browser's site data or uninstall the app, or after ten failed deliveries in a row. Turn it on again from that device to bring it back.
 
-Changing `SLING_SECRET_KEY` changes the key Sling signs pushes with, so every device has to turn notifications on again, the same way webhook URLs change.
+Changing `SLING_SECRET_KEY` changes the key Sling signs pushes with, so every device has to turn notifications on again, the same way webhook URLs change. Notifications already on a device can't be answered from there after that.
 
 ## iPhone and iPad
 
@@ -49,7 +49,7 @@ Workflows can notify you with the **Notify my devices** step (`app.notify`). It 
 
 ## What a notification carries
 
-A push holds a title, a line of text, and the page to open, at most 3 KB. That's the approval's or task's title, a chat's name, or what a workflow's step says. Sling never puts command output, task summaries, diffs, or what a message says in a push, because pushes pass through your browser maker's push service and show on your lock screen. Each push is encrypted for the one device it goes to (RFC 8291), so the push service can't read it.
+A push holds a title, a line of text, and the page to open, at most 3 KB. That's the approval's or task's title, a chat's name, or what a workflow's step says. A push you can answer from the notification also carries a token that answers that one approval. Sling never puts command output, task summaries, diffs, or what a message says in a push, because pushes pass through your browser maker's push service and show on your lock screen. Each push is encrypted for the one device it goes to (RFC 8291), so the push service can't read it.
 
 Tapping a notification opens the page it's about in an open Sling window, or opens a new one:
 
@@ -58,9 +58,43 @@ Tapping a notification opens the page it's about in an open Sling window, or ope
 - a reply, or a command waiting in a chat, opens the chat
 - a workflow's step opens whatever page it names, such as a new chat with a draft
 
-Notifications have no buttons. You approve in the app, never from the lock screen.
-
 A newer notification about the same task, approval, or chat replaces the older one, on the device and while it waits at the push service. You see "Delivered: Fix the footer" instead of a stale "Approve pull request?" above it.
+
+## Answering from the notification
+
+Some approvals show **Allow** and **Deny** on the notification itself, so you can answer without opening Sling:
+
+- a message, email, or event the assistant wants to send from a chat
+- a task's push and pull request
+
+Everything else opens Sling when you tap it: merges and deploys, commands that want to leave the sandbox, changes to Sling's setup, rules, workflow approval steps, and running a task in a sandbox.
+
+**Allow** and **Deny** answer the same way the buttons in the app do. A task's push and pull request are answered together, as on **Approvals**. The notification then changes to say how it went:
+
+| It says | Because |
+|---|---|
+| Allowed | The send or the push went ahead |
+| Denied | Nothing was sent or pushed |
+| Already answered | You answered it in the app or on another device first |
+| Expired | The approval ran out: 5 minutes for a send in a chat, 24 hours for a push |
+| Couldn't answer | Sling couldn't be reached, or the approval can only be answered in the app. Tap it to open Sling |
+
+Each notification answers once. The same push goes to all your devices, and the first answer counts.
+
+The notification shows the one-line summary, such as "Approve: Email ana@example.com: Lunch moved?", not the whole message. Open the chat when you want to read what would be sent first.
+
+Android and desktop browsers show the buttons. iPhones and iPads don't, so there a tap opens Sling as before.
+
+## Talking instead of typing
+
+The message box has a mic button in browsers that can turn speech into text, such as Chrome, Edge, and Safari. There's no button where the browser can't.
+
+- **Hold** the mic and talk. Let go to stop.
+- Or **tap** it to start, and tap again to stop. That's easier on a phone.
+
+Your words show in the message box as you talk, after anything you'd already typed, in your browser's language. Nothing is sent until you press send, so you can fix a word first. Sending stops the mic.
+
+The browser does the recognition: Chrome and Edge send the audio to Google or Microsoft, and Safari to Apple. Sling never gets the audio, only the words in the box. The first time, the browser asks whether Sling may use the microphone. If you said no, the box says the microphone is blocked; allow it in the browser's site settings.
 
 ## Where pushes go
 
