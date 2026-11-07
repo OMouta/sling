@@ -132,6 +132,8 @@ let publicUrl = "";
 let posts: { method: string; path: string; body: unknown }[] = [];
 let hasModel = false;
 let runners: RunnerView[] = [];
+/** Installations the dialog sees; a Docker one makes sandboxes an option. */
+let installed: { id: string; connectorId: string; name: string }[] = [];
 
 function routes(path: string): unknown {
   if (path === "/api/status")
@@ -150,7 +152,9 @@ function routes(path: string): unknown {
     };
   }
   if (/^\/api\/runners\/rnr_\d\//.test(path)) return { ok: true, message: "Allowed api." };
-  if (path === "/api/installations" || path === "/api/connectors") return [];
+  if (path === "/api/installations") return installed;
+  if (path === "/api/connectors") return [];
+  if (path.startsWith("/api/sandbox-repos/")) return null;
   if (path === "/api/models" || path === "/api/tasks" || path === "/api/sandboxes") return null;
   if (path === "/api/settings") {
     return {
@@ -215,6 +219,7 @@ beforeEach(() => {
   publicUrl = window.location.origin;
   hasModel = false;
   runners = [runner];
+  installed = [];
   vi.stubGlobal("WebSocket", FakeSocket);
   vi.stubGlobal(
     "fetch",
@@ -334,6 +339,41 @@ describe("web app", () => {
     );
     expect(await d.findByText("studio is ready")).toBeTruthy();
     expect(d.getByText("Works in 1 repo · Claude Code ready")).toBeTruthy();
+  });
+
+  it("asks which of the new machine's repos may also run in a sandbox, with a provider set up", async () => {
+    installed = [{ id: "ins_docker", connectorId: "docker", name: "Docker" }];
+    renderAt("/machines?pair=true");
+    const d = within(await screen.findByRole("dialog", { name: "Add a machine" }));
+    fireEvent.click(d.getByRole("button", { name: "Continue" }));
+    await d.findByText(/Waiting for the machine/);
+    const studio: RunnerView = { ...runner, id: "rnr_2", name: "studio", repos: [] };
+    runners = [runner, studio];
+    emit({ type: "runner.updated", runner: studio });
+    await d.findByText(/studio is connected/);
+    fireEvent.click(d.getByRole("button", { name: "Continue" }));
+    fireEvent.click(d.getByRole("checkbox", { name: /api/ }));
+    // A step for sandboxes only once there's a repo to put in one.
+    fireEvent.click(d.getByRole("button", { name: "Continue" }));
+    expect(d.getByRole("heading", { name: "Which may also run in a sandbox?" })).toBeTruthy();
+    const box = within(d.getByRole("group", { name: "Sandbox repos" }));
+    expect(box.getAllByRole("checkbox").map((c) => c.textContent)).toEqual(["apigithub.com/a/api"]);
+    fireEvent.click(box.getByRole("checkbox", { name: /api/ }));
+    fireEvent.click(d.getByRole("button", { name: "Allow 1 repo" }));
+    await waitFor(() =>
+      expect(
+        posts.find(
+          (p) => p.method === "PUT" && p.path === "/api/sandbox-repos/github.com%2Fa%2Fapi",
+        )?.body,
+      ).toBe(
+        JSON.stringify({
+          cloneUrl: "https://github.com/a/api.git",
+          defaultBranch: "main",
+          network: false,
+        }),
+      ),
+    );
+    expect(await d.findByText(/Works in 1 repo · 1 repo in sandboxes/)).toBeTruthy();
   });
 
   it("allows a repo the machine found, in place", async () => {
