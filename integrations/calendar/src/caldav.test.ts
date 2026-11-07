@@ -5,6 +5,7 @@
  */
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { Installation, NodeContext } from "@sling/connector-sdk";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   discover,
@@ -16,6 +17,8 @@ import {
   putEvent,
   utcStamp,
 } from "./caldav.ts";
+import { createEvent } from "./nodes.ts";
+import { verifyEvent, whenText } from "./verify.ts";
 
 const ICLOUD_ROOT = `<?xml version="1.0" encoding="UTF-8"?>
 <multistatus xmlns="DAV:">
@@ -171,6 +174,10 @@ beforeAll(async () => {
     }
     if (req.method === "PROPFIND" && path === "/1234567/calendars/") return xml(FASTMAIL_HOME);
     if (req.method === "REPORT" && path === "/1234567/calendars/home/") return xml(REPORT);
+    if (req.method === "GET" && stored.has(path)) {
+      res.writeHead(200, { "content-type": "text/calendar" }).end(stored.get(path));
+      return;
+    }
     if (req.method === "PUT") {
       if (stored.has(path) && req.headers["if-none-match"] === "*") {
         res.writeHead(412).end();
@@ -267,5 +274,67 @@ describe("talking to a CalDAV server", () => {
     expect(await putEvent(account(), home, "sling-abc.ics", `${ics}x`, signal())).toBe("exists");
     expect(stored.get("/1234567/calendars/home/sling-abc.ics")).toBe(ics);
     expect(seen.filter((s) => s.method === "PUT").every((s) => s.ifNoneMatch === "*")).toBe(true);
+  });
+});
+
+describe("reading an added event back", () => {
+  const installation = (): Installation => ({
+    id: "ins_cal",
+    connectorId: "calendar",
+    name: "iCloud",
+    credentials: { password: "app-pass" },
+    config: { kind: "caldav", serverUrl: `${base}/`, username: "ana", defaultCalendar: "" },
+  });
+  const ctx = (key: string): NodeContext => ({
+    runId: "chat:c1",
+    nodeId: "calendar_create_event",
+    nodeRunId: "call_1",
+    workflowId: "",
+    workspaceId: "ws_1",
+    ownerId: "usr_1",
+    iteration: 0,
+    attempt: 1,
+    idempotencyKey: key,
+    signal: AbortSignal.timeout(5_000),
+    log: { info() {}, warn() {}, error() {} },
+    installation: async () => installation() as never,
+    services: { timeZone: async () => "Europe/Lisbon" },
+  });
+
+  it("finds the event by its UID, and says which calendar it's in and when", async () => {
+    const config = {
+      installationId: "ins_cal",
+      calendar: "Home",
+      title: "Dentist",
+      start: "2026-11-09T10:00",
+      end: "",
+      durationMinutes: 30,
+      allDay: false,
+      location: "",
+      description: "",
+    };
+    const run = await createEvent.run?.(ctx("chat:call_verify"), { config, inputs: {} });
+    if (!run || !("exec" in run)) throw new Error("no run");
+    const outputs = run.outputs ?? {};
+    expect(await verifyEvent(ctx("chat:call_verify"), { config, inputs: {}, outputs })).toEqual({
+      state: "passed",
+      message: "In Home, Mon 9 Nov 10:00",
+    });
+    // An event that isn't there, such as one a server dropped, fails the check.
+    const gone = { event: { ...(outputs.event as object), uid: "sling-not-there" } };
+    expect(await verifyEvent(ctx("chat:x"), { config, inputs: {}, outputs: gone })).toEqual({
+      state: "failed",
+      message: "The event isn't in Home",
+    });
+    // Nothing to look for claims nothing.
+    expect(await verifyEvent(ctx("chat:x"), { config, inputs: {}, outputs: {} })).toMatchObject({
+      state: "unchecked",
+    });
+  });
+
+  it("writes the day the way a card shows it", () => {
+    expect(whenText("2026-11-09T10:00:00+00:00", false)).toBe("Mon 9 Nov 10:00");
+    expect(whenText("2026-11-13", true)).toBe("Fri 13 Nov");
+    expect(whenText("", false)).toBe("");
   });
 });

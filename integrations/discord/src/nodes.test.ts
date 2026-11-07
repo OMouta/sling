@@ -282,6 +282,40 @@ describe("discord.send_message", () => {
     ).rejects.toMatchObject({ code: "wrong_installation" });
   });
 
+  it("fetches the message back by its ID to check it was posted", async () => {
+    const path = `/channels/${CHANNEL}/messages/800000000000000001`;
+    const outputs = { messageId: "800000000000000001", channelId: CHANNEL };
+    const config = cfg({ installationId: "inst_discord", channelId: CHANNEL, content: "hi" });
+    const check = (routes: Parameters<typeof fakeRest>[0]) =>
+      createSendMessage(fakeRest(routes).factory).verify?.(fakeNodeContext(), {
+        inputs: {},
+        config,
+        outputs,
+      });
+    expect(await check({ [`GET ${path}`]: sent(CHANNEL) })).toEqual({
+      state: "passed",
+      message: "Discord has the message",
+    });
+    expect(await check({})).toMatchObject({ state: "failed" });
+    expect(
+      await check({
+        [`GET ${path}`]: { status: 403, body: { code: 50001, message: "Missing Access" } },
+      }),
+    ).toEqual({
+      state: "unchecked",
+      message: "Discord won't let the bot read it back: Missing Access (Discord code 50001)",
+    });
+    expect(
+      await check({ [`GET ${path}`]: { status: 503, body: "", retryAfterMs: 2000 } }),
+    ).toMatchObject({ state: "waiting", retryAfterSeconds: 5 });
+    const nothing = await createSendMessage(fakeRest({}).factory).verify?.(fakeNodeContext(), {
+      inputs: {},
+      config,
+      outputs: {},
+    });
+    expect(nothing).toMatchObject({ state: "unchecked" });
+  });
+
   it("isn't retried automatically", () => {
     const node = createSendMessage(fakeRest({}).factory);
     expect(node.idempotent).toBe(false);

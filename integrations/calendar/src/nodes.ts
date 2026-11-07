@@ -3,6 +3,7 @@ import { z } from "zod";
 import { addEvent, readEvents } from "./calendar.ts";
 import type { FeedCache } from "./feeds.ts";
 import { CONNECTOR_ID } from "./schemas.ts";
+import { verifyEvent } from "./verify.ts";
 import { addDays, dateIn, isZone } from "./zone.ts";
 
 /**
@@ -207,4 +208,8 @@ export const createEvent: NodeSpec<CreateConfig> = {
     });
     return { exec: "next", outputs: { event: added.event, created: added.created } };
   },
+
+  // A calendar shows a new event at once, so a short limit is enough for a slow server.
+  verify: verifyEvent,
+  verifyForSeconds: 120,
 };

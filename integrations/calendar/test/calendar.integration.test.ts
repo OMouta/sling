@@ -283,6 +283,17 @@ describe("a CalDAV installation", () => {
     });
     expect(again).toMatchObject({ outputs: { created: false } });
 
+    // Read back from the server by its UID, as the chat's check does.
+    const checked = await createEvent.verify?.(context(caldav(), "chat:call_dentist"), {
+      inputs: {},
+      config,
+      outputs: (first as { outputs: Record<string, unknown> }).outputs,
+    });
+    expect(checked).toEqual({
+      state: "passed",
+      message: expect.stringMatching(/^In Home, \w{3} \d+ \w{3} 15:00$/),
+    });
+
     const [home] = (
       await discover(
         { serverUrl: `${base}/`, username: USER, password: PASSWORD },

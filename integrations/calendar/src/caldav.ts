@@ -331,3 +331,24 @@ export async function putEvent(
   if (res.status === 412) return "exists";
   throw failure(res, `adding the event to ${calendar.name}`);
 }
+
+/**
+ * Reads one event back by its resource name, as `putEvent` stored it. Null
+ * when the calendar has nothing by that name.
+ */
+export async function getEvent(
+  a: CalDavAccount,
+  calendar: DavCalendar,
+  name: string,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const base = calendar.url.endsWith("/") ? calendar.url : `${calendar.url}/`;
+  const res = await request(
+    new URL(encodeURIComponent(name), base).toString(),
+    { method: "GET", headers: { authorization: authHeader(a), accept: "text/calendar" }, signal },
+    SERVER,
+  );
+  if (res.status === 404 || res.status === 410) return null;
+  if (res.status >= 200 && res.status <= 299) return res.body;
+  throw failure(res, `reading the event back from ${calendar.name}`);
+}

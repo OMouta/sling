@@ -361,5 +361,46 @@ export function createSendMessage(rest: RestFactory): NodeSpec<SendMessageConfig
       ctx.log.info("Sent Discord message", { channelId: sentChannel, messageId });
       return { exec: "next", outputs: { messageId, channelId: sentChannel } };
     },
+
+    verifyForSeconds: 60,
+    /** Fetches the sent message back by its ID. */
+    async verify(ctx, { config: rawConfig, outputs }) {
+      const messageId = typeof outputs.messageId === "string" ? outputs.messageId : "";
+      const channelId = typeof outputs.channelId === "string" ? outputs.channelId : "";
+      if (!SNOWFLAKE.test(messageId) || !SNOWFLAKE.test(channelId)) {
+        return { state: "unchecked", message: "Discord didn't say which message it posted" };
+      }
+      const installation = await ctx.installation<DiscordCredentials, DiscordConfig>(
+        String((rawConfig as { installationId?: unknown }).installationId ?? ""),
+      );
+      const credentials = credentialsSchema.safeParse(installation.credentials);
+      if (installation.connectorId !== CONNECTOR_ID || !credentials.success) {
+        return { state: "unchecked", message: "The bot's token isn't there to look with" };
+      }
+      const res = await rest(credentials.data.botToken).request(
+        "GET",
+        `/channels/${channelId}/messages/${messageId}`,
+        undefined,
+        ctx.signal,
+      );
+      if (isOk(res) && field(res.body, "id") === messageId) {
+        return { state: "passed", message: "Discord has the message" };
+      }
+      if (res.status === 404) {
+        return { state: "failed", message: "Discord doesn't have the message: it was removed" };
+      }
+      if (res.status === 429 || res.status >= 500) {
+        return {
+          state: "waiting",
+          message: `Discord answered ${res.status}`,
+          retryAfterSeconds: Math.max(5, Math.ceil((res.retryAfterMs ?? 10_000) / 1000)),
+        };
+      }
+      // The bot can post but not read the channel's history, so it can't tell.
+      return {
+        state: "unchecked",
+        message: `Discord won't let the bot read it back: ${describeError(res)}`,
+      };
+    },
   };
 }
