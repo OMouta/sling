@@ -12,12 +12,14 @@ import { ArrowRight, ArrowUp, Check, ChevronDown, Cpu, Laptop } from "lucide-rea
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { Glyph } from "../components/Glyph.tsx";
+import { MicButton } from "../components/MicButton.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { PersonalityBar, useArrowKeys, useSwipe } from "../components/PersonalitySwitcher.tsx";
 import { TaskStateBadge } from "../components/TaskCard.tsx";
 import { Button, Card, cx, ErrorText, Kbd, Skeleton } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
+import { useDictation } from "../lib/dictation.ts";
 import { ago } from "../lib/format.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
@@ -46,6 +48,7 @@ export function HomePage() {
     queryFn: () => api.get<TaskView[]>("/api/tasks"),
   });
   const [text, setText] = useState("");
+  const dictation = useDictation(text, setText);
   const input = useRef<HTMLTextAreaElement>(null);
   const catalog = useModelCatalog();
   // "New chat" lands here; the composer takes the focus, keeping any draft.
@@ -143,7 +146,9 @@ export function HomePage() {
 
   function submit(e: FormEvent) {
     e.preventDefault();
-    if (text.trim() && !start.isPending) start.mutate(text.trim());
+    if (!text.trim() || start.isPending) return;
+    dictation.cancel();
+    start.mutate(text.trim());
   }
 
   return (
@@ -245,9 +250,11 @@ export function HomePage() {
                 }}
                 aria-label="Message"
                 placeholder={
-                  !picked || picked.tools.includes("coding")
-                    ? "The footer year in site is hardcoded. Make it dynamic and add a test."
-                    : `Message ${picked.name}`
+                  dictation.listening
+                    ? "Listening…"
+                    : !picked || picked.tools.includes("coding")
+                      ? "The footer year in site is hardcoded. Make it dynamic and add a test."
+                      : `Message ${picked.name}`
                 }
                 className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 outline-none placeholder:text-subtle focus-visible:outline-none disabled:cursor-not-allowed"
                 disabled={!ready}
@@ -267,7 +274,8 @@ export function HomePage() {
                     : {})}
                 />
                 <div className="flex shrink-0 items-center gap-2">
-                  <ErrorText error={start.error} />
+                  <ErrorText error={start.error ?? dictation.error} />
+                  <MicButton dictation={dictation} disabled={!ready} />
                   <Button
                     type="submit"
                     variant="primary"

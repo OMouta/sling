@@ -13,12 +13,14 @@ import { ChatMarkdown } from "../components/ChatMarkdown.tsx";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { Glyph } from "../components/Glyph.tsx";
 import { Logo } from "../components/Logo.tsx";
+import { MicButton } from "../components/MicButton.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { StartedBy } from "../components/StartedBy.tsx";
 import { TaskCard } from "../components/TaskCard.tsx";
 import { Badge, Button, cx, Dot, ErrorText, Skeleton, type Tone } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
+import { useDictation } from "../lib/dictation.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
 import { usePersonalities } from "../lib/personalities.ts";
 import { seedLiveReply, useLiveReply } from "../lib/realtime.ts";
@@ -40,6 +42,7 @@ export function ChatPage() {
   // For a turn already running when the page opened, before its first event.
   const [openedAt] = useState(Date.now);
   const [text, setText] = useState("");
+  const dictation = useDictation(text, setText);
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   // Follow new content only while the reader is at the bottom.
@@ -191,6 +194,7 @@ export function ChatPage() {
     const t = text.trim();
     if (!t || send.isPending) return;
     following.current = true;
+    dictation.cancel();
     send.mutate(t);
   };
 
@@ -283,7 +287,9 @@ export function ChatPage() {
                   if (e.key === "Enter" && !e.shiftKey) submit(e);
                 }}
                 aria-label="Message"
-                placeholder={`Message ${personality?.name ?? "Sling"}`}
+                placeholder={
+                  dictation.listening ? "Listening…" : `Message ${personality?.name ?? "Sling"}`
+                }
                 className="block min-h-[44px] w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-5 outline-none placeholder:text-subtle focus-visible:outline-none"
               />
               <div className="flex items-center gap-2 px-2 pb-2">
@@ -295,6 +301,7 @@ export function ChatPage() {
                   // The mode only limits tools, so a personality without any has no use for it.
                   {...(hasTools ? { mode: conversation.mode, onMode: modeChange.change } : {})}
                 />
+                <MicButton dictation={dictation} />
                 <Button
                   type="submit"
                   variant="primary"
@@ -307,7 +314,9 @@ export function ChatPage() {
               </div>
             </div>
             <div className="mt-1.5 px-1">
-              <ErrorText error={send.error ?? setMode.error ?? setSettings.error} />
+              <ErrorText
+                error={send.error ?? dictation.error ?? setMode.error ?? setSettings.error}
+              />
             </div>
           </div>
         </form>
