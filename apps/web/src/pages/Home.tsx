@@ -8,16 +8,16 @@ import type {
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { ArrowRight, ArrowUp, Check, ChevronDown, Cpu, Laptop } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { ArrowRight, Check, ChevronDown, Cpu, Laptop } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Composer } from "../components/Composer.tsx";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { Glyph } from "../components/Glyph.tsx";
-import { MicButton } from "../components/MicButton.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { PersonalityBar, useArrowKeys, useSwipe } from "../components/PersonalitySwitcher.tsx";
 import { TaskStateBadge } from "../components/TaskCard.tsx";
-import { Button, Card, cx, ErrorText, Kbd, Skeleton } from "../components/ui.tsx";
+import { Card, cx, Kbd, Skeleton } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { useDictation } from "../lib/dictation.ts";
 import { ago } from "../lib/format.ts";
@@ -144,13 +144,6 @@ export function HomePage() {
   }, [ready]);
   const recent = (tasks.data ?? []).slice(0, 5);
 
-  function submit(e: FormEvent) {
-    e.preventDefault();
-    if (!text.trim() || start.isPending) return;
-    dictation.cancel();
-    start.mutate(text.trim());
-  }
-
   return (
     <Page title="Chat">
       {/* The first screen: who you're talking to, then the composer at the bottom. Recent tasks sit below it. */}
@@ -233,62 +226,39 @@ export function HomePage() {
             </div>
           </div>
 
-          <form onSubmit={submit}>
-            <div
-              className={cx(
-                "rounded-2xl bg-surface shadow-card transition-shadow duration-150 has-[textarea:focus]:shadow-focus",
-                !ready && "opacity-60",
-              )}
-            >
-              <textarea
-                ref={input}
-                rows={3}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) submit(e);
-                }}
-                aria-label="Message"
-                placeholder={
-                  dictation.listening
-                    ? "Listening…"
-                    : !picked || picked.tools.includes("coding")
-                      ? "The footer year in site is hardcoded. Make it dynamic and add a test."
-                      : `Message ${picked.name}`
-                }
-                className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm leading-6 outline-none placeholder:text-subtle focus-visible:outline-none disabled:cursor-not-allowed"
-                disabled={!ready}
+          <Composer
+            variant="start"
+            text={text}
+            setText={setText}
+            onSubmit={() => {
+              dictation.cancel();
+              start.mutate(text.trim());
+            }}
+            inputRef={input}
+            dictation={dictation}
+            placeholder={
+              !picked || picked.tools.includes("coding")
+                ? "The footer year in site is hardcoded. Make it dynamic and add a test."
+                : `Message ${picked.name}`
+            }
+            busy={start.isPending}
+            disabled={!ready}
+            error={start.error ?? dictation.error}
+            controls={
+              <ChatControls
+                catalog={catalog.data}
+                assistant={assistant ?? catalog.data?.defaults.assistant ?? null}
+                onAssistant={setAssistant}
+                // The mode only limits tools, so a personality without any has no use for it.
+                {...(hasTools
+                  ? {
+                      mode: mode ?? settings.data?.defaultMode ?? "auto",
+                      onMode: modeChange.change,
+                    }
+                  : {})}
               />
-              <div className="flex items-center gap-2 px-2 pt-1 pb-2">
-                <ChatControls
-                  className="min-w-0 flex-1"
-                  catalog={catalog.data}
-                  assistant={assistant ?? catalog.data?.defaults.assistant ?? null}
-                  onAssistant={setAssistant}
-                  // The mode only limits tools, so a personality without any has no use for it.
-                  {...(hasTools
-                    ? {
-                        mode: mode ?? settings.data?.defaultMode ?? "auto",
-                        onMode: modeChange.change,
-                      }
-                    : {})}
-                />
-                <div className="flex shrink-0 items-center gap-2">
-                  <ErrorText error={start.error ?? dictation.error} />
-                  <MicButton dictation={dictation} disabled={!ready} />
-                  <Button
-                    type="submit"
-                    variant="primary"
-                    icon={ArrowUp}
-                    busy={start.isPending}
-                    disabled={!ready || !text.trim()}
-                  >
-                    Start
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </form>
+            }
+          />
           <div className="flex items-center justify-between gap-3 px-1 pt-2 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-xs text-subtle">
             <span className="flex items-center gap-1 max-sm:hidden">
               <Kbd>↵</Kbd> to send, <Kbd>⇧</Kbd>

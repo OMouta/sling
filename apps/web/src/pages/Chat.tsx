@@ -1,8 +1,7 @@
 import type { AssistantChoice, ChatSettings, PermissionMode, PersonalityView } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowUp } from "lucide-react";
-import { type FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   type ActivityContext,
   ReplySteps,
@@ -10,15 +9,19 @@ import {
   WorkingLine,
 } from "../components/ChatActivity.tsx";
 import { ChatMarkdown } from "../components/ChatMarkdown.tsx";
+import { Composer } from "../components/Composer.tsx";
 import { useModeChange } from "../components/ConfirmFullAccess.tsx";
+import { FollowUps } from "../components/FollowUps.tsx";
 import { Glyph } from "../components/Glyph.tsx";
 import { Logo } from "../components/Logo.tsx";
-import { MicButton } from "../components/MicButton.tsx";
+import { MessageFiles } from "../components/MessageFiles.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
+import { ReplyActions } from "../components/ReplyActions.tsx";
+import { ReplySources } from "../components/ReplySources.tsx";
 import { StartedBy } from "../components/StartedBy.tsx";
 import { TaskCard } from "../components/TaskCard.tsx";
-import { Badge, Button, cx, Dot, ErrorText, Skeleton, type Tone } from "../components/ui.tsx";
+import { Badge, cx, Dot, ErrorText, Skeleton, type Tone } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { useDictation } from "../lib/dictation.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
@@ -138,15 +141,6 @@ export function ChatPage() {
     if (scroller && following.current) scroller.scrollTop = scroller.scrollHeight;
   }, [items, live]);
 
-  // Grow the composer with its text, up to a limit.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: measure when the text changes.
-  useEffect(() => {
-    const el = input.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
-  }, [text]);
-
   if (detail.isPending) {
     return (
       <Page title={<Skeleton className="h-4 w-48" />}>
@@ -184,19 +178,12 @@ export function ChatPage() {
     conversationMode: conversation.mode,
     tasks,
   };
+  const lastReplyId = detail.data.messages.findLast((m) => m.role !== "system")?.id;
   const liveSteps = live?.steps ?? [];
   const lastLive = liveSteps.at(-1);
   // Something already shows it's working: a running tool, or thinking as it comes.
   const busyStep =
     lastLive?.kind === "thinking" || (lastLive?.kind === "tool" && lastLive.status === "running");
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const t = text.trim();
-    if (!t || send.isPending) return;
-    following.current = true;
-    dictation.cancel();
-    send.mutate(t);
-  };
 
   return (
     <Page
@@ -252,6 +239,11 @@ export function ChatPage() {
                   activity={activity}
                   tasks={tasks}
                   personality={personality}
+                  latest={!thinking && item.message.id === lastReplyId}
+                  onSend={(t) => {
+                    following.current = true;
+                    send.mutate(t);
+                  }}
                 />
               ),
             )}
@@ -272,54 +264,34 @@ export function ChatPage() {
           </div>
         </div>
 
-        <form
-          onSubmit={submit}
-          className="sticky bottom-0 bg-gradient-to-t from-bg from-60% to-transparent px-5 pt-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
-        >
+        <div className="sticky bottom-0 bg-gradient-to-t from-bg from-60% to-transparent px-5 pt-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className={cx("mx-auto", CHAT_WIDTH)}>
-            <div className="rounded-2xl bg-surface shadow-card transition-shadow duration-150 has-[textarea:focus]:shadow-focus">
-              <textarea
-                ref={input}
-                rows={1}
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) submit(e);
-                }}
-                aria-label="Message"
-                placeholder={
-                  dictation.listening ? "Listening…" : `Message ${personality?.name ?? "Sling"}`
-                }
-                className="block min-h-[44px] w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-5 outline-none placeholder:text-subtle focus-visible:outline-none"
-              />
-              <div className="flex items-center gap-2 px-2 pb-2">
+            <Composer
+              variant="reply"
+              text={text}
+              setText={setText}
+              onSubmit={() => {
+                following.current = true;
+                dictation.cancel();
+                send.mutate(text.trim());
+              }}
+              inputRef={input}
+              dictation={dictation}
+              placeholder={`Message ${personality?.name ?? "Sling"}`}
+              busy={send.isPending}
+              error={send.error ?? dictation.error ?? setMode.error ?? setSettings.error}
+              controls={
                 <ChatControls
-                  className="min-w-0 flex-1"
                   catalog={catalog.data}
                   assistant={assistant}
                   onAssistant={(choice) => setSettings.mutate({ assistant: choice })}
                   // The mode only limits tools, so a personality without any has no use for it.
                   {...(hasTools ? { mode: conversation.mode, onMode: modeChange.change } : {})}
                 />
-                <MicButton dictation={dictation} />
-                <Button
-                  type="submit"
-                  variant="primary"
-                  iconOnly
-                  icon={ArrowUp}
-                  aria-label="Send"
-                  busy={send.isPending}
-                  disabled={!text.trim()}
-                />
-              </div>
-            </div>
-            <div className="mt-1.5 px-1">
-              <ErrorText
-                error={send.error ?? dictation.error ?? setMode.error ?? setSettings.error}
-              />
-            </div>
+              }
+            />
           </div>
-        </form>
+        </div>
       </div>
       {modeChange.dialog}
     </Page>
@@ -410,16 +382,22 @@ function Message({
   activity,
   tasks,
   personality,
+  latest,
+  onSend,
 }: {
   message: MessageView;
   activity: ActivityContext;
   tasks: Map<string, TaskView>;
   personality: PersonalityView | null | undefined;
+  /** The chat's last reply, with nothing being written after it. */
+  latest: boolean;
+  onSend: (text: string) => void;
 }) {
   if (message.role === "system") return <SystemNote message={message} tasks={tasks} />;
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
+      <div className="flex flex-col items-end gap-1.5">
+        {message.attachments.length > 0 && <MessageFiles files={message.attachments} />}
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-surface-3 px-3.5 py-2 text-sm leading-6 whitespace-pre-wrap shadow-active [overflow-wrap:anywhere]">
           {message.text}
         </div>
@@ -432,6 +410,9 @@ function Message({
       <div className="prose-chat text-sm leading-6">
         <ChatMarkdown>{message.text}</ChatMarkdown>
       </div>
+      <ReplySources message={message} />
+      <ReplyActions message={message} latest={latest} />
+      {latest && <FollowUps message={message} onSend={onSend} />}
     </AssistantRow>
   );
 }
