@@ -42,7 +42,7 @@ The script asks how you'll reach Sling: this computer, your local network, or fr
 curl -fsSL https://sling.example.com/install.sh | SLING_CODE=K7QM-2XVD-HP4R sh
 ```
 
-Then switch on the repos Sling may use, from the list the machine found, or use **Allow all**. Start a conversation: "The footer year in site is hardcoded. Make it dynamic and add a test."
+Once it connects, the dialog lists the repos the machine found. Pick the ones Sling may use, and change them later under **Machines**. Start a conversation: "The footer year in site is hardcoded. Make it dynamic and add a test."
 
 The assistant chats through that machine's Codex or Claude Code, on your own login, so it runs on your subscription with no API key. It picks the coding agent and model for each task itself, unless you name one. API keys under **Settings** are optional, for chatting when no machine is on or through another provider such as Ollama.
 

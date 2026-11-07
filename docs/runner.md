@@ -44,7 +44,7 @@ sling-runner service install                # run in the background
 sling-runner doctor                         # check everything
 ```
 
-Then choose the repos Sling may use under **Machines** in Sling.
+Once the machine connects, the **Add machine** dialog lists the repos it found. Pick the ones Sling may use there, or later under **Machines**.
 
 ## Repos
 

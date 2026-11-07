@@ -2,7 +2,7 @@
 import type { ConversationView, RunnerView, TaskView } from "@sling/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router.tsx";
 
@@ -131,13 +131,14 @@ let signedIn = true;
 let publicUrl = "";
 let posts: { method: string; path: string; body: unknown }[] = [];
 let hasModel = false;
+let runners: RunnerView[] = [];
 
 function routes(path: string): unknown {
   if (path === "/api/status")
     return { needsSetup: false, signedIn, email: "a@b.c", version: "0.1.0", publicUrl };
   if (path === "/api/conversations") return [conversation];
   if (path === "/api/approvals") return [];
-  if (path === "/api/runners") return [runner];
+  if (path === "/api/runners") return runners;
   if (path === "/api/sandbox-repos") return [];
   if (path === "/api/runners/enrollments") {
     return {
@@ -148,7 +149,8 @@ function routes(path: string): unknown {
       windowsInstallCommand: "$env:SLING_CODE='ABCD-1234'; irm http://localhost/install.ps1 | iex",
     };
   }
-  if (path.startsWith("/api/runners/rnr_1/")) return { ok: true, message: "Allowed api." };
+  if (/^\/api\/runners\/rnr_\d\//.test(path)) return { ok: true, message: "Allowed api." };
+  if (path === "/api/installations" || path === "/api/connectors") return [];
   if (path === "/api/models" || path === "/api/tasks" || path === "/api/sandboxes") return null;
   if (path === "/api/settings") {
     return {
@@ -189,13 +191,22 @@ function routes(path: string): unknown {
   throw new Error(`unmocked ${path}`);
 }
 
+let socket: FakeSocket | null = null;
+
 class FakeSocket {
   readyState = 0;
   onopen: (() => void) | null = null;
   onclose: (() => void) | null = null;
-  onmessage: (() => void) | null = null;
+  onmessage: ((e: { data: string }) => void) | null = null;
+  constructor() {
+    socket = this;
+  }
   send() {}
   close() {}
+}
+
+function emit(ev: unknown) {
+  act(() => socket?.onmessage?.({ data: JSON.stringify(ev) }));
 }
 
 beforeEach(() => {
@@ -203,6 +214,7 @@ beforeEach(() => {
   signedIn = true;
   publicUrl = window.location.origin;
   hasModel = false;
+  runners = [runner];
   vi.stubGlobal("WebSocket", FakeSocket);
   vi.stubGlobal(
     "fetch",
@@ -273,16 +285,55 @@ describe("web app", () => {
     expect(screen.getByText("0.166.0")).toBeTruthy();
   });
 
-  it("pairs a machine with one command", async () => {
+  it("pairs a machine a step at a time: what it runs, the command, then its repos", async () => {
     renderAt("/machines?pair=true");
-    const dialog = await screen.findByRole("dialog");
+    const d = within(await screen.findByRole("dialog", { name: "Add a machine" }));
+    expect(d.getByRole("heading", { name: "What does the machine run?" })).toBeTruthy();
+    // The command for the system picked.
+    fireEvent.click(d.getByRole("radio", { name: /Windows/ }));
+    fireEvent.click(d.getByRole("button", { name: "Continue" }));
+    expect(await d.findByText(/irm http:\/\/localhost\/install\.ps1/)).toBeTruthy();
+    fireEvent.click(d.getByRole("button", { name: "Back" }));
+    fireEvent.click(d.getByRole("radio", { name: /macOS or Linux/ }));
+    fireEvent.click(d.getByRole("button", { name: "Continue" }));
     expect(
-      await within(dialog).findByText(
-        "curl -fsSL http://localhost/install.sh | SLING_CODE=ABCD-1234 sh",
-      ),
+      await d.findByText("curl -fsSL http://localhost/install.sh | SLING_CODE=ABCD-1234 sh"),
     ).toBeTruthy();
-    fireEvent.click(within(dialog).getByRole("tab", { name: "Windows" }));
-    expect(within(dialog).getByText(/irm http:\/\/localhost\/install\.ps1/)).toBeTruthy();
+    // Nothing to continue to until the machine connects.
+    expect(d.getByText(/Waiting for the machine/)).toBeTruthy();
+    const next = () =>
+      d.getByRole("button", { name: /Continue|Allow|Finish/ }) as HTMLButtonElement;
+    expect(next().disabled).toBe(true);
+
+    const studio: RunnerView = {
+      ...runner,
+      id: "rnr_2",
+      name: "studio",
+      repos: [],
+      capabilities: [{ name: "coding.claude-code", version: "2.1.0", ready: true, detail: "" }],
+    };
+    runners = [runner, studio];
+    emit({ type: "runner.updated", runner: studio });
+    expect(await d.findByText("studio is connected, with Claude Code ready.")).toBeTruthy();
+    fireEvent.click(next());
+
+    expect(d.getByRole("heading", { name: "Which repos may it work in?" })).toBeTruthy();
+    const repos = within(d.getByRole("group", { name: "Repos" }));
+    expect(repos.getAllByRole("checkbox").map((c) => c.textContent)).toEqual([
+      "api/Users/me/code/api",
+      "web/Users/me/code/web",
+    ]);
+    expect(next().textContent).toBe("Finish");
+    fireEvent.click(repos.getByRole("checkbox", { name: /web/ }));
+    expect(next().textContent).toBe("Allow 1 repo");
+    fireEvent.click(next());
+    await waitFor(() =>
+      expect(
+        posts.find((p) => p.method === "POST" && p.path === "/api/runners/rnr_2/repos")?.body,
+      ).toBe(JSON.stringify({ path: "/Users/me/code/web" })),
+    );
+    expect(await d.findByText("studio is ready")).toBeTruthy();
+    expect(d.getByText("Works in 1 repo · Claude Code ready")).toBeTruthy();
   });
 
   it("allows a repo the machine found, in place", async () => {

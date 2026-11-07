@@ -7,21 +7,22 @@ import {
   harnessCapability,
   type RepoView,
   type RunnerView,
+  remoteKey,
   type SandboxRepoView,
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { Check, CheckCheck, Copy, FolderGit2, Laptop, Plus, RefreshCw, Unplug } from "lucide-react";
+import { CheckCheck, FolderGit2, Laptop, Plus, RefreshCw, Unplug } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
 import { ProviderIcon } from "../components/ProviderIcon.tsx";
+import { OptionCards } from "../components/SchemaForm.tsx";
 import {
   Badge,
   Button,
   Card,
   cx,
-  Dialog,
   Dot,
   Empty,
   ErrorText,
@@ -32,6 +33,8 @@ import {
   Switch,
   useConfirm,
 } from "../components/ui.tsx";
+import { Wizard, type WizardStep } from "../components/Wizard.tsx";
+import { CheckCards, CopyLine, StepNote } from "../components/WizardBits.tsx";
 import { api } from "../lib/api.ts";
 import { ago, plural } from "../lib/format.ts";
 import {
@@ -41,10 +44,11 @@ import {
   machinesOnly,
   splitLabels,
 } from "../lib/machines.ts";
+import { providerInstallations } from "../lib/sandbox.ts";
 import { sandboxApi, useSandboxRepos } from "../lib/sandboxApi.ts";
 import type { Enrollment } from "../lib/types.ts";
 import { useNow } from "../lib/useNow.ts";
-import { qk } from "../lib/workflowApi.ts";
+import { qk, useConnectors, useInstallations } from "../lib/workflowApi.ts";
 import { machinesRoute } from "../router.tsx";
 
 const CAPABILITY_LABEL: Record<string, string> = {
@@ -210,44 +214,49 @@ export function MachinesPage() {
   );
 }
 
-function CodeLine({ children, copy }: { children: ReactNode; copy?: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex items-center gap-2 rounded-lg bg-field py-1 pr-1 pl-3 shadow-field">
-      <pre className="min-w-0 flex-1 py-1 font-mono text-xs leading-5 break-all whitespace-pre-wrap text-soft">
-        {children}
-      </pre>
-      {copy !== undefined && (
-        <Button
-          size="sm"
-          variant="ghost"
-          icon={copied ? Check : Copy}
-          disabled={!copy}
-          onClick={async () => {
-            if (!copy) return;
-            await navigator.clipboard.writeText(copy);
-            setCopied(true);
-          }}
-        >
-          {copied ? "Copied" : "Copy"}
-        </Button>
-      )}
-    </div>
-  );
+type System = "unix" | "windows" | "installed";
+
+const SYSTEMS: Record<System, { label: string; detail: string }> = {
+  unix: {
+    label: "macOS or Linux",
+    detail: "One command installs sling-runner, pairs it, and starts it.",
+  },
+  windows: { label: "Windows", detail: "The same, in PowerShell." },
+  installed: { label: "It already has sling-runner", detail: "Pair it with a code." },
+};
+
+/** "Codex and Claude Code", or null when no coding agent is ready there. */
+function readyAgents(runner: RunnerView): string | null {
+  const ready = codingAgents(runner).filter((a) => a.ready);
+  return ready.length > 0 ? ready.map((a) => a.label).join(" and ") : null;
 }
 
-type InstallTab = "unix" | "windows" | "installed";
-
+/**
+ * Pairs a machine, one step at a time: what it runs, the command for it with
+ * a live wait until it connects, then the repos it found, and whether they
+ * may also run in sandboxes when there's a sandbox provider.
+ */
 function PairDialog({ onClose, known }: { onClose: () => void; known: RunnerView[] }) {
+  const qc = useQueryClient();
   const create = useMutation({
     mutationFn: () => api.post<Enrollment>("/api/runners/enrollments"),
   });
   const initial = useRef(new Set(known.map((r) => r.id)));
-  const paired = known.find((r) => !initial.current.has(r.id));
-  const [tab, setTab] = useState<InstallTab>(() =>
+  // The new machine, kept once seen so a refetch mid-step can't drop it.
+  const seen = useRef<RunnerView | undefined>(undefined);
+  const paired = known.find((r) => !initial.current.has(r.id)) ?? seen.current;
+  seen.current = paired;
+  const [system, setSystem] = useState<System>(() =>
     navigator.userAgent.includes("Windows") ? "windows" : "unix",
   );
+  const [picked, setPicked] = useState<string[]>([]);
+  const [sandboxed, setSandboxed] = useState<string[]>([]);
   const now = useNow(1000, Boolean(create.data) && !paired);
+  const installations = useInstallations();
+  const connectors = useConnectors();
+  const sandboxRepos = useSandboxRepos();
+  const hasProviders =
+    providerInstallations(installations.data ?? [], connectors.data ?? []).length > 0;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: create one code when the dialog opens.
   useEffect(() => {
@@ -256,88 +265,242 @@ function PairDialog({ onClose, known }: { onClose: () => void; known: RunnerView
 
   const e = create.data;
   const left = e ? Math.max(0, new Date(e.expiresAt).getTime() - now) : 0;
-  const expired = Boolean(e) && left === 0;
+  const expired = Boolean(e) && left === 0 && !paired;
   const command =
-    tab === "unix" ? e?.installCommand : tab === "windows" ? e?.windowsInstallCommand : e?.command;
+    system === "unix"
+      ? e?.installCommand
+      : system === "windows"
+        ? e?.windowsInstallCommand
+        : e?.command;
 
-  return (
-    <Dialog
-      title={paired ? `${paired.name} is paired` : "Pair a machine"}
-      description={
-        paired ? "Next, pick the repos it may use." : "Run this on the computer with your repos."
+  // ---------------------------------------------------------------- repos
+  const found = paired?.foundRepos ?? [];
+  const chosen = found.filter((f) => picked.includes(f.path));
+  const canAllow = Boolean(paired?.online && paired.remoteRepos);
+  // What it'll work in: the repos already in its config, and the ones picked.
+  const working = [
+    ...(paired?.repos ?? []).flatMap((r) =>
+      r.remoteKey ? [{ key: r.remoteKey, name: r.name, branch: r.defaultBranch }] : [],
+    ),
+    ...chosen.flatMap((f) => {
+      const key = remoteKey(f.remoteUrl);
+      return key ? [{ key, name: f.name, branch: f.defaultBranch }] : [];
+    }),
+  ];
+  const inSandboxes = new Set((sandboxRepos.data ?? []).map((r) => r.remoteKey));
+  const offerSandboxes = hasProviders && working.some((w) => !inSandboxes.has(w.key));
+
+  const toSandbox = working.filter((w) => sandboxed.includes(w.key) && !inSandboxes.has(w.key));
+  const finish = useMutation({
+    // What it did, for the done screen, before the machine's new list comes in.
+    mutationFn: async () => {
+      const did = { repos: (paired?.repos.length ?? 0) + chosen.length, sandboxes: 0 };
+      if (!paired) return did;
+      if (chosen.length > 0) {
+        await api.post(
+          `/api/runners/${paired.id}/repos`,
+          chosen.length === 1 ? { path: chosen[0]?.path } : { paths: chosen.map((f) => f.path) },
+        );
       }
-      onClose={onClose}
-      footer={
-        <>
-          {paired ? (
-            <p className="mr-auto flex items-center gap-2 text-xs text-ok">
-              <Dot tone="ok" /> Connected. {plural(paired.foundRepos.length, "repo")} found.
-            </p>
-          ) : expired ? (
-            <p className="mr-auto text-xs text-warn">This code expired.</p>
+      for (const w of toSandbox) {
+        await sandboxApi.allowRepo({ remoteKey: w.key, defaultBranch: w.branch, network: false });
+        did.sandboxes += 1;
+      }
+      return did;
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: ["runners"] });
+      void qc.invalidateQueries({ queryKey: qk.sandboxRepos() });
+    },
+  });
+
+  // ---------------------------------------------------------------- steps
+  const systemStep: WizardStep = {
+    id: "system",
+    title: "What does the machine run?",
+    hint: "It needs git, and Codex or Claude Code logged in.",
+    content: (
+      <OptionCards
+        label="System"
+        options={(["unix", "windows", "installed"] as const).map((s) => ({
+          value: s,
+          label: SYSTEMS[s].label,
+          detail: SYSTEMS[s].detail,
+        }))}
+        value={system}
+        onChange={(v) => setSystem(v as System)}
+      />
+    ),
+  };
+
+  const agents = paired ? readyAgents(paired) : null;
+  const pairStep: WizardStep = {
+    id: "pair",
+    title: system === "installed" ? "Run these on the machine" : "Run this on the machine",
+    blocked: !paired,
+    content: (
+      <>
+        <CopyLine text={command} />
+        {system === "installed" && <CopyLine text="sling-runner service install" />}
+        {paired ? (
+          paired.online ? (
+            <StepNote tone="ok">
+              {paired.name} is connected
+              {agents ? `, with ${agents} ready` : ""}.
+            </StepNote>
           ) : (
-            <p className="mr-auto flex items-center gap-2 text-xs text-muted">
-              <Spinner className="size-3.5" /> Waiting for the machine
-              {e && (
-                <span className="tabular text-subtle">
-                  · code expires in {Math.floor(left / 60_000)}:
-                  {String(Math.floor((left % 60_000) / 1000)).padStart(2, "0")}
-                </span>
-              )}
-            </p>
-          )}
-          {expired && !paired && (
-            <Button icon={RefreshCw} busy={create.isPending} onClick={() => create.mutate()}>
+            <StepNote tone="wait">{paired.name} is paired. Waiting for it to start.</StepNote>
+          )
+        ) : expired ? (
+          <div className="flex items-center gap-2">
+            <StepNote tone="warn">This code expired.</StepNote>
+            <Button
+              size="sm"
+              variant="ghost"
+              icon={RefreshCw}
+              busy={create.isPending}
+              onClick={() => create.mutate()}
+            >
               New code
             </Button>
-          )}
-          <Button variant={paired ? "primary" : "secondary"} onClick={onClose}>
-            {paired ? "Pick repos" : "Close"}
-          </Button>
-        </>
-      }
-    >
-      {!paired && (
-        <div className="space-y-4">
-          <div
-            role="tablist"
-            aria-label="System"
-            className="flex w-fit rounded-full bg-field p-0.5 shadow-field"
-          >
-            {(
-              [
-                ["unix", "macOS and Linux"],
-                ["windows", "Windows"],
-                ["installed", "Already installed"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                aria-selected={tab === id}
-                onClick={() => setTab(id)}
-                className={cx(
-                  "h-[26px] cursor-pointer rounded-full px-3 text-xs transition-colors duration-150",
-                  tab === id
-                    ? "bg-surface-3 text-text shadow-active"
-                    : "text-subtle hover:text-soft",
-                )}
-              >
-                {label}
-              </button>
-            ))}
           </div>
-          <CodeLine copy={command ?? ""}>{command ?? "…"}</CodeLine>
-          <p className="text-xs leading-[18px] text-muted">
-            {tab === "installed"
-              ? "Then run sling-runner service install to keep it running."
-              : "Needs git and a logged-in Codex or Claude Code."}
-          </p>
-          <ErrorText error={create.error} />
+        ) : (
+          <StepNote tone="wait">
+            Waiting for the machine
+            {e && (
+              <span className="tabular text-subtle">
+                {" "}
+                · code expires in {Math.floor(left / 60_000)}:
+                {String(Math.floor((left % 60_000) / 1000)).padStart(2, "0")}
+              </span>
+            )}
+          </StepNote>
+        )}
+        <ErrorText error={create.error} />
+      </>
+    ),
+  };
+
+  const reposStep: WizardStep = {
+    id: "repos",
+    title: "Which repos may it work in?",
+    hint:
+      found.length > 0 ? "Network access stays off. You can change these on Machines." : undefined,
+    content: !paired ? null : found.length === 0 && paired.repos.length === 0 ? (
+      paired.remoteRepos ? (
+        <StepNote>{paired.name} found no git repos. Add one later from Machines.</StepNote>
+      ) : (
+        <StepNote>
+          To pick repos from here, run <Mono>sling-runner config set remote-repos on</Mono> on{" "}
+          {paired.name}.
+        </StepNote>
+      )
+    ) : (
+      <>
+        <div className="max-h-[min(22rem,50vh)] overflow-y-auto">
+          <CheckCards
+            label="Repos"
+            options={[
+              ...paired.repos.map((r) => ({
+                value: `allowed:${r.name}`,
+                label: r.name,
+                detail: "Already allowed",
+                locked: true,
+              })),
+              ...found.map((f) => ({
+                value: f.path,
+                label: f.name,
+                detail: (
+                  <span className="block truncate font-mono text-[11px] text-subtle [direction:rtl]">
+                    <bdi>{f.path}</bdi>
+                  </span>
+                ),
+                disabled: !canAllow,
+              })),
+            ]}
+            value={picked}
+            onChange={(v) => setPicked(v.filter((x) => !x.startsWith("allowed:")))}
+          />
         </div>
-      )}
-    </Dialog>
+        {found.length > 1 && canAllow && (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={CheckCheck}
+            className="-ml-1.5"
+            onClick={() =>
+              setPicked(picked.length === found.length ? [] : found.map((f) => f.path))
+            }
+          >
+            {picked.length === found.length ? "Clear" : "Pick all"}
+          </Button>
+        )}
+        {!canAllow && found.length > 0 && (
+          <StepNote tone="wait">Repos can be picked once {paired.name} is online.</StepNote>
+        )}
+      </>
+    ),
+  };
+
+  const sandboxStep: WizardStep = {
+    id: "sandboxes",
+    title: "Which may also run in a sandbox?",
+    hint: "When no machine can take a task, a sandbox clones the repo instead.",
+    content: (
+      <CheckCards
+        label="Sandbox repos"
+        options={working.map((w) => ({
+          value: w.key,
+          label: w.name,
+          detail: inSandboxes.has(w.key) ? "Already allowed in sandboxes" : w.key,
+          locked: inSandboxes.has(w.key),
+        }))}
+        value={sandboxed}
+        onChange={setSandboxed}
+      />
+    ),
+  };
+
+  const steps = [systemStep, pairStep, reposStep, ...(offerSandboxes ? [sandboxStep] : [])];
+
+  return (
+    <Wizard
+      title="Add a machine"
+      steps={steps}
+      finishLabel={chosen.length > 0 ? `Allow ${plural(chosen.length, "repo")}` : "Finish"}
+      finishing={finish.isPending}
+      error={finish.error instanceof Error ? finish.error.message : null}
+      onFinish={async () => {
+        try {
+          await finish.mutateAsync();
+          return true;
+        } catch {
+          return false;
+        }
+      }}
+      done={
+        paired && (
+          <>
+            <p className="text-sm font-medium">{paired.name} is ready</p>
+            <p className="mt-1 text-xs leading-4 text-muted">
+              {finish.data?.repos
+                ? `Works in ${plural(finish.data.repos, "repo")}`
+                : "No repos allowed yet"}
+              {finish.data?.sandboxes
+                ? ` · ${plural(finish.data.sandboxes, "repo")} in sandboxes`
+                : ""}
+              {agents && ` · ${agents} ready`}
+            </p>
+            {!agents && (
+              <p className="mt-1 text-xs leading-4 text-warn">
+                Log in to Codex or Claude Code on it to start tasks.
+              </p>
+            )}
+          </>
+        )
+      }
+      onClose={onClose}
+    />
   );
 }
 
