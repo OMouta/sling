@@ -43,6 +43,7 @@ export function speakableText(markdown: string): string {
     .replace(/(?<!\w)_(?!\s)(.+?)_(?!\w)/g, "$1")
     .replace(/~~(.+?)~~/g, "$1")
     .replace(/[ \t]+/g, " ")
+    .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
