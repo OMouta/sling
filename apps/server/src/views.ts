@@ -58,6 +58,9 @@ export function toRunnerView(r: RunnerRow, repos: RepoRow[]): RunnerView {
     foundRepos: r.foundRepos,
     remoteRepos: r.remoteRepos,
     deploys: r.deploys,
+    folders: r.folders,
+    files: r.files,
+    channels: r.channels,
   };
 }
 
@@ -333,6 +336,7 @@ export function toConversationView(c: ConversationRow): ConversationView {
     mode: c.mode,
     settings: c.settings ?? { assistant: null, agent: null },
     personalityId: c.personalityId,
+    startedBy: c.startedBy ?? null,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
   };

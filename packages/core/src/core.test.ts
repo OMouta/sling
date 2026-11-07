@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  ACTION_CHECK_STATES,
+  CHECK_INTERVAL_SECONDS,
+  CHECK_KINDS,
   canTransitionTask,
   cloneUrlFor,
   isTerminalTask,
@@ -7,7 +10,11 @@ import {
   modeWithinCap,
   needsApproval,
   newId,
+  PERSONALITY_TOOL_INFO,
+  PERSONALITY_TOOLS,
+  RULE_TASK_STEPS,
   remoteKey,
+  START_RULE_MODES,
   TASK_STATES,
   taskBranch,
 } from "./index.ts";
@@ -83,5 +90,19 @@ describe("remote keys", () => {
     expect(remoteKey("/srv/git/site.git")).toBeNull();
     expect(remoteKey("file:///srv/git/site.git")).toBeNull();
     expect(remoteKey("https://github.com/")).toBeNull();
+  });
+});
+
+describe("rules and checks", () => {
+  it("never starts a chat in Full access, and never lets a merge or deploy through", () => {
+    expect(START_RULE_MODES).not.toContain("full-access");
+    expect(RULE_TASK_STEPS).not.toContain("merge");
+    expect(RULE_TASK_STEPS).not.toContain("deploy");
+  });
+
+  it("gives every check kind a schedule, and every tool group a label", () => {
+    for (const kind of CHECK_KINDS) expect(CHECK_INTERVAL_SECONDS[kind]).toBeGreaterThan(0);
+    for (const tool of PERSONALITY_TOOLS) expect(PERSONALITY_TOOL_INFO[tool].label).toBeTruthy();
+    expect(ACTION_CHECK_STATES).toEqual(["passed", "failed", "waiting", "unchecked"]);
   });
 });

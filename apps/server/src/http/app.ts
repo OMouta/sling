@@ -9,17 +9,21 @@ import {
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
 import { agentToolRoutes } from "../agent/tool-routes.ts";
+import { checkRoutes } from "../checks/routes.ts";
 import type { Config } from "../config.ts";
 import type { AppContext } from "../context.ts";
 import { conversationRoutes } from "../conversations/routes.ts";
 import { deployRoutes } from "../deploys/routes.ts";
 import { extensionRoutes } from "../extensions/routes.ts";
+import { memoryRoutes } from "../memory/routes.ts";
+import { oauthRoutes } from "../oauth/routes.ts";
 import { personalityRoutes } from "../personalities/routes.ts";
 import { pushRoutes } from "../push/routes.ts";
 import { hubRoutes } from "../realtime/hub.ts";
 import { authRoutes } from "../routes/auth.ts";
 import { settingsRoutes } from "../routes/settings.ts";
 import { setupRoutes } from "../routes/setup.ts";
+import { ruleRoutes } from "../rules/routes.ts";
 import { installRoutes } from "../runners/install.ts";
 import { runnerRoutes } from "../runners/routes.ts";
 import { sandboxRoutes } from "../sandboxes/routes.ts";
@@ -88,6 +92,15 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
     await deployRoutes(scope, ctx);
   });
   await app.register(async (scope) => {
+    await checkRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await ruleRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await memoryRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
     await conversationRoutes(scope, ctx);
   });
   await app.register(async (scope) => {
@@ -98,6 +111,9 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   });
   await app.register(async (scope) => {
     await connectorRoutes(scope, ctx);
+  });
+  await app.register(async (scope) => {
+    await oauthRoutes(scope, ctx);
   });
   await app.register(async (scope) => {
     await extensionRoutes(scope, ctx);

@@ -164,19 +164,37 @@ function created(c: CreatedTask) {
   };
 }
 
-/** The tools each personality tool group gives the assistant. */
+/**
+ * The tools each personality tool group gives the assistant. A group can name
+ * a tool before it's built: agentTools only offers the ones it builds.
+ */
 export const TOOLS_BY_GROUP: Record<PersonalityTool, readonly string[]> = {
   commands: ["list_machines", "run_command"],
   coding: ["list_machines", "delegate_coding_task", "get_task", "cancel_task"],
   // Also every connector action flagged for the assistant, added per turn.
   apps: ["run_workflow"],
   deploys: ["list_machines", "check_deploy_target", "deploy_task"],
-  setup: SETUP_TOOLS,
+  setup: [...SETUP_TOOLS, "create_workflow", "workflow_nodes", "save_rule", "save_check"],
+  memory: ["remember", "forget", "recall"],
+  files: ["search_files", "read_file"],
 };
 
 /** Tool names a personality with these groups may call. */
 export function allowedTools(groups: readonly PersonalityTool[]): Set<string> {
   return new Set(groups.flatMap((g) => TOOLS_BY_GROUP[g] ?? []));
+}
+
+let built: ReadonlySet<string> | undefined;
+
+/** Whether agentTools builds a tool by this name, so a prompt never names one a turn can't call. */
+export function isBuiltTool(name: string): boolean {
+  // Building the tools reads nothing from the context or the scope.
+  built ??= new Set(
+    Object.keys(
+      allTools({} as AppContext, { workspaceId: "", ownerId: "", conversationId: "" }, true),
+    ),
+  );
+  return built.has(name);
 }
 
 /**

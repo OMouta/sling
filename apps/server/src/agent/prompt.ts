@@ -1,6 +1,6 @@
 import { MODE_POLICY, type PermissionMode, type PersonalityTool } from "@sling/core";
 import { deploysSection } from "./deploy-prompt.ts";
-import { allowedTools } from "./tools.ts";
+import { allowedTools, isBuiltTool } from "./tools.ts";
 
 /** What the prompt needs from a personality. */
 export interface PromptPersonality {
@@ -226,7 +226,10 @@ export function assistantInstructions(
 
 /** Told to the assistant when it runs on a CLI, which has its own tools by default. */
 function cliNote(tools: readonly PersonalityTool[], apps: readonly string[]): string {
-  const names = [...new Set([...allowedTools(tools), ...apps])];
+  // The app tools are built per turn, run_workflow among them.
+  const names = [
+    ...new Set([...allowedTools(tools), ...apps].filter((n) => isBuiltTool(n) || apps.includes(n))),
+  ];
   const how = [
     ...(tools.includes("commands")
       ? ["run_command is how you run commands on the user's machines"]

@@ -17,9 +17,11 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
+  Brain,
   Copy,
   Drama,
   Ellipsis,
+  FolderSearch,
   LayoutGrid,
   Plus,
   Rocket,
@@ -73,6 +75,8 @@ const TOOL_ICONS: Record<PersonalityTool, typeof Terminal> = {
   apps: LayoutGrid,
   deploys: Rocket,
   setup: SlidersHorizontal,
+  memory: Brain,
+  files: FolderSearch,
 };
 
 const TOOL_SHORT: Record<PersonalityTool, string> = {
@@ -81,6 +85,8 @@ const TOOL_SHORT: Record<PersonalityTool, string> = {
   apps: "Apps",
   deploys: "Deploys",
   setup: "Setup",
+  memory: "Memory",
+  files: "Files",
 };
 
 function toolsLine(tools: PersonalityTool[]): string {

@@ -1,9 +1,17 @@
 import type {
+  ActionCheckState,
   ActionKind,
   ActionState,
   AgentModelView,
   ApprovalState,
+  ChannelView,
   ChatSettings,
+  CheckConfig,
+  CheckKind,
+  CheckResultDetail,
+  CheckResultView,
+  CheckState,
+  ConversationStartedBy,
   Delivery,
   DeployCheck,
   DeployCheckResult,
@@ -11,6 +19,7 @@ import type {
   FoundRepoView,
   GlyphShape,
   Harness,
+  MemorySourceKind,
   MergeMethod,
   ModelProviderId,
   NotificationSettings,
@@ -19,15 +28,19 @@ import type {
   PersonalityTool,
   ReplyTrace,
   RoutingView,
+  RuleKind,
   SandboxState,
+  StartRuleEvent,
+  StartRuleMode,
   TaskState,
   VerifyDetail,
 } from "@sling/core";
-import { sql } from "drizzle-orm";
+import { type SQL, sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   bigint,
   boolean,
+  customType,
   doublePrecision,
   index,
   integer,
@@ -39,6 +52,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { users } from "./auth.ts";
+import { connectorInstallations } from "./workflows.ts";
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 const createdAt = () => ts("created_at").defaultNow().notNull();
@@ -172,6 +186,12 @@ export const runners = pgTable(
     remoteRepos: boolean("remote_repos").notNull().default(false),
     /** Whether the machine accepts merges and deploys, from its inventory. */
     deploys: boolean("deploys").notNull().default(true),
+    /** Names of the folders the machine shares, from its inventory. */
+    folders: jsonb("folders").$type<string[]>().notNull().default([]),
+    /** Whether the machine answers file searches and reads, from its inventory. */
+    files: boolean("files").notNull().default(false),
+    /** Messaging channels the machine relays, from its inventory. */
+    channels: jsonb("channels").$type<ChannelView[]>().notNull().default([]),
     /** A sandbox's Runner: hidden from Machines and revoked with its sandbox. */
     ephemeral: boolean("ephemeral").notNull().default(false),
     sandboxId: text("sandbox_id").references((): AnyPgColumn => sandboxes.id, {
@@ -279,6 +299,8 @@ export const conversations = pgTable(
     workflowId: text("workflow_id"),
     /** Stable key for conversations bound to an outside channel, e.g. `discord:<installation>:<channel>`. */
     externalKey: text("external_key"),
+    /** The start rule that opened it, and the check change it reacted to. */
+    startedBy: jsonb("started_by").$type<ConversationStartedBy>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     archivedAt: ts("archived_at"),
@@ -591,10 +613,19 @@ export const deployTargets = pgTable(
     hookHost: text("hook_host"),
     hookMethod: text("hook_method").$type<"POST" | "GET">(),
     hookHasHeader: boolean("hook_has_header").notNull().default(false),
-    checks: jsonb("checks").$type<DeployCheck[]>().notNull(),
+    /**
+     * The site check this target deploys for, which holds its URLs, version
+     * URL, and results. Null only for targets made before checks existed and
+     * not yet moved.
+     */
+    checkId: text("check_id").references((): AnyPgColumn => checks.id, { onDelete: "cascade" }),
+    /** Copied to the site check, which is what's kept up to date. */
+    checks: jsonb("checks").$type<DeployCheck[]>().notNull().default([]),
+    /** Copied to the site check, which is what's kept up to date. */
     versionUrl: text("version_url"),
     settleSeconds: integer("settle_seconds").notNull().default(0),
     timeoutSeconds: integer("timeout_seconds").notNull().default(600),
+    /** Copied to the site check, which is what's kept up to date. */
     lastCheck: jsonb("last_check").$type<DeployLastCheck>(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -602,6 +633,7 @@ export const deployTargets = pgTable(
   (t) => [
     uniqueIndex("deploy_targets_name_idx").on(t.workspaceId, t.name),
     uniqueIndex("deploy_targets_remote_idx").on(t.workspaceId, t.remoteKey),
+    uniqueIndex("deploy_targets_check_idx").on(t.checkId),
   ],
 );
 
@@ -629,3 +661,258 @@ export const pushSubscriptions = pgTable(
   },
   (t) => [index("push_subscriptions_user_idx").on(t.workspaceId, t.userId)],
 );
+
+/** A Postgres full-text search vector. */
+const tsvector = customType<{ data: string }>({
+  dataType: () => "tsvector",
+});
+
+/** Lasting facts about a user, for the assistant's prompt and `recall`. */
+export const memories = pgTable(
+  "memories",
+  {
+    id: text("id").primaryKey(),
+    /** The owner is the user the memory is about. */
+    ...owned(),
+    /** At most 500 characters. */
+    text: text("text").notNull(),
+    /** The one personality that sees it. Null when every personality does. */
+    personalityId: text("personality_id").references(() => personalities.id, {
+      onDelete: "cascade",
+    }),
+    source: text("source").$type<MemorySourceKind>().notNull(),
+    /** `chat`: the chat and the message it was saved from. */
+    conversationId: text("conversation_id").references(() => conversations.id, {
+      onDelete: "set null",
+    }),
+    messageId: text("message_id").references(() => messages.id, { onDelete: "set null" }),
+    /** Moves when a prompt includes it or `recall` returns it. Starts at creation. */
+    lastUsedAt: ts("last_used_at").defaultNow().notNull(),
+    /** English stems and the words as written, so a search finds either form. */
+    search: tsvector("search").generatedAlwaysAs(
+      (): SQL =>
+        sql`to_tsvector('english', ${memories.text}) || to_tsvector('simple', ${memories.text})`,
+    ),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index("memories_used_idx").on(t.workspaceId, t.ownerId, t.lastUsedAt),
+    index("memories_search_idx").using("gin", t.search),
+  ],
+);
+
+/**
+ * Standing answers. `allow` skips the question for an action that would ask.
+ * `start` opens a chat when a check changes. Revoked, never deleted.
+ */
+export const rules = pgTable(
+  "rules",
+  {
+    id: text("id").primaryKey(),
+    ...owned(),
+    kind: text("kind").$type<RuleKind>().notNull(),
+    /** One line, for the Rules tab and the audit. */
+    summary: text("summary").notNull(),
+    /** `allow`: a flagged node type, `run_workflow`, `push`, or `open_pr`. */
+    action: text("action"),
+    /** `allow`: one account, or null for any. Goes with its installation. */
+    installationId: text("installation_id").references(() => connectorInstallations.id, {
+      onDelete: "cascade",
+    }),
+    /** `allow`: pinned argument values. Exact, or a suffix after a leading `*`. */
+    match: jsonb("match").$type<Record<string, string>>().notNull().default({}),
+    /** `start`: one check, or null for every check. */
+    checkId: text("check_id").references((): AnyPgColumn => checks.id, { onDelete: "cascade" }),
+    /** `start`: what the check did. */
+    on: text("on_event").$type<StartRuleEvent>(),
+    /** `start`: who answers. Null uses the default personality. */
+    personalityId: text("personality_id").references(() => personalities.id, {
+      onDelete: "set null",
+    }),
+    /** `start`: the first message, with `{check}` and `{results}` filled in. */
+    message: text("message"),
+    /** `start`: never Full access. */
+    mode: text("mode").$type<StartRuleMode>(),
+    /** The approval whose Always allow made it. Chat approvals live in memory, so no foreign key. */
+    approvalId: text("approval_id"),
+    /** The chat it was made from. */
+    conversationId: text("conversation_id").references(() => conversations.id, {
+      onDelete: "set null",
+    }),
+    uses: integer("uses").notNull().default(0),
+    lastUsedAt: ts("last_used_at"),
+    revokedAt: ts("revoked_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("rules_active_idx").on(t.workspaceId, t.kind).where(sql`${t.revokedAt} is null`)],
+);
+
+/** What Sling watches on its own: a site, a command on a machine, or an email reply. */
+export const checks = pgTable(
+  "checks",
+  {
+    id: text("id").primaryKey(),
+    ...owned(),
+    kind: text("kind").$type<CheckKind>().notNull(),
+    name: text("name").notNull(),
+    /** By kind. Its `kind` always matches the column. */
+    config: jsonb("config").$type<CheckConfig>().notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    intervalSeconds: integer("interval_seconds").notNull(),
+    /** `reply`: when it turns missed. */
+    deadline: ts("deadline"),
+    /** `command`: the machine it runs on. */
+    runnerId: text("runner_id").references(() => runners.id, { onDelete: "set null" }),
+    /** `reply`: the email account it watches. */
+    installationId: text("installation_id").references(() => connectorInstallations.id, {
+      onDelete: "set null",
+    }),
+    state: text("state").$type<CheckState>().notNull().default("unknown"),
+    stateSince: ts("state_since"),
+    /** Failed runs in a row. */
+    failures: integer("failures").notNull().default(0),
+    lastResult: jsonb("last_result").$type<CheckResultView>(),
+    lastRunAt: ts("last_run_at"),
+    /** When the scheduler runs it next. Null once a reply check stops. */
+    nextRunAt: ts("next_run_at"),
+    /** Push to the owner when its state changes. */
+    notify: boolean("notify").notNull().default(true),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("checks_name_idx").on(t.workspaceId, t.name),
+    index("checks_due_idx").on(t.nextRunAt).where(sql`${t.enabled} and ${t.nextRunAt} is not null`),
+  ],
+);
+
+/** Each run of a check. The newest 100 per check are kept. */
+export const checkResults = pgTable(
+  "check_results",
+  {
+    id: text("id").primaryKey(),
+    checkId: text("check_id")
+      .notNull()
+      .references(() => checks.id, { onDelete: "cascade" }),
+    at: ts("at").notNull(),
+    passed: boolean("passed").notNull(),
+    /** The check's state after this run. */
+    state: text("state").$type<CheckState>().notNull(),
+    message: text("message").notNull().default(""),
+    ms: integer("ms").notNull().default(0),
+    detail: jsonb("detail").$type<CheckResultDetail>().notNull(),
+  },
+  (t) => [index("check_results_check_idx").on(t.checkId, t.at)],
+);
+
+/**
+ * Whether an action outside Sling happened: a chat tool call whose node has
+ * `verify`, or a task's PR waiting for its CI. One row per call or step.
+ */
+export const actionChecks = pgTable(
+  "action_checks",
+  {
+    id: text("id").primaryKey(),
+    ...owned(),
+    /** A chat tool call: its conversation, the reply it's on once saved, and the call's ID. */
+    conversationId: text("conversation_id").references(() => conversations.id, {
+      onDelete: "cascade",
+    }),
+    messageId: text("message_id").references(() => messages.id, { onDelete: "cascade" }),
+    toolCallId: text("tool_call_id"),
+    /** A task's step, such as a PR whose CI it waits for. */
+    actionId: text("action_id").references(() => actions.id, { onDelete: "cascade" }),
+    /** What checks it: a node type whose `verify` runs, such as `email.send`, or a task step's kind. */
+    kind: text("kind").notNull(),
+    nodeVersion: integer("node_version"),
+    installationId: text("installation_id").references(() => connectorInstallations.id, {
+      onDelete: "set null",
+    }),
+    /** What each check gets: the node's config, inputs, and outputs, redacted. */
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    state: text("state").$type<ActionCheckState>().notNull().default("waiting"),
+    message: text("message").notNull().default(""),
+    attempts: integer("attempts").notNull().default(0),
+    checkedAt: ts("checked_at"),
+    /** While waiting: when it's checked again. */
+    nextRunAt: ts("next_run_at"),
+    /** A check still waiting then turns unchecked. */
+    giveUpAt: ts("give_up_at"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex("action_checks_call_idx")
+      .on(t.conversationId, t.toolCallId)
+      .where(sql`${t.toolCallId} is not null`),
+    uniqueIndex("action_checks_action_idx").on(t.actionId).where(sql`${t.actionId} is not null`),
+    index("action_checks_due_idx").on(t.nextRunAt).where(sql`${t.state} = 'waiting'`),
+  ],
+);
+
+/** OAuth tokens of one installation, encrypted like credentials. */
+export const oauthTokens = pgTable(
+  "oauth_tokens",
+  {
+    id: text("id").primaryKey(),
+    ...owned(),
+    installationId: text("installation_id")
+      .notNull()
+      .references(() => connectorInstallations.id, { onDelete: "cascade" }),
+    /** Such as `google`. */
+    provider: text("provider").notNull(),
+    /** base64 of iv | auth tag | ciphertext, AES-256-GCM. */
+    refreshToken: text("refresh_token").notNull(),
+    accessToken: text("access_token"),
+    keyVersion: integer("key_version").notNull(),
+    /** When the access token expires. */
+    expiresAt: ts("expires_at"),
+    scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex("oauth_tokens_installation_idx").on(t.installationId)],
+);
+
+/** An OAuth consent in progress, from Connect to the provider's callback. Used once. */
+export const oauthFlows = pgTable(
+  "oauth_flows",
+  {
+    /** SHA-256 of the `state` sent to the provider, hex. */
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    installationId: text("installation_id")
+      .notNull()
+      .references(() => connectorInstallations.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    /** The PKCE verifier, encrypted. */
+    codeVerifier: text("code_verifier").notNull(),
+    keyVersion: integer("key_version").notNull(),
+    /** SHA-256 of the session that started it, hex, so only that browser can finish it. */
+    sessionHash: text("session_hash").notNull(),
+    expiresAt: ts("expires_at").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("oauth_flows_expires_idx").on(t.expiresAt)],
+);
+
+/** Approvals answered from a notification, so each notification's token works once. */
+export const notificationAnswers = pgTable("notification_answers", {
+  /** A task step's approval or a chat send's. Chat approvals live in memory, so no foreign key. */
+  approvalId: text("approval_id").primaryKey(),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  answer: text("answer").$type<"allow" | "deny">().notNull(),
+  usedAt: ts("used_at").defaultNow().notNull(),
+});

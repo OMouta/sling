@@ -3,6 +3,9 @@ import { toBinary } from "@bufbuild/protobuf";
 import {
   AGENT_MODEL_PATTERN,
   type AgentModelView,
+  CHANNEL_KINDS,
+  type ChannelKind,
+  type ChannelView,
   EFFORT_PATTERN,
   newId,
   remoteKey,
@@ -11,6 +14,7 @@ import { schema } from "@sling/db";
 import {
   type AgentModel,
   authPayload,
+  type Channel,
   create,
   decodeEnvelope,
   type Envelope,
@@ -303,6 +307,7 @@ export class RunnerGateway {
     await this.#publishRunner(session);
     this.#ctx.log.info({ runnerId: runner.id }, "runner connected");
     await this.handlers?.ready(session, hello);
+    this.#ctx.channels?.runnerConnected(session);
     return session;
   }
 
@@ -330,6 +335,18 @@ export class RunnerGateway {
         return;
       case "repoActionResult":
         await this.#ctx.deploys?.repoActionResult(session, envelope.body.value);
+        return;
+      case "fileSearchResult":
+        this.#ctx.files?.searchResult(session, envelope.body.value);
+        return;
+      case "fileReadResult":
+        this.#ctx.files?.readResult(session, envelope.body.value);
+        return;
+      case "channelMessage":
+        await this.#ctx.channels?.message(session, envelope.body.value);
+        return;
+      case "channelSendResult":
+        this.#ctx.channels?.sendResult(session, envelope.body.value);
         return;
       case "repoChangeResult": {
         const r = envelope.body.value;
@@ -364,6 +381,9 @@ export class RunnerGateway {
         })),
         remoteRepos: inv.remoteRepos,
         deploys: inv.deploys,
+        folders: folderNames(inv.folders),
+        files: inv.files,
+        channels: channelViews(inv.channels),
         maxMode: modeFromProto(inv.maxMode),
         maxConcurrentTasks: Math.max(1, Math.min(inv.maxConcurrentTasks || 1, 16)),
         labels: normalizeLabels(inv.labels),
@@ -428,6 +448,27 @@ function agentModels(models: AgentModel[]): AgentModelView[] {
       defaultEffort: effort(m.defaultEffort) ? m.defaultEffort : "",
       fast: m.fast,
       isDefault: m.isDefault,
+    }));
+}
+
+/** Shared folder names as the Runner reports them, bounded. */
+function folderNames(names: string[]): string[] {
+  return [...new Set(names.map((n) => n.trim().slice(0, 120)).filter(Boolean))].slice(0, 100);
+}
+
+/** Channels as the Runner reports them, bounded, and only of kinds Sling knows. */
+function channelViews(channels: Channel[]): ChannelView[] {
+  return channels
+    .filter((c): c is Channel & { kind: ChannelKind } =>
+      (CHANNEL_KINDS as readonly string[]).includes(c.kind),
+    )
+    .slice(0, 20)
+    .map((c) => ({
+      kind: c.kind,
+      name: c.name.slice(0, 80),
+      allowedSenders: c.allowedSenders,
+      ready: c.ready,
+      missing: c.missing.slice(0, 300),
     }));
 }
 

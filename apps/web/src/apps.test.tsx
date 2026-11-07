@@ -139,7 +139,7 @@ describe("personality tool groups", () => {
     expect(screen.getAllByRole("switch").map((s) => s.getAttribute("aria-label"))).toEqual(
       PERSONALITY_TOOLS.map((t) => PERSONALITY_TOOL_INFO[t].label),
     );
-    expect(PERSONALITY_TOOLS.slice(-3)).toEqual(["apps", "deploys", "setup"]);
+    expect(PERSONALITY_TOOLS.slice(2, 5)).toEqual(["apps", "deploys", "setup"]);
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "On call" } });
     fireEvent.change(screen.getByLabelText("Instructions"), {

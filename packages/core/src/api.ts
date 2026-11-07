@@ -1,7 +1,10 @@
+import type { ActionCheckView, CheckView } from "./checks.ts";
 import type { Harness } from "./harness.ts";
+import type { MemoryView, ToolStepMemory } from "./memory.ts";
 import type { ChatSettings } from "./models.ts";
 import type { ActionKind, PermissionMode } from "./modes.ts";
 import type { PersonalityView, ReplyPersonality } from "./personalities.ts";
+import type { ConversationStartedBy, RuleOfferView, RuleView } from "./rules.ts";
 import type { ActionState, ApprovalState, Delivery, TaskState } from "./states.ts";
 
 /**
@@ -74,6 +77,27 @@ export interface RunnerView {
   deploys: boolean;
   /** Whether repos can be allowed and removed from Sling. Turned off on the machine. */
   remoteRepos: boolean;
+  /** Folders shared with `sling-runner folder add`, by name. Only the machine can add one. */
+  folders: string[];
+  /** False when the machine refuses file searches and reads (`files off`), or its Runner can't do them. */
+  files: boolean;
+  /** Messaging channels the machine relays, set up with `sling-runner channel add`. */
+  channels: ChannelView[];
+}
+
+export const CHANNEL_KINDS = ["imessage", "signal"] as const;
+export type ChannelKind = (typeof CHANNEL_KINDS)[number];
+
+/** A messaging channel on a machine. Only the machine adds one or allows its senders. */
+export interface ChannelView {
+  kind: ChannelKind;
+  /** Unique on the machine. */
+  name: string;
+  /** Senders the machine forwards. Nothing is forwarded at 0. */
+  allowedSenders: number;
+  ready: boolean;
+  /** What it needs when it isn't ready, such as Full Disk Access. Empty when ready. */
+  missing: string;
 }
 
 export interface DiffStatsView {
@@ -189,6 +213,8 @@ export interface ActionView {
   output: string | null;
   /** Verify only. */
   verify: VerifyDetail | null;
+  /** A delivered PR: its CI, once Sling starts checking. Absent with nothing to check. */
+  check?: ActionCheckView;
 }
 
 /** What one health check saw. */
@@ -296,6 +322,8 @@ export interface ApprovalView {
    * What the approver is shown. For `sandbox_fallback`, a SandboxFallbackPayload.
    */
   payload: Record<string, unknown> | null;
+  /** Push and PR steps: the rule Always allow would make. Absent when none can cover it. */
+  ruleOffer?: RuleOfferView;
 }
 
 /** `ApprovalView.payload` of a `sandbox_fallback` approval. */
@@ -319,6 +347,8 @@ export interface ConversationView {
   settings: ChatSettings;
   /** The personality that answers here, fixed when the chat started. */
   personalityId: string | null;
+  /** The start rule that opened it. Null for chats a person or a workflow started. */
+  startedBy: ConversationStartedBy | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -381,6 +411,20 @@ export interface SetupChangeView {
   rows: SetupChangeRow[];
   /** Inputs the card shows. Their values go from the card to the server, never to the model. */
   secrets: SetupSecretField[];
+  /** A workflow written in the chat: its steps in order, in plain words. */
+  workflow?: {
+    steps: WorkflowStepView[];
+    /** Set once applied, for Open in editor. */
+    workflowId: string | null;
+  };
+}
+
+/** One step of a workflow, as a card lists it: "Every Monday at 09:00", "Send to Discord #general". */
+export interface WorkflowStepView {
+  nodeId: string;
+  text: string;
+  /** It reaches outside Sling, such as sending a message. */
+  sends: boolean;
 }
 
 /** A command, a send, or a setup change waiting on the user in a chat, or what they decided. */
@@ -398,6 +442,8 @@ export interface CommandApprovalView {
   summary: string;
   /** Changes: what would change, and the secrets to type in. */
   change?: SetupChangeView;
+  /** Sends: the rule Always allow would make. Absent when none can cover it. */
+  ruleOffer?: RuleOfferView;
 }
 
 /** A tool call the assistant made while replying. */
@@ -412,6 +458,10 @@ export interface ToolStep {
   output: string | null;
   /** For a command, a send, or a setup change that needs the user's approval. */
   approval?: CommandApprovalView;
+  /** For an action outside Sling whose node checks it happened. Absent when nothing checks it. */
+  check?: ActionCheckView;
+  /** For `remember`: what it saved. */
+  memory?: ToolStepMemory;
 }
 
 /**
@@ -823,6 +873,22 @@ export interface PushPayload {
   url: string;
   /** Pushes with the same tag replace each other on the device. */
   tag: string;
+  /**
+   * For an approval that can be answered from the notification: Allow and
+   * Deny post the token to POST /api/approvals/:id/notification-answer.
+   */
+  answer?: { approvalId: string; token: string };
+}
+
+/** POST /api/approvals/:id/notification-answer, from the service worker. */
+export interface NotificationAnswerInput {
+  token: string;
+  answer: "allow" | "deny";
+}
+
+/** What the service worker replaces the notification with. */
+export interface NotificationAnswerResult {
+  outcome: "allowed" | "denied" | "already_answered" | "expired";
 }
 
 /** What the web app's socket tells the server. */
@@ -857,5 +923,21 @@ export type ServerEvent =
   | { type: "personality.removed"; id: string }
   | { type: "deploy_target.updated"; target: DeployTargetView }
   | { type: "deploy_target.removed"; id: string }
+  | { type: "memory.updated"; memory: MemoryView }
+  | { type: "memory.removed"; id: string }
+  | { type: "rule.updated"; rule: RuleView }
+  /** Anything about a check changed: its state, its last result, or its settings. */
+  | { type: "check.changed"; check: CheckView }
+  | { type: "check.removed"; id: string }
+  /** An action's check changed after its reply was saved, such as an email bouncing. */
+  | {
+      type: "tool_step.check";
+      conversationId: string;
+      /** The reply the step is on. */
+      messageId: string;
+      /** The step's ID: its tool call. */
+      stepId: string;
+      check: ActionCheckView;
+    }
   /** Workspace or notification settings changed: open settings pages load them again. */
   | { type: "settings.updated" };

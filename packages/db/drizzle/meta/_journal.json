@@ -85,6 +85,13 @@
       "when": 1794054098731,
       "tag": "0011_assistant_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1794060345589,
+      "tag": "0012_assistant_memory",
+      "breakpoints": true
     }
   ]
 }

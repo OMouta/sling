@@ -8,6 +8,8 @@ import { Agent } from "./agent/agent.ts";
 import { CliChat } from "./agent/cli-chat.ts";
 import { Commands } from "./agent/commands.ts";
 import { createAuth } from "./auth/auth.ts";
+import { Channels } from "./channels/service.ts";
+import { Checks } from "./checks/service.ts";
 import type { Config } from "./config.ts";
 import type { AppContext } from "./context.ts";
 import { deriveKey } from "./crypto.ts";
@@ -15,11 +17,15 @@ import { DeployService } from "./deploys/service.ts";
 import { ProcessRuntime } from "./extensions/process-runtime.ts";
 import type { ExtensionRuntime } from "./extensions/runtime.ts";
 import { ExtensionService } from "./extensions/service.ts";
+import { Files } from "./files/service.ts";
 import { createServer, registerRoutes } from "./http/app.ts";
 import { startJobs } from "./jobs.ts";
+import { Memories } from "./memory/service.ts";
+import { OAuth } from "./oauth/service.ts";
 import { ensurePersonalities } from "./personalities/service.ts";
 import { PushService } from "./push/service.ts";
 import { Hub } from "./realtime/hub.ts";
+import { Rules } from "./rules/service.ts";
 import { RunnerGateway } from "./runners/gateway.ts";
 import { SandboxService } from "./sandboxes/service.ts";
 import { TaskService } from "./tasks/service.ts";
@@ -103,6 +109,12 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     extensions: undefined as unknown as ExtensionService,
     deploys: undefined as unknown as DeployService,
     push: undefined as unknown as PushService,
+    memory: undefined as unknown as Memories,
+    files: undefined as unknown as Files,
+    rules: undefined as unknown as Rules,
+    checks: undefined as unknown as Checks,
+    channels: undefined as unknown as Channels,
+    oauth: undefined as unknown as OAuth,
   };
   ctx.runners = new RunnerGateway(ctx);
   ctx.tasks = new TaskService(ctx);
@@ -121,6 +133,12 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   );
   ctx.deploys = new DeployService(ctx);
   ctx.push = new PushService(ctx);
+  ctx.memory = new Memories(ctx);
+  ctx.files = new Files(ctx);
+  ctx.rules = new Rules(ctx);
+  ctx.checks = new Checks(ctx);
+  ctx.channels = new Channels(ctx);
+  ctx.oauth = new OAuth(ctx);
   ctx.runners.handlers = ctx.tasks;
   ctx.tasks.onSettled = async (taskId, reason) => {
     // First, so a failing hook below can't keep a sandbox alive.
@@ -144,6 +162,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     await ctx.workflows.ensureBuiltIns();
     await ctx.engine.start(boss, { concurrency: opts.runConcurrency ?? 10 });
     await ctx.deploys.start(boss);
+    await ctx.checks.start(boss);
 
     await registerRoutes(app, ctx);
     await app.listen({ host: config.host, port: config.port });
@@ -170,6 +189,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
       await Promise.race([ctx.sandboxes.idle(), new Promise((ok) => setTimeout(ok, 10_000))]);
       await Promise.race([ctx.push.idle(), new Promise((ok) => setTimeout(ok, 2_000))]);
       await Promise.race([ctx.deploys.idle(), new Promise((ok) => setTimeout(ok, 35_000))]);
+      await Promise.race([ctx.checks.idle(), new Promise((ok) => setTimeout(ok, 35_000))]);
       ctx.runners.stop();
       await boss?.stop({ graceful: true, timeout: 10_000 });
       await app.close();

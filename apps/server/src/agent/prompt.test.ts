@@ -1,7 +1,8 @@
+import { PERSONALITY_TOOLS } from "@sling/core";
 import { describe, expect, it } from "vitest";
 import { personalityTemplate } from "../personalities/templates.ts";
 import { assistantInstructions, dateLine } from "./prompt.ts";
-import { allowedTools } from "./tools.ts";
+import { allowedTools, isBuiltTool } from "./tools.ts";
 
 const now = new Date("2026-11-06T12:00:00Z");
 const sling = personalityTemplate("sling");
@@ -64,6 +65,15 @@ describe("the assistant's prompt", () => {
     );
     const p = assistantInstructions(sling, "auto", morning, { timeZone: "Europe/Lisbon" });
     expect(p).toContain("It's Friday, 6 November 2026, 07:30 in Europe/Lisbon.");
+  });
+
+  it("names only the tools a CLI turn can call", () => {
+    const every = { instructions: "You are Sling.", tools: PERSONALITY_TOOLS };
+    const note = assistantInstructions(every, "auto", now, { cli: true, apps: ["run_workflow"] });
+    const names = note.match(/"sling": ([^.]+)\./)?.[1]?.split(", ") ?? [];
+    expect(names).toContain("run_command");
+    expect(names).toContain("run_workflow");
+    for (const name of names) expect(isBuiltTool(name) || name === "run_workflow").toBe(true);
   });
 
   it("tells a personality with apps how reads and sends work in each mode", () => {
@@ -139,6 +149,17 @@ describe("the assistant's prompt", () => {
       "change_workflow",
       "save_personality",
       "change_settings",
+      "create_workflow",
+      "workflow_nodes",
+      "save_rule",
+      "save_check",
+    ]);
+    expect([...allowedTools(["memory", "files"])]).toEqual([
+      "remember",
+      "forget",
+      "recall",
+      "search_files",
+      "read_file",
     ]);
     expect([...allowedTools([])]).toEqual([]);
     expect([...allowedTools(["coding"])]).toEqual([

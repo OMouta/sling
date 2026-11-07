@@ -638,6 +638,9 @@ export const devbox: RunnerView = {
   foundRepos: [],
   remoteRepos: false,
   deploys: true,
+  folders: [],
+  files: false,
+  channels: [],
 };
 
 export const buildbox: RunnerView = {
@@ -671,6 +674,9 @@ export const buildbox: RunnerView = {
   foundRepos: [],
   remoteRepos: false,
   deploys: true,
+  folders: [],
+  files: false,
+  channels: [],
 };
 
 /** A sandbox's own Runner, which the Machines page never shows. */
@@ -687,6 +693,9 @@ export const sandboxRunner: RunnerView = {
   foundRepos: [],
   remoteRepos: false,
   deploys: true,
+  folders: [],
+  files: false,
+  channels: [],
 };
 
 export const providerConnectors: ConnectorView[] = [

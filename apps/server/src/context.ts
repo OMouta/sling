@@ -6,11 +6,17 @@ import type { Agent } from "./agent/agent.ts";
 import type { CliChat } from "./agent/cli-chat.ts";
 import type { Commands } from "./agent/commands.ts";
 import type { Auth } from "./auth/auth.ts";
+import type { ChannelService } from "./channels/service.ts";
+import type { CheckService } from "./checks/service.ts";
 import type { Config } from "./config.ts";
 import type { DeployService } from "./deploys/service.ts";
 import type { ExtensionService } from "./extensions/service.ts";
+import type { FileService } from "./files/service.ts";
+import type { MemoryService } from "./memory/service.ts";
+import type { OAuthService } from "./oauth/service.ts";
 import type { PushService } from "./push/service.ts";
 import type { Hub } from "./realtime/hub.ts";
+import type { RuleService } from "./rules/service.ts";
 import type { RunnerGateway } from "./runners/gateway.ts";
 import type { SandboxService } from "./sandboxes/service.ts";
 import type { TaskService } from "./tasks/service.ts";
@@ -50,6 +56,18 @@ export interface AppContext {
   deploys: DeployService;
   /** Web Push to people's devices. */
   push: PushService;
+  /** Lasting facts about the user, for prompts and `recall`. */
+  memory: MemoryService;
+  /** Searching and reading the folders machines share. */
+  files: FileService;
+  /** Allow rules that skip a question, and start rules that open a chat. */
+  rules: RuleService;
+  /** What Sling watches on its own, and the checks of actions outside Sling. */
+  checks: CheckService;
+  /** iMessage and Signal, through the machines that relay them. */
+  channels: ChannelService;
+  /** OAuth sign-in and tokens for connectors that use the user's own client. */
+  oauth: OAuthService;
   /** Durable jobs. Null until the server has started it. */
   boss: PgBoss | null;
   /** Replaces the workspace model everywhere. Tests use a scripted mock. */

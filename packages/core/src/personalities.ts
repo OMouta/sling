@@ -5,7 +5,15 @@
  */
 
 /** Groups of Sling's assistant tools a personality can be given. */
-export const PERSONALITY_TOOLS = ["commands", "coding", "apps", "deploys", "setup"] as const;
+export const PERSONALITY_TOOLS = [
+  "commands",
+  "coding",
+  "apps",
+  "deploys",
+  "setup",
+  "memory",
+  "files",
+] as const;
 export type PersonalityTool = (typeof PERSONALITY_TOOLS)[number];
 
 export const PERSONALITY_TOOL_INFO: Record<
@@ -31,6 +39,14 @@ export const PERSONALITY_TOOL_INFO: Record<
   setup: {
     label: "Change Sling's setup",
     description: "Deploy targets, apps, workflows, personalities and settings. Asks first.",
+  },
+  memory: {
+    label: "Memory",
+    description: "Remembers what you tell it about yourself, and forgets on request.",
+  },
+  files: {
+    label: "Files on your machines",
+    description: "Searches and reads the folders your machines share.",
   },
 };
 
