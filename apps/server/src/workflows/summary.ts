@@ -279,6 +279,19 @@ const TYPES: Record<string, (a: Args) => Described> = {
     };
   },
   "sling.approval_requested": () => ({ text: "When something needs your approval" }),
+  "checks.changed": (a) => {
+    const name = plain(a.config.check);
+    const kind = plain(a.config.kind);
+    const what = name ? quote(name, 40) : kind && kind !== "any" ? `a ${kind} check` : "a check";
+    const on = plain(a.config.on);
+    const verbs: Record<string, string> = {
+      down: "goes down",
+      up: "comes back up",
+      met: "is met",
+      missed: "is missed",
+    };
+    return { text: `When ${what} ${on && verbs[on] ? verbs[on] : "changes"}` };
+  },
 
   "discord.message_received": (a) => {
     const bot = account(a) ?? "the bot";

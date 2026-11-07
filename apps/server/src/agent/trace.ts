@@ -114,7 +114,10 @@ export class TraceRecorder {
    * or when a tool drops a value from its recorded input. A tool can start
    * before its call is recorded, so a change that comes first waits for it.
    */
-  toolUpdate(id: string, patch: Pick<Partial<ToolStep>, "approval" | "input" | "memory" | "check">) {
+  toolUpdate(
+    id: string,
+    patch: Pick<Partial<ToolStep>, "approval" | "input" | "memory" | "check">,
+  ) {
     const step = this.#tool(id);
     if (!step) {
       this.#early.set(id, { ...this.#early.get(id), ...patch });

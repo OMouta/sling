@@ -977,11 +977,11 @@ export class Checks implements CheckService {
     };
     let openChat: string | null = null;
     try {
-      openChat = conversationIn(await ctx.rules.checkChanged(change));
+      const [started] = await ctx.rules.checkChanged(change);
+      openChat = started?.conversationId ?? null;
     } catch (err) {
       ctx.log.error({ err, checkId: row.id }, "start rules failed");
     }
-    openChat ??= await this.#startedChat(row.id, new Date(result.at));
     const timeZone = await workspaceTimeZone(ctx, row.workspaceId);
     const alert = alertFor(view, from, result, { timeZone, openChat });
     await audit(ctx, {
@@ -1023,21 +1023,6 @@ export class Checks implements CheckService {
   }
 
   /** The chat a start rule opened for this change, when it opened one. */
-  async #startedChat(checkId: string, at: Date): Promise<string | null> {
-    const [conv] = await this.#db
-      .select({ id: schema.conversations.id })
-      .from(schema.conversations)
-      .where(
-        and(
-          sql`${schema.conversations.startedBy}->>'checkId' = ${checkId}`,
-          sql`${schema.conversations.createdAt} >= ${new Date(at.getTime() - 60_000)}`,
-        ),
-      )
-      .orderBy(desc(schema.conversations.createdAt))
-      .limit(1);
-    return conv?.id ?? null;
-  }
-
   /**
    * Whether a workflow already pushes about this change, so Sling's own push
    * would be a second one: a run this change started that notifies, or an
@@ -1087,16 +1072,4 @@ export class Checks implements CheckService {
   background(label: string, work: () => Promise<unknown>) {
     this.#background(label, work);
   }
-}
-
-/** The chat a start rule opened, from whatever `rules.checkChanged` answers with. */
-function conversationIn(value: unknown): string | null {
-  if (!value || typeof value !== "object") return null;
-  const v = value as Record<string, unknown>;
-  if (typeof v.conversationId === "string") return v.conversationId;
-  if (Array.isArray(v.conversationIds) && typeof v.conversationIds[0] === "string") {
-    return v.conversationIds[0];
-  }
-  const conv = v.conversation as Record<string, unknown> | undefined;
-  return typeof conv?.id === "string" ? conv.id : null;
 }

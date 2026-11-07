@@ -69,9 +69,7 @@ describe("a workflow's steps in words", () => {
       "Notify your devices: “Your morning briefing”",
     ],
     "site-down-alert": [
-      "Every minute",
-      "Check every deploy target",
-      "Each change",
+      "When a site check changes",
       "Back up?",
       "If so: notify your devices",
       "If not: notify your devices",
