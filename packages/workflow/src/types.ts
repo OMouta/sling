@@ -90,6 +90,22 @@ export const NAMED_TYPES: Record<string, NamedType> = {
       required: ["id", "chatId", "chatType", "from", "text", "date"],
     },
   },
+  "channel.message": {
+    name: "channel.message",
+    description: "An iMessage or Signal message, relayed by one of your machines",
+    schema: {
+      type: "object",
+      properties: {
+        id: str,
+        conversation: str,
+        sender: str,
+        text: str,
+        isGroup: bool,
+        sentAt: str,
+      },
+      required: ["id", "conversation", "sender", "text", "isGroup", "sentAt"],
+    },
+  },
   conversation: {
     name: "conversation",
     description: "A Sling conversation",

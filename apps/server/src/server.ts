@@ -8,6 +8,7 @@ import { Agent } from "./agent/agent.ts";
 import { CliChat } from "./agent/cli-chat.ts";
 import { Commands } from "./agent/commands.ts";
 import { createAuth } from "./auth/auth.ts";
+import { channelConnectors } from "./channels/connectors.ts";
 import { Channels } from "./channels/service.ts";
 import { Checks } from "./checks/service.ts";
 import type { Config } from "./config.ts";
@@ -138,6 +139,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   ctx.rules = new Rules(ctx);
   ctx.checks = new Checks(ctx);
   ctx.channels = new Channels(ctx);
+  for (const c of channelConnectors(ctx)) registry.registerConnector(c);
   ctx.oauth = new OAuth(ctx);
   ctx.runners.handlers = ctx.tasks;
   ctx.tasks.onSettled = async (taskId, reason) => {
