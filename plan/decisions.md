@@ -336,6 +336,41 @@ Sends and push-and-PR steps get **Allow** and **Deny** on their push, answered b
 ### D93. Two more personality tool groups: memory and files
 `memory` covers `remember`, `forget`, and `recall`, and every personality gets it, since it reads and writes only Sling's own data. `files` covers `search_files` and `read_file`, and only the default personality gets it. The setup group gains `create_workflow`, `workflow_nodes`, `save_rule`, and `save_check`, and `check_deploy_target` becomes `run_check`.
 
+## Stage 7
+
+### D94. Web search is the model's own, and replies cite numbered sources
+A new personality tool group, `web`, turns on the search the model already has: Claude Code's `WebSearch` and `WebFetch`, Codex's `web_search`, and the Anthropic and OpenAI API's web search tools. CLI turns stay on the user's subscription, and Sling stores no search API key. OpenAI-compatible models get no search, and the prompt says so. The reply cites a claim with a Markdown link whose text is its number, `[1](https://…)`, and ends with the sources it cited. Searches show as steps in the reply's trace. This supersedes the fixed prompt's "you can't browse" for personalities with `web`, and rules out a search provider run or paid for by Sling. Asked 2026-11-07.
+
+### D95. Sources are files and links on a personality, searched in Postgres
+A personality's editor takes PDFs, Word files, text, Markdown, and links. The server extracts the text once, by page for a PDF, stores the file and the text in the workspace's Postgres, and searches chunks with full-text search. A personality with sources gets `search_sources` and `read_source`, and its prompt lists them by name. A citation links to the file at its page. Only that personality uses them. This keeps D82's "no embeddings", and rules out OCR, a shared library, and syncing a link after it's added. Asked 2026-11-07 ("on each personality").
+
+### D96. Files in chat: documents become the chat's sources, and images go to the model
+The composer takes files by paperclip, drag, or paste. A document is extracted like a source but belongs to the chat: short ones go to the model whole, and longer ones through `search_sources` and `read_source`. An image is shrunk in the browser and sent to the model as an image, through the API, Claude Code's stream-json input, or Codex's `--image`. This supersedes D83's "no PDFs or Office files" for files you upload, not for shared folders.
+
+### D97. Deep research is a switch on one message
+For a personality with `web` on a model that searches, the composer's **+** menu has **Deep research**. That turn gets the research instructions, up to 60 model steps on an API and 30 minutes on a CLI, and writes a report with its sources. It asks up to three questions first when the request is too broad. This rules out a separate research agent or queue.
+
+### D98. A personality has a model, which a chat starts with and can change
+The personality editor uses the chat's own model picker. Picking a personality on the new chat screen sets the picker to its model, and the chat can change it, as now. A chat with no choice of its own, such as one a workflow starts, uses the personality's model, then the workspace default. Asked 2026-11-07 ("no lock").
+
+### D99. An @mention hands one turn to another personality
+Typing `@` in the composer lists the personalities. A message that mentions one is answered by it, with its instructions, tools, and model, under its glyph. The chat keeps its own personality for the next message. A CLI session isn't resumed across personalities. Asked 2026-11-07.
+
+### D100. Personalities export and import as one file
+**Export** saves a `sling.personality/v1` JSON file with the fields, the model, and the sources' files. **New personality → From a file** adds one. Memories, feedback, and chats stay behind.
+
+### D101. Retry and edit replace the last exchange, when it did nothing outside the chat
+Retry runs the last reply again, and editing your last message runs it from there. Both delete the messages they replace and start a new CLI session. Neither is offered when what they'd replace started a task, sent something, changed setup, or ran a command outside the sandbox, because running it again would do it twice. This rules out keeping replaced replies as versions.
+
+### D102. Follow-up suggestions come from the reply itself
+The reply ends with up to three follow-ups in a `<follow-ups>` block, which the server removes and stores on the trace. The latest reply shows them as buttons that send. No second model call. Channels such as Telegram never see the block.
+
+### D103. Read aloud is the browser's speech synthesis
+A speaker button on a reply reads it, without code blocks, in the browser's voice. It shows only where the browser has `speechSynthesis`. This supersedes D91's "no reading replies aloud".
+
+### D104. Feedback on replies suggests changes to the instructions
+Thumbs up or down on a reply, with an optional reason on down, is stored against the personality's revision. The personality's page shows the counts for its current revision and the recent downvotes, and **Suggest changes** asks the personality's model for new instructions from them. You see the change before **Apply**, which bumps the revision.
+
 ## Defaults I picked (override any of these)
 
 - Web client is React + TypeScript as a Vite SPA, served by the control plane. There's no SSR need, so no Next.js. TanStack Router (code-based routes) and TanStack Query, styled with Tailwind 4. Chat replies render through react-markdown, which never renders raw HTML.
@@ -368,6 +403,13 @@ Sends and push-and-PR steps get **Allow** and **Deny** on their push, answered b
   - Five approvals in a row with no denial in 30 days earn a rule suggestion.
   - A start rule opens at most one chat per check every 30 minutes.
   - iMessage polls `chat.db` every 2 seconds. A send to an offline machine waits up to 5 minutes.
+- Stage 7:
+  - A source or attachment is at most 25 MB and 2 million characters of text. A personality has at most 50 sources, and a message at most 10 files.
+  - Chunks are about 1,500 characters, split on paragraphs inside a page. `search_sources` returns at most 8, and `read_source` at most 30,000 characters.
+  - A document in chat under 20,000 characters goes to the model whole.
+  - Images are shrunk to 2,048 pixels on the long side, at most 4 per message and 3 MB in all.
+  - The templates that get `web`: Sling, Ops, Incident, Research, Planner, Travel, and Finance. The migration gives it to personalities made from those.
+  - **Suggest changes** reads the latest 20 downvotes on the current revision.
 
 ## To verify before building Stage 1
 
