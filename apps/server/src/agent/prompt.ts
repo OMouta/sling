@@ -3,6 +3,7 @@ import { filesSection } from "../files/prompt.ts";
 import { memorySection } from "../memory/prompt.ts";
 import { RULES_NOTE } from "../rules/tool.ts";
 import { deploysSection } from "./deploy-prompt.ts";
+import { FOLLOW_UPS_RULE } from "./follow-ups.ts";
 import { allowedTools, isBuiltTool } from "./tools.ts";
 import { RESEARCH_SECTION, WEB_SECTION, webLine } from "./web-prompt.ts";
 
@@ -258,6 +259,7 @@ export function assistantInstructions(
   }
   if (any && opts.cli) out.push(cliNote(personality.tools, opts.apps ?? [], searches));
   if (remembers && opts.memory) out.push(opts.memory);
+  out.push(FOLLOW_UPS_RULE);
   out.push(dateLine(now, opts.timeZone ?? "UTC"));
   if (coding && opts.agents) out.push(opts.agents);
   return out.join("\n\n");

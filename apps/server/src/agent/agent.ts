@@ -26,6 +26,7 @@ import { conversationKey, conversationObject } from "../workflows/sling-events.t
 import { appTools } from "./app-tools.ts";
 import { NoChatMachine } from "./cli-chat.ts";
 import { deployOutcome, stepLine } from "./deploy-update.ts";
+import { withoutFollowUps } from "./follow-ups.ts";
 import { textOf, toMessageView, toModelMessages, UPDATE_PREFIX } from "./history.ts";
 import { NoModelConfigured, resolveAssistant, webTools } from "./models.ts";
 import { assistantInstructions } from "./prompt.ts";
@@ -398,7 +399,7 @@ export class Agent {
         await this.addMessage(
           conv,
           m.role,
-          m,
+          i === shown ? withoutFollowUps(m) : m,
           null,
           i === messages.length - 1 ? usage : null,
           i === shown ? (saved ?? { steps: [], ms: 0 }) : null,

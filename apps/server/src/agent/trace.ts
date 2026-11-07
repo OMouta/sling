@@ -7,6 +7,7 @@ import type {
   TraceStep,
 } from "@sling/core";
 import { collectSources, pagesSeen } from "./citations.ts";
+import { liveText, splitFollowUps } from "./follow-ups.ts";
 
 /** Longest tool input kept as-is, and longest output kept, in characters. */
 const INPUT_LIMIT = 4_000;
@@ -66,6 +67,8 @@ export class TraceRecorder {
   readonly #conversationId: string;
   /** Text since the last step: the answer, unless more work follows it. */
   #text = "";
+  /** How much of it went out live. The follow-ups block never does. */
+  #shown = 0;
   #finished = false;
   /** Changes to tool calls that haven't been recorded yet. */
   readonly #early = new Map<string, Partial<ToolStep>>();
@@ -87,7 +90,11 @@ export class TraceRecorder {
   text(delta: string) {
     if (!delta) return;
     this.#text += delta;
-    this.#publish({ type: "agent.delta", conversationId: this.#conversationId, text: delta });
+    const shown = liveText(this.#text);
+    if (shown.length <= this.#shown) return;
+    const text = shown.slice(this.#shown);
+    this.#shown = shown.length;
+    this.#publish({ type: "agent.delta", conversationId: this.#conversationId, text });
   }
 
   thinking(text: string) {
@@ -150,7 +157,11 @@ export class TraceRecorder {
 
   /** The reply so far, for a chat opened while it's being written. */
   snapshot(): LiveReplyView {
-    return { text: this.#text, steps: structuredClone(this.#steps), startedAt: this.#started };
+    return {
+      text: liveText(this.#text),
+      steps: structuredClone(this.#steps),
+      startedAt: this.#started,
+    };
   }
 
   #tool(id: string): ToolStep | undefined {
@@ -160,24 +171,27 @@ export class TraceRecorder {
   /**
    * The answer and what led to it. The answer is the text after the last
    * step. With none, the last text step stands in, and then `fallback`.
+   * Its follow-ups come out of it first.
    */
   finish(fallback: string): { answer: string; trace: ReplyTrace | null } {
     this.#finished = true;
-    let answer = this.#text.trim();
+    let { text: answer, followUps } = splitFollowUps(this.#text.trim());
     if (!answer) {
       const i = this.#steps.findLastIndex((s) => s.kind === "text");
       const step = this.#steps[i];
       if (step?.kind === "text") {
-        answer = step.text.trim();
+        ({ text: answer, followUps } = splitFollowUps(step.text.trim()));
         this.#steps.splice(i, 1);
       }
     }
-    if (!answer) answer = fallback.trim();
+    if (!answer) ({ text: answer, followUps } = splitFollowUps(fallback.trim()));
+    const more = followUps.length ? { followUps } : {};
     const steps = this.#steps.filter((s) => s.kind === "tool" || s.text.trim());
     const ms = Date.now() - this.#started;
     const sources = collectSources(answer, pagesSeen(steps, this.pageTitles), this.publicOrigin);
     const extra = {
       ...(sources.length ? { sources } : {}),
+      ...more,
       ...(this.research ? { research: true } : {}),
     };
     if (this.personality) {
@@ -191,11 +205,12 @@ export class TraceRecorder {
         },
       };
     }
-    const keep = steps.length > 0 || sources.length > 0 || this.research;
+    const keep = steps.length > 0 || sources.length > 0 || followUps.length > 0 || this.research;
     return { answer, trace: keep ? { steps: structuredClone(steps), ms, ...extra } : null };
   }
 
   #settleText() {
+    this.#shown = 0;
     if (!this.#text.trim()) {
       this.#text = "";
       return;
