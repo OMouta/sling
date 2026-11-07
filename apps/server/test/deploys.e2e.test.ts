@@ -374,10 +374,19 @@ async function reconfigureReal(check: (r: RunnerView) => boolean, ...args: strin
   await stopReal();
   await realCli(...args);
   startReal();
-  await until("real Runner back", async () => {
-    const r = await machineView(realId);
-    return r?.online && check(r);
-  });
+  try {
+    await until("real Runner back", async () => {
+      const r = await machineView(realId);
+      return r?.online && check(r);
+    });
+  } catch (err) {
+    // The Runner's own log is the only place that says why it didn't come back.
+    const view = await machineView(realId).catch(() => null);
+    const log = readFileSync(join(dir, "realbox.log"), "utf8").trimEnd().split("\n").slice(-40);
+    throw new Error(
+      `${(err as Error).message}\nmachine: ${JSON.stringify({ online: view?.online, deploys: view?.deploys, maxMode: view?.maxMode })}\nthe Runner's last lines:\n${log.join("\n")}`,
+    );
+  }
 }
 
 const realMachine: Machine = {
