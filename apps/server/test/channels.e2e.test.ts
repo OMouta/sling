@@ -513,6 +513,7 @@ describe("channels on a machine", () => {
     ).toEqual({
       installation: "iMessage on laptop",
       output: { machine: "laptop" },
+      check: { state: "passed", message: "Messages on laptop took it" },
     });
     expect(imessagesSent().at(-1)).toEqual([JO, "Dinner is at 20:00"]);
     expect(
