@@ -14,7 +14,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Check, CheckCheck, Copy, FolderGit2, Laptop, Plus, RefreshCw, Unplug } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { ModeBadge } from "../components/ModeBadge.tsx";
-import { Page, StatsBar, Toolbar, ToolbarText } from "../components/Page.tsx";
+import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
 import { ProviderIcon } from "../components/ProviderIcon.tsx";
 import {
   Badge,
@@ -169,11 +169,7 @@ export function MachinesPage() {
               Add machine
             </Button>
           }
-        >
-          <ToolbarText>
-            Computers running sling-runner. Sling works only in the repos you allow on each one.
-          </ToolbarText>
-        </Toolbar>
+        />
       }
       footer={
         machines &&
@@ -209,9 +205,7 @@ export function MachinesPage() {
               Add machine
             </Button>
           }
-        >
-          Add one to let Sling run commands and coding agents on it.
-        </Empty>
+        />
       ) : (
         <div className="space-y-4 px-5 pt-1 pb-6">
           {runners.isPending && <Skeleton className="h-[320px] w-full rounded-xl" />}
@@ -279,9 +273,7 @@ function PairDialog({ onClose, known }: { onClose: () => void; known: RunnerView
     <Dialog
       title={paired ? `${paired.name} is paired` : "Pair a machine"}
       description={
-        paired
-          ? "Pick the repos Sling may use on it. They're listed on its card."
-          : "Run one command on the computer that has your repos and a coding agent."
+        paired ? "Next, pick the repos it may use." : "Run this on the computer with your repos."
       }
       onClose={onClose}
       footer={
@@ -348,9 +340,8 @@ function PairDialog({ onClose, known }: { onClose: () => void; known: RunnerView
           <CodeLine copy={command ?? ""}>{command ?? "…"}</CodeLine>
           <p className="text-xs leading-[18px] text-muted">
             {tab === "installed"
-              ? "Pairs this machine and starts nothing else. Run sling-runner service install afterwards to keep it running."
-              : "It installs sling-runner, pairs it with this code, and starts it in the background. The code works once."}{" "}
-            The machine needs git, and a coding agent logged in: Codex or Claude Code.
+              ? "Then run sling-runner service install to keep it running."
+              : "Needs git and a logged-in Codex or Claude Code."}
           </p>
           <ErrorText error={create.error} />
         </div>
@@ -412,7 +403,7 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
             onClick={async () => {
               const ok = await confirm({
                 title: `Revoke ${runner.name}?`,
-                body: "It disconnects now and has to be paired again. Tasks running on it stop.",
+                body: "Tasks running on it stop, and it has to be paired again.",
                 action: "Revoke",
                 danger: true,
               });
@@ -500,8 +491,8 @@ function AgentTile({ agent: a, models }: { agent: AgentStatus; models: number })
   const detail = a.ready
     ? [a.detail, models > 0 && plural(models, "model")].filter(Boolean).join(" · ")
     : a.installed
-      ? a.detail || "Installed, but not logged in."
-      : `Not installed on this machine.`;
+      ? a.detail || "Not logged in"
+      : "Not installed";
   return (
     <li className="flex min-w-0 items-center gap-3 px-4 py-3">
       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-surface-2 shadow-raised">
@@ -623,7 +614,7 @@ function RepoSection({ runner, access }: { runner: RunnerView; access: SandboxAc
     const n = allowable.length;
     const ok = await confirm({
       title: `Allow ${plural(n, "repo")} on ${runner.name}?`,
-      body: `Sling can then run a coding agent in ${n === 1 ? "it" : "any of them"}, within the conversation's permission mode. Network access stays off for each.`,
+      body: `Coding agents can then work in ${n === 1 ? "it" : "them"}, with network access off.`,
       action: `Allow ${plural(n, "repo")}`,
     });
     if (ok) allow.mutate(allowable);
@@ -637,9 +628,8 @@ function RepoSection({ runner, access }: { runner: RunnerView; access: SandboxAc
   } else if (!runner.remoteRepos) {
     status = (
       <>
-        This machine doesn't take repo changes from Sling. Add repos on it with{" "}
-        <Mono>sling-runner repo add</Mono>, or allow changes from here with{" "}
-        <Mono>sling-runner config set remote-repos on</Mono>.
+        To change repos from here, run <Mono>sling-runner config set remote-repos on</Mono> on the
+        machine.
       </>
     );
   } else if (!runner.online) {
@@ -689,9 +679,7 @@ function RepoSection({ runner, access }: { runner: RunnerView; access: SandboxAc
       </div>
 
       {items.length === 0 ? (
-        <p className="border-t border-border px-4 py-4 text-xs text-muted">
-          No git repos found under its scan roots yet.
-        </p>
+        <p className="border-t border-border px-4 py-4 text-xs text-muted">No git repos found.</p>
       ) : (
         <div className="max-h-[min(28rem,60vh)] overflow-y-auto border-t border-border">
           <div
@@ -704,9 +692,7 @@ function RepoSection({ runner, access }: { runner: RunnerView; access: SandboxAc
             <span />
             <span>Repo</span>
             <span className="max-sm:hidden">Branch</span>
-            <span title="Let Sling run a task for the repo in a sandbox when no machine can take it.">
-              Sandboxes
-            </span>
+            <span title="Run tasks in a sandbox when no machine can">Sandboxes</span>
             <span className="text-right">Allowed</span>
           </div>
           <ul aria-label={`Repo list for ${runner.name}`}>
@@ -726,22 +712,14 @@ function RepoSection({ runner, access }: { runner: RunnerView; access: SandboxAc
             ))}
             {shown.length === 0 && (
               <li className="border-t border-border px-4 py-4 text-xs text-muted">
-                Nothing matches that filter.
+                No matching repos.
               </li>
             )}
           </ul>
         </div>
       )}
-      {(status || items.length > 0) && (
-        <div className="space-y-1.5 border-t border-border px-4 py-2.5 text-xs leading-4 text-subtle">
-          {status && <p>{status}</p>}
-          {items.length > 0 && (
-            <p>
-              A sandbox clones the repo from its remote when no machine can take a task, so local
-              files and uncommitted work never leave this machine.
-            </p>
-          )}
-        </div>
+      {status && (
+        <p className="border-t border-border px-4 py-2.5 text-xs leading-4 text-subtle">{status}</p>
       )}
       {dialog}
     </section>

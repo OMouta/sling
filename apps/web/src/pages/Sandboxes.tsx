@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Box, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Page, StatsBar, Toolbar, ToolbarText } from "../components/Page.tsx";
+import { Page, StatsBar } from "../components/Page.tsx";
 import { SandboxStateBadge } from "../components/StatusBadge.tsx";
 import {
   Button,
@@ -59,14 +59,6 @@ export function SandboxesPage() {
           ]}
         />
       }
-      toolbar={
-        <Toolbar>
-          <ToolbarText>
-            Fresh environments a provider creates for one task, then destroys. Limits and secrets
-            are under Settings.
-          </ToolbarText>
-        </Toolbar>
-      }
       footer={
         rows.length > 0 && (
           <StatsBar
@@ -84,7 +76,7 @@ export function SandboxesPage() {
     >
       {/* A column, so an empty list can center itself under the usage. */}
       <div className="flex min-h-full flex-col">
-        <div className="px-5 pt-1 pb-5">
+        <div className="px-5 pt-5 pb-5">
           {list.isPending && <Skeleton className="h-24 w-full rounded-xl" />}
           <ErrorText error={list.error} />
           {list.data && <Usage usage={list.data.usage} />}
@@ -95,17 +87,14 @@ export function SandboxesPage() {
             title={sandboxes.length === 0 ? "No sandboxes yet" : "Nothing live"}
             className="flex-1 justify-center pb-[12vh]"
           >
-            {sandboxes.length === 0 ? (
+            {sandboxes.length === 0 && (
               <>
-                When no machine can take a task, Sling asks to run it in a sandbox. Add a provider
-                under{" "}
+                Add a provider under{" "}
                 <Link to="/connectors" className="text-accent-text hover:underline">
                   Connectors
                 </Link>
                 .
               </>
-            ) : (
-              "No sandbox is running right now."
             )}
           </Empty>
         )}
@@ -177,8 +166,7 @@ function Usage({ usage }: { usage: SandboxListView["usage"] }) {
         </div>
         {ratio >= 1 && (
           <p className="mt-2 text-xs text-danger">
-            The budget is used up. New sandboxes are refused until next month, or until you raise it
-            in Settings.
+            Budget used up. Raise it in Settings to start more.
           </p>
         )}
       </div>
@@ -305,8 +293,9 @@ function SandboxRow({
             }
           >
             <p className="text-left text-[13px] leading-5 whitespace-normal text-soft">
-              {s.providerName} removes it now, with anything in it that wasn't pushed.
-              {live && s.taskId ? " Its task stops and is marked interrupted." : ""}
+              {live && s.taskId
+                ? "Its task stops, and anything not pushed is lost."
+                : "Anything not pushed is lost."}
             </p>
           </Dialog>
         )}

@@ -283,7 +283,7 @@ describe("sandboxes page", () => {
       usage: { ...sandboxList.usage, monthMinutes: 600, estimatedMonthCost: null },
     };
     renderAt("/sandboxes");
-    expect(await screen.findByText(/The budget is used up/)).toBeTruthy();
+    expect(await screen.findByText(/Budget used up/)).toBeTruthy();
     expect(screen.queryByText("Estimated spend")).toBeNull();
   });
 
@@ -294,7 +294,7 @@ describe("sandboxes page", () => {
       busy.getByRole("button", { name: "Destroy the sandbox for Fix the signup form" }),
     );
     const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByText(/Its task stops and is marked interrupted/)).toBeTruthy();
+    expect(within(dialog).getByText(/Its task stops/)).toBeTruthy();
     expect(callsTo("POST", "/api/sandboxes/sbx_1/destroy")).toHaveLength(0);
     fireEvent.click(within(dialog).getByRole("button", { name: "Destroy" }));
     await waitFor(() => expect(callsTo("POST", "/api/sandboxes/sbx_1/destroy")).toHaveLength(1));
@@ -484,7 +484,7 @@ describe("machines", () => {
     expect(dev.getByText("git 2.47.1")).toBeTruthy();
     const build = await machineCard("buildbox");
     expect(tiles(build, "buildbox")).toEqual([
-      "CodexNot installed on this machine.Missing",
+      "CodexNot installedMissing",
       "Claude Code2.1.4Ready",
     ]);
   });
@@ -502,7 +502,6 @@ describe("machines", () => {
     const dev = await machineCard("devbox");
     const site = dev.getByRole("switch", { name: "Allow site in sandboxes" });
     expect(site.getAttribute("aria-checked")).toBe("false");
-    expect(dev.getByText(/clones the repo from its remote when no machine/)).toBeTruthy();
 
     fireEvent.click(site);
     const path = "/api/sandbox-repos/github.com%2Fa%2Fsite";
