@@ -20,6 +20,7 @@ import { applyDeployTargetEvent } from "./deploys.ts";
 import { applyExtension, forgetExtension } from "./extensionApi.ts";
 import { modelsKey } from "./models.ts";
 import { applyPersonalityEvent } from "./personalities.ts";
+import { applyRuleEvent } from "./rules.ts";
 import type { ConversationDetail, TaskDetail } from "./types.ts";
 import { qk } from "./workflowApi.ts";
 
@@ -367,6 +368,9 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
     case "deploy_target.updated":
     case "deploy_target.removed":
       applyDeployTargetEvent(qc, ev);
+      return;
+    case "rule.updated":
+      applyRuleEvent(qc, ev);
       return;
     case "settings.updated":
       for (const queryKey of [["settings"], qk.sandboxSettings(), qk.sandboxRepos(), modelsKey]) {

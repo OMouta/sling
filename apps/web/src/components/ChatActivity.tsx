@@ -28,6 +28,7 @@ import { api } from "../lib/api.ts";
 import { duration, readableLocalDate } from "../lib/format.ts";
 import { useNow } from "../lib/useNow.ts";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
+import { RuleQuestion } from "./RuleQuestion.tsx";
 import { TaskCard } from "./TaskCard.tsx";
 import { Button, cx, ErrorText, Input, Spinner } from "./ui.tsx";
 import { OpenInEditor, WorkflowSteps } from "./WorkflowSteps.tsx";
@@ -77,6 +78,7 @@ const TOOLS: Record<string, [string, string, string]> = {
     "Looked up workflow steps",
     "Couldn't look up workflow steps",
   ],
+  save_rule: ["Saving a rule", "Saved a rule", "Couldn't save the rule"],
 };
 
 /** A call that failed, or finished with an error for the assistant, such as a refused workflow. */
@@ -466,6 +468,8 @@ function SendStep({
   ctx: ActivityContext;
 }) {
   const [open, setOpen] = useState(false);
+  // Always allow made a rule from this card.
+  const [ruled, setRuled] = useState(false);
   const waiting = approval.state === "pending";
   const stopped = approval.state === "denied" || approval.state === "expired";
   const running = step.status === "running" && !waiting && !stopped;
@@ -508,16 +512,29 @@ function SendStep({
         {approval.state === "approved" && (
           <span
             className="inline-flex shrink-0 items-center gap-1 text-[11.5px] text-subtle"
-            title="You allowed it"
+            title={approval.allowedBy?.summary ?? "You allowed it"}
           >
             <ShieldCheck aria-hidden="true" size={12} />
-            approved
+            {approval.allowedBy ? "allowed by rule" : ruled ? "always allowed" : "approved"}
           </span>
         )}
       </Disclosure>
       {waiting && <SendValues input={step.input} />}
       {waiting && (
-        <ChatApproval approvalId={approval.id} ctx={ctx} approve="Allow" question="Allow this?" />
+        <RuleQuestion
+          offers={approval.ruleOffer ? [approval.ruleOffer] : []}
+          approvalId={approval.id}
+          question="Allow this?"
+          approve="Allow"
+          deny="Deny"
+          onDecide={(allow) =>
+            api.post(`/api/conversations/${ctx.conversationId}/commands/${approval.id}`, {
+              decision: allow ? "approve" : "deny",
+            })
+          }
+          onRuled={() => setRuled(true)}
+          className="bg-surface px-2.5 py-2"
+        />
       )}
       {approval.state === "denied" && (
         <p className="border-t border-border px-2.5 py-1.5 text-xs text-muted">
