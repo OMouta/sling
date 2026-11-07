@@ -367,6 +367,8 @@ describe("approvals and tasks", () => {
       body: "Fix the footer year",
       url: "/approvals",
       tag: `task:${created.id}`,
+      // Push and PR can be answered from the notification.
+      answer: { approvalId: expect.stringMatching(/^apv_/), token: expect.any(String) },
     });
     expect(asked.r.headers.urgency).toBe("high");
     expect(asked.r.headers.ttl).toBe(String(24 * 3600));

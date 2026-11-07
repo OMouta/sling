@@ -93,6 +93,7 @@ export function encodePayload(p: PushPayload): Buffer {
     // Only paths in the app open on tap, never another site.
     url: p.url.startsWith("/") && !p.url.startsWith("//") && p.url.length <= 2000 ? p.url : "/",
     tag: clip(p.tag, 200),
+    ...(p.answer ? { answer: { approvalId: p.answer.approvalId, token: p.answer.token } } : {}),
   };
   let json = Buffer.from(JSON.stringify(out));
   if (json.length > MAX_PAYLOAD_BYTES) {

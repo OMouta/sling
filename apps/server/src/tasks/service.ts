@@ -1150,14 +1150,14 @@ export class TaskService implements GatewayHandlers {
 
   /**
    * Approves or rejects one approval. `via` is set when the decision came from
-   * outside the web app, for example a Discord button.
+   * outside the web app, for example a Discord button or a notification.
    */
   async decide(
     workspaceId: string,
     approvalId: string,
     userId: string,
     approve: boolean,
-    via?: { via: string; externalUserId: string },
+    via?: { via: string; externalUserId?: string },
   ): Promise<boolean> {
     const [approval] = await this.#db
       .update(schema.approvals)
@@ -1188,7 +1188,8 @@ export class TaskService implements GatewayHandlers {
         taskId: approval.taskId,
         actionId: approval.actionId,
         runId: approval.runId,
-        ...(via ? { via: via.via, externalUserId: via.externalUserId } : {}),
+        ...(via ? { via: via.via } : {}),
+        ...(via?.externalUserId ? { externalUserId: via.externalUserId } : {}),
       },
     });
     await this.#publishApproval(workspaceId, approval.id);

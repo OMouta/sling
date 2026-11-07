@@ -60,6 +60,9 @@ interface Pending {
 interface Approval {
   workspaceId: string;
   conversationId: string;
+  kind: CommandApprovalView["kind"];
+  /** When it expires, in ms. */
+  expiresAt: number;
   /** For a change: the secret fields its card shows. Null for commands and sends, which take none. */
   secrets: { key: string; required: boolean }[] | null;
   settle: (d: Decision, secrets?: SecretValues) => void;
@@ -248,6 +251,8 @@ export class Commands {
       this.#approvals.set(id, {
         workspaceId: opts.workspaceId,
         conversationId: opts.conversationId,
+        kind: view(id, "pending").kind,
+        expiresAt: Date.now() + this.approvalWaitMs,
         secrets,
         settle,
       });
@@ -255,6 +260,21 @@ export class Commands {
     });
     opts.onChange(view(id, out.decision));
     return out;
+  }
+
+  /** What waits under this ID, while it waits. */
+  waiting(
+    id: string,
+  ): Pick<Approval, "workspaceId" | "conversationId" | "kind" | "expiresAt"> | null {
+    const a = this.#approvals.get(id);
+    return a
+      ? {
+          workspaceId: a.workspaceId,
+          conversationId: a.conversationId,
+          kind: a.kind,
+          expiresAt: a.expiresAt,
+        }
+      : null;
   }
 
   /** Conversations with a command, a send, or a change waiting for the user's answer. */

@@ -13,6 +13,7 @@ import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
 import type { SettleReason } from "../tasks/service.ts";
+import { answerableSteps, NotificationAnswers } from "./answers.ts";
 import {
   encryptPayload,
   fromB64u,
@@ -112,11 +113,14 @@ export class PushService {
   readonly #sockets = new Map<string, SocketPresence>();
   readonly #seen = new Seen();
   readonly #inflight = new Set<Promise<unknown>>();
+  /** Allow and Deny on a notification, for the approvals that can take them. */
+  readonly answers: NotificationAnswers;
 
   constructor(ctx: AppContext) {
     this.#ctx = ctx;
     this.#keys = vapidKeys(ctx.config.secretKey);
     this.#signer = new VapidSigner(this.#keys, vapidSubject(ctx.config.publicUrl));
+    this.answers = new NotificationAnswers(ctx);
     ctx.hub.listen((workspaceId, event) => this.#onEvent(workspaceId, event));
   }
 
@@ -457,9 +461,11 @@ export class PushService {
         title: a.title,
         ownerId: a.ownerId,
         createdAt: a.createdAt,
+        expiresAt: a.expiresAt,
         taskId: a.taskId,
         payload: a.payload,
         actionKind: schema.actions.kind,
+        position: schema.actions.position,
         targetName: schema.deployTargets.name,
         taskTitle: schema.tasks.title,
         repoName: schema.tasks.repoName,
@@ -508,15 +514,21 @@ export class PushService {
       }
     }
     for (const [taskId, list] of byTask) {
+      list.sort((x, y) => (x.position ?? 0) - (y.position ?? 0));
       const first = list[0];
       if (!first) continue;
+      const kinds = list.flatMap((r) => (r.actionKind ? [r.actionKind as ActionKind] : []));
       const p = taskApprovalPayload({
         taskId,
         taskTitle: first.taskTitle ?? "",
-        kinds: list.flatMap((r) => (r.actionKind ? [r.actionKind as ActionKind] : [])),
+        kinds,
         targetName: list.find((r) => r.targetName)?.targetName ?? null,
         repoName: first.repoName ?? "",
       });
+      // A push or a PR can be answered from the notification; a deployment can't.
+      if (kinds.length === list.length && answerableSteps(kinds)) {
+        p.answer = this.answers.forTask({ ...first, workspaceId });
+      }
       sends.push(this.notify(workspaceId, first.ownerId, p, opts));
     }
     await Promise.all(sends);
@@ -529,18 +541,21 @@ export class PushService {
       .from(c)
       .where(and(eq(c.id, conversationId), eq(c.workspaceId, workspaceId)));
     if (!conv) return;
-    await this.notify(
-      workspaceId,
-      conv.ownerId,
-      chatApprovalPayload({
-        conversationId,
-        conversationTitle: conv.title,
-        kind: a.kind,
-        machine: a.machine,
-        summary: a.summary,
-      }),
-      { category: "approvals", urgency: "high", ttlSeconds: CHAT_APPROVAL_TTL_S },
-    );
+    const p = chatApprovalPayload({
+      conversationId,
+      conversationTitle: conv.title,
+      kind: a.kind,
+      machine: a.machine,
+      summary: a.summary,
+    });
+    // A send can be answered from the notification; a command or a change can't.
+    const answer = a.kind === "send" ? this.answers.forChat(a.id, conv.ownerId) : null;
+    if (answer) p.answer = answer;
+    await this.notify(workspaceId, conv.ownerId, p, {
+      category: "approvals",
+      urgency: "high",
+      ttlSeconds: CHAT_APPROVAL_TTL_S,
+    });
   }
 
   async #reply(workspaceId: string, conversationId: string) {
