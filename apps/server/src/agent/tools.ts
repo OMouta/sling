@@ -516,7 +516,6 @@ function allTools(ctx: AppContext, scope: ToolScope, canDeploy: boolean) {
 
     check_deploy_target: checkDeployTargetTool(ctx, scope),
     deploy_task: deployTaskTool(ctx, scope),
-    ...setupTools(ctx, scope),
 
     cancel_task: tool({
       description: "Cancel a queued or running task. Only do this when the user asks.",
@@ -526,5 +525,7 @@ function allTools(ctx: AppContext, scope: ToolScope, canDeploy: boolean) {
         return t ? { ok: true } : { error: "no such task" };
       },
     }),
+
+    ...setupTools(ctx, scope),
   };
 }

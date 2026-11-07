@@ -550,7 +550,7 @@ describe("chat on a coding agent's CLI", () => {
     await api("POST", `/api/conversations/${conv.id}/messages`, { text: "[fake:tool] machines?" });
     const r = await reply(conv.id, 0);
     expect(r.text).toBe(
-      "Tools: list_machines, delegate_coding_task, get_task, run_command, check_deploy_target, deploy_task, cancel_task. Machines: devbox.",
+      "Tools: list_machines, delegate_coding_task, get_task, run_command, check_deploy_target, deploy_task, cancel_task, read_setup, save_deploy_target, save_app_account, add_workflow, change_workflow, save_personality, change_settings. Machines: devbox.",
     );
     // The reply keeps its thinking and the tool call Sling served, in order.
     const { messages } = await api<{ messages: { role: string; trace: ReplyTrace | null }[] }>(
@@ -606,7 +606,7 @@ describe("personalities", () => {
   it("starts a workspace with Sling only, and adds the rest from templates", async () => {
     const list = await api<P[]>("GET", "/api/personalities");
     expect(list.map((p) => [p.name, p.tools, p.isDefault])).toEqual([
-      ["Sling", ["commands", "coding", "apps", "deploys"], true],
+      ["Sling", ["commands", "coding", "apps", "deploys", "setup"], true],
     ]);
     // Chats from before personalities get the default, so they keep who answers them.
     const convs = await server.ctx.db.select().from(schema.conversations);
