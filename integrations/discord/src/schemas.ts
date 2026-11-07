@@ -6,10 +6,7 @@ export const SNOWFLAKE = /^\d{15,22}$/;
 const snowflake = z.string().regex(SNOWFLAKE, "Discord IDs are 15 to 22 digits");
 
 export const credentialsSchema = z.object({
-  botToken: z
-    .string()
-    .min(1)
-    .describe("Bot token from the Bot page of your application in the Discord developer portal"),
+  botToken: z.string().min(1).meta({ title: "Bot token", lookup: true }),
 });
 
 export type DiscordCredentials = z.infer<typeof credentialsSchema>;
@@ -18,20 +15,27 @@ export const configSchema = z.object({
   allowedUserIds: z
     .array(snowflake)
     .default([])
-    .describe(
-      "Discord user IDs whose messages reach your workflows. Messages from anyone else are dropped before any trigger sees them.",
-    ),
+    .meta({
+      title: "Who can message it",
+      picker: true,
+      allowOther: true,
+      placeholder: "Add a user ID",
+    }),
   approverUserIds: z
     .array(snowflake)
     .default([])
-    .describe(
-      "Discord user IDs that may press Approve or Reject on approval messages. Clicks from anyone else are refused and logged.",
-    ),
+    .meta({
+      title: "Who can approve",
+      picker: true,
+      allowOther: true,
+      advanced: true,
+      placeholder: "Add a user ID",
+    }),
   defaultChannelId: z
     .string()
     .regex(/^(\d{15,22})?$/, "Discord IDs are 15 to 22 digits")
     .optional()
-    .describe("Channel ID that Send message posts to when the node names no channel or user"),
+    .meta({ title: "Default channel", picker: true, placeholder: "None" }),
 });
 
 export type DiscordConfig = z.infer<typeof configSchema>;

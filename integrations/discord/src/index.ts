@@ -10,6 +10,7 @@ import {
   type DiscordConfig,
   type DiscordCredentials,
 } from "./schemas.ts";
+import { discordSetup } from "./setup.ts";
 import { createDiscordSource } from "./source.ts";
 
 export type { ButtonClick, DiscordGateway, GatewayHandlers, GatewayMessage } from "./gateway.ts";
@@ -39,10 +40,7 @@ export function createDiscordConnector(
   return defineConnector<DiscordCredentials, DiscordConfig>({
     id: CONNECTOR_ID,
     name: "Discord",
-    description:
-      "A Discord bot you create. Workflows can react to messages sent to it and send messages, including approvals with buttons.",
-    setupHelp:
-      "Create an application in the Discord developer portal, add a bot, turn on the Message Content intent, and copy the bot token. Invite the bot with the bot scope. Allowed users and approvers are Discord user IDs: turn on Developer Mode in Discord, then right-click a user and choose Copy User ID.",
+    description: "Message your bot, and approve from Discord with buttons.",
     credentialsSchema,
     secretFields: ["botToken"],
     configSchema,
@@ -76,6 +74,8 @@ export function createDiscordConnector(
         return { ok: false, error: `Couldn't reach Discord: ${errorMessage(error)}` };
       }
     },
+
+    setup: ({ credentials, config, signal }) => discordSetup(rest, credentials, config, signal),
 
     nodes: [messageReceived, createSendMessage(rest)],
     source: createDiscordSource({

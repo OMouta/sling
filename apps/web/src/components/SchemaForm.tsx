@@ -160,6 +160,7 @@ function Control({
         options={options}
         // A picker's choices come from the lookup; "none" is only there until one is picked.
         offerNone={!field.required && !field.meta.picker}
+        placeholder={field.meta.placeholder ?? undefined}
         disabled={disabled}
         onChange={set}
       />
@@ -173,6 +174,7 @@ function Control({
         options={options}
         emptyMeansAll={field.meta.emptyMeansAll}
         allowOther={field.meta.allowOther}
+        placeholder={field.meta.placeholder ?? undefined}
         disabled={disabled}
         onChange={set}
       />
@@ -323,6 +325,7 @@ function OptionSelect({
   value,
   options,
   offerNone,
+  placeholder,
   disabled,
   onChange,
 }: {
@@ -330,13 +333,17 @@ function OptionSelect({
   value: string;
   options: SetupOptionView[];
   offerNone: boolean;
+  /** The label of the empty choice. */
+  placeholder?: string;
   disabled?: boolean;
   onChange: (v: string) => void;
 }) {
   const known = value === "" || options.some((o) => o.value === value);
   return (
     <Select id={id} value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-      {(offerNone || value === "") && <option value="">{offerNone ? "None" : "Pick one"}</option>}
+      {(offerNone || value === "") && (
+        <option value="">{placeholder ?? (offerNone ? "None" : "Pick one")}</option>
+      )}
       {!known && <option value={value}>{value}</option>}
       {options.map((o) => (
         <option key={o.value} value={o.value}>
@@ -354,6 +361,7 @@ function CheckList({
   options,
   emptyMeansAll,
   allowOther,
+  placeholder,
   disabled,
   onChange,
 }: {
@@ -362,6 +370,7 @@ function CheckList({
   options: SetupOptionView[];
   emptyMeansAll: boolean;
   allowOther: boolean;
+  placeholder?: string;
   disabled?: boolean;
   onChange: (v: string[]) => void;
 }) {
@@ -419,7 +428,7 @@ function CheckList({
           <input
             aria-label={`Add to ${label}`}
             className="h-9 w-full bg-transparent px-3 text-[13px] outline-none placeholder:text-subtle"
-            placeholder="Add another"
+            placeholder={placeholder ?? "Add another"}
             value={draft}
             disabled={disabled}
             onChange={(e) => setDraft(e.target.value)}
