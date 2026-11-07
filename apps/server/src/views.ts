@@ -14,6 +14,7 @@ import { isHarness, remoteKey } from "@sling/core";
 import { schema } from "@sling/db";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { AppContext } from "./context.ts";
+import { stepRuleOffer } from "./rules/steps.ts";
 import { effectiveLabels } from "./runners/labels.ts";
 
 type RunnerRow = typeof schema.runners.$inferSelect;
@@ -368,7 +369,10 @@ export async function approvalView(
     .where(eq(schema.approvals.id, approvalId));
   if (!row) return null;
   const { approval, action, task } = row;
-  const [tv] = task ? await taskViews(ctx, [task]) : [];
+  const [[tv], ruleOffer] = await Promise.all([
+    task ? taskViews(ctx, [task]) : Promise.resolve([]),
+    stepRuleOffer(ctx, approval, action, task),
+  ]);
   const fallback = approval.kind === "sandbox_fallback" ? approval.payload : null;
   const title =
     approval.title ??
@@ -400,6 +404,7 @@ export async function approvalView(
     prBody: action?.prBody ?? null,
     runId: approval.runId,
     payload: approval.payload ?? null,
+    ...(ruleOffer ? { ruleOffer } : {}),
   };
 }
 

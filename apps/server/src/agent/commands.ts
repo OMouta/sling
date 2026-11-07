@@ -1,5 +1,10 @@
 import { randomBytes } from "node:crypto";
-import type { CommandApprovalView, PermissionMode, SetupChangeView } from "@sling/core";
+import type {
+  CommandApprovalView,
+  PermissionMode,
+  RuleOfferView,
+  SetupChangeView,
+} from "@sling/core";
 import { create, EnvelopeSchema, type ExecResult } from "@sling/runner-protocol";
 import type { AppContext } from "../context.ts";
 import { modeToProto } from "../runners/convert.ts";
@@ -167,12 +172,25 @@ export class Commands {
       onChange: (view: CommandApprovalView) => void;
     } & (
       | { kind?: "command"; machine: string }
-      | { kind: "send" /** What would go out, as the user sees it. */; summary: string }
+      | {
+          kind: "send";
+          /** What would go out, as the user sees it. */
+          summary: string;
+          /** The rule the card's Always allow would make. */
+          ruleOffer?: RuleOfferView;
+        }
     ),
   ): Promise<Decision> {
     const view = (id: string, state: CommandApprovalView["state"]): CommandApprovalView =>
       opts.kind === "send"
-        ? { id, kind: "send", state, machine: "", summary: opts.summary }
+        ? {
+            id,
+            kind: "send",
+            state,
+            machine: "",
+            summary: opts.summary,
+            ...(opts.ruleOffer ? { ruleOffer: opts.ruleOffer } : {}),
+          }
         : { id, kind: "command", state, machine: opts.machine, summary: "" };
     const { decision } = await this.#wait(opts, null, view);
     return decision;

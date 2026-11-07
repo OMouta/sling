@@ -24,6 +24,7 @@ import type { AppContext } from "../context.ts";
 import { conversationPersonality } from "../personalities/service.ts";
 import { loadRouterInput } from "../routing/inputs.ts";
 import { type Environment, route } from "../routing/router.ts";
+import { stepRule } from "../rules/steps.ts";
 import { modeToProto } from "../runners/convert.ts";
 import type { GatewayHandlers, RunnerSession } from "../runners/gateway.ts";
 import { workspaceSettings } from "../sandboxes/settings.ts";
@@ -837,7 +838,12 @@ export class TaskService implements GatewayHandlers {
       "---",
       `Sling task \`${task.id}\`, ${task.mode} mode.`,
     ].join("\n");
-    for (const [position, { kind, state, requiresApproval }] of first.entries()) {
+    for (const [position, step] of first.entries()) {
+      const { kind } = step;
+      // An allow rule answers for the user, so the step goes without asking.
+      const ruled = step.requiresApproval ? await stepRule(this.#ctx, tx, task, kind) : null;
+      const requiresApproval = step.requiresApproval && !ruled;
+      const state = ruled ? "ready" : step.state;
       const actionId = newId("act");
       await tx.insert(schema.actions).values({
         id: actionId,
@@ -861,6 +867,7 @@ export class TaskService implements GatewayHandlers {
           expiresAt: new Date(Date.now() + APPROVAL_TTL_MS),
         });
       }
+      if (ruled) await this.#ctx.rules.used(ruled.rule, { ...ruled.call, actionId }, tx);
     }
     if (task.deliver === "deploy") await this.#addDeploySteps(tx, task, first.length);
     return true;

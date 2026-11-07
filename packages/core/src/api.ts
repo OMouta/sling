@@ -444,6 +444,8 @@ export interface CommandApprovalView {
   change?: SetupChangeView;
   /** Sends: the rule Always allow would make. Absent when none can cover it. */
   ruleOffer?: RuleOfferView;
+  /** Sends: the allow rule that let it go without asking. */
+  allowedBy?: { ruleId: string; summary: string };
 }
 
 /** A tool call the assistant made while replying. */

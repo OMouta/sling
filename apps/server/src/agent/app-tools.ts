@@ -19,6 +19,7 @@ import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
+import { type RuleSubject, ruleAnswer } from "../rules/answer.ts";
 import { workspaceTimeZone } from "../timezone.ts";
 import { loadInstallation } from "../workflows/connectors/installations.ts";
 import { redactPayload } from "../workflows/redact.ts";
@@ -48,7 +49,8 @@ export type ActionDecision =
   | "approved"
   | "denied"
   | "expired"
-  | "refused";
+  | "refused"
+  | "rule";
 
 /** A node type as a tool name: dots become underscores. */
 export function toolName(type: string): string {
@@ -260,7 +262,8 @@ const EXPIRED =
 
 /**
  * Decides whether a call may go ahead: reads always do, and sends follow the
- * conversation's mode, asking in the chat when it says to.
+ * conversation's mode, asking in the chat when it says to, unless an allow
+ * rule answers for the user.
  */
 async function permit(
   ctx: AppContext,
@@ -268,6 +271,7 @@ async function permit(
   sends: boolean,
   summary: string,
   options: CallOptions,
+  subject: RuleSubject,
 ): Promise<
   { decision: ActionDecision; go: true } | { decision: ActionDecision; go: false; error: string }
 > {
@@ -277,6 +281,8 @@ async function permit(
   const policy = sendPolicy(mode);
   if (policy === "refuse") return { decision: "refused", go: false, error: REFUSED };
   if (policy === "run") return { decision: "full_access", go: true };
+  const answer = await ruleAnswer(ctx, scope, mode, summary, options.toolCallId, subject);
+  if (answer.rule) return { decision: "rule", go: true };
   const trace = scope.trace;
   if (!trace) {
     return {
@@ -290,6 +296,7 @@ async function permit(
     conversationId: scope.conversationId,
     kind: "send",
     summary,
+    ...(answer.offer ? { ruleOffer: answer.offer } : {}),
     ...(options.abortSignal ? { signal: options.abortSignal } : {}),
     onChange: (approval) => trace.toolUpdate(options.toolCallId, { approval }),
   });
@@ -476,13 +483,18 @@ function connectorAction(
       for (const f of spec.installationFields ?? []) delete shown[f];
       const summary = fillSummary(use.summary, shown, spec.title);
       const name = toolName(spec.type);
-      const details = {
+      const details: Record<string, unknown> = {
         nodeType: spec.type,
         installationId: chosen.id,
         installation: chosen.name,
       };
 
-      const allowed = await permit(ctx, scope, use.sends, summary, options);
+      const allowed = await permit(ctx, scope, use.sends, summary, options, {
+        action: spec.type,
+        installationId: chosen.id,
+        args: shown,
+        details,
+      });
       if (!allowed.go) {
         await record(ctx, scope, {
           tool: name,
@@ -616,8 +628,13 @@ function runWorkflowTool(ctx: AppContext, scope: ToolScope, workflows: Runnable[
       const w = workflows.find((x) => x.label === workflow);
       if (!w) return { error: `No workflow called ${workflow}.` };
       const summary = `Run the ${w.name} workflow`;
-      const details = { workflowId: w.id, workflow: w.name };
-      const allowed = await permit(ctx, scope, w.sends, summary, options);
+      const details: Record<string, unknown> = { workflowId: w.id, workflow: w.name };
+      const allowed = await permit(ctx, scope, w.sends, summary, options, {
+        action: "run_workflow",
+        installationId: null,
+        args: { workflow: w.id },
+        details,
+      });
       if (!allowed.go) {
         await record(ctx, scope, {
           tool: "run_workflow",
