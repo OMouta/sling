@@ -6,7 +6,7 @@ import { useState } from "react";
 import { api } from "../lib/api.ts";
 import { ago } from "../lib/format.ts";
 import { personalitiesKey } from "../lib/personalities.ts";
-import { Button, Card, Dialog, ErrorText, Skeleton } from "./ui.tsx";
+import { Button, Card, Dialog, ErrorText } from "./ui.tsx";
 
 export const feedbackKey = (id: string) => ["personality-feedback", id] as const;
 
@@ -41,60 +41,63 @@ export function PersonalityFeedback({ personality }: { personality: PersonalityV
   });
 
   const data = summary.data;
+  // Nothing to show until a reply has been rated. The section is last, so
+  // appearing later moves nothing above it.
+  if (!data || (data.up === 0 && data.down === 0 && data.recent.length === 0)) {
+    return summary.error ? <ErrorText error={summary.error} /> : null;
+  }
   return (
     <section className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex min-h-[30px] items-center justify-between gap-3">
         <h2 className="text-sm font-medium">Feedback</h2>
-        <Button
-          size="sm"
-          icon={Sparkles}
-          busy={suggest.isPending}
-          disabled={!data || data.down === 0}
-          onClick={() => suggest.mutate()}
-        >
-          Suggest changes
-        </Button>
+        {/* Suggestions come from downvotes on the current instructions. */}
+        {data.down > 0 && (
+          <Button
+            size="sm"
+            icon={Sparkles}
+            busy={suggest.isPending}
+            onClick={() => suggest.mutate()}
+          >
+            Suggest changes
+          </Button>
+        )}
       </div>
       <ErrorText error={suggest.error ?? summary.error} />
-      {!data ? (
-        <Skeleton className="h-14 w-full rounded-xl" />
-      ) : (
-        <Card className="divide-y divide-border">
-          <div className="flex items-center gap-4 px-4 py-3 text-[13px]">
-            <span className="tabular flex items-center gap-1.5" title="Good replies">
-              <ThumbsUp aria-hidden="true" className="size-3.5 text-subtle" />
-              {data.up}
-              <span className="sr-only">up</span>
-            </span>
-            <span className="tabular flex items-center gap-1.5" title="Bad replies">
-              <ThumbsDown aria-hidden="true" className="size-3.5 text-subtle" />
-              {data.down}
-              <span className="sr-only">down</span>
-            </span>
-            <span className="ml-auto text-xs text-subtle">Revision {data.revision}</span>
-          </div>
-          {data.recent.map((f) => (
-            <Link
-              key={f.messageId}
-              to="/c/$id"
-              params={{ id: f.conversationId }}
-              className="block px-4 py-3 hover:bg-hover"
-            >
-              <div className="flex items-baseline gap-3">
-                <p className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                  {f.reason || <span className="font-normal text-subtle">No reason</span>}
-                </p>
-                <span className="shrink-0 text-xs text-subtle">
-                  {f.revision !== data.revision && `Revision ${f.revision} · `}
-                  {ago(f.createdAt)}
-                </span>
-              </div>
-              <p className="mt-0.5 truncate text-xs leading-5 text-muted">{f.excerpt}</p>
-              <p className="truncate text-xs leading-5 text-subtle">{f.conversationTitle}</p>
-            </Link>
-          ))}
-        </Card>
-      )}
+      <Card className="divide-y divide-border">
+        <div className="flex items-center gap-4 px-4 py-3 text-[13px]">
+          <span className="tabular flex items-center gap-1.5" title="Good replies">
+            <ThumbsUp aria-hidden="true" className="size-3.5 text-subtle" />
+            {data.up}
+            <span className="sr-only">up</span>
+          </span>
+          <span className="tabular flex items-center gap-1.5" title="Bad replies">
+            <ThumbsDown aria-hidden="true" className="size-3.5 text-subtle" />
+            {data.down}
+            <span className="sr-only">down</span>
+          </span>
+          <span className="ml-auto text-xs text-subtle">Revision {data.revision}</span>
+        </div>
+        {data.recent.map((f) => (
+          <Link
+            key={f.messageId}
+            to="/c/$id"
+            params={{ id: f.conversationId }}
+            className="block px-4 py-3 hover:bg-hover"
+          >
+            <div className="flex items-baseline gap-3">
+              <p className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                {f.reason || <span className="font-normal text-subtle">No reason</span>}
+              </p>
+              <span className="shrink-0 text-xs text-subtle">
+                {f.revision !== data.revision && `Revision ${f.revision} · `}
+                {ago(f.createdAt)}
+              </span>
+            </div>
+            <p className="mt-0.5 truncate text-xs leading-5 text-muted">{f.excerpt}</p>
+            <p className="truncate text-xs leading-5 text-subtle">{f.conversationTitle}</p>
+          </Link>
+        ))}
+      </Card>
       {suggestion && (
         <Dialog
           wide

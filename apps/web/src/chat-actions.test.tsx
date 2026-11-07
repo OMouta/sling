@@ -432,7 +432,7 @@ describe("a personality's feedback", () => {
     );
   });
 
-  it("can't suggest anything without downvotes", async () => {
+  it("offers no suggestion without downvotes on this revision", async () => {
     const before = summary.down;
     summary.down = 0;
     try {
@@ -440,10 +440,22 @@ describe("a personality's feedback", () => {
       const heading = await screen.findByRole("heading", { name: "Feedback" });
       const section = heading.closest("section") as HTMLElement;
       await within(section).findByText("Revision 3");
-      const button = within(section).getByRole("button", { name: "Suggest changes" });
-      expect((button as HTMLButtonElement).disabled).toBe(true);
+      expect(within(section).queryByRole("button", { name: "Suggest changes" })).toBeNull();
     } finally {
       summary.down = before;
+    }
+  });
+
+  it("has no Feedback section until a reply is rated", async () => {
+    const saved = { up: summary.up, down: summary.down, recent: summary.recent };
+    Object.assign(summary, { up: 0, down: 0, recent: [] });
+    try {
+      open("/personalities/prs_1");
+      await screen.findByRole("heading", { name: "Instructions" });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.queryByRole("heading", { name: "Feedback" })).toBeNull();
+    } finally {
+      Object.assign(summary, saved);
     }
   });
 });
