@@ -29,10 +29,18 @@ import { effectiveChat } from "./chat-settings.ts";
 import { NoChatMachine } from "./cli-chat.ts";
 import { deployOutcome, stepLine } from "./deploy-update.ts";
 import { textOf, toMessageView, toModelMessages, UPDATE_PREFIX } from "./history.ts";
-import { NoModelConfigured, resolveAssistant } from "./models.ts";
+import { NoModelConfigured, resolveAssistant, webTools } from "./models.ts";
 import { assistantInstructions } from "./prompt.ts";
 import { agentTools, allowedTools, type ToolScope } from "./tools.ts";
 import { TraceRecorder } from "./trace.ts";
+import {
+  ProviderWebSteps,
+  RESEARCH_MAX_STEPS,
+  RESEARCH_TURN_MS,
+  searchesWeb,
+  wantsResearch,
+} from "./web.ts";
+import { RESEARCH_SECTION } from "./web-prompt.ts";
 
 const MAX_STEPS = 8;
 
@@ -277,6 +285,7 @@ export class Agent {
     this.#setStatus(conv.workspaceId, conv.id, "thinking");
     const trace = new TraceRecorder(conv.id, (ev) => ctx.hub.publish(conv.workspaceId, ev));
     this.#live.set(conv.id, trace);
+    trace.publicOrigin = ctx.config.publicUrl.origin;
     try {
       const row = await conversationPersonality(ctx.db, conv);
       const personality = row ?? FALLBACK_PERSONALITY;
@@ -302,6 +311,10 @@ export class Agent {
           : Promise.resolve(""),
       ]);
       const appNames = Object.keys(apps);
+      const web = searchesWeb(personality.tools, chat.assistant);
+      // Deep research needs search, and is ignored on a turn without it.
+      const research = web && wantsResearch(rows);
+      trace.research = research;
       const allowed = allowedTools(personality.tools);
       for (const name of appNames) allowed.add(name);
       // A scripted test model stands in for the workspace default, but not for a
@@ -315,10 +328,13 @@ export class Agent {
             timeZone,
             apps: appNames,
             memory,
+            web,
           }),
           tools: [...allowed],
           appTools: apps,
           trace,
+          web,
+          research,
           ...(opts.signal ? { signal: opts.signal } : {}),
         });
         this.#setStatus(conv.workspaceId, conv.id, "idle");
@@ -335,15 +351,23 @@ export class Agent {
           timeZone,
           apps: appNames,
           memory,
+          web,
+          research,
         }),
         messages: toModelMessages(rows),
-        tools: { ...agentTools(ctx, scope, allowed), ...apps },
-        stopWhen: isStepCount(MAX_STEPS),
+        tools: {
+          ...agentTools(ctx, scope, allowed),
+          ...apps,
+          ...(web ? webTools(chat.assistant?.provider) : {}),
+        },
+        stopWhen: isStepCount(research ? RESEARCH_MAX_STEPS : MAX_STEPS),
         maxRetries: 2,
         ...(opts.signal ? { abortSignal: opts.signal } : {}),
       });
       let streamError: unknown = null;
+      const webSteps = new ProviderWebSteps(trace);
       for await (const part of result.fullStream) {
+        if (webSteps.handle(part)) continue;
         if (part.type === "text-delta") {
           trace.text(part.text);
         } else if (part.type === "reasoning-delta") {
@@ -424,12 +448,20 @@ export class Agent {
       appTools: Record<string, unknown>;
       trace: TraceRecorder;
       signal?: AbortSignal;
+      web: boolean;
+      research: boolean;
     },
   ): Promise<string> {
     const { trace, signal } = turn;
     const ctx = this.#ctx;
     const harness = choice.provider as Harness;
-    const { prompt, history } = cliTranscript(rows);
+    const transcript = cliTranscript(rows);
+    const { history } = transcript;
+    // In the message rather than the instructions, which a resumed Codex
+    // session keeps from its start.
+    const prompt = turn.research
+      ? `${RESEARCH_SECTION}\n\n${transcript.prompt}`
+      : transcript.prompt;
     const result = await ctx.cliChat.run({
       workspaceId: conv.workspaceId,
       ownerId: conv.ownerId,
@@ -445,6 +477,8 @@ export class Agent {
       ...(signal ? { signal } : {}),
       onDelta: (text) => trace.text(text),
       trace,
+      web: turn.web,
+      ...(turn.research ? { timeoutMs: RESEARCH_TURN_MS } : {}),
     });
     if (result.sessionId) {
       await ctx.db

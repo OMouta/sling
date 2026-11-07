@@ -6,6 +6,7 @@ import type {
   ToolStep,
   TraceStep,
 } from "@sling/core";
+import { collectSources, pagesSeen } from "./citations.ts";
 
 /** Longest tool input kept as-is, and longest output kept, in characters. */
 const INPUT_LIMIT = 4_000;
@@ -76,6 +77,12 @@ export class TraceRecorder {
 
   /** Recorded with the reply, so it's known later which personality wrote it. */
   personality: ReplyPersonality | undefined;
+  /** Written as Deep research. */
+  research = false;
+  /** Titles of pages the model's provider named, by URL, for the reply's citations. */
+  readonly pageTitles = new Map<string, string>();
+  /** Sling's own origin, whose source links cite documents. */
+  publicOrigin = "";
 
   text(delta: string) {
     if (!delta) return;
@@ -168,13 +175,24 @@ export class TraceRecorder {
     if (!answer) answer = fallback.trim();
     const steps = this.#steps.filter((s) => s.kind === "tool" || s.text.trim());
     const ms = Date.now() - this.#started;
+    const sources = collectSources(answer, pagesSeen(steps, this.pageTitles), this.publicOrigin);
+    const extra = {
+      ...(sources.length ? { sources } : {}),
+      ...(this.research ? { research: true } : {}),
+    };
     if (this.personality) {
       return {
         answer,
-        trace: { steps: structuredClone(steps), ms, personality: { ...this.personality } },
+        trace: {
+          steps: structuredClone(steps),
+          ms,
+          personality: { ...this.personality },
+          ...extra,
+        },
       };
     }
-    return { answer, trace: steps.length > 0 ? { steps: structuredClone(steps), ms } : null };
+    const keep = steps.length > 0 || sources.length > 0 || this.research;
+    return { answer, trace: keep ? { steps: structuredClone(steps), ms, ...extra } : null };
   }
 
   #settleText() {

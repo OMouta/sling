@@ -1,9 +1,9 @@
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI } from "@ai-sdk/openai";
+import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI, openai } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { type AssistantChoice, isCliProvider } from "@sling/core";
+import { type AssistantChoice, type AssistantProvider, isCliProvider } from "@sling/core";
 import { type ModelProviderId, schema } from "@sling/db";
-import type { LanguageModel } from "ai";
+import type { LanguageModel, ToolSet } from "ai";
 import { and, desc, eq } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import { decryptSecret } from "../crypto.ts";
@@ -174,6 +174,24 @@ export function providerOptionsFor(choice: AssistantChoice): ProviderOptions {
           ...(fast ? { speed: "fast" } : {}),
         },
       };
+    default:
+      return {};
+  }
+}
+
+/**
+ * The provider's own web search and page reading, which it runs itself.
+ * Their steps go by the names every provider's web steps share.
+ */
+export function webTools(provider: AssistantProvider | undefined): ToolSet {
+  switch (provider) {
+    case "anthropic":
+      return {
+        web_search: anthropic.tools.webSearch_20250305({ maxUses: 8 }),
+        web_fetch: anthropic.tools.webFetch_20250910({ maxUses: 8 }),
+      };
+    case "openai":
+      return { web_search: openai.tools.webSearch({}) };
     default:
       return {};
   }

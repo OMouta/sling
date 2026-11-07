@@ -4,6 +4,7 @@ import { memorySection } from "../memory/prompt.ts";
 import { RULES_NOTE } from "../rules/tool.ts";
 import { deploysSection } from "./deploy-prompt.ts";
 import { allowedTools, isBuiltTool } from "./tools.ts";
+import { RESEARCH_SECTION, WEB_SECTION, webLine } from "./web-prompt.ts";
 
 /** What the prompt needs from a personality. */
 export interface PromptPersonality {
@@ -107,6 +108,10 @@ export function assistantInstructions(
     apps?: readonly string[];
     /** What's remembered about the user, for a personality with memory. */
     memory?: string;
+    /** This turn searches the web: the personality has it, on a model that searches. */
+    web?: boolean;
+    /** Deep research rules for this turn. */
+    research?: boolean;
   } = {},
 ): string {
   const commands = personality.tools.includes("commands");
@@ -116,6 +121,7 @@ export function assistantInstructions(
   const setup = personality.tools.includes("setup");
   const remembers = personality.tools.includes("memory");
   const files = personality.tools.includes("files");
+  const searches = opts.web === true;
   // Memory holds only what the user told Sling: it reaches nothing of theirs.
   const reaches = commands || coding || apps || deploys || setup || files;
   const any = reaches || remembers;
@@ -125,11 +131,15 @@ export function assistantInstructions(
   const chat = [
     "How the chat works:",
     "- The chat shows Markdown. Use it where it helps: short paragraphs, lists, a table to compare things, code blocks for code and commands.",
-    "- You can't browse the web. When something needs current information you don't have, say so instead of guessing.",
+    webLine(personality.tools.includes("web"), searches),
   ];
   if (!reaches) {
+    const besides = [
+      ...(searches ? ["web search"] : []),
+      ...(remembers ? ["your memory of the user"] : []),
+    ];
     chat.push(
-      `- You have no tools in this chat${remembers ? " besides your memory of the user" : ""}. You can't see or change anything on the user's machines, files, or repos. If they ask for that, say you can't do it here, and that a chat with a personality that reaches their machines can.`,
+      `- You have no tools in this chat${besides.length ? ` besides ${besides.join(" and ")}` : ""}. You can't see or change anything on the user's machines, files, or repos. If they ask for that, say you can't do it here, and that a chat with a personality that reaches their machines can.`,
     );
   } else {
     if (commands || coding) {
@@ -221,6 +231,8 @@ export function assistantInstructions(
   if (deploys) out.push(deploysSection(mode));
   if (remembers) out.push(memorySection());
   if (files) out.push(filesSection());
+  if (searches) out.push(WEB_SECTION);
+  if (searches && opts.research) out.push(RESEARCH_SECTION);
 
   if (setup) {
     out.push(
@@ -244,7 +256,7 @@ export function assistantInstructions(
       `This conversation is in ${policy.label} mode: ${policy.description} You can't change the mode. The user switches it in the app.`,
     );
   }
-  if (any && opts.cli) out.push(cliNote(personality.tools, opts.apps ?? []));
+  if (any && opts.cli) out.push(cliNote(personality.tools, opts.apps ?? [], searches));
   if (remembers && opts.memory) out.push(opts.memory);
   out.push(dateLine(now, opts.timeZone ?? "UTC"));
   if (coding && opts.agents) out.push(opts.agents);
@@ -252,7 +264,7 @@ export function assistantInstructions(
 }
 
 /** Told to the assistant when it runs on a CLI, which has its own tools by default. */
-function cliNote(tools: readonly PersonalityTool[], apps: readonly string[]): string {
+function cliNote(tools: readonly PersonalityTool[], apps: readonly string[], web: boolean): string {
   // The app tools are built per turn, run_workflow among them.
   const names = [
     ...new Set([...allowedTools(tools), ...apps].filter((n) => isBuiltTool(n) || apps.includes(n))),
@@ -273,5 +285,8 @@ function cliNote(tools: readonly PersonalityTool[], apps: readonly string[]): st
       ? ["remember and recall are how you keep and find what you know about them"]
       : []),
   ].join(", and ");
-  return `You're running inside a coding agent's CLI on one of the user's machines, for Sling. Your only tools are Sling's, from the MCP server named "sling": ${names.join(", ")}. You have no file, shell, or web tools of your own here: ${how}.`;
+  const own = web
+    ? "Besides the CLI's own web search and page reading, you have no tools of your own here, no files or shell"
+    : "You have no file, shell, or web tools of your own here";
+  return `You're running inside a coding agent's CLI on one of the user's machines, for Sling. Your only tools are Sling's, from the MCP server named "sling": ${names.join(", ")}. ${own}: ${how}.`;
 }

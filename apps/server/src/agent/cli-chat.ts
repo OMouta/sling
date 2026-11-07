@@ -6,6 +6,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import type { RunnerSession } from "../runners/gateway.ts";
 import type { TraceRecorder } from "./trace.ts";
+import { cliToolFinished, cliToolStarted } from "./web.ts";
 
 /** A turn runs at most this long before it's given up. */
 const TURN_TIMEOUT_MS = 10 * 60_000;
@@ -104,7 +105,12 @@ export class CliChat {
     onTool?: (name: string) => void;
     /** Collects the turn's thinking, and its tool calls as Sling serves them. */
     trace?: TraceRecorder;
+    /** The CLI's own web search and page reading. */
+    web?: boolean;
+    /** How long the turn may run. Ten minutes when absent. */
+    timeoutMs?: number;
   }): Promise<CliTurnResult> {
+    const timeoutMs = opts.timeoutMs ?? TURN_TIMEOUT_MS;
     const harness = opts.choice.provider;
     if (!isCliProvider(harness)) throw new Error("not a CLI provider");
     const sameAgent = opts.session?.harness === harness ? opts.session : null;
@@ -120,7 +126,7 @@ export class CliChat {
       conversationId: opts.conversationId,
       tools: new Set(opts.tools),
       appTools: opts.appTools ?? {},
-      expiresAt: Date.now() + TURN_TIMEOUT_MS,
+      expiresAt: Date.now() + timeoutMs,
     });
     const resume = sameAgent && sameAgent.runnerId === runnerId ? sameAgent.sessionId : "";
 
@@ -136,7 +142,7 @@ export class CliChat {
         this.cancel(turnId);
         done();
         reject(new Error("The machine didn't finish the turn in time."));
-      }, TURN_TIMEOUT_MS);
+      }, timeoutMs);
       const onAbort = () => {
         this.cancel(turnId);
         done();
@@ -175,6 +181,7 @@ export class CliChat {
               toolsUrl: `${this.#ctx.config.publicUrl.origin}/api/agent/tools`,
               toolsToken: token,
               history: resume ? "" : opts.history,
+              web: opts.web ?? false,
             },
           },
         }),
@@ -201,7 +208,12 @@ export class CliChat {
         if (ev.kind.value.text) t.onDelta(ev.kind.value.text);
         return;
       case "toolUse":
-        t.onTool(ev.kind.value.name);
+        // Sling records its own tools when it serves them, and the CLI's here.
+        if (ev.kind.value.builtin) cliToolStarted(t.trace, ev.kind.value);
+        else t.onTool(ev.kind.value.name);
+        return;
+      case "toolResult":
+        cliToolFinished(t.trace, ev.kind.value);
         return;
       case "thinking":
         t.trace?.thinking(ev.kind.value.text);
