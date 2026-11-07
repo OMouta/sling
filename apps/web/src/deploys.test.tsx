@@ -251,13 +251,23 @@ async function openAddDialog() {
 
 type Scope = ReturnType<typeof within>;
 
-function pickRepo(d: Scope, remote: string) {
-  fireEvent.change(d.getByLabelText(/^Repo/), { target: { value: remote } });
+async function pickRepo(d: Scope, remote: string) {
+  fireEvent.click(await d.findByRole("radio", { name: new RegExp(remote.replace(/[.]/g, "\\.")) }));
+}
+
+function next(d: Scope) {
+  fireEvent.click(d.getByRole("button", { name: "Continue" }));
 }
 
 function fillCheck(d: Scope, url: string) {
-  fireEvent.change(d.getByLabelText("Check 1 URL"), { target: { value: url } });
+  fireEvent.change(d.getByLabelText("URL to check"), { target: { value: url } });
 }
+
+const METHOD_CARD = {
+  merge: /^When it's merged/,
+  command: /^A command on one of your machines/,
+  hook: /^A deploy hook/,
+};
 
 describe("deploys page", () => {
   it("lists each target with its method, status, last deploy, and checks", async () => {
@@ -352,32 +362,33 @@ describe("deploys page", () => {
 });
 
 describe("the target dialog", () => {
-  it("adds a target the host deploys on merge", async () => {
+  it("adds a target the host deploys on merge, then says whether it's up", async () => {
     sandboxRepos = allowedRepos;
-    const d = await openAddDialog();
-    // Repos come from the machines and the sandbox list; one that has a target can't be picked.
-    const repo = d.getByLabelText(/^Repo/) as HTMLSelectElement;
-    const options = () => [...repo.options].map((o) => [o.textContent, o.disabled]);
-    await waitFor(() =>
-      expect(options()).toEqual([
-        ["Pick a repo", true],
-        ["github.com/a/api (API deploys it)", true],
-        ["github.com/a/site (Website deploys it)", true],
-      ]),
+    const taken = await openAddDialog();
+    // Both repos have a target already, so there's nothing to pick.
+    expect(await taken.findByText("Every repo already has a deploy target.")).toBeTruthy();
+    expect((taken.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(
+      true,
     );
     targets = [];
     cleanup();
-    const fresh = await openAddDialog();
-    expect(fresh.getByRole("radio", { name: "On merge" }).getAttribute("aria-checked")).toBe(
+    const d = await openAddDialog();
+    await pickRepo(d, "github.com/a/site");
+    // The name comes from the repo until you type one.
+    const name = d.getByLabelText(/^Name/) as HTMLInputElement;
+    expect(name.value).toBe("Site");
+    fireEvent.change(name, { target: { value: "Website" } });
+    next(d);
+    expect(d.getByRole("radio", { name: METHOD_CARD.merge }).getAttribute("aria-checked")).toBe(
       "true",
     );
-    fireEvent.change(fresh.getByLabelText(/^Name/), { target: { value: "Website" } });
-    pickRepo(fresh, "github.com/a/site");
-    fillCheck(fresh, "https://example.com/");
-    fireEvent.change(fresh.getByLabelText(/^Version URL/), {
+    next(d);
+    fillCheck(d, "https://example.com/");
+    fireEvent.click(d.getByRole("button", { name: "More settings" }));
+    fireEvent.change(d.getByLabelText(/^Version URL/), {
       target: { value: "https://example.com/version" },
     });
-    fireEvent.click(fresh.getByRole("button", { name: "Add target" }));
+    fireEvent.click(d.getByRole("button", { name: "Add" }));
     await waitFor(() => expect(callsTo("POST", "/api/deploy-targets")).toHaveLength(1));
     expect(callsTo("POST", "/api/deploy-targets")[0]?.body).toEqual({
       name: "Website",
@@ -389,32 +400,36 @@ describe("the target dialog", () => {
       settleSeconds: 60,
       timeoutSeconds: 600,
     });
+    // It checks the site straight away and says what it saw.
+    expect(await d.findByText("Website is set up")).toBeTruthy();
+    expect(d.getByText("example.com: Expected 200 to 399, got 503")).toBeTruthy();
+    fireEvent.click(d.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(await targetCard("Website")).toBeTruthy();
   });
 
-  it("offers only machines that report a deploy command, and shows the command", async () => {
+  it("offers the machines that report a deploy command, and picks the one that can", async () => {
     targets = [];
     runners = [studioMac, lockedMac, devbox];
     const d = await openAddDialog();
-    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "Website" } });
-    pickRepo(d, "github.com/a/site");
-    fireEvent.click(d.getByRole("radio", { name: "Command" }));
-    const machine = d.getByLabelText(/^Machine/) as HTMLSelectElement;
-    expect([...machine.options].map((o) => [o.textContent, o.disabled])).toEqual([
-      ["Pick a machine", true],
-      ["locked-mac: fly deploy (deploys are off)", true],
-      ["Studio Mac: fly deploy", false],
+    await pickRepo(d, "github.com/a/site");
+    next(d);
+    fireEvent.click(d.getByRole("radio", { name: METHOD_CARD.command }));
+    next(d);
+    expect(d.getByRole("heading", { name: "Which machine deploys it?" })).toBeTruthy();
+    const machines = d
+      .getAllByRole("radio")
+      .map((r) => [r.textContent, r.getAttribute("aria-checked")]);
+    expect(machines).toEqual([
+      ["locked-macRefuses deploys: deploys are off", "false"],
+      ["Studio MacRuns fly deploy", "true"],
     ]);
-    // The one machine that can deploy is picked for you.
-    expect(machine.value).toBe("rnr_3");
-    expect(d.getByText(/on the merged commit/).textContent).toBe(
-      "Runs fly deploy on the merged commit.",
-    );
+    next(d);
     fillCheck(d, "https://example.com/health");
-    fireEvent.change(d.getByLabelText("Check 1 status"), { target: { value: "200" } });
-    fireEvent.change(d.getByLabelText("Check 1 page contains"), { target: { value: "ok" } });
-    fireEvent.click(d.getByRole("button", { name: "Add target" }));
+    fireEvent.click(d.getByRole("button", { name: "More settings" }));
+    fireEvent.change(d.getByLabelText(/^Status/), { target: { value: "200" } });
+    fireEvent.change(d.getByLabelText("Page contains"), { target: { value: "ok" } });
+    fireEvent.click(d.getByRole("button", { name: "Add" }));
     await waitFor(() => expect(callsTo("POST", "/api/deploy-targets")).toHaveLength(1));
     expect(callsTo("POST", "/api/deploy-targets")[0]?.body).toMatchObject({
       method: "command",
@@ -424,45 +439,44 @@ describe("the target dialog", () => {
     });
   });
 
-  it("shows the line that sets a deploy command when no machine has one", async () => {
+  it("shows the line that sets a deploy command, and waits for a machine to report it", async () => {
     targets = [];
     runners = [devbox];
     const d = await openAddDialog();
-    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "Website" } });
-    pickRepo(d, "github.com/a/site");
-    fireEvent.click(d.getByRole("radio", { name: "Command" }));
+    await pickRepo(d, "github.com/a/site");
+    next(d);
+    fireEvent.click(d.getByRole("radio", { name: METHOD_CARD.command }));
+    next(d);
     const line = 'sling-runner repo set site deploy-command "…"';
     expect(d.getByText(line)).toBeTruthy();
-    expect(d.queryByLabelText(/^Machine/)).toBeNull();
+    expect(d.getByText("Waiting for a machine to report it")).toBeTruthy();
+    expect((d.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(d.getByRole("button", { name: "Copy" }));
     await waitFor(() => expect(clipboard).toEqual([line]));
     expect(d.getByRole("button", { name: "Copied" })).toBeTruthy();
-
-    fillCheck(d, "https://example.com/");
-    fireEvent.click(d.getByRole("button", { name: "Add target" }));
-    expect(await d.findByText("Pick the machine that deploys it.")).toBeTruthy();
     expect(callsTo("POST", "/api/deploy-targets")).toHaveLength(0);
   });
 
   it("adds a deploy hook with a header", async () => {
     targets = [];
     const d = await openAddDialog();
-    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "Website" } });
-    pickRepo(d, "github.com/a/site");
-    fireEvent.click(d.getByRole("radio", { name: "Deploy hook" }));
+    await pickRepo(d, "github.com/a/site");
+    next(d);
+    fireEvent.click(d.getByRole("radio", { name: METHOD_CARD.hook }));
+    next(d);
     fireEvent.change(d.getByLabelText(/^Hook URL/), {
       target: { value: "https://api.render.com/deploy/srv-1?key=abc" },
     });
+    fireEvent.click(d.getByRole("button", { name: "More settings" }));
     fireEvent.click(d.getByRole("radio", { name: "GET" }));
-    fireEvent.change(d.getByLabelText(/^Header \(optional\)/), {
-      target: { value: "Authorization" },
-    });
-    fireEvent.click(d.getByRole("button", { name: "Add target" }));
-    // A header name needs its value.
-    expect(await d.findByText("Add the header's value, or clear its name.")).toBeTruthy();
-    fireEvent.change(d.getByLabelText(/^Header value/), { target: { value: "Bearer t0k" } });
+    fireEvent.change(d.getByLabelText("Header"), { target: { value: "Authorization" } });
+    // A header name needs its value before it can go on.
+    expect(d.getByText("Add the header's value, or clear its name.")).toBeTruthy();
+    expect((d.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(d.getByLabelText("Header value"), { target: { value: "Bearer t0k" } });
+    next(d);
     fillCheck(d, "https://example.com/");
-    fireEvent.click(d.getByRole("button", { name: "Add target" }));
+    fireEvent.click(d.getByRole("button", { name: "Add" }));
     await waitFor(() => expect(callsTo("POST", "/api/deploy-targets")).toHaveLength(1));
     expect(callsTo("POST", "/api/deploy-targets")[0]?.body).toMatchObject({
       method: "hook",
@@ -475,16 +489,18 @@ describe("the target dialog", () => {
     });
   });
 
-  it("keeps a stored hook unless it's replaced", async () => {
+  it("edits from a summary, and keeps a stored hook unless it's replaced", async () => {
     renderAt("/deploys");
     await openMenu("API", "Edit");
     let d = within(await screen.findByRole("dialog", { name: "Edit API" }));
-    expect(d.getByText("Stored for api.render.com")).toBeTruthy();
-    expect(d.queryByLabelText(/^Hook URL/)).toBeNull();
-    expect((d.getByLabelText(/^Header \(optional\)/) as HTMLInputElement).placeholder).toBe(
-      "Stored",
-    );
+    const row = (label: string) =>
+      within(d.getByRole("list", { name: "Settings" }))
+        .getByText(label)
+        .closest("button") as HTMLElement;
+    expect(row("Hook").textContent).toContain("Stored for api.render.com");
+    fireEvent.click(row("Name"));
     fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "Public API" } });
+    fireEvent.click(d.getByRole("button", { name: "Done" }));
     fireEvent.click(d.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(callsTo("PATCH", "/api/deploy-targets/dpt_api")).toHaveLength(1));
     const kept = callsTo("PATCH", "/api/deploy-targets/dpt_api")[0]?.body as Record<
@@ -499,12 +515,14 @@ describe("the target dialog", () => {
 
     await openMenu("Public API", "Edit");
     d = within(await screen.findByRole("dialog", { name: "Edit Public API" }));
+    fireEvent.click(row("Hook"));
+    expect(d.getByText("Stored for api.render.com")).toBeTruthy();
     fireEvent.click(d.getByRole("button", { name: "Replace the hook" }));
-    fireEvent.click(d.getByRole("button", { name: "Save" }));
-    expect(await d.findByText("Paste the deploy hook's URL.")).toBeTruthy();
-    fireEvent.change(d.getByLabelText(/^Hook URL/), {
+    expect((d.getByRole("button", { name: "Done" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(d.getByPlaceholderText("https://api.example-host.com/deploy/…"), {
       target: { value: "https://api.render.com/deploy/srv-2" },
     });
+    fireEvent.click(d.getByRole("button", { name: "Done" }));
     fireEvent.click(d.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(callsTo("PATCH", "/api/deploy-targets/dpt_api")).toHaveLength(2));
     expect(callsTo("PATCH", "/api/deploy-targets/dpt_api")[1]?.body).toMatchObject({
@@ -512,46 +530,53 @@ describe("the target dialog", () => {
     });
   });
 
-  it("says what's wrong in place, and sends nothing", async () => {
+  it("says what's wrong in place, and won't go on", async () => {
+    targets = targets.filter((t) => t.remoteKey === "github.com/a/api");
     const d = await openAddDialog();
-    fireEvent.click(d.getByRole("button", { name: "Add target" }));
-    expect(await d.findByText("Give it a name.")).toBeTruthy();
-    expect(d.getByText("Pick a repo.")).toBeTruthy();
-    expect(d.getByText("Add the URL to check.")).toBeTruthy();
-    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "website" } });
+    await pickRepo(d, "github.com/a/site");
+    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "api" } });
     expect(d.getByText("Another target has this name.")).toBeTruthy();
+    expect((d.getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(d.getByLabelText(/^Name/), { target: { value: "Fresh" } });
+    next(d);
+    next(d);
     fillCheck(d, "example.com");
-    fireEvent.change(d.getByLabelText("Check 1 status"), { target: { value: "42" } });
     expect(d.getByText("Use an http or https URL.")).toBeTruthy();
-    fireEvent.change(d.getByLabelText("Check 1 URL"), { target: { value: "https://example.com" } });
+    expect((d.getByRole("button", { name: "Add" }) as HTMLButtonElement).disabled).toBe(true);
+    fillCheck(d, "https://example.com");
+    fireEvent.click(d.getByRole("button", { name: "More settings" }));
+    fireEvent.change(d.getByLabelText(/^Status/), { target: { value: "42" } });
     expect(d.getByText("A status is 100 to 599.")).toBeTruthy();
     expect(callsTo("POST", "/api/deploy-targets")).toHaveLength(0);
   });
 
-  it("keeps every method's fields in place, so switching doesn't move the form", async () => {
+  it("asks for a machine or a hook only when the method needs one", async () => {
+    targets = [];
     const d = await openAddDialog();
-    const panels = () =>
-      [
-        ...(d.getByRole("radiogroup", { name: "How it deploys" }).parentElement?.nextElementSibling
-          ?.children ?? []),
-      ].map((p) => p.getAttribute("aria-hidden") === "true");
-    expect(panels()).toEqual([false, true, true]);
-    fireEvent.click(d.getByRole("radio", { name: "Deploy hook" }));
-    expect(panels()).toEqual([true, true, false]);
-    fireEvent.click(d.getByRole("radio", { name: "Command" }));
-    expect(panels()).toEqual([true, false, true]);
+    const steps = () => d.getByRole("list", { name: "Steps" }).children.length;
+    await pickRepo(d, "github.com/a/site");
+    expect(steps()).toBe(3);
+    next(d);
+    fireEvent.click(d.getByRole("radio", { name: METHOD_CARD.hook }));
+    expect(steps()).toBe(4);
+    fireEvent.click(d.getByRole("radio", { name: METHOD_CARD.merge }));
+    expect(steps()).toBe(3);
   });
 
   it("adds and removes checks, up to five", async () => {
+    targets = [];
     const d = await openAddDialog();
-    const add = d.getByRole("button", { name: "Add check" });
-    expect(d.getByRole("button", { name: "Remove check 1" }).hasAttribute("disabled")).toBe(true);
-    for (let i = 0; i < 4; i++) fireEvent.click(add);
+    await pickRepo(d, "github.com/a/site");
+    next(d);
+    next(d);
+    expect(d.queryByRole("button", { name: "Remove check 1" })).toBeNull();
+    for (let i = 0; i < 4; i++)
+      fireEvent.click(d.getByRole("button", { name: "Check another page" }));
     expect(d.getByLabelText("Check 5 URL")).toBeTruthy();
-    expect(add.hasAttribute("disabled")).toBe(true);
+    expect(d.queryByRole("button", { name: "Check another page" })).toBeNull();
     fireEvent.click(d.getByRole("button", { name: "Remove check 2" }));
     expect(d.queryByLabelText("Check 5 URL")).toBeNull();
-    expect(add.hasAttribute("disabled")).toBe(false);
+    expect(d.getByRole("button", { name: "Check another page" })).toBeTruthy();
   });
 });
 
