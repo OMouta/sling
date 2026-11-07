@@ -34,6 +34,8 @@ export function MemoryPage() {
   const personalities = usePersonalities().data ?? [];
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
+  // A long list renders a page at a time, the next one as you scroll to it.
+  const [limit, setLimit] = useState(PAGE);
   const all = list.data ?? [];
   const query = useDeferredValue(q.trim());
   // The server sends the most recently used; past that, it searches the rest.
@@ -93,17 +95,18 @@ export function MemoryPage() {
         <Empty fill icon={Brain} title="Nothing remembered yet" />
       ) : (
         <div className="px-5 pt-1 pb-6">
-          <Card className="overflow-hidden">
+          <Card>
             <ul aria-label="Memories" className="divide-y divide-border">
               {adding && (
                 <li className="px-4 py-3">
                   <NewMemory onDone={() => setAdding(false)} />
                 </li>
               )}
-              {shown.map((m) => (
+              {shown.slice(0, limit).map((m) => (
                 <MemoryRow key={m.id} memory={m} personalities={personalities} />
               ))}
             </ul>
+            {shown.length > limit && <More key={limit} onSeen={() => setLimit((n) => n + PAGE)} />}
             {query && shown.length === 0 && !(capped && server.isFetching) && (
               <p className="px-4 py-6 text-center text-[13px] text-muted">No memories match.</p>
             )}
@@ -112,6 +115,33 @@ export function MemoryPage() {
       )}
     </Page>
   );
+}
+
+/** Rows rendered at a time. */
+const PAGE = 200;
+
+/** The end of what's rendered: in view, it asks for the next page. Each page mounts a new one. */
+function More({ onSeen }: { onSeen: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const seen = useRef(onSeen);
+  seen.current = onSeen;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === "undefined") {
+      seen.current();
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) seen.current();
+      },
+      { rootMargin: "600px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  return <div ref={ref} aria-hidden="true" className="h-px" />;
 }
 
 function NewMemory({ onDone }: { onDone: () => void }) {
@@ -270,12 +300,7 @@ function MemoryRow({
   }
 
   return (
-    <li
-      className={cx(
-        "group flex items-start gap-3 px-4 py-3 [contain-intrinsic-size:auto_64px] [content-visibility:auto]",
-        remove.isPending && "opacity-50",
-      )}
-    >
+    <li className={cx("group flex items-start gap-3 px-4 py-3", remove.isPending && "opacity-50")}>
       <div className="min-w-0 flex-1">
         <button
           type="button"
@@ -287,22 +312,18 @@ function MemoryRow({
         <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-subtle">
           <Source memory={m} />
           {pinned && (
-            <>
-              <span aria-hidden="true" className="text-faint">
-                ·
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Glyph shape={pinned.shape} color={pinned.color} size={13} still />
-                Only {pinned.name}
-              </span>
-            </>
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <Dot />
+              <Glyph shape={pinned.shape} color={pinned.color} size={13} still />
+              Only {pinned.name}
+            </span>
           )}
-          <span aria-hidden="true" className="text-faint">
-            ·
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <Dot />
+            <time dateTime={m.createdAt} title={new Date(m.createdAt).toLocaleString()}>
+              {ago(m.createdAt)}
+            </time>
           </span>
-          <time dateTime={m.createdAt} title={new Date(m.createdAt).toLocaleString()}>
-            {ago(m.createdAt)}
-          </time>
         </p>
         <ErrorText error={save.error ?? remove.error} />
       </div>
@@ -354,6 +375,15 @@ function MemoryRow({
         </MenuItem>
       </Menu>
     </li>
+  );
+}
+
+/** Between two facts on a line. It wraps with the fact after it, so no line ends on one. */
+function Dot() {
+  return (
+    <span aria-hidden="true" className="text-faint">
+      ·
+    </span>
   );
 }
 

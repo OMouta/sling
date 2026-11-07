@@ -337,6 +337,29 @@ describe("the Memory page", () => {
     expect(screen.queryByText(/Jo Silva/)).toBeNull();
   });
 
+  it("renders a long list a page at a time as you scroll", async () => {
+    let seen: ((entries: { isIntersecting: boolean }[]) => void) | null = null;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(cb: typeof seen) {
+          seen = cb;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    memories = Array.from({ length: 450 }, (_, i) => memory({ id: `mem_${i}`, text: `Fact ${i}` }));
+    renderAt("/memory");
+    const l = await list();
+    expect(rows(l)).toHaveLength(200);
+    act(() => seen?.([{ isIntersecting: true }]));
+    await waitFor(() => expect(rows(l)).toHaveLength(400));
+    act(() => seen?.([{ isIntersecting: true }]));
+    await waitFor(() => expect(rows(l)).toHaveLength(450));
+    expect(screen.getByRole("button", { name: "Fact 449" })).toBeTruthy();
+  });
+
   it("says so when there's nothing yet", async () => {
     memories = [];
     renderAt("/memory");
