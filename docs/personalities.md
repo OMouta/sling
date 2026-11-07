@@ -2,7 +2,7 @@
 
 A personality is who answers in a chat: its own instructions, the Sling tools it may use, a color, and a moving glyph. Make and edit them under **Personalities** in the sidebar.
 
-A new workspace has one, Sling: the default, with every tool. **From template** adds ready-made ones in a click, and each can be changed after:
+A new workspace has one, Sling: the default, with every tool. **New personality** starts blank or from a template, then asks for its name, its look, what it can use, and its instructions, one step each, filled in from the template. Each can be changed after. The templates:
 
 | Group | Personality | Tools | For |
 |---|---|---|---|

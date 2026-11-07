@@ -3,6 +3,7 @@ import {
   type ExtensionPreview,
   PERSONALITY_TOOL_INFO,
   PERSONALITY_TOOLS,
+  type PersonalityTemplateView,
   type PersonalityView,
 } from "@sling/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -23,6 +24,29 @@ vi.mock("./lib/auth.ts", () => ({
 }));
 
 let posts: { path: string; body: unknown }[] = [];
+
+const personalityTemplates: PersonalityTemplateView[] = [
+  {
+    key: "ops",
+    group: "Your machines",
+    name: "Ops",
+    description: "Checks your servers.",
+    instructions: "You are Ops. Leave code alone.",
+    tools: ["commands"],
+    color: "amber",
+    shape: "ripple",
+  },
+  {
+    key: "travel",
+    group: "Everyday",
+    name: "Travel",
+    description: "Plans trips around your dates.",
+    instructions: "You are Travel.",
+    tools: [],
+    color: "blue",
+    shape: "orbit",
+  },
+];
 let previews: Record<string, ExtensionPreview> = {};
 
 function route(method: string, path: string, body: unknown): unknown {
@@ -41,6 +65,7 @@ function route(method: string, path: string, body: unknown): unknown {
   if (path === "/api/status") {
     return { needsSetup: false, signedIn: true, email: "a@b.c", version: "0.1.0" };
   }
+  if (path === "/api/personalities/templates") return personalityTemplates;
   if (path === "/api/personalities" || path === "/api/conversations" || path === "/api/runners") {
     return [];
   }
@@ -128,6 +153,93 @@ describe("personality tool groups", () => {
       name: "On call",
       tools: ["apps", "deploys"],
     });
+  });
+});
+
+describe("new personality", () => {
+  it("makes one from a template a step at a time, each step filled in from it", async () => {
+    renderAt("/personalities");
+    fireEvent.click(await screen.findByRole("button", { name: "New personality" }));
+    const d = within(await screen.findByRole("dialog", { name: "New personality" }));
+    const next = () => d.getByRole("button", { name: /^(Continue|Create)$/ }) as HTMLButtonElement;
+    expect(d.getByRole("heading", { name: "What should it start from?" })).toBeTruthy();
+    expect(next().disabled).toBe(true);
+    // Templates under their group headings.
+    expect(await d.findByText("Your machines")).toBeTruthy();
+    fireEvent.click(d.getByRole("radio", { name: /Ops/ }));
+    fireEvent.click(next());
+
+    expect(d.getByRole("heading", { name: "What's it called?" })).toBeTruthy();
+    const name = d.getByLabelText("Name") as HTMLInputElement;
+    expect(name.value).toBe("Ops");
+    fireEvent.change(name, { target: { value: "" } });
+    expect(next().disabled).toBe(true);
+    fireEvent.change(name, { target: { value: "Servers" } });
+    fireEvent.click(next());
+
+    expect(d.getByRole("heading", { name: "How should it look?" })).toBeTruthy();
+    expect(d.getByRole("radio", { name: /Ripple/ }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(d.getByRole("radio", { name: "Green" }));
+    fireEvent.click(next());
+
+    expect(d.getByRole("heading", { name: "What can it use?" })).toBeTruthy();
+    const tools = within(d.getByRole("group", { name: "Tools" }));
+    expect(
+      tools
+        .getAllByRole("checkbox")
+        .filter((c) => c.getAttribute("aria-checked") === "true")
+        .map((c) => c.textContent),
+    ).toEqual([
+      `${PERSONALITY_TOOL_INFO.commands.label}${PERSONALITY_TOOL_INFO.commands.description}`,
+    ]);
+    fireEvent.click(tools.getByRole("checkbox", { name: /Deploys/ }));
+    fireEvent.click(next());
+
+    expect(d.getByRole("heading", { name: "What are its instructions?" })).toBeTruthy();
+    expect((d.getByLabelText("Instructions") as HTMLTextAreaElement).value).toBe(
+      "You are Ops. Leave code alone.",
+    );
+    fireEvent.click(next());
+    await waitFor(() => expect(posts.some((p) => p.path === "/api/personalities")).toBe(true));
+    expect(posts.find((p) => p.path === "/api/personalities")?.body).toEqual({
+      name: "Servers",
+      description: "Checks your servers.",
+      instructions: "You are Ops. Leave code alone.",
+      tools: ["commands", "deploys"],
+      color: "green",
+      shape: "ripple",
+      templateKey: "ops",
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("needs instructions when it starts blank", async () => {
+    renderAt("/personalities");
+    fireEvent.click(await screen.findByRole("button", { name: "New personality" }));
+    const d = within(await screen.findByRole("dialog", { name: "New personality" }));
+    fireEvent.click(await d.findByRole("radio", { name: /Blank/ }));
+    fireEvent.click(d.getByRole("button", { name: "Continue" }));
+    fireEvent.change(d.getByLabelText("Name"), { target: { value: "Notes" } });
+    fireEvent.click(d.getByRole("button", { name: "Continue" }));
+    fireEvent.click(d.getByRole("button", { name: "Continue" }));
+    // Nothing ticked to start with.
+    expect(
+      within(d.getByRole("group", { name: "Tools" }))
+        .getAllByRole("checkbox")
+        .every((c) => c.getAttribute("aria-checked") === "false"),
+    ).toBe(true);
+    fireEvent.click(d.getByRole("button", { name: "Continue" }));
+    const create = d.getByRole("button", { name: "Create" }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    fireEvent.change(d.getByLabelText("Instructions"), { target: { value: "Keep notes." } });
+    fireEvent.click(create);
+    await waitFor(() => expect(posts.some((p) => p.path === "/api/personalities")).toBe(true));
+    const body = posts.find((p) => p.path === "/api/personalities")?.body as Record<
+      string,
+      unknown
+    >;
+    expect(body).toMatchObject({ name: "Notes", instructions: "Keep notes.", tools: [] });
+    expect(body.templateKey).toBeUndefined();
   });
 });
 

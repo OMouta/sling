@@ -79,7 +79,8 @@ export async function insertPersonality(
 export async function createPersonality(
   ctx: AppContext,
   actor: Owner,
-  fields: PersonalityFields,
+  /** A template's key marks one made from it, however it was changed on the way. */
+  fields: PersonalityFields & { templateKey?: string },
 ): Promise<PersonalityRow> {
   const row = await insertPersonality(ctx, actor, fields);
   await audit(ctx, {
@@ -89,7 +90,11 @@ export async function createPersonality(
     verb: "personality.created",
     subjectType: "personality",
     subjectId: row.id,
-    details: { name: row.name, tools: row.tools },
+    details: {
+      name: row.name,
+      tools: row.tools,
+      ...(fields.templateKey ? { template: fields.templateKey } : {}),
+    },
   });
   publishPersonality(ctx, row);
   return row;

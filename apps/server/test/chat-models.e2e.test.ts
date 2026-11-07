@@ -646,6 +646,23 @@ describe("personalities", () => {
     expect((await raw("POST", "/api/personalities/templates/nope")).status).toBe(404);
     // The installed one counts as added from its template.
     expect((await api<P>("POST", "/api/personalities/templates/sling")).id).toBe(list[0]?.id);
+    // One made from a template, however it was changed, keeps the template's key.
+    const fields = {
+      name: "Trips",
+      instructions: "Plan trips around my dates.",
+      tools: [],
+      color: "blue",
+      shape: "drift",
+    };
+    const trips = await api<P & { templateKey: string | null }>("POST", "/api/personalities", {
+      ...fields,
+      templateKey: "travel",
+    });
+    expect(trips.templateKey).toBe("travel");
+    expect(
+      (await raw("POST", "/api/personalities", { ...fields, templateKey: "nope" })).status,
+    ).toBe(400);
+    await api("DELETE", `/api/personalities/${trips.id}`);
   });
 
   it("gives a Finance chat on a CLI no tools, and refuses them if it asks anyway", async () => {

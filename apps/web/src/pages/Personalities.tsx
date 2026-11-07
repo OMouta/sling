@@ -17,12 +17,10 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowDown,
   ArrowUp,
-  Check,
   Copy,
   Drama,
   Ellipsis,
   LayoutGrid,
-  LayoutTemplate,
   Plus,
   Rocket,
   SlidersHorizontal,
@@ -31,7 +29,7 @@ import {
   Trash2,
   Wrench,
 } from "lucide-react";
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useMemo, useRef, useState } from "react";
 import { Glyph } from "../components/Glyph.tsx";
 import { Page, Toolbar } from "../components/Page.tsx";
 import {
@@ -39,7 +37,6 @@ import {
   Button,
   Card,
   cx,
-  Dialog,
   Empty,
   ErrorText,
   Field,
@@ -52,6 +49,8 @@ import {
   Textarea,
   useConfirm,
 } from "../components/ui.tsx";
+import { Wizard, type WizardStep } from "../components/Wizard.tsx";
+import { CheckCards, StepNote } from "../components/WizardBits.tsx";
 import { api } from "../lib/api.ts";
 import { GLYPH_LABELS } from "../lib/glyphs.ts";
 import {
@@ -93,27 +92,17 @@ function toolsLine(tools: PersonalityTool[]): string {
 
 export function PersonalitiesPage() {
   const personalities = usePersonalities();
-  const navigate = useNavigate();
   const list = personalities.data ?? [];
-  const [gallery, setGallery] = useState(false);
+  const [creating, setCreating] = useState(false);
   return (
     <Page
       title="Personalities"
       toolbar={
         <Toolbar
           actions={
-            <>
-              <Button icon={LayoutTemplate} onClick={() => setGallery(true)}>
-                From template
-              </Button>
-              <Button
-                variant="primary"
-                icon={Plus}
-                onClick={() => void navigate({ to: "/personalities/$id", params: { id: "new" } })}
-              >
-                New personality
-              </Button>
-            </>
+            <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+              New personality
+            </Button>
           }
         />
       }
@@ -138,111 +127,307 @@ export function PersonalitiesPage() {
           ))}
         </div>
       )}
-      {gallery && <TemplateGallery list={list} onClose={() => setGallery(false)} />}
+      {creating && personalities.isSuccess && (
+        <NewPersonalityDialog list={list} onClose={() => setCreating(false)} />
+      )}
     </Page>
   );
 }
 
-/** Ready-made personalities, grouped, to add with one click. */
-function TemplateGallery({ list, onClose }: { list: PersonalityView[]; onClose: () => void }) {
+const BLANK = "blank";
+
+const fromTemplate = (t: PersonalityTemplateView): Draft => ({
+  name: t.name,
+  description: t.description,
+  instructions: t.instructions,
+  tools: t.tools,
+  color: t.color,
+  shape: t.shape,
+});
+
+/**
+ * A new personality, a step at a time: blank or a template to start from,
+ * then its name, its look, what it can use, and its instructions, each
+ * filled in from the template.
+ */
+function NewPersonalityDialog({ list, onClose }: { list: PersonalityView[]; onClose: () => void }) {
   const qc = useQueryClient();
   const templates = usePersonalityTemplates();
+  const [start, setStart] = useState("");
+  const [draft, setDraft] = useState<Draft>(() => blankDraft(list));
+  const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }));
   const added = new Set(list.map((p) => p.templateKey).filter(Boolean));
-  const add = useMutation({
-    mutationFn: (key: string) => api.post<PersonalityView>(`/api/personalities/templates/${key}`),
+
+  const create = useMutation({
+    mutationFn: () =>
+      api.post<PersonalityView>("/api/personalities", {
+        ...draft,
+        name: draft.name.trim(),
+        description: draft.description.trim(),
+        ...(start && start !== BLANK ? { templateKey: start } : {}),
+      }),
     onSuccess: (p) =>
       qc.setQueryData<PersonalityView[]>(personalitiesKey, (l) =>
         l && !l.some((x) => x.id === p.id) ? [...l, p] : l,
       ),
   });
-  const groups = new Map<string, PersonalityTemplateView[]>();
-  for (const t of templates.data ?? []) groups.set(t.group, [...(groups.get(t.group) ?? []), t]);
+
+  const steps: WizardStep[] = [
+    {
+      id: "start",
+      title: "What should it start from?",
+      blocked: !start,
+      content: templates.isPending ? (
+        <Skeleton className="h-40 w-full rounded-xl" />
+      ) : (
+        <>
+          {templates.error ? (
+            <StepNote tone="error">
+              Couldn't load the templates: {(templates.error as Error).message}
+            </StepNote>
+          ) : null}
+          <StartPicker
+            templates={templates.data ?? []}
+            added={added}
+            value={start}
+            onChange={(key) => {
+              if (key === start) return;
+              setStart(key);
+              const t = templates.data?.find((x) => x.key === key);
+              setDraft(t ? fromTemplate(t) : blankDraft(list));
+            }}
+          />
+        </>
+      ),
+    },
+    {
+      id: "name",
+      title: "What's it called?",
+      blocked: !draft.name.trim(),
+      content: (
+        <>
+          <Field label="Name">
+            <Input
+              value={draft.name}
+              maxLength={PERSONALITY_NAME_MAX}
+              placeholder="Travel"
+              onChange={(e) => set("name", e.target.value)}
+            />
+          </Field>
+          <Field label="Description">
+            <Input
+              value={draft.description}
+              maxLength={PERSONALITY_DESCRIPTION_MAX}
+              placeholder="Trips, bookings, and what to pack."
+              onChange={(e) => set("description", e.target.value)}
+            />
+          </Field>
+        </>
+      ),
+    },
+    {
+      id: "look",
+      title: "How should it look?",
+      content: (
+        <>
+          <div className="flex flex-col items-center py-2 text-center">
+            <div className="relative grid size-16 place-items-center">
+              <span
+                aria-hidden="true"
+                className="absolute inset-2 rounded-full opacity-30 blur-2xl transition-[background-color] duration-300"
+                style={{ background: colorVar(draft.color) }}
+              />
+              <Glyph
+                shape={draft.shape}
+                color={draft.color}
+                size={48}
+                seed="new"
+                lively
+                className="relative"
+              />
+            </div>
+            <p className="mt-1 text-sm font-medium">{draft.name.trim() || "Untitled"}</p>
+          </div>
+          <ColorPicker value={draft.color} onChange={(c) => set("color", c)} />
+          <ShapePicker
+            value={draft.shape}
+            color={draft.color}
+            onChange={(sh) => set("shape", sh)}
+          />
+        </>
+      ),
+    },
+    {
+      id: "tools",
+      title: "What can it use?",
+      content: (
+        <CheckCards
+          label="Tools"
+          value={draft.tools}
+          onChange={(v) => set("tools", v as PersonalityTool[])}
+          options={PERSONALITY_TOOLS.map((t) => {
+            const Icon = TOOL_ICONS[t];
+            return {
+              value: t,
+              label: PERSONALITY_TOOL_INFO[t].label,
+              detail: PERSONALITY_TOOL_INFO[t].description,
+              icon: <Icon aria-hidden="true" size={15} />,
+            };
+          })}
+        />
+      ),
+    },
+    {
+      id: "instructions",
+      title: "What are its instructions?",
+      blocked: !draft.instructions.trim(),
+      content: (
+        <div className="space-y-1.5">
+          <Textarea
+            aria-label="Instructions"
+            value={draft.instructions}
+            maxLength={PERSONALITY_INSTRUCTIONS_MAX}
+            rows={11}
+            placeholder={
+              "You are Travel, the user's trip planner.\n\nAsk for dates and budget before suggesting anything."
+            }
+            onChange={(e) => set("instructions", e.target.value)}
+            className="resize-y font-mono text-[12.5px] leading-5"
+          />
+          <p className="tabular text-right text-xs text-subtle">
+            {draft.instructions.length.toLocaleString()} /{" "}
+            {PERSONALITY_INSTRUCTIONS_MAX.toLocaleString()}
+          </p>
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <Dialog
-      wide
-      title="Add from templates"
+    <Wizard
+      title="New personality"
+      steps={steps}
+      finishLabel="Create"
+      finishing={create.isPending}
+      error={create.error instanceof Error ? create.error.message : null}
+      onFinish={async () => {
+        try {
+          await create.mutateAsync();
+          return true;
+        } catch {
+          return false;
+        }
+      }}
       onClose={onClose}
-      footer={
-        <Button onClick={onClose} data-autofocus>
-          Done
-        </Button>
-      }
-    >
-      {templates.isPending && <Skeleton className="h-40 w-full rounded-xl" />}
-      <ErrorText error={templates.error ?? add.error} />
-      <div className="space-y-5">
-        {[...groups].map(([group, items]) => (
-          <section key={group} className="space-y-2">
-            <h3 className="section-label px-0.5">{group}</h3>
-            <ul className="grid gap-2 sm:grid-cols-2">
-              {items.map((t) => (
-                <TemplateItem
-                  key={t.key}
-                  template={t}
-                  added={added.has(t.key)}
-                  busy={add.isPending && add.variables === t.key}
-                  onAdd={() => add.mutate(t.key)}
-                />
-              ))}
-            </ul>
-          </section>
-        ))}
-      </div>
-    </Dialog>
+    />
   );
 }
 
-function TemplateItem({
-  template: t,
+/** Blank, then the templates under their group headings, as one set of radio cards. */
+function StartPicker({
+  templates,
   added,
-  busy,
-  onAdd,
+  value,
+  onChange,
 }: {
-  template: PersonalityTemplateView;
-  added: boolean;
-  busy: boolean;
-  onAdd: () => void;
+  templates: PersonalityTemplateView[];
+  added: Set<string | null>;
+  value: string;
+  onChange: (key: string) => void;
 }) {
-  const [hover, setHover] = useState(false);
+  const refs = useRef(new Map<string, HTMLButtonElement | null>());
+  const order = [BLANK, ...templates.map((t) => t.key)];
+  const move = (from: string, by: number) => {
+    const next = order[(order.indexOf(from) + by + order.length) % order.length];
+    if (!next) return;
+    onChange(next);
+    refs.current.get(next)?.focus();
+  };
+  const groups = new Map<string, PersonalityTemplateView[]>();
+  for (const t of templates) groups.set(t.group, [...(groups.get(t.group) ?? []), t]);
+  const card = (key: string, label: ReactNode, detail: string, glyph: ReactNode) => {
+    const on = value === key;
+    return (
+      // biome-ignore lint/a11y/useSemanticElements: styled radios inside a radiogroup.
+      <button
+        key={key}
+        ref={(el) => {
+          refs.current.set(key, el);
+        }}
+        type="button"
+        role="radio"
+        aria-checked={on}
+        tabIndex={on || (!order.includes(value) && key === BLANK) ? 0 : -1}
+        onClick={() => onChange(key)}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" || e.key === "ArrowRight") {
+            e.preventDefault();
+            move(key, 1);
+          } else if (e.key === "ArrowUp" || e.key === "ArrowLeft") {
+            e.preventDefault();
+            move(key, -1);
+          }
+        }}
+        className={cx(
+          "group flex min-w-0 cursor-pointer items-start gap-3 rounded-xl p-3 text-left transition-shadow duration-150 focus-visible:shadow-focus focus-visible:outline-none",
+          on
+            ? "bg-surface-2 shadow-[inset_0_0_0_1.5px_var(--color-accent)]"
+            : "bg-field shadow-field hover:shadow-field-hover",
+        )}
+      >
+        <span className="grid size-7 shrink-0 place-items-center">{glyph}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[13px] font-medium text-text">{label}</span>
+          <span className="mt-0.5 block text-xs leading-4 text-muted">{detail}</span>
+        </span>
+        <span
+          aria-hidden="true"
+          className={cx(
+            "mt-0.5 grid size-4 shrink-0 place-items-center rounded-full transition-colors duration-150",
+            on ? "bg-accent" : "shadow-[inset_0_0_0_1.5px_var(--color-line-strong)]",
+          )}
+        >
+          {on && <span className="size-1.5 rounded-full bg-white" />}
+        </span>
+      </button>
+    );
+  };
   return (
-    <li
-      onPointerEnter={() => setHover(true)}
-      onPointerLeave={() => setHover(false)}
-      className="flex items-start gap-3 rounded-xl bg-surface-2 p-3 shadow-raised"
-    >
-      <span className="grid size-8 shrink-0 place-items-center">
-        <Glyph
-          shape={t.shape}
-          color={t.color}
-          size={26}
-          seed={t.key}
-          lively={hover}
-          still={!hover}
-        />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-medium">{t.name}</span>
-        <span className="mt-0.5 block text-xs leading-4 text-muted">{t.description}</span>
-        <span className="mt-1.5 flex items-center gap-1.5 text-xs text-subtle">
-          {t.tools.map((tool) => {
-            const Icon = TOOL_ICONS[tool];
-            return <Icon key={tool} aria-hidden="true" size={12} className="shrink-0" />;
-          })}
-          {toolsLine(t.tools)}
-        </span>
-      </span>
-      {added ? (
-        <span className="flex h-[26px] shrink-0 items-center gap-1 px-1.5 text-xs text-muted">
-          <Check aria-hidden="true" size={13} className="text-ok" />
-          Added
-        </span>
-      ) : (
-        <Button size="sm" icon={Plus} busy={busy} onClick={onAdd} aria-label={`Add ${t.name}`}>
-          Add
-        </Button>
-      )}
-    </li>
+    <div role="radiogroup" aria-label="Start from" className="space-y-4">
+      <div className="grid">
+        {card(
+          BLANK,
+          "Blank",
+          "Your own instructions, from scratch.",
+          <Plus aria-hidden="true" size={16} className="text-icon" />,
+        )}
+      </div>
+      {[...groups].map(([group, items]) => (
+        <div key={group} className="space-y-2">
+          <p className="section-label px-0.5">{group}</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {items.map((t) =>
+              card(
+                t.key,
+                <span className="flex items-center gap-2">
+                  {t.name}
+                  {added.has(t.key) && <Badge>Added</Badge>}
+                </span>,
+                t.description,
+                <Glyph
+                  shape={t.shape}
+                  color={t.color}
+                  size={24}
+                  seed={t.key}
+                  lively={value === t.key}
+                  still={value !== t.key}
+                />,
+              ),
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 

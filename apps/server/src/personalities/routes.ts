@@ -71,10 +71,21 @@ export async function personalityRoutes(app: FastifyInstance, ctx: AppContext) {
     },
   );
 
-  r.post("/api/personalities", { schema: { body: PersonalityFields } }, async (request) => {
-    const row = await createPersonality(ctx, actorOf(request), request.body);
-    return toPersonalityView(row);
-  });
+  r.post(
+    "/api/personalities",
+    { schema: { body: PersonalityFields.extend({ templateKey: z.string().max(80).optional() }) } },
+    async (request, reply) => {
+      const { templateKey, ...fields } = request.body;
+      if (templateKey && !personalityTemplate(templateKey)) {
+        return reply.code(400).send({ error: "no such template" });
+      }
+      const row = await createPersonality(ctx, actorOf(request), {
+        ...fields,
+        ...(templateKey ? { templateKey } : {}),
+      });
+      return toPersonalityView(row);
+    },
+  );
 
   r.patch(
     "/api/personalities/:id",
