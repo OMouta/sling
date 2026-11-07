@@ -30,6 +30,7 @@ import { ruleRoutes } from "../rules/routes.ts";
 import { installRoutes } from "../runners/install.ts";
 import { runnerRoutes } from "../runners/routes.ts";
 import { sandboxRoutes } from "../sandboxes/routes.ts";
+import { sourceRoutes } from "../sources/routes.ts";
 import { taskRoutes } from "../tasks/routes.ts";
 import { connectorRoutes } from "../workflows/connectors/routes.ts";
 import { webhookRoutes, workflowRoutes } from "../workflows/routes.ts";
@@ -117,6 +118,10 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   });
   await app.register(async (scope) => {
     await personalityTransferRoutes(scope, ctx);
+  });
+  // Its own scope too: its raw body parser is for its uploads only.
+  await app.register(async (scope) => {
+    await sourceRoutes(scope, ctx);
   });
   await app.register(async (scope) => {
     await workflowRoutes(scope, ctx);
