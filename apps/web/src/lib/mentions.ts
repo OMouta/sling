@@ -101,11 +101,22 @@ export function useMention({
   // biome-ignore lint/correctness/useExhaustiveDependencies: start at the top as the filter changes.
   useEffect(() => setCursor(0), [typed]);
 
+  // Keys can come before the effect above has caught up with the last
+  // letter typed, so picking reads the token from the box itself.
+  const live = (): { value: string; query: MentionQuery | null } => {
+    const el = inputRef.current;
+    if (!el) return { value: text, query };
+    const at =
+      el.selectionStart === el.selectionEnd ? mentionAt(el.value, el.selectionStart) : null;
+    return { value: el.value, query: at ?? query };
+  };
+
   const pick = (p: PersonalityView) => {
-    if (!query) return;
+    const { value, query: q } = live();
+    if (!q) return;
     const token = `@${p.name} `;
-    let before = text.slice(0, query.start);
-    let after = text.slice(query.end);
+    let before = value.slice(0, q.start);
+    let after = value.slice(q.end);
     // One mention per message: the one picked before goes.
     if (chosen && chosen.id !== p.id) {
       const old = `@${chosen.name}`;
@@ -118,8 +129,7 @@ export function useMention({
       else after = drop(after);
     }
     if (after.startsWith(" ")) after = after.slice(1);
-    const next = before + token + after;
-    setText(next);
+    setText(before + token + after);
     setChosen(p);
     setQuery(null);
     const caret = before.length + token.length;
@@ -131,22 +141,28 @@ export function useMention({
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (options.length === 0 || e.nativeEvent.isComposing || !query) return false;
+    if (e.nativeEvent.isComposing) return false;
+    const q = live().query;
+    if (!q || dismissed === q.start) return false;
+    const found = matchPersonalities(personalities, q.text);
+    if (found.length === 0) return false;
+    // The cursor belongs to the list on screen; a list that's behind starts at the top.
+    const at = q.text === query?.text ? Math.min(cursor, found.length - 1) : 0;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const by = e.key === "ArrowDown" ? 1 : -1;
-      setCursor((c) => (c + by + options.length) % options.length);
+      setCursor((at + by + found.length) % found.length);
       return true;
     }
     if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
       e.preventDefault();
-      const p = options[Math.min(cursor, options.length - 1)];
+      const p = found[at];
       if (p) pick(p);
       return true;
     }
     if (e.key === "Escape") {
       e.preventDefault();
-      setDismissed(query.start);
+      setDismissed(q.start);
       return true;
     }
     return false;
