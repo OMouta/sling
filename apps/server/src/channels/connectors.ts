@@ -36,6 +36,10 @@ interface Kind {
   add: string;
   /** What the app is called when it took a message. */
   service: string;
+  /** One message, as people say it: "iMessage", "Signal message". */
+  message: string;
+  /** With its article. */
+  aMessage: string;
 }
 
 const KINDS: Record<ChannelKind, Kind> = {
@@ -46,6 +50,8 @@ const KINDS: Record<ChannelKind, Kind> = {
     machine: "Mac",
     add: "sling-runner channel add imessage",
     service: "Messages",
+    message: "iMessage",
+    aMessage: "an iMessage",
   },
   signal: {
     id: "signal",
@@ -54,6 +60,8 @@ const KINDS: Record<ChannelKind, Kind> = {
     machine: "machine",
     add: "sling-runner channel add signal --account <number>",
     service: "Signal",
+    message: "Signal message",
+    aMessage: "a Signal message",
   },
 };
 
@@ -245,8 +253,8 @@ function messageReceived(k: Kind): NodeSpec<{ installationId: string; senders: s
   return {
     type: event,
     version: 1,
-    title: `${k.name} message received`,
-    description: `Fires when someone the machine allows sends a ${k.name} message, one to one or in a group.`,
+    title: `${k.message} received`,
+    description: `Fires when someone the machine allows sends ${k.aMessage}, one to one or in a group.`,
     category: "trigger",
     connector: k.id,
     configSchema,
@@ -302,8 +310,8 @@ function sendMessage(ctx: AppContext, k: Kind): NodeSpec<SendConfig> {
   return {
     type: `${k.id}.send_message`,
     version: 1,
-    title: `Send ${k.name} message`,
-    description: `Sends a ${k.name} message from your ${k.machine}, to someone it allows or a group they wrote in.`,
+    title: `Send ${k.message}`,
+    description: `Sends ${k.aMessage} from your ${k.machine}, to someone it allows or a group they wrote in.`,
     category: "action",
     connector: k.id,
     configSchema,
@@ -360,7 +368,7 @@ function sendMessage(ctx: AppContext, k: Kind): NodeSpec<SendConfig> {
         signal: node.signal,
       });
       if (!answer.ok) throw new NodeError(answer.message, { code: "channel_send_failed" });
-      node.log.info(`Sent a ${k.name} message`, { machine: answer.machine });
+      node.log.info(`Sent ${k.aMessage}`, { machine: answer.machine });
       return { exec: "next", outputs: { machine: answer.machine ?? "" } };
     },
     // Neither app says more than that it took the message.
