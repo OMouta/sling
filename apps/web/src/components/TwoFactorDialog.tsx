@@ -103,11 +103,11 @@ export function TwoFactorDialog({
       title={title}
       description={
         step.kind === "confirm"
-          ? "You signed in a while ago, so confirm it's you first."
+          ? "Confirm it's you first."
           : step.kind === "scan"
-            ? "Scan the code with 1Password, Google Authenticator, or any authenticator app."
+            ? "Scan the QR code with any authenticator app."
             : step.kind === "codes"
-              ? "Each one signs you in once if you lose your phone. Sling won't show them again."
+              ? "You won't see them again."
               : undefined
       }
       onClose={onClose}

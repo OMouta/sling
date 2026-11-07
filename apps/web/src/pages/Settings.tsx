@@ -198,10 +198,6 @@ function GeneralSection({ settings }: { settings: Settings }) {
           labelledBy="time-zone-label"
           onChange={(tz) => save.mutate(tz)}
         />
-        <span className="block text-xs leading-4 text-subtle">
-          What “today” means in your calendar, in schedules that don't name a zone, and in the date
-          the assistant goes by.
-        </span>
         <ErrorText error={save.error} />
       </div>
     </SettingsSection>
@@ -221,11 +217,7 @@ function ModelSection({ settings }: { settings: Settings }) {
     return catalog.data?.assistant.find((p) => p.provider === SUBSCRIPTIONS[id].cli);
   };
   return (
-    <SettingsSection
-      id="model"
-      title="Models"
-      description="Sling chats through the coding agents on your machines, on the login that's already there, so your ChatGPT or Claude subscription covers it. The assistant picks the agent and model for each task."
-    >
+    <SettingsSection id="model" title="Models">
       <div className="space-y-6 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-6">
         <ChatDefaults />
         <ul aria-label="Model providers" className="space-y-5">
@@ -283,8 +275,7 @@ function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: Provi
   if (cli && viaCli) {
     status = `Through ${cli.label} on ${cli.machines.join(", ")}.${cli.login ? ` ${cli.login}.` : ""}`;
   } else if (cli && sub) {
-    status =
-      cli.error ?? `Log in to ${cli.label} on a paired machine to use your ${sub.plan} plan.`;
+    status = cli.error ?? `Log in to ${cli.label} on a machine to use your ${sub.plan} plan.`;
   } else {
     status = "Ollama, LM Studio, OpenRouter, or any OpenAI-compatible server.";
   }
@@ -293,7 +284,7 @@ function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: Provi
     : !sub
       ? p.baseUrl
       : viaCli
-        ? "API key saved. Chat uses it when no machine is on."
+        ? "API key saved, used when no machine is on."
         : "Chatting with your API key.";
 
   return (
@@ -374,7 +365,7 @@ function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: Provi
                 onChange={(e) => setApiKey(e.target.value)}
                 placeholder={
                   p.hasKey
-                    ? "Stored. Paste a new key to replace it."
+                    ? "Stored. Paste a new key to replace it"
                     : p.needsBaseUrl
                       ? "API key, if the server needs one"
                       : `Paste an ${p.label} API key`
@@ -448,7 +439,6 @@ function ChatDefaults() {
           <Spinner className="m-1 size-4" />
         )}
       </div>
-      <p className="text-xs text-subtle">Any chat can switch from its composer.</p>
       <ErrorText error={save.error} />
     </div>
   );
@@ -461,11 +451,7 @@ function ModeSection({ settings }: { settings: Settings }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
   });
   return (
-    <SettingsSection
-      id="mode"
-      title="Default permission mode"
-      description="New conversations start in this mode. You can switch any conversation later. Each machine can also cap the mode it accepts."
-    >
+    <SettingsSection id="mode" title="Default permission mode">
       <div className="space-y-2">
         {settings.modes.map((m) => (
           <label
@@ -496,20 +482,7 @@ function ModeSection({ settings }: { settings: Settings }) {
 function SandboxSection() {
   const settings = useSandboxSettings();
   return (
-    <SettingsSection
-      id="sandboxes"
-      title="Sandboxes"
-      description={
-        <>
-          When no machine can take a task, Sling can run it in a fresh sandbox from a provider under{" "}
-          <Link to="/connectors" className="text-accent-text hover:underline">
-            Connectors
-          </Link>
-          . A sandbox clones an allowed repo from its remote, runs the coding agent, and is
-          destroyed.
-        </>
-      }
-    >
+    <SettingsSection id="sandboxes" title="Sandboxes">
       {settings.isPending && <Spinner />}
       <ErrorText error={settings.error} />
       {settings.data && (
@@ -573,10 +546,7 @@ function SandboxLimits({ settings }: { settings: SandboxSettingsView }) {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <Field
-        label="Default coding agent"
-        hint="Used when a request doesn't name one, on machines and in sandboxes."
-      >
+      <Field label="Default coding agent" hint="For machines and sandboxes">
         <Select value={harness} onChange={(e) => setHarness(e.target.value as Harness)}>
           {HARNESSES.map((h) => (
             <option key={h} value={h}>
@@ -586,7 +556,7 @@ function SandboxLimits({ settings }: { settings: SandboxSettingsView }) {
         </Select>
       </Field>
       <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="Concurrent sandboxes" hint="More requests wait.">
+        <Field label="Concurrent sandboxes">
           <Input
             type="number"
             min={1}
@@ -596,7 +566,7 @@ function SandboxLimits({ settings }: { settings: SandboxSettingsView }) {
             required
           />
         </Field>
-        <Field label="Lifetime (minutes)" hint="Longer ones are destroyed.">
+        <Field label="Lifetime (minutes)">
           <Input
             type="number"
             min={1}
@@ -606,7 +576,7 @@ function SandboxLimits({ settings }: { settings: SandboxSettingsView }) {
             required
           />
         </Field>
-        <Field label="Minutes a month" hint="Requests over this are refused.">
+        <Field label="Minutes a month">
           <Input
             type="number"
             min={0}
@@ -619,12 +589,14 @@ function SandboxLimits({ settings }: { settings: SandboxSettingsView }) {
       </div>
       <div className="space-y-2">
         <p className="text-xs font-medium text-soft">Estimated cost per hour</p>
-        <p className="text-xs text-muted">
-          Optional, in your own currency. With a cost set, the Sandboxes page shows estimated spend.
-        </p>
+        <p className="text-xs text-muted">Optional, in any currency.</p>
         {providers.length === 0 ? (
           <p className="text-xs text-muted">
-            Add a sandbox provider under Connectors to set what it costs.
+            Add a provider under{" "}
+            <Link to="/connectors" className="text-accent-text hover:underline">
+              Connectors
+            </Link>{" "}
+            first.
           </p>
         ) : (
           <ul className="space-y-2">
@@ -653,7 +625,7 @@ function SandboxLimits({ settings }: { settings: SandboxSettingsView }) {
         </Button>
         {!valid && (
           <span className="text-xs text-muted">
-            Limits are whole numbers, and the concurrent limit and lifetime are at least 1.
+            Use whole numbers, and at least 1 for concurrent sandboxes and lifetime.
           </span>
         )}
         {save.isSuccess && <span className="text-xs text-ok">Saved.</span>}
@@ -663,27 +635,17 @@ function SandboxLimits({ settings }: { settings: SandboxSettingsView }) {
   );
 }
 
-const SECRETS: { key: SecretKey; label: string; hint: ReactNode }[] = [
-  {
-    key: "openaiApiKey",
-    label: "OpenAI API key",
-    hint: "Codex logs in with it inside the sandbox.",
-  },
-  {
-    key: "anthropicApiKey",
-    label: "Anthropic API key",
-    hint: "Claude Code uses it inside the sandbox.",
-  },
+const SECRETS: { key: SecretKey; label: string; hint?: ReactNode }[] = [
+  { key: "openaiApiKey", label: "OpenAI API key" },
+  { key: "anthropicApiKey", label: "Anthropic API key" },
   {
     key: "gitToken",
     label: "GitHub token",
     hint: (
       <>
-        Use a fine-grained token limited to the repos you allow in sandboxes, with{" "}
+        A fine-grained token limited to the repos you allow, with{" "}
         <strong className="font-medium text-text">Contents</strong> and{" "}
-        <strong className="font-medium text-text">Pull requests</strong> set to read and write. The
-        Runner uses it to clone, push, and open pull requests, and never passes it to the agent.
-        Setup steps are in <code className="font-mono text-soft">docs/sandboxes.md</code>.
+        <strong className="font-medium text-text">Pull requests</strong> set to read and write.
       </>
     ),
   },
@@ -723,14 +685,7 @@ function SandboxSecrets({ secrets }: { secrets: SandboxSettingsView["secrets"] }
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <div>
-        <h3 className="text-[13px] font-medium">Secrets</h3>
-        <p className="mt-1 text-xs text-muted">
-          Stored encrypted and never shown again. Sling passes them only to the sandbox running a
-          task, and they're gone when it's destroyed. A provider with a custom image can bring its
-          own logins instead.
-        </p>
-      </div>
+      <h3 className="text-[13px] font-medium">Secrets</h3>
       {SECRETS.map((s) => (
         <SecretField
           key={s.key}
@@ -778,7 +733,7 @@ function SecretField({
   onClear,
 }: {
   label: string;
-  hint: ReactNode;
+  hint?: ReactNode;
   stored: boolean;
   value: string;
   onChange: (value: string) => void;
@@ -811,10 +766,10 @@ function SecretField({
         type="password"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={stored ? "Stored (hidden). Type to replace it." : ""}
+        placeholder={stored ? "Stored. Type to replace it" : ""}
         autoComplete="off"
       />
-      <p className="text-xs leading-4 text-subtle">{hint}</p>
+      {hint && <p className="text-xs leading-4 text-subtle">{hint}</p>}
     </div>
   );
 }
@@ -825,11 +780,7 @@ function SecuritySection() {
     (session.data?.user as { twoFactorEnabled?: boolean } | undefined)?.twoFactorEnabled,
   );
   return (
-    <SettingsSection
-      id="security"
-      title="Sign-in security"
-      description="This account can start work on your machines, so protect it with a passkey or a second factor."
-    >
+    <SettingsSection id="security" title="Sign-in security">
       <div className="space-y-6 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-6">
         <TwoFactor
           enabled={enabled}
@@ -872,11 +823,7 @@ function TwoFactor({
             <Badge>Off</Badge>
           )}
         </p>
-        <p className="text-xs text-muted">
-          {enabled
-            ? "Signing in asks for a code from your authenticator app."
-            : "Ask for a code from your phone when signing in."}
-        </p>
+        <p className="text-xs text-muted">A code from your phone at sign-in.</p>
       </div>
       <Button variant={enabled ? "ghost-danger" : "secondary"} onClick={() => setOpen(true)}>
         {enabled ? "Turn off" : "Set up"}

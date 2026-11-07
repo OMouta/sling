@@ -439,7 +439,6 @@ describe("settings: sandboxes", () => {
     renderAt("/settings");
     const s = await section();
     expect(await s.findByText(/fine-grained token limited to the repos you allow/)).toBeTruthy();
-    expect(s.getByText("docs/sandboxes.md")).toBeTruthy();
   });
 });
 

@@ -235,9 +235,7 @@ describe("Settings → Notifications", () => {
     const section = await notificationsSection();
     const toggle = await section.findByRole("switch", { name: "Notifications on this device" });
     expect(toggle.getAttribute("aria-checked")).toBe("false");
-    expect(
-      section.getByText("Get notified on Chrome on Android when something needs you."),
-    ).toBeTruthy();
+    expect(section.getByText("Chrome on Android")).toBeTruthy();
 
     fireEvent.click(toggle);
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
@@ -318,11 +316,7 @@ describe("Settings → Notifications", () => {
     setUserAgent(IPHONE);
     open("/settings");
     const section = await notificationsSection();
-    expect(
-      await section.findByText(
-        "On iPhone and iPad, notifications work once Sling is on your Home Screen.",
-      ),
-    ).toBeTruthy();
+    expect(await section.findByText("Add Sling to your Home Screen first.")).toBeTruthy();
     expect(section.getByText("Choose Add to Home Screen.")).toBeTruthy();
     expect(section.queryByRole("switch", { name: "Notifications on this device" })).toBeNull();
   });
@@ -331,7 +325,7 @@ describe("Settings → Notifications", () => {
     setSecure(false);
     open("/settings");
     const section = await notificationsSection();
-    expect(await section.findByText(/Push needs HTTPS, or localhost\./)).toBeTruthy();
+    expect(await section.findByText(/Push needs HTTPS\./)).toBeTruthy();
     expect(section.queryByRole("switch", { name: "Notifications on this device" })).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });

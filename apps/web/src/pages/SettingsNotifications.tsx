@@ -26,11 +26,7 @@ import type { Settings } from "../lib/types.ts";
 
 export function NotificationsSection({ settings }: { settings: Settings }) {
   return (
-    <SettingsSection
-      id="notifications"
-      title="Notifications"
-      description="Sling can notify your phone or computer when something waits for you or finishes, even with Sling closed. A notification shows a title and a few words, never command output or what a message says."
-    >
+    <SettingsSection id="notifications" title="Notifications">
       <div className="space-y-6 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-6">
         <Devices />
         <Categories notifications={settings.notifications ?? DEFAULT_NOTIFICATIONS} />
@@ -78,15 +74,11 @@ function Devices() {
   });
 
   const status: Record<PushSupport, ReactNode> = {
-    ready: on
-      ? `Notifications come to ${label}.`
-      : `Get notified on ${label} when something needs you.`,
-    blocked:
-      "Notifications are blocked for this site. Allow them in the browser's site settings, then turn them on here.",
-    insecure:
-      "Push needs HTTPS, or localhost. Open Sling at its https:// address to turn notifications on here.",
+    ready: label,
+    blocked: "Blocked for this site. Allow them in your browser's site settings.",
+    insecure: "Push needs HTTPS. Open Sling at its https:// address.",
     unsupported: "This browser can't receive push notifications.",
-    "home-screen": "On iPhone and iPad, notifications work once Sling is on your Home Screen.",
+    "home-screen": "Add Sling to your Home Screen first.",
   };
   const canSwitch = support === "ready" || support === "blocked";
 
@@ -232,14 +224,10 @@ function DeviceRow({
   );
 }
 
-const CATEGORIES: { key: keyof NotificationSettings; label: string; hint: string }[] = [
-  {
-    key: "approvals",
-    label: "Approvals",
-    hint: "A step, a sandbox, a workflow, or a command in a chat waits for your answer.",
-  },
-  { key: "tasks", label: "Finished tasks", hint: "A task succeeds, fails, or is delivered." },
-  { key: "replies", label: "Replies", hint: "Sling answers in a chat you don't have open." },
+const CATEGORIES: { key: keyof NotificationSettings; label: string }[] = [
+  { key: "approvals", label: "Approvals" },
+  { key: "tasks", label: "Finished tasks" },
+  { key: "replies", label: "Replies" },
 ];
 
 function Categories({ notifications }: { notifications: NotificationSettings }) {
@@ -259,11 +247,8 @@ function Categories({ notifications }: { notifications: NotificationSettings }) 
       <p className="text-[13px] font-medium">Notify me about</p>
       <ul className="space-y-3">
         {CATEGORIES.map((c) => (
-          <li key={c.key} className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px]">{c.label}</p>
-              <p className="text-xs leading-4 text-muted">{c.hint}</p>
-            </div>
+          <li key={c.key} className="flex items-center gap-3">
+            <p className="min-w-0 flex-1 text-[13px]">{c.label}</p>
             <Switch
               label={c.label}
               checked={notifications[c.key]}
