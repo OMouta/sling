@@ -10,7 +10,7 @@ Sling coordinates. The coding agent writes the code. The control plane never edi
 
 Around that sits a workflow engine with a visual editor. Workflows react to email, Discord messages, schedules, webhooks, and Sling's own events, and they can summarize with a model, ask for approval, or hand work to a coding agent. The chat assistant is itself a workflow, so the web app and Discord talk to the same one.
 
-This repo is at **Stage 5** of the plan in [`plan/`](plan/): fixes that Sling merges, deploys, and checks once you approve, a calendar the assistant reads and adds to, and the web app on your phone's home screen with push notifications. Stage 4 brought extensions that other people write and you install, as signed packages that run in their own restricted processes. Stage 3 brought routing across machines, Docker and Railway sandboxes, and Claude Code next to Codex. Workflows, the editor, and the Discord and email connectors came in Stage 2.
+This repo is at **Stage 6** of the plan in [`plan/`](plan/): an assistant that remembers what you tell it, writes workflows from chat, answers under rules you set, checks that what it did happened, and talks to you over Telegram, iMessage, and Signal. Stage 5 brought fixes that Sling merges, deploys, and checks once you approve, a calendar, and the web app on your phone's home screen with push notifications. Stage 4 brought extensions that other people write and you install, as signed packages that run in their own restricted processes. Stage 3 brought routing across machines, Docker and Railway sandboxes, and Claude Code next to Codex. Workflows, the editor, and the Discord and email connectors came in Stage 2.
 
 ## How it fits together
 
@@ -48,7 +48,7 @@ The assistant chats through that machine's Codex or Claude Code, on your own log
 
 To use Discord, Telegram, or email, add them under **Connectors**, then install a template under **Workflows**, for example **Important email to Discord**, **Discord assistant**, or **Telegram assistant**.
 
-## Deploys
+## Checks and deploys
 
 Add your site under **Checks**: a URL that says it works, and, if Sling should deploy it, its repo and how it deploys (your host deploys on merge, a command on one of your machines, or a deploy hook). Sling checks it every minute and sends a push when it goes down. Then "the site is down, fix it" goes all the way: the assistant checks the site, a coding agent fixes it, and once the PR is open Sling asks "Approve deployment?" in the chat and on your phone. After you approve, it merges, deploys, and checks the site until it passes, and tells you what it saw. The machine's own config decides what a deploy command runs, and it only deploys merged commits. Checks also watch a command on one of your machines, such as whether last night's backup is there, and an email you're waiting for by a deadline, and a delivered PR shows its CI. [docs/checks.md](docs/checks.md) has the details.
 
@@ -56,13 +56,23 @@ Add your site under **Checks**: a URL that says it works, and, if Sling should d
 
 Add your calendar under **Connectors**: iCloud, Fastmail, Nextcloud, or any CalDAV account, Google Calendar through your own OAuth client, or the private iCal link of an Outlook calendar. The assistant then answers "what's on tomorrow?" and adds events, and the **Morning briefing** template writes you a briefing each morning. It can also search and read your email, send email, Discord, and Telegram messages, and run your workflows from chat. Reading never asks; anything that goes out asks you in the chat first, except in Full access.
 
+## Memory and your files
+
+Tell the assistant something about yourself and it remembers: the chat shows "Remembered: Vegetarian" with **Undo**, and every chat after that knows it, whichever personality answers. **Memory** lists what it knows, with the chat each fact came from, to edit or delete. It never keeps passwords or card numbers. To let it read your notes, share a folder on the machine that has them with `sling-runner folder add ~/Notes`; it searches and reads them there and never uploads the folder. See [docs/memory.md](docs/memory.md).
+
+## Rules
+
+When the assistant asks before sending something, **Always allow** makes a rule from that answer, such as "Email to anyone at acme.com", and matching sends go without asking from then on. After five approvals in a row, the card suggests it. A start rule does work on its own: "When Website goes down, Incident investigates" opens a chat and starts on it before you've seen the alert. Merges and deploys always ask, except in Full access. Rules are listed under **Approvals → Rules**, where you revoke them. See [docs/rules.md](docs/rules.md).
+
 ## Setting Sling up from chat
 
-The assistant can change Sling's own setup for you: "add a deploy target for my site", "connect my Fastmail", "make a workflow from the Site down alert template", "set my time zone to Lisbon". Each change shows in the chat with **Apply** and **Cancel**, except in Full access, and a password or token goes in a field on that card, never in the chat. See [docs/modes.md](docs/modes.md#changing-slings-setup).
+The assistant can change Sling's own setup for you: "add a deploy target for my site", "connect my Fastmail", "every Monday at 9, send me this week's calendar on Telegram", "remind me at 17:00 to call the bank", "set my time zone to Lisbon". A request that repeats becomes a workflow whose steps the card lists in plain words, and it runs without a model wherever a step doesn't need one. Each change shows in the chat with **Apply** and **Cancel**, except in Full access, and a password or token goes in a field on that card, never in the chat. See [docs/modes.md](docs/modes.md#changing-slings-setup).
 
 ## On your phone
 
-Open Sling on your phone and add it to the home screen. Under **Settings → Notifications**, turn on notifications for that device: approvals, finished tasks, and replies then reach you with Sling closed, and a tap opens the right page. Push needs an HTTPS address, which the Tailscale and Cloudflare Tunnel setups give you. See [docs/notifications.md](docs/notifications.md).
+Open Sling on your phone and add it to the home screen. Under **Settings → Notifications**, turn on notifications for that device: approvals, finished tasks, and replies then reach you with Sling closed, and a tap opens the right page. On Android and desktop, a send or a push and pull request can be allowed or denied from the notification itself. Hold the mic in the composer to talk instead of typing. Push needs an HTTPS address, which the Tailscale and Cloudflare Tunnel setups give you. See [docs/notifications.md](docs/notifications.md).
+
+You can also talk to Sling from Telegram, or from iMessage and Signal through one of your machines. Add the account under **Connectors** and turn on its assistant template under **Workflows**.
 
 ## Extensions
 
@@ -88,6 +98,8 @@ Each conversation has a mode, and each machine can cap the mode it accepts. Deta
 - [Reach Sling from your phone, at home or away](docs/remote-access.md)
 - [Permission modes and what enforces them](docs/modes.md)
 - [Personalities: who answers, and what it may use](docs/personalities.md)
+- [Memory, and the folders your machines share](docs/memory.md)
+- [Rules: standing answers, and work that starts on its own](docs/rules.md)
 - [Checks: watch sites, commands, and replies, and deploy a fix](docs/checks.md)
 - [Notifications and the phone app](docs/notifications.md)
 - [Workflows, nodes, and templates](docs/workflows.md)

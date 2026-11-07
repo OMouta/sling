@@ -4,7 +4,71 @@ An assistant that knows you and acts under rules you set. This adds to the spec'
 
 ## Status (2026-11-07)
 
-Planned. Nothing built yet.
+W0 and WA to WG are built and on `main`. The contracts went in first: views, the migration `0012_assistant_memory`, the protocol messages, SDK 1.3.0, and the service slots. Seven workstreams followed in their own worktrees and were cherry-picked onto `main` one at a time, each merge checked before the next. Integration then ran against a preview server with its own database, a real Runner with a shared folder, and a GreenMail mailbox.
+
+| "Done when" item | Verified by |
+|---|---|
+| 1. Memory | `memory-files.e2e`: the Remembered step, another personality's prompt, an edit reaching the next chat, Undo everywhere, and secrets refused. **Live**, in the preview: "By the way, I'm vegetarian" saved "Vegetarian", and a new Chef chat suggested a chickpea curry |
+| 2. Recall | `memory-files.e2e` with 2,000 memories: the block stays within 6 KB, newest first, and `recall` finds one too old for it |
+| 3. Files | Rust tests against real folders with symlinks out, and `memory-files.e2e` on the real Runner, offline machine included. **Live**: "What did I write about the boiler?" quoted the note (WA's preview) |
+| 4. Workflows from chat | `workflows-chat.e2e`: the card, Apply, a manual run that sends, a refused graph fixed, and "Tuesdays" on the same workflow. **Live**: the Monday calendar workflow and its change to Tuesdays (WB's preview) |
+| 5. One-time schedules | `workflows-chat.e2e` with a real pg-boss delayed job in Europe/Lisbon, and the past-time refusal. Not run with a real model |
+| 6. Allow rules | `rules.e2e` with real sends through GreenMail: the offer, each mode, mixed recipients, revoke, the streak, and what never matches. **Live**: a second email went out under the rule with no question (WC's preview). A DOM test covers Always allow on a chat's task card |
+| 7. Start rules | `rules.e2e`, calling the checks service's hook with a check row: one chat per 30 minutes, the check's results in the first turn, Full access refused. The alert's push links to that chat. No real turn |
+| 8. Rules from chat | `rules.e2e`: the card in Full access and Read-only, nothing saved before Apply. The card wasn't looked at in a browser |
+| 9. Checks | `checks.e2e` and `deploys.e2e` (39, unchanged) on checks: each kind changing state, the scheduler's limit, one push per change, the redirect, the migrated targets. In the preview the scheduler ran a site check on its own |
+| 10. Every action checked | CalDAV read-back against Radicale, Google's against a stand-in, Discord's fetch, the email bounce against GreenMail, PR CI through a stand-in `gh` and a fake GitHub API, and a failure telling the chat and pushing (`checks.e2e`). Reply checks through the real email search, in `apps.e2e` |
+| 11. Email from chat | GreenMail integration tests. **Live**: "Did Jo email me about the invoice?" ran `email_search` without asking and answered "420 EUR, due on the 15th" |
+| 12. Google Calendar | `oauth.e2e` against stand-ins for Google's token and Calendar endpoints: PKCE, the session-bound state, one refresh for two calls, a revoked grant. Not against Google |
+| 13. Telegram | `telegram.e2e` against a stand-in Bot API: setup finds the chat, the template replies, another chat is ignored, a restart answers nothing twice. Not with a real bot |
+| 14. Signal and iMessage | `channels.e2e` on the real Runner with a `chat.db` the test makes, a stand-in `osascript`, and a stand-in `signal-cli`: allowed senders, strangers ignored, a message during downtime answered once, an offline machine. Not with real Messages or Signal |
+| 15. Voice | DOM tests with a stand-in recognizer, and screenshots of each state. Not with a real speech service |
+| 16. Approve from the notification | `notification-answers.e2e` (14), and pushes delivered over CDP with the buttons tapped in the service worker. Not on a device |
+| 17. Checked in a browser | Each workstream at 1440×900 and 390×844 in dark and light, then the merged app in the preview: both chats, Memory, Checks, Approvals → Rules, Machines with a shared folder, Connectors, and Home with the mic |
+
+Test counts on `main`:
+- **Unit:** server 418, web 344, workflow 42, connector SDK 22, extension CLI 29, extension runtime 6, core 11, runner protocol 3, Discord 53, Telegram 22. Rust 238.
+- **Integration:** email 71 with GreenMail, calendar 59 with Radicale.
+- **End to end:** 711 across 56 files. The last full run passed 706: two failures were test races, now fixed, and three were timing budgets (engine overhead per node, routing, the check scheduler) that miss only when every file runs at once and pass alone.
+- **Live:** 9 real chat turns, all on Claude Code with Haiku 5.5, none in fast mode: 2 each in WA, WB, and WC, and 3 in integration.
+
+| Budget | Measured |
+|---|---|
+| Memory block in the prompt | At most 6 KB, asserted |
+| `recall` over 10,000 memories, p95 | 2.1 to 3.6 ms |
+| `search_files` over 20,000 files | 206 to 231 ms, release build |
+| Rule matching per action | 200 rules in under 1 ms |
+| Check scheduler overhead per check | 0.78 ms alone. 5.0 ms with every test file running |
+| Telegram message to the turn starting | Under 500 ms, asserted |
+| iMessage message to the server | 0.5 to 1.3 s |
+| Notification answer, p95 | 2 to 4 ms |
+| Service worker and manifest | 6.9 KB |
+| Runner release binary on macOS | 6.2 MB, with SQLite bundled |
+
+Found and fixed during integration:
+- **Reply checks could never match.** The check sent `email.search` a timestamp where it takes a day, read the sender as text where it's an address, and the search results had no `In-Reply-To`. The check now searches from the day before, keeps what arrived after it was made (with a minute for a slow sender's clock), and the results carry `In-Reply-To`. `apps.e2e` runs it through the real search.
+- **Reading an event back** was written twice, CalDAV in one place and Google in another. One `verify` now handles both.
+- **A start rule's chat** came back as a list that the checks service read as one object, so the alert's push fell back to a guess. It now links to the chat.
+- **Workflow cards** showed raw titles for the check, Telegram, iMessage, and Signal triggers. They read in words now.
+- **The chat's task card** had no Always allow; only Approvals did.
+- **A site check with one page** said "Not checked yet" twice, a gap left from Stage 5. Its page row shows only when it's failing.
+- **Test races:** a failed check's push and note follow the step's event, and a finished task's push follows its state. The tests now wait for both.
+- **Seven agents at once hit the API's rate limit** together. They were resumed four at a time in their own threads, keeping their work.
+
+Not done or not verified yet:
+- **Live services:** a Google OAuth client, a Telegram bot, a real mailbox's bounces, `gh pr checks` against GitHub, and a Discord read-back.
+- **iMessage on a real Mac:** Full Disk Access, the `attributedBody` decoder on real messages, the AppleScript send to a person and a group, and whether the launchd service gets its own Automation prompt.
+- **Signal with a linked signal-cli:** the JSON-RPC field names come from its docs and a stand-in.
+- **On a device:** notification buttons on Android or desktop, and real speech recognition in Chrome or Safari.
+- **Real turns:** a start rule's chat, a one-time reminder, a model fixing a refused graph, and anything on Codex.
+- **Elsewhere:** Windows and Linux paths for shared folders, a file that isn't UTF-8, and `docker build` with the Telegram package.
+- **Smaller gaps:**
+  - GreenMail's search seems case-sensitive, so the model needed three searches; real servers aren't
+  - a send from chat to an offline machine's channel stops at the 60-second action timeout, before the 5-minute wait
+  - chat approvals are lost on a restart, so their notification tokens answer "Expired"
+  - `deploy_targets` still has the columns copied into checks, to drop later
+  - the ntfy extension has no `ruleFields` yet
+  - Google ends a sign-in after 7 days while its consent screen is in testing mode
 
 ## Goal
 
