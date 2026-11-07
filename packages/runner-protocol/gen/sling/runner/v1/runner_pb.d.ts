@@ -2155,6 +2155,7 @@ export declare type RepoAction = Message<"sling.runner.v1.RepoAction"> & {
 
   /**
    * MERGE: the task's PR, when one was opened. Empty merges with plain git.
+   * CI: the PR whose checks to read.
    *
    * @generated from field: string pr_url = 7;
    */
@@ -2211,6 +2212,14 @@ export enum RepoAction_Kind {
    * @generated from enum value: KIND_DEPLOY = 2;
    */
   DEPLOY = 2,
+
+  /**
+   * Read the CI checks of the PR at pr_url with `gh pr checks`. It changes
+   * nothing, so `deploys off` and a Read-only max_mode don't refuse it.
+   *
+   * @generated from enum value: KIND_CI = 3;
+   */
+  CI = 3,
 }
 
 /**
@@ -2301,6 +2310,13 @@ export declare type RepoActionResult = Message<"sling.runner.v1.RepoActionResult
    * @generated from field: optional int32 exit_code = 7;
    */
   exitCode?: number | undefined;
+
+  /**
+   * CI: each check on the PR. Empty when none has reported yet.
+   *
+   * @generated from field: repeated sling.runner.v1.CiCheck ci_checks = 8;
+   */
+  ciChecks: CiCheck[];
 };
 
 /**
@@ -2340,6 +2356,31 @@ export enum RepoActionResult_Outcome {
  * Describes the enum sling.runner.v1.RepoActionResult.Outcome.
  */
 export declare const RepoActionResult_OutcomeSchema: GenEnum<RepoActionResult_Outcome>;
+
+/**
+ * One CI check of a PR, as `gh pr checks` reports it.
+ *
+ * @generated from message sling.runner.v1.CiCheck
+ */
+export declare type CiCheck = Message<"sling.runner.v1.CiCheck"> & {
+  /**
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * "pass", "fail", "pending", "skipping", or "cancel".
+   *
+   * @generated from field: string bucket = 2;
+   */
+  bucket: string;
+};
+
+/**
+ * Describes the message sling.runner.v1.CiCheck.
+ * Use `create(CiCheckSchema)` to create a new message.
+ */
+export declare const CiCheckSchema: GenMessage<CiCheck>;
 
 /**
  * Server to Runner: search the text files in shared folders. The Runner skips

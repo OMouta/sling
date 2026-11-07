@@ -573,6 +573,9 @@ message RepoAction {
     KIND_UNSPECIFIED = 0;
     KIND_MERGE = 1;
     KIND_DEPLOY = 2;
+    // Read the CI checks of the PR at pr_url with `gh pr checks`. It changes
+    // nothing, so `deploys off` and a Read-only max_mode don't refuse it.
+    KIND_CI = 3;
   }
   string request_id = 1;
   Kind kind = 2;
@@ -584,6 +587,7 @@ message RepoAction {
   string branch = 5;
   string default_branch = 6;
   // MERGE: the task's PR, when one was opened. Empty merges with plain git.
+  // CI: the PR whose checks to read.
   string pr_url = 7;
   // MERGE: "squash", "merge", or "rebase".
   string merge_method = 8;
@@ -622,6 +626,15 @@ message RepoActionResult {
   string url = 6;
   // DEPLOY: the command's exit code. Unset when it never ran or was killed.
   optional int32 exit_code = 7;
+  // CI: each check on the PR. Empty when none has reported yet.
+  repeated CiCheck ci_checks = 8;
+}
+
+// One CI check of a PR, as `gh pr checks` reports it.
+message CiCheck {
+  string name = 1;
+  // "pass", "fail", "pending", "skipping", or "cancel".
+  string bucket = 2;
 }
 
 // ---------------------------------------------------------------- files

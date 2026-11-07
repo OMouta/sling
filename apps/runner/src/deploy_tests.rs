@@ -27,6 +27,9 @@ echo "$(pwd)|$*" >> "$dir/gh.log"
 case "$1 $2" in
   "auth status") [ -f "$dir/gh-logged-out" ] && exit 1; exit 0 ;;
   "pr view") cat "$dir/pr.json" ;;
+  "pr checks")
+    if [ -f "$dir/checks.json" ]; then cat "$dir/checks.json"; exit "$(cat "$dir/checks-exit" 2>/dev/null || echo 0)"; fi
+    echo "no checks reported on the 'x' branch" >&2; exit 1 ;;
   "pr merge")
     if [ -f "$dir/merge-fails" ]; then echo "Pull request is not mergeable" >&2; exit 1; fi
     if [ -f "$dir/pr-after.json" ]; then cp "$dir/pr-after.json" "$dir/pr.json"; fi
@@ -506,6 +509,88 @@ fi
         git(&env.remote, &["show", &format!("{head}:CHANGED.md")]),
         "changed"
     );
+}
+
+// ---------------------------------------------------------------- CI
+
+fn ci(id: &str) -> RepoAction {
+    RepoAction {
+        request_id: id.into(),
+        kind: repo_action::Kind::Ci as i32,
+        repo: "site".into(),
+        pr_url: PR.into(),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn reads_a_prs_ci_with_gh_even_with_deploys_off() {
+    let env = setup_with(true, |c| c.deploys = false);
+    env.write(
+        "checks.json",
+        r#"[{"name":"lint","bucket":"pass"},{"name":"test","bucket":"pending"}]"#,
+    );
+    // gh exits 8 while checks are still running, and prints them all the same.
+    env.write("checks-exit", "8");
+    let (r, _) = run_action(&env.mgr, ci("c1")).await;
+    assert_eq!(
+        outcome(&r),
+        repo_action_result::Outcome::Succeeded,
+        "{}",
+        r.message
+    );
+    let got: Vec<(String, String)> = r
+        .ci_checks
+        .iter()
+        .map(|c| (c.name.clone(), c.bucket.clone()))
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("lint".to_string(), "pass".to_string()),
+            ("test".to_string(), "pending".to_string())
+        ]
+    );
+    let log = env.gh_log();
+    assert!(
+        log.contains(&format!("|pr checks {PR} --json name,bucket")),
+        "{log}"
+    );
+}
+
+#[tokio::test]
+async fn a_pr_with_no_checks_yet_has_an_empty_list() {
+    let env = setup_with(true, |_| {});
+    let (r, _) = run_action(&env.mgr, ci("c2")).await;
+    assert_eq!(
+        outcome(&r),
+        repo_action_result::Outcome::Succeeded,
+        "{}",
+        r.message
+    );
+    assert!(r.ci_checks.is_empty());
+}
+
+#[tokio::test]
+async fn reads_ci_only_for_a_pr_of_the_repos_remote_and_with_gh_logged_in() {
+    let env = setup_with(true, |_| {});
+    let other = RepoAction {
+        pr_url: "https://github.com/someone/else/pull/3".into(),
+        ..ci("c3")
+    };
+    let (r, _) = run_action(&env.mgr, other).await;
+    assert_eq!(
+        outcome(&r),
+        repo_action_result::Outcome::Refused,
+        "{}",
+        r.message
+    );
+    assert!(env.gh_log().is_empty(), "gh never ran: {}", env.gh_log());
+
+    env.write("gh-logged-out", "");
+    let (r, _) = run_action(&env.mgr, ci("c4")).await;
+    assert_eq!(outcome(&r), repo_action_result::Outcome::Failed);
+    assert!(r.message.starts_with("gh isn't logged in"), "{}", r.message);
 }
 
 // ---------------------------------------------------------------- merge with gh

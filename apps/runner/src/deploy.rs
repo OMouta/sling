@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use sling_runner_protocol::envelope::Body;
 use sling_runner_protocol::{
-    RepoAction, RepoActionOutput, RepoActionResult, repo_action, repo_action_result,
+    CiCheck, RepoAction, RepoActionOutput, RepoActionResult, repo_action, repo_action_result,
 };
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
@@ -178,13 +178,14 @@ impl RepoActions {
     }
 }
 
-/// What a merge or deploy came to.
+/// What a merge, a deploy, or a read of a PR's CI came to.
 struct Outcome {
     outcome: repo_action_result::Outcome,
     message: String,
     commit_sha: String,
     url: String,
     exit_code: Option<i32>,
+    ci_checks: Vec<CiCheck>,
 }
 
 impl Outcome {
@@ -195,6 +196,7 @@ impl Outcome {
             commit_sha: String::new(),
             url: String::new(),
             exit_code: None,
+            ci_checks: Vec::new(),
         }
     }
 
@@ -256,6 +258,7 @@ impl Manager {
                 commit_sha: outcome.commit_sha,
                 url: outcome.url,
                 exit_code: outcome.exit_code,
+                ci_checks: outcome.ci_checks,
             });
             me.outbox.notify_one();
         });
@@ -292,6 +295,7 @@ impl Manager {
         match req.kind() {
             repo_action::Kind::Merge => self.merge(&cfg, &repo, req).await,
             repo_action::Kind::Deploy => self.deploy(&repo, req).await,
+            repo_action::Kind::Ci => self.ci(&cfg, &repo, req).await,
             repo_action::Kind::Unspecified => unreachable!("checked in refusal"),
         }
     }
@@ -299,13 +303,15 @@ impl Manager {
 
 /// Why this machine won't take `req` at all, whatever it is.
 fn refusal(cfg: &Config, req: &RepoAction) -> Option<String> {
-    if !cfg.deploys {
+    // Reading a PR's CI changes nothing, so only the repo has to be one of this machine's.
+    let reads = req.kind() == repo_action::Kind::Ci;
+    if !cfg.deploys && !reads {
         return Some(
             "Merges and deploys are off on this machine. The owner turns them on with `sling-runner config set deploys on`."
                 .into(),
         );
     }
-    if !cfg.max_mode.writes() {
+    if !cfg.max_mode.writes() && !reads {
         return Some("This machine's max-mode is read-only, so it doesn't merge or deploy.".into());
     }
     if req.kind() == repo_action::Kind::Unspecified {
@@ -601,6 +607,77 @@ async fn add_worktree(repo: &Path, dir: &ActionDir, commit: &str) -> Result<(), 
     )
     .await
     .map(|_| ())
+}
+
+// ---------------------------------------------------------------- CI
+
+/// The checks `gh pr checks --json name,bucket` printed.
+fn parse_ci(json: &str) -> Result<Vec<CiCheck>, String> {
+    let v: serde_json::Value = serde_json::from_str(json)
+        .map_err(|e| format!("gh pr checks printed something else: {e}"))?;
+    let list = v
+        .as_array()
+        .ok_or("gh pr checks printed something other than a list")?;
+    Ok(list
+        .iter()
+        .map(|c| CiCheck {
+            name: c["name"].as_str().unwrap_or_default().to_string(),
+            bucket: c["bucket"].as_str().unwrap_or_default().to_string(),
+        })
+        .collect())
+}
+
+impl Manager {
+    /// Reads a PR's CI with `gh pr checks`, from a directory outside the
+    /// repo. Only a PR of the repo's own remote, so `gh` reads nothing else.
+    async fn ci(&self, cfg: &Config, repo: &RepoEntry, req: &RepoAction) -> Outcome {
+        let url = req.pr_url.trim();
+        let Some(pr) = github_pr(url) else {
+            return Outcome::refused(format!("{url:?} isn't a pull request URL."));
+        };
+        let Some(remote) = git::remote_url(&repo.path).await else {
+            return Outcome::failed(format!("{} has no origin remote.", repo.name));
+        };
+        if !pr_is_for_origin(&repo.path, &remote, &pr).await {
+            return Outcome::refused(format!(
+                "{url} isn't a PR of {}'s remote on this machine.",
+                repo.name
+            ));
+        }
+        let gh = cfg.gh_bin();
+        if !git::gh_ready(&gh).await {
+            return Outcome::failed(
+                "gh isn't logged in on this machine, so it can't read the PR's CI.",
+            );
+        }
+        let dir = match ActionDir::new(&self.paths, true) {
+            Ok(d) => d,
+            Err(e) => return Outcome::failed(e),
+        };
+        let args = ["pr", "checks", url, "--json", "name,bucket"];
+        let out = match run_timeout(&gh, &args, Some(dir.path()), GIT_NETWORK_TIMEOUT).await {
+            Ok(o) => o,
+            Err(e) => return Outcome::failed(format!("{e:#}")),
+        };
+        // It exits non-zero while checks run or after one failed, and still prints them.
+        if out.stdout.trim_start().starts_with('[') {
+            return match parse_ci(&out.stdout) {
+                Ok(checks) => Outcome {
+                    ci_checks: checks,
+                    ..Outcome::new(OUTCOME_SUCCEEDED, "")
+                },
+                Err(e) => Outcome::failed(e),
+            };
+        }
+        if out.stderr.contains("no checks reported") {
+            return Outcome::new(OUTCOME_SUCCEEDED, "");
+        }
+        let why = [out.stderr.trim(), out.stdout.trim()]
+            .into_iter()
+            .find(|s| !s.is_empty())
+            .unwrap_or("no output");
+        Outcome::failed(format!("gh pr checks failed: {why}"))
+    }
 }
 
 // ---------------------------------------------------------------- merge
