@@ -16,7 +16,6 @@ export function RuleQuestion({
   approve,
   deny,
   onDecide,
-  onRuled,
   className,
 }: {
   offers: RuleOfferView[];
@@ -26,8 +25,6 @@ export function RuleQuestion({
   approve: string;
   deny: string;
   onDecide: (allow: boolean) => Promise<unknown>;
-  /** After Always allow saved its rules and allowed this one. */
-  onRuled?: () => void;
   /** Its padding and background, for where it sits. */
   className?: string;
 }) {
@@ -49,7 +46,7 @@ export function RuleQuestion({
               </p>
             ))}
           </div>
-          <div className="flex gap-2">
+          <div className="ml-auto flex gap-2">
             <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
               Back
             </Button>
@@ -57,7 +54,7 @@ export function RuleQuestion({
               size="sm"
               variant="primary"
               busy={always.isPending}
-              onClick={() => always.mutate(undefined, { onSuccess: () => onRuled?.() })}
+              onClick={() => always.mutate()}
             >
               Always allow
             </Button>
@@ -70,7 +67,7 @@ export function RuleQuestion({
           )}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <p className="mr-auto min-w-0 text-[13px] text-soft">{question}</p>
-            <div className="flex gap-2">
+            <div className="ml-auto flex gap-2">
               {offers.length > 0 && (
                 <Button
                   size="sm"

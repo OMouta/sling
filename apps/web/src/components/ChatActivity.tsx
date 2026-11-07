@@ -26,6 +26,7 @@ import {
 import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { api } from "../lib/api.ts";
 import { duration, readableLocalDate } from "../lib/format.ts";
+import { useMadeRule } from "../lib/rules.ts";
 import { useNow } from "../lib/useNow.ts";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
 import { RuleQuestion } from "./RuleQuestion.tsx";
@@ -468,8 +469,7 @@ function SendStep({
   ctx: ActivityContext;
 }) {
   const [open, setOpen] = useState(false);
-  // Always allow made a rule from this card.
-  const [ruled, setRuled] = useState(false);
+  const ruled = useMadeRule(approval.id, approval.state === "approved" && !!approval.ruleOffer);
   const waiting = approval.state === "pending";
   const stopped = approval.state === "denied" || approval.state === "expired";
   const running = step.status === "running" && !waiting && !stopped;
@@ -532,7 +532,6 @@ function SendStep({
               decision: allow ? "approve" : "deny",
             })
           }
-          onRuled={() => setRuled(true)}
           className="bg-surface px-2.5 py-2"
         />
       )}

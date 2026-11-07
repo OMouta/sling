@@ -72,7 +72,12 @@ function RuleRow({ rule }: { rule: RuleView }) {
       <div className="min-w-0 flex-1">
         <p className="text-[13px] leading-5 font-medium break-words">{rule.summary}</p>
         <p className="mt-0.5 flex flex-wrap gap-x-1.5 text-xs text-muted">
-          {rule.kind === "start" && <span>{MODE_POLICY[rule.mode].label} ·</span>}
+          {rule.kind === "start" && (
+            <>
+              <span>{MODE_POLICY[rule.mode].label}</span>
+              <span aria-hidden="true">·</span>
+            </>
+          )}
           <span>{usage(rule)}</span>
           {from && (
             <>

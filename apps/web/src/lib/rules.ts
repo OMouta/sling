@@ -52,6 +52,12 @@ export function useAlwaysAllow(
   });
 }
 
+/** Whether Always allow on this approval made a rule. Asks only when it could have. */
+export function useMadeRule(approvalId: string, could: boolean): boolean {
+  const rules = useRules(could);
+  return could && (rules.data ?? []).some((r) => r.createdFrom.approvalId === approvalId);
+}
+
 /** Approvals in a row the card mentions: the fewest among its offers. */
 export function streakOf(offers: RuleOfferView[]): number {
   return offers.length ? Math.min(...offers.map((o) => o.streak)) : 0;

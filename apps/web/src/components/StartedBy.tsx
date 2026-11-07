@@ -24,7 +24,7 @@ export function StartedBy({ by }: { by: ConversationStartedBy }) {
       className="flex h-[22px] min-w-0 items-center gap-1.5 rounded-full bg-surface-2 px-2 text-xs text-soft shadow-raised transition-colors duration-150 hover:text-text"
     >
       <Zap aria-hidden="true" size={12} className="shrink-0 text-warn" />
-      <span className="max-w-64 truncate max-sm:hidden">{summary}</span>
+      <span className="max-w-[22rem] truncate max-sm:hidden">{summary}</span>
     </Link>
   );
 }

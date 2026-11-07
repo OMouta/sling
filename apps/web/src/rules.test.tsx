@@ -3,6 +3,7 @@ import type {
   AllowRuleView,
   ApprovalView,
   ConversationStartedBy,
+  MessageView,
   RuleOfferView,
   RuleView,
   ServerEvent,
@@ -71,6 +72,7 @@ const offer = (streak: number): RuleOfferView => ({
 let rules: RuleView[] = [];
 let approvals: ApprovalView[] = [];
 let startedBy: ConversationStartedBy | null = null;
+let messages: MessageView[] = [];
 let calls: { method: string; path: string; body: unknown }[] = [];
 
 function route(path: string): unknown {
@@ -90,7 +92,7 @@ function route(path: string): unknown {
           updatedAt: "2026-11-05T10:01:00.000Z",
         },
         personality: null,
-        messages: [],
+        messages,
         tasks: [],
         agentStatus: "thinking",
         live: null,
@@ -129,6 +131,7 @@ beforeEach(() => {
   rules = [];
   approvals = [];
   startedBy = null;
+  messages = [];
   calls = [];
   socket = null;
   vi.stubGlobal("WebSocket", FakeSocket);
@@ -233,6 +236,43 @@ describe("Always allow on a send", () => {
     expect(screen.getByText("You've allowed this 5 times")).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Always allow" })).toHaveLength(1);
     emit({ type: "agent.status", conversationId: "cnv_1", status: "idle" });
+  });
+
+  it("still says Always allow made a rule once the reply is saved", async () => {
+    rules = [{ ...allowRule, createdFrom: { approvalId: "cap_9", conversationId: "cnv_1" } }];
+    messages = [
+      {
+        id: "msg_1",
+        conversationId: "cnv_1",
+        role: "assistant",
+        text: "Sent.",
+        taskIds: [],
+        createdAt: "2026-11-07T10:01:00.000Z",
+        trace: {
+          ms: 1000,
+          steps: [
+            {
+              kind: "tool",
+              id: "t1",
+              name: "email_send",
+              input: { to: "bo@acme.com" },
+              status: "done",
+              output: "{}",
+              approval: {
+                id: "cap_9",
+                kind: "send",
+                state: "approved",
+                machine: "",
+                summary: "Email bo@acme.com: Invoice",
+                ruleOffer: offer(0),
+              },
+            },
+          ],
+        },
+      },
+    ];
+    open("/c/cnv_1");
+    expect(await screen.findByText("always allowed")).toBeTruthy();
   });
 
   it("says when a rule let a send through", async () => {
