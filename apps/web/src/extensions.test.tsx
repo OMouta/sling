@@ -926,20 +926,26 @@ describe("elsewhere", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Export" }, { timeout: 3000 }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Export as package" }));
     const d = await dialog();
-    expect(d.getByText("From version 1")).toBeTruthy();
+    expect(d.getByRole("heading", { name: "What should the package be called?" })).toBeTruthy();
+    expect(d.getByText("From version 1 of Important email to Discord")).toBeTruthy();
     expect((d.getByLabelText("Name") as HTMLInputElement).value).toBe("Important email to Discord");
     const id = d.getByLabelText("ID") as HTMLInputElement;
     expect(id.value).toBe("important-email-to-discord");
-    expect((d.getByLabelText("Version") as HTMLInputElement).value).toBe("1.0.0");
 
     // The ID follows the name until it's edited, and must be a valid ID.
     fireEvent.change(d.getByLabelText("Name"), { target: { value: "Important email" } });
     expect(id.value).toBe("important-email");
     fireEvent.change(id, { target: { value: "9-bad" } });
-    expect((d.getByRole("button", { name: "Download" }) as HTMLButtonElement).disabled).toBe(true);
+    const next = () =>
+      d.getByRole("button", { name: /^(Continue|Download)$/ }) as HTMLButtonElement;
+    expect(next().disabled).toBe(true);
     fireEvent.change(id, { target: { value: "important-email" } });
+    fireEvent.click(next());
 
-    fireEvent.click(d.getByRole("button", { name: "Download" }));
+    expect(d.getByRole("heading", { name: "Which version is it?" })).toBeTruthy();
+    expect((d.getByLabelText("Version") as HTMLInputElement).value).toBe("1.0.0");
+    expect(d.getByText("Saves important-email-1.0.0.slx")).toBeTruthy();
+    fireEvent.click(next());
     await waitFor(() =>
       expect(callsTo("POST", "/api/workflows/wf_1/export-package")).toHaveLength(1),
     );
@@ -949,6 +955,10 @@ describe("elsewhere", () => {
       name: "Important email",
     });
     await waitFor(() => expect(saved).toEqual(["important-email-1.0.0.slx"]));
+    // What it saved, and what to do before sharing it.
+    expect(await d.findByText("Downloaded important-email-1.0.0.slx")).toBeTruthy();
+    expect(d.getByText("sling-ext sign")).toBeTruthy();
+    fireEvent.click(d.getByRole("button", { name: "Done" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });

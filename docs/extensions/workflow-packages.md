@@ -100,7 +100,7 @@ Any workflow can become a package from the workflow editor's menu, with **Export
 - Every config value that's an installation ID becomes a binding: `$discord`, `$discord_2`, and so on, each labeled with the connector's name.
 - Credentials can't be included, since workflows hold only installation IDs.
 - `requires` lists the extensions and built-in connectors the workflow's nodes come from.
-- The dialog asks for the package's ID and version, and suggests both from the workflow's name.
+- The dialog asks for the package's name and ID, then its version, with the ID suggested from the name and 1.0.0 to start. Its last screen names the file it saved.
 
 The download is unsigned. Sign it before you share it:
 

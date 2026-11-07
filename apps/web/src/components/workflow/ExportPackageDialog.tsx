@@ -1,12 +1,15 @@
 import { useMutation } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { useState } from "react";
 import { extensionApi } from "../../lib/extensionApi.ts";
 import { EXTENSION_ID, SEMVER, suggestPackageId } from "../../lib/extensions.ts";
-import { Button, Dialog, ErrorText, Field, Input } from "../ui.tsx";
+import { Field, Input } from "../ui.tsx";
+import { Wizard, type WizardStep } from "../Wizard.tsx";
+import { StepNote } from "../WizardBits.tsx";
 
 /**
  * Downloads a workflow as an unsigned package other Sling servers can
- * install. The server swaps installation IDs for bindings.
+ * install, a step at a time: its name and ID, then its version. The server
+ * swaps installation IDs for bindings.
  */
 export function ExportPackageDialog({
   workflowId,
@@ -26,50 +29,35 @@ export function ExportPackageDialog({
   const [version, setVersion] = useState("1.0.0");
   const idOk = EXTENSION_ID.test(id);
   const versionOk = SEMVER.test(version.trim());
-  const ready = idOk && versionOk && name.trim().length > 0;
+  const file = `${id}-${version.trim()}.slx`;
 
   const save = useMutation({
     mutationFn: () =>
       extensionApi.exportPackage(workflowId, { id, version: version.trim(), name: name.trim() }),
-    onSuccess: onClose,
   });
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (ready) save.mutate();
-  };
 
-  return (
-    <Dialog
-      title="Export as package"
-      description={activeVersion === null ? "From the draft" : `From version ${activeVersion}`}
-      onClose={onClose}
-      footer={
+  const steps: WizardStep[] = [
+    {
+      id: "name",
+      title: "What should the package be called?",
+      blocked: !name.trim() || !idOk,
+      content: (
         <>
-          <ErrorText error={save.error} />
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            type="submit"
-            form="export-package"
-            busy={save.isPending}
-            disabled={!ready}
-          >
-            Download
-          </Button>
-        </>
-      }
-    >
-      <form id="export-package" onSubmit={submit} className="space-y-4">
-        <Field label="Name">
-          <Input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
-        </Field>
-        <div className="grid gap-4 sm:grid-cols-[1fr_8rem]">
+          <StepNote>
+            From {activeVersion === null ? "the draft" : `version ${activeVersion}`} of{" "}
+            {workflowName}
+          </StepNote>
+          <Field label="Name">
+            <Input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} />
+          </Field>
           <Field
             label="ID"
             hint={
-              id && !idOk
-                ? "Lowercase letters, digits and hyphens, starting with a letter"
-                : undefined
+              id && !idOk ? (
+                <span className="text-danger">
+                  Lowercase letters, digits and hyphens, starting with a letter
+                </span>
+              ) : undefined
             }
           >
             <Input
@@ -77,30 +65,67 @@ export function ExportPackageDialog({
               maxLength={40}
               spellCheck={false}
               autoCapitalize="off"
-              aria-invalid={!idOk || undefined}
+              aria-invalid={(Boolean(id) && !idOk) || undefined}
               className="font-mono text-[12.5px]"
               onChange={(e) => setOwnId(e.target.value.toLowerCase())}
             />
           </Field>
-          <Field label="Version" hint={version && !versionOk ? "Like 1.0.0." : undefined}>
-            <Input
-              value={version}
-              maxLength={40}
-              spellCheck={false}
-              aria-invalid={!versionOk || undefined}
-              className="tabular"
-              onChange={(e) => setVersion(e.target.value)}
-            />
-          </Field>
-        </div>
-        <p className="text-xs leading-4 text-muted">
-          Unsigned. Sign it with{" "}
-          <code className="font-mono text-[11.5px] whitespace-nowrap text-soft">
-            sling-ext sign
-          </code>{" "}
-          before sharing.
-        </p>
-      </form>
-    </Dialog>
+        </>
+      ),
+    },
+    {
+      id: "version",
+      title: "Which version is it?",
+      blocked: !versionOk,
+      content: (
+        <>
+          <Input
+            aria-label="Version"
+            value={version}
+            maxLength={40}
+            spellCheck={false}
+            aria-invalid={(Boolean(version) && !versionOk) || undefined}
+            className="tabular"
+            onChange={(e) => setVersion(e.target.value)}
+          />
+          {version.trim() && !versionOk ? (
+            <StepNote tone="error">Like 1.0.0</StepNote>
+          ) : (
+            <StepNote>Saves {file}</StepNote>
+          )}
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <Wizard
+      title="Export as package"
+      steps={steps}
+      finishLabel="Download"
+      finishing={save.isPending}
+      error={save.error instanceof Error ? save.error.message : null}
+      onFinish={async () => {
+        try {
+          await save.mutateAsync();
+          return true;
+        } catch {
+          return false;
+        }
+      }}
+      done={
+        <>
+          <p className="text-sm font-medium">Downloaded {file}</p>
+          <p className="mt-1 text-xs leading-4 text-muted">
+            Unsigned. Sign it with{" "}
+            <code className="font-mono text-[11.5px] whitespace-nowrap text-soft">
+              sling-ext sign
+            </code>{" "}
+            before you share it.
+          </p>
+        </>
+      }
+      onClose={onClose}
+    />
   );
 }
