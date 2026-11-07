@@ -13,7 +13,7 @@ use sling_runner_protocol::{
     file_change, log_line, plan_update, task_event::Kind,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStderr, ChildStdout, Command};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::sync::mpsc;
 
 pub mod chat;
@@ -354,8 +354,7 @@ pub(crate) async fn spawn(
     // Claude Code waits a few seconds for stdin when it isn't a TTY, so
     // write the prompt and close it right away.
     let mut stdin = child.stdin.take().context("no stdin")?;
-    stdin.write_all(stdin_text.as_bytes()).await?;
-    stdin.shutdown().await?;
+    write_input(&mut stdin, stdin_text).await?;
     drop(stdin);
     Ok(Spawned {
         stdout: child.stdout.take().context("no stdout")?,
@@ -363,6 +362,21 @@ pub(crate) async fn spawn(
         pid: child.id(),
         child,
     })
+}
+
+/// Writes the prompt and closes stdin. A process that exits before reading
+/// it, as Claude Code does for a session it doesn't have, has already closed
+/// the pipe. That's no error here: its exit and stderr say what happened.
+async fn write_input(stdin: &mut ChildStdin, text: &str) -> std::io::Result<()> {
+    let written = async {
+        stdin.write_all(text.as_bytes()).await?;
+        stdin.shutdown().await
+    }
+    .await;
+    match written {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        other => other,
+    }
 }
 
 impl Run {
