@@ -121,9 +121,6 @@ export function WorkflowsPage() {
             </>
           }
         >
-          <p className="min-w-0 text-xs leading-4 text-muted max-lg:hidden">
-            What Sling does when something happens: a chat message, an email, a schedule.
-          </p>
           <ErrorText error={importJson.error} />
         </Toolbar>
       }
@@ -165,9 +162,7 @@ export function WorkflowsPage() {
               Browse templates
             </Button>
           }
-        >
-          Start from a template or a blank canvas.
-        </Empty>
+        />
       )}
       {sorted.length > 0 && (
         <Table className="border-t border-border">

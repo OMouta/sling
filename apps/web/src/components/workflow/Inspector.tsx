@@ -104,14 +104,10 @@ function NodeInspector({
         {spec?.description && (
           <p className="text-xs leading-[18px] text-muted">{spec.description}</p>
         )}
-        {!spec && (
-          <p className="text-xs text-danger">
-            This server doesn't know this node type. Publishing will fail until it's removed.
-          </p>
-        )}
+        {!spec && <p className="text-xs text-danger">Unknown step type. Remove it to publish.</p>}
         {spec && spec.version !== data.version && (
           <p className="text-xs text-warn">
-            Written for version {data.version} of this node; the server has version {spec.version}.
+            Made for version {data.version}. This server has version {spec.version}.
           </p>
         )}
       </div>
@@ -363,7 +359,7 @@ function FieldList({
   );
   return (
     <div className="max-h-64 space-y-2 overflow-y-auto rounded-lg bg-field p-2 shadow-field">
-      {group("Inputs", fields.inputs, "Connect a data input to use its fields here.")}
+      {group("Inputs", fields.inputs, "No data inputs connected.")}
       {group("Trigger", fields.trigger, "No trigger yet.")}
       {group(
         "Variables",

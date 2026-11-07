@@ -83,9 +83,7 @@ export function VersionsTab({
         <ErrorText error={exportJson.error} />
         {versions.isPending && <Spinner />}
         <ErrorText error={versions.error} />
-        {versions.data?.length === 0 && (
-          <Empty title="Not published yet">Publish the draft to create version 1.</Empty>
-        )}
+        {versions.data?.length === 0 && <Empty title="Not published yet" />}
         <ul className="space-y-2">
           {[...(versions.data ?? [])]
             .sort((a, b) => b.number - a.number)
@@ -197,7 +195,7 @@ function VersionView({
             side={
               <Inspector
                 readOnly
-                empty={<p className="p-4 text-xs text-muted">Select a node to see its settings.</p>}
+                empty={<p className="p-4 text-xs text-muted">Select a step to see its settings.</p>}
               />
             }
           />
@@ -246,8 +244,7 @@ function RestoreDialog({
       }
     >
       <p className="text-[13px] leading-5 text-soft">
-        The draft is replaced with version {n}. Publish afterwards to make it the active version.
-        The current draft isn't kept, so export it first if you want it.
+        Your current draft is replaced and isn't kept.
       </p>
     </Dialog>
   );

@@ -250,7 +250,7 @@ function EditorSession({
                 disabled={live.activeVersion === null}
                 title={
                   live.activeVersion === null
-                    ? "Publish a version first. Runs use the active version."
+                    ? "Publish a version first"
                     : `Runs version ${live.activeVersion}`
                 }
                 onClick={() => setRunning(true)}
@@ -412,7 +412,7 @@ function CanvasView({ detail, issuesOpen, onCloseIssues, onPatch }: CanvasProps)
             <CopyButton text={hook.url} />
           </div>
         ) : (
-          <p className="text-xs text-muted">Publish to get a URL for this trigger.</p>
+          <p className="text-xs text-muted">Publish to get the URL.</p>
         )}
       </div>
     );
@@ -475,7 +475,7 @@ function CanvasView({ detail, issuesOpen, onCloseIssues, onPatch }: CanvasProps)
               variant="ghost"
               icon={Cable}
               aria-pressed={showData}
-              title="Show every step's data inputs and outputs, not just the wired ones"
+              title="Show every input and output"
               className={cx(showData && "bg-surface-3 text-text")}
               onClick={() => setShowData((v) => !v)}
             >
@@ -525,10 +525,6 @@ function CanvasView({ detail, issuesOpen, onCloseIssues, onPatch }: CanvasProps)
         <div className="pointer-events-none absolute inset-0 z-10 grid place-items-center p-6">
           <div className="pointer-events-auto max-w-sm rounded-2xl bg-surface p-6 text-center shadow-popover">
             <p className="text-sm font-medium">Start with what makes it run</p>
-            <p className="mt-1.5 text-[13px] leading-5 text-muted">
-              A trigger starts a run: a chat message, an email, a schedule, or a webhook. Then add
-              the steps it takes.
-            </p>
             <Button
               className="mt-4"
               variant="primary"
@@ -645,29 +641,23 @@ function HowItWorks({ onClose }: { onClose: () => void }) {
       </div>
       <ol className="mt-2 space-y-2.5 text-[13px] leading-5 text-soft">
         <li>
-          <span className="font-medium text-text">A trigger starts a run.</span> A chat message, an
-          email, a schedule, a webhook, or a button you press.
+          <span className="font-medium text-text">A trigger starts a run.</span>
         </li>
         <li>
-          <span className="font-medium text-text">Steps run along the thick lines</span>, left to
-          right. A step with branches, like If, follows the one that matches.
+          <span className="font-medium text-text">Thick lines set the order</span>, left to right.
         </li>
         <li>
-          <span className="font-medium text-text">Thin colored lines carry data</span>, such as a
-          message's text, from one step into another. Turn on Data to see every input and output.
+          <span className="font-medium text-text">Thin colored lines carry data</span> between
+          steps.
         </li>
         <li>
-          <span className="font-medium text-text">Select a step to set it up.</span> Add step puts
-          the new one after the selected step and connects them.
-        </li>
-        <li>
-          <span className="font-medium text-text">Changes save as a draft.</span> Publish makes the
-          draft the version that runs, and Run starts that version now.
+          <span className="font-medium text-text">Changes save as a draft.</span> Publish makes them
+          live.
         </li>
       </ol>
       <p className="mt-3 border-t border-border pt-3 text-xs leading-4 text-muted">
-        Drag from a port to connect. Shift-drag to select several. Delete removes the selection. ⌘
-        or Ctrl with Z undoes, and with C, X, V, or D copies, cuts, pastes, or duplicates.
+        Drag from a port to connect. Shift-drag to select. ⌘Z undo. ⌘C, ⌘X, ⌘V, ⌘D copy, cut, paste,
+        duplicate.
       </p>
     </section>
   );
@@ -703,9 +693,7 @@ function WorkflowPanel({
       <section className="space-y-2">
         <h3 className="section-label">Triggers</h3>
         {triggers.length === 0 ? (
-          <p className="text-xs text-muted">
-            No trigger yet, so it never runs. Add one with Add step.
-          </p>
+          <p className="text-xs text-muted">No trigger yet, so it never runs.</p>
         ) : (
           <ul className="space-y-1 text-[13px]">
             {triggers.map((n) => (
@@ -764,7 +752,7 @@ function DeleteWorkflow({ workflowId, name }: { workflowId: string; name: string
       </Button>
       {open && (
         <Dialog
-          title="Delete this workflow?"
+          title={`Delete ${name}?`}
           onClose={() => setOpen(false)}
           footer={
             <>
@@ -777,7 +765,7 @@ function DeleteWorkflow({ workflowId, name }: { workflowId: string; name: string
           }
         >
           <p className="text-[13px] leading-5 text-soft">
-            {name}, its versions and its run history are deleted. Its triggers stop.
+            Its versions and run history go with it.
           </p>
         </Dialog>
       )}
@@ -892,25 +880,19 @@ function PublishDialog({
         </>
       }
     >
-      <div className="space-y-3">
-        <p className="text-[13px] leading-5 text-muted">
-          The server checks the draft, saves it as a new version and makes that version active.
-          Triggers switch to it right away.
-        </p>
-        <div className="space-y-1.5">
-          <label htmlFor="publish-note" className="text-xs font-medium text-soft">
-            Note
-          </label>
-          <Input
-            id="publish-note"
-            value={note}
-            placeholder="What changed"
-            onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") publish.mutate();
-            }}
-          />
-        </div>
+      <div className="space-y-1.5">
+        <label htmlFor="publish-note" className="text-xs font-medium text-soft">
+          Note
+        </label>
+        <Input
+          id="publish-note"
+          value={note}
+          placeholder="What changed"
+          onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") publish.mutate();
+          }}
+        />
       </div>
     </Dialog>
   );
@@ -942,7 +924,7 @@ function RunDialog({
   if (hasUnpublishedChanges) {
     note = (
       <p className="text-[13px] text-warn">
-        The draft has unpublished changes. This run uses version {activeVersion}.
+        Runs version {activeVersion}, without your unpublished changes.
       </p>
     );
   }
@@ -974,12 +956,11 @@ function RunDialog({
               Input JSON
             </label>
             <JsonInput id="run-input" rows={8} value={input} onChange={setInput} />
-            <p className="text-xs text-muted">The Manual run trigger outputs this as `input`.</p>
           </div>
         ) : (
-          <p className="text-[13px] text-muted">
-            This workflow has no Manual run trigger, so it starts with no input.
-          </p>
+          !hasUnpublishedChanges && (
+            <p className="text-[13px] text-muted">Runs version {activeVersion}.</p>
+          )
         )}
       </div>
     </Dialog>

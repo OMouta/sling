@@ -893,7 +893,7 @@ describe("elsewhere", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Export" }, { timeout: 3000 }));
     fireEvent.click(await screen.findByRole("menuitem", { name: "Export as package" }));
     const d = await dialog();
-    expect(d.getByText("Built from version 1, the active one.")).toBeTruthy();
+    expect(d.getByText("From version 1")).toBeTruthy();
     expect((d.getByLabelText("Name") as HTMLInputElement).value).toBe("Important email to Discord");
     const id = d.getByLabelText("ID") as HTMLInputElement;
     expect(id.value).toBe("important-email-to-discord");

@@ -41,11 +41,7 @@ export function ExportPackageDialog({
   return (
     <Dialog
       title="Export as package"
-      description={
-        activeVersion === null
-          ? "Built from the draft, since nothing is published yet."
-          : `Built from version ${activeVersion}, the active one.`
-      }
+      description={activeVersion === null ? "From the draft" : `From version ${activeVersion}`}
       onClose={onClose}
       footer={
         <>
@@ -72,7 +68,7 @@ export function ExportPackageDialog({
             label="ID"
             hint={
               id && !idOk
-                ? "3 to 40 lowercase letters, digits, and hyphens, starting with a letter."
+                ? "Lowercase letters, digits and hyphens, starting with a letter"
                 : undefined
             }
           >
@@ -98,12 +94,11 @@ export function ExportPackageDialog({
           </Field>
         </div>
         <p className="text-xs leading-4 text-muted">
-          Connector installations become bindings that ask for an installation on install.
-          Credentials are never included. The package is unsigned; sign it with{" "}
+          Unsigned. Sign it with{" "}
           <code className="font-mono text-[11.5px] whitespace-nowrap text-soft">
             sling-ext sign
           </code>{" "}
-          before you share it.
+          before sharing.
         </p>
       </form>
     </Dialog>

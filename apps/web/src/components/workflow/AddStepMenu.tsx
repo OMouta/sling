@@ -111,11 +111,9 @@ export function AddStepMenu({
           <X aria-hidden="true" size={14} />
         </button>
       </div>
-      {!triggers && (
-        <p className="border-b border-border px-3 py-2 text-xs text-muted">
-          {after
-            ? `Goes after "${after}" and connects to it. Triggers go on their own.`
-            : "Select a step first to add the new one after it, connected."}
+      {!triggers && after && (
+        <p className="truncate border-b border-border px-3 py-2 text-xs text-muted">
+          Adds after "{after}"
         </p>
       )}
       <div ref={list} className="min-h-0 flex-1 overflow-y-auto p-1.5">

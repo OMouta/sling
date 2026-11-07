@@ -29,9 +29,7 @@ export function RunsTab({
     <div className="mx-auto max-w-4xl space-y-4 px-4 py-6">
       {runs.isPending && <Spinner />}
       <ErrorText error={runs.error} />
-      {runs.data?.length === 0 && (
-        <Empty title="No runs yet">Runs appear here when a trigger fires or you press Run.</Empty>
-      )}
+      {runs.data?.length === 0 && <Empty title="No runs yet" />}
       {runs.data && runs.data.length > 0 && (
         <ul className="divide-y divide-border overflow-hidden rounded-xl bg-surface shadow-card">
           {runs.data.map((r) => (
