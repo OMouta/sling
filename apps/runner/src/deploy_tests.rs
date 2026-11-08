@@ -942,10 +942,14 @@ async fn deploy_output_is_redacted_and_capped() {
 
 #[tokio::test]
 async fn deploy_output_streams_in_batches() {
+    // Two bursts of builtin echoes, a few flushes apart. A sleep between every
+    // line would start a process per line, and on a slow machine each one can
+    // take longer than a flush, so every line would go out alone.
     let env = setup_with(
         false,
         with_command(
-            "for i in 1 2 3 4 5 6 7 8 9 10; do echo line $i; sleep 0.05; done",
+            "for i in 1 2 3 4 5; do echo line $i; done; sleep 0.3; \
+             for i in 6 7 8 9 10; do echo line $i; done",
             None,
         ),
     );
