@@ -22,11 +22,13 @@ const Env = z.object({
   SLING_INCLUDED_EXTENSIONS: z.string().min(1).optional(),
   /** Where installed extension packages are unpacked for their processes. */
   SLING_EXTENSION_CACHE: z.string().min(1).optional(),
-  /** GitHub repo, as owner/name, whose releases the Runner install script downloads. */
+  /** GitHub repo, as owner/name, whose releases Sling gets sling-runner builds from. */
   SLING_RELEASE_REPO: z
     .string()
     .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "SLING_RELEASE_REPO must look like owner/name")
     .optional(),
+  /** Where sling-runner builds are kept once Sling has fetched them. */
+  SLING_RUNNER_CACHE: z.string().min(1).optional(),
 });
 
 export interface Config {
@@ -39,8 +41,10 @@ export interface Config {
   webDist: string | undefined;
   /** Image sandboxes run when their provider doesn't name one. Defaults to `sling-sandbox:latest`. */
   sandboxImage?: string | undefined;
-  /** GitHub repo the Runner install script downloads releases from. */
+  /** GitHub repo whose releases carry sling-runner builds. Defaults to OMouta/sling. */
   releaseRepo?: string | undefined;
+  /** Where fetched sling-runner builds are kept. Defaults to `<tmpdir>/sling-runner-builds`. */
+  runnerCacheDir?: string | undefined;
   /** Unsigned extension packages may be installed. Only the server's environment sets it. */
   allowUnsignedExtensions?: boolean;
   /** Catalog that ships with Sling. Defaults to the repo's `extensions/dist`. */
@@ -79,6 +83,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     webDist: e.SLING_WEB_DIST,
     sandboxImage: e.SLING_SANDBOX_IMAGE,
     releaseRepo: e.SLING_RELEASE_REPO,
+    runnerCacheDir: e.SLING_RUNNER_CACHE,
     allowUnsignedExtensions: e.SLING_ALLOW_UNSIGNED_EXTENSIONS,
     includedExtensionsDir: e.SLING_INCLUDED_EXTENSIONS,
     extensionCacheDir: e.SLING_EXTENSION_CACHE,

@@ -10,19 +10,19 @@ Copy the install command from **Machines > Add machine** in Sling. It looks like
 curl -fsSL https://sling.example.com/install.sh | SLING_CODE=<code> sh
 ```
 
-The script downloads `sling-runner`, pairs it with the code, and installs the background service. Sling fills in its own URL and the GitHub repo to download from when it serves the script. On Windows, run the PowerShell command from the same page, which does the same with `install.ps1`:
+The script downloads `sling-runner` from Sling, pairs it with the code, and installs the background service, so the machine only needs to reach Sling. Sling hands out the build of its own version: the first time a machine asks for one, Sling gets it from the matching GitHub release, checks its checksum, and keeps it. On Windows, run the PowerShell command from the same page, which does the same with `install.ps1`:
 
 ```powershell
 $env:SLING_CODE = "<code>"; irm https://sling.example.com/install.ps1 | iex
 ```
 
-You can also run the script from a GitHub release. Set `SLING_REPO` to the repo that publishes Sling, and add `SLING_URL` and `SLING_CODE` to pair in the same step:
+You can also run the script from a GitHub release, which downloads straight from GitHub. Set `SLING_REPO` to the repo that publishes Sling, and add `SLING_URL` and `SLING_CODE` to pair in the same step:
 
 ```sh
 curl -fsSL https://github.com/$SLING_REPO/releases/latest/download/install.sh | SLING_REPO=$SLING_REPO sh
 ```
 
-If `SLING_REPO` is empty and `sling-runner` is already on your PATH, the script skips the download and uses that one. From source: `cargo build --release -p sling-runner`.
+With neither `SLING_URL` nor `SLING_REPO`, the script uses the `sling-runner` already on your PATH. From source: `cargo build --release -p sling-runner`.
 
 You also need, on the same machine and as the same user:
 

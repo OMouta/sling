@@ -43,7 +43,7 @@ Fill in `.env`:
 | `SLING_BIND` | Where to publish it: `127.0.0.1` (default) for this computer and a tunnel only, `0.0.0.0` for the local network too. |
 | `COMPOSE_PROFILES` | `tailscale` or `cloudflare` to run that tunnel next to Sling. Its secret goes in `deploy/tunnel.env`. |
 | `LOG_LEVEL` | `info` by default. |
-| `SLING_RELEASE_REPO` | Optional. The GitHub repo, as `owner/name`, whose releases the Runner install command downloads. Without it, the command works only on machines that already have `sling-runner`. |
+| `SLING_RELEASE_REPO` | Optional. The GitHub repo, as `owner/name`, whose releases Sling gets `sling-runner` from for the install command. Default `OMouta/sling`. Set it when you publish your own builds. |
 | `SLING_ALLOW_UNSIGNED_EXTENSIONS` | Optional, for developing extensions. `1` lets you install unsigned packages and add catalogs on loopback addresses. Leave it off otherwise: the web app can't turn it on, which is the point. |
 
 Start it:

@@ -50,7 +50,7 @@ In the Cloudflare Zero Trust dashboard, under **Networks → Tunnels**:
 
 The sign-in page is public with a tunnel like this, so turn on two-factor under **Settings**.
 
-If you put Cloudflare Access in front, the browser login works as usual, but Runners can't do a browser login. Add a bypass policy for `/runner/v1/ws` and `/api/runner/pair`. Those paths are protected by the Runner's signed handshake and the one-time pairing code.
+If you put Cloudflare Access in front, the browser login works as usual, but Runners can't do a browser login. Add a bypass policy for `/runner/v1/ws` and `/api/runner/pair`, and for `/install.sh`, `/install.ps1`, and `/runner/download/` so the install command works. The first two are protected by the Runner's signed handshake and the one-time pairing code; the others only hand out the public install scripts and `sling-runner` builds.
 
 ## Moving to a new address
 

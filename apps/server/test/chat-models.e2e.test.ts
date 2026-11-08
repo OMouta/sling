@@ -3,7 +3,11 @@
  * the web app, the one-line install script, and turning two-factor on
  * without a password right after signing in.
  */
+import { createHash } from "node:crypto";
+import { mkdtemp } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { base32 } from "@better-auth/utils/base32";
 import { createOTP } from "@better-auth/utils/otp";
 import type { ModelCatalogView, ReplyTrace } from "@sling/core";
@@ -14,6 +18,7 @@ import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.ts";
+import { runnerTag } from "../src/runners/builds.ts";
 import { type RunningServer, startServer } from "../src/server.ts";
 import { FakeRunner } from "./fixtures/fake-runner.ts";
 
@@ -23,6 +28,12 @@ let cookie = "";
 let origin = "";
 let runner: FakeRunner | null = null;
 const realFetch = globalThis.fetch;
+/** A stand-in sling-runner release on GitHub: one Mac build and its checksum. */
+const release = {
+  tag: "",
+  build: Buffer.from("a stand-in sling-runner archive"),
+  asked: [] as string[],
+};
 
 /** The assistant answers every update with one word, so no model call leaves the test. */
 const model = new MockLanguageModelV4({
@@ -132,6 +143,17 @@ function stubProviders() {
         ],
       });
     }
+    if (url.startsWith("https://github.com/acme/sling/releases/download/")) {
+      release.asked.push(url);
+      const archive = `sling-runner-${release.tag}-aarch64-apple-darwin.tar.gz`;
+      const base = `https://github.com/acme/sling/releases/download/${release.tag}/`;
+      if (url === base + archive) return new Response(new Uint8Array(release.build));
+      if (url === `${base + archive}.sha256`) {
+        const sum = createHash("sha256").update(release.build).digest("hex");
+        return new Response(`${sum}  ${archive}\n`);
+      }
+      return new Response("Not Found", { status: 404 });
+    }
     // Model calls from the assistant never leave the test.
     if (/^https:\/\/api\.(anthropic|openai)\.com\//.test(url)) {
       return new Response(JSON.stringify({ error: { message: "offline in tests" } }), {
@@ -155,7 +177,9 @@ beforeAll(async () => {
     logLevel: "warn",
     webDist: undefined,
     releaseRepo: "acme/sling",
+    runnerCacheDir: await mkdtemp(join(tmpdir(), "sling-runner-builds-")),
   };
+  release.tag = (await runnerTag()) ?? "";
   server = await startServer(config, { model, jobs: false });
   await api("POST", "/api/auth/sign-up/email", {
     name: "Admin",
@@ -441,13 +465,49 @@ describe("repos from the web app", () => {
 });
 
 describe("one-line install", () => {
-  it("serves the install scripts with this server's URL and release repo filled in", async () => {
+  it("serves the install scripts with this server's URL filled in", async () => {
     const sh = await raw("GET", "/install.sh");
     expect(sh.status).toBe(200);
     expect(sh.text).toContain(`: "\${SLING_URL:=${origin}}"`);
-    expect(sh.text).toContain(`: "\${SLING_REPO:=acme/sling}"`);
+    // They download sling-runner from here, not from GitHub.
+    expect(sh.text).not.toContain("SLING_REPO:=");
     const ps = await raw("GET", "/install.ps1");
     expect(ps.text).toContain(`$env:SLING_URL = '${origin}'`);
+  });
+
+  it("hands out the sling-runner build from its own version's release, fetched once", async () => {
+    const archive = await realFetch(
+      `${server.url}/runner/download/sling-runner-aarch64-apple-darwin.tar.gz`,
+    );
+    expect(archive.status).toBe(200);
+    expect(archive.headers.get("content-type")).toBe("application/gzip");
+    expect(Buffer.from(await archive.arrayBuffer())).toEqual(release.build);
+    const sum = await realFetch(
+      `${server.url}/runner/download/sling-runner-aarch64-apple-darwin.tar.gz.sha256`,
+    );
+    expect((await sum.text()).split(" ")[0]).toBe(
+      createHash("sha256").update(release.build).digest("hex"),
+    );
+    await realFetch(`${server.url}/runner/download/sling-runner-aarch64-apple-darwin.tar.gz`);
+    expect(release.asked).toEqual([
+      `https://github.com/acme/sling/releases/download/${release.tag}/sling-runner-${release.tag}-aarch64-apple-darwin.tar.gz`,
+      `https://github.com/acme/sling/releases/download/${release.tag}/sling-runner-${release.tag}-aarch64-apple-darwin.tar.gz.sha256`,
+    ]);
+  });
+
+  it("tells the install script why a build isn't there", async () => {
+    const missing = await realFetch(
+      `${server.url}/runner/download/sling-runner-x86_64-pc-windows-msvc.zip`,
+    );
+    expect(missing.status).toBe(404);
+    expect(await missing.text()).toContain(
+      `https://github.com/acme/sling/releases/tag/${release.tag} has no sling-runner build for x86_64-pc-windows-msvc`,
+    );
+    const unknown = await realFetch(`${server.url}/runner/download/sling-runner-amiga.tar.gz`);
+    expect(unknown.status).toBe(404);
+    expect(await unknown.text()).toContain(
+      "no sling-runner build called sling-runner-amiga.tar.gz",
+    );
   });
 
   it("gives an install command with the pairing code", async () => {

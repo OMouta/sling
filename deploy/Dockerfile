@@ -65,8 +65,10 @@ COPY integrations integrations
 COPY apps/server apps/server
 # Bundled workflow templates. The server reads them from the repo root.
 COPY workflows workflows
-# Runner install scripts, served at /install.sh and /install.ps1.
+# Runner install scripts, served at /install.sh and /install.ps1. Cargo.toml
+# names the sling-runner version this server hands out to them.
 COPY scripts/install.sh scripts/install.ps1 scripts/
+COPY Cargo.toml ./
 COPY --from=web /app/apps/web/dist /app/web
 # Included extensions: catalog.json and the .slx files it lists.
 COPY --from=extensions /app/extensions/dist /app/extensions
