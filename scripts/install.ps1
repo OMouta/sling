@@ -65,6 +65,17 @@ if ($Repo -or $Url) {
     $Exe = Get-ChildItem "$Tmp\unpacked" -Recurse -Filter sling-runner.exe | Select-Object -First 1
     if (-not $Exe) { throw "$File has no sling-runner.exe." }
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    # A running Runner keeps sling-runner.exe open, so it can't be replaced.
+    # `sling-runner service install` starts it again.
+    if ($IsWindows -ne $false) {
+      Get-ScheduledTask -TaskName SlingRunner -ErrorAction SilentlyContinue | Stop-ScheduledTask
+      Get-CimInstance Win32_Process -Filter "Name = 'sling-runner.exe'" |
+        Where-Object { $_.CommandLine -match '\srun( --service)?\s*$' } |
+        ForEach-Object {
+          Write-Host "Stopping the running Runner to replace it."
+          taskkill /PID $_.ProcessId /T /F | Out-Null
+        }
+    }
     Copy-Item $Exe.FullName "$BinDir\sling-runner.exe" -Force
     Write-Host "Installed $(& "$BinDir\sling-runner.exe" --version) in $BinDir"
 

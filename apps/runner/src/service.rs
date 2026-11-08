@@ -14,6 +14,8 @@ pub const LABEL: &str = "dev.sling.runner";
 pub const EXIT_REVOKED: i32 = 78;
 /// Set in the service definition so the Runner knows to log to a file.
 pub const SERVICE_ENV: &str = "SLING_RUNNER_SERVICE";
+/// The Windows logon task's name.
+const TASK: &str = "SlingRunner";
 
 fn exe() -> Result<PathBuf> {
     std::env::current_exe()?
@@ -93,6 +95,89 @@ pub fn systemd_unit(exe: &str, path: &str, home: Option<&str>) -> String {
     )
 }
 
+/// The Windows logon task. `conhost --headless` hosts the Runner's console
+/// without a window, so there's no window to close, and the commands the
+/// Runner starts share that console instead of opening their own. Task
+/// Scheduler's defaults would also keep it from starting on battery, stop it
+/// when the laptop unplugs, and end it after 3 days.
+pub fn windows_task_xml(exe: &str, user: Option<&str>) -> String {
+    let user_id = user
+        .map(|u| format!("\n      <UserId>{}</UserId>", xml_escape(u)))
+        .unwrap_or_default();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Sling Runner: runs Sling tasks on this machine while you're logged in.</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>{user_id}
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">{user_id}
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <Enabled>true</Enabled>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>%SystemRoot%\System32\conhost.exe</Command>
+      <Arguments>--headless "{exe}" run --service</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"#,
+        exe = xml_escape(exe),
+    )
+}
+
+/// `DOMAIN\user` for the task to run as, from the logged-in session.
+fn windows_user() -> Option<String> {
+    let user = std::env::var("USERNAME").ok().filter(|u| !u.is_empty())?;
+    Some(match std::env::var("USERDOMAIN") {
+        Ok(domain) if !domain.is_empty() => format!("{domain}\\{user}"),
+        _ => user,
+    })
+}
+
+/// `C:\...` for `\\?\C:\...`, the form `canonicalize` gives on Windows,
+/// which not every program accepts on its command line.
+pub fn without_verbatim_prefix(path: &str) -> &str {
+    match path.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with(r"UNC\") => rest,
+        _ => path,
+    }
+}
+
+/// UTF-16 with a byte order mark, the encoding schtasks reads task XML in.
+pub fn utf16_with_bom(text: &str) -> Vec<u8> {
+    std::iter::once(0xFEFF)
+        .chain(text.encode_utf16())
+        .flat_map(u16::to_le_bytes)
+        .collect()
+}
+
+/// Ends the logon task and the Runner it started, with everything the Runner
+/// started. Ending the task alone only ends conhost.
+async fn stop_windows_task() {
+    let _ = sh("schtasks", &["/End", "/TN", TASK]).await;
+    let script = "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'sling-runner.exe' -and $_.CommandLine -match '\\srun --service\\s*$' } | ForEach-Object { taskkill /PID $_.ProcessId /T /F | Out-Null }";
+    let _ = sh(
+        "powershell",
+        &["-NoProfile", "-NonInteractive", "-Command", script],
+    )
+    .await;
+}
+
 async fn sh(program: &str, args: &[&str]) -> Result<crate::sys::Output> {
     crate::sys::run(program, args, None).await
 }
@@ -147,29 +232,31 @@ pub async fn install(paths: &Paths) -> Result<String> {
             paths.log_file().display()
         ))
     } else if cfg!(windows) {
-        let tr = format!("\"{exe}\" run");
+        let xml = windows_task_xml(without_verbatim_prefix(&exe), windows_user().as_deref());
+        let file = std::env::temp_dir().join("sling-runner-task.xml");
+        std::fs::write(&file, utf16_with_bom(&xml))?;
+        // A Runner from an earlier install, which may still have a window open.
+        stop_windows_task().await;
         let out = sh(
             "schtasks",
             &[
                 "/Create",
-                "/SC",
-                "ONLOGON",
-                "/RL",
-                "LIMITED",
                 "/TN",
-                "SlingRunner",
-                "/TR",
-                &tr,
+                TASK,
+                "/XML",
+                &file.display().to_string(),
                 "/F",
             ],
         )
-        .await?;
+        .await;
+        let _ = std::fs::remove_file(&file);
+        let out = out?;
         if !out.ok() {
             bail!("schtasks /Create failed: {}", out.stderr.trim());
         }
-        let _ = sh("schtasks", &["/Run", "/TN", "SlingRunner"]).await;
+        let _ = sh("schtasks", &["/Run", "/TN", TASK]).await;
         Ok(format!(
-            "Installed the SlingRunner logon task. It runs while you're logged in. Logs: {}",
+            "Installed the {TASK} logon task. It runs in the background while you're logged in. Logs: {}",
             paths.log_file().display()
         ))
     } else {
@@ -197,9 +284,9 @@ pub async fn uninstall() -> Result<String> {
         let _ = sh("systemctl", &["--user", "daemon-reload"]).await;
         Ok("Removed the systemd user unit.".into())
     } else if cfg!(windows) {
-        let _ = sh("schtasks", &["/End", "/TN", "SlingRunner"]).await;
-        let _ = sh("schtasks", &["/Delete", "/TN", "SlingRunner", "/F"]).await;
-        Ok("Removed the SlingRunner task.".into())
+        stop_windows_task().await;
+        let _ = sh("schtasks", &["/Delete", "/TN", TASK, "/F"]).await;
+        Ok(format!("Removed the {TASK} task."))
     } else {
         bail!("not supported on this OS")
     }
@@ -226,7 +313,7 @@ pub async fn status() -> Result<String> {
         .await?;
         Ok(out.stdout.trim().to_string())
     } else if cfg!(windows) {
-        let out = sh("schtasks", &["/Query", "/TN", "SlingRunner", "/FO", "LIST"]).await?;
+        let out = sh("schtasks", &["/Query", "/TN", TASK, "/FO", "LIST"]).await?;
         if !out.ok() {
             return Ok("not installed".into());
         }
@@ -262,6 +349,37 @@ mod tests {
         assert!(p.contains("/opt/homebrew/bin:/usr/bin"));
         assert!(p.contains("SLING_RUNNER_SERVICE"));
         assert!(p.contains("<key>SuccessfulExit</key><false/>"));
+    }
+
+    #[test]
+    fn windows_task_runs_without_a_window_on_battery_and_without_a_time_limit() {
+        let x = windows_task_xml(r"C:\Users\Tiago & Co\sling-runner.exe", Some(r"PC\tiago"));
+        assert!(x.contains(r"<Command>%SystemRoot%\System32\conhost.exe</Command>"));
+        assert!(x.contains(
+            r#"<Arguments>--headless "C:\Users\Tiago &amp; Co\sling-runner.exe" run --service</Arguments>"#
+        ));
+        assert!(x.contains("<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"));
+        assert!(x.contains("<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"));
+        assert!(x.contains("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"));
+        assert_eq!(x.matches(r"<UserId>PC\tiago</UserId>").count(), 2);
+        assert!(!windows_task_xml("x", None).contains("UserId"));
+    }
+
+    #[test]
+    fn windows_paths_lose_the_verbatim_prefix_and_xml_is_utf16() {
+        assert_eq!(
+            without_verbatim_prefix(r"\\?\C:\bin\sling-runner.exe"),
+            r"C:\bin\sling-runner.exe"
+        );
+        assert_eq!(
+            without_verbatim_prefix(r"\\?\UNC\host\share\x.exe"),
+            r"\\?\UNC\host\share\x.exe"
+        );
+        assert_eq!(without_verbatim_prefix(r"C:\x.exe"), r"C:\x.exe");
+        assert_eq!(
+            utf16_with_bom("<a/>"),
+            [0xFF, 0xFE, b'<', 0, b'a', 0, b'/', 0, b'>', 0]
+        );
     }
 
     #[test]

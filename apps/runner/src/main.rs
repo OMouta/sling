@@ -77,7 +77,13 @@ enum Command {
         command: ConfigCommand,
     },
     /// Connect and run tasks in the foreground.
-    Run,
+    Run {
+        /// Started by the Windows logon task: log to runner.log, like
+        /// `SLING_RUNNER_SERVICE` does for launchd and systemd, which a
+        /// scheduled task can't set.
+        #[arg(long, hide = true)]
+        service: bool,
+    },
     /// Run the Runner in the background as your user (launchd, systemd, or a logon task).
     Service {
         #[command(subcommand)]
@@ -161,7 +167,10 @@ fn main() {
     if let Command::Mcp = &cli.command {
         std::process::exit(mcp::main());
     }
-    init_logging();
+    init_logging(
+        std::env::var_os(service::SERVICE_ENV).is_some()
+            || matches!(cli.command, Command::Run { service: true }),
+    );
     let prepared = match cli.command {
         Command::Sandbox => match sandbox::prepare() {
             Ok(p) => Some(p),
@@ -195,7 +204,7 @@ fn main() {
 
 /// Logs go to stdout, or to `runner.log` (rotated at 10 MB) when running as a
 /// service. Colors only when stdout is a terminal.
-fn init_logging() {
+fn init_logging(service: bool) {
     use std::io::IsTerminal;
     let filter = tracing_subscriber::EnvFilter::try_from_env("SLING_RUNNER_LOG")
         .unwrap_or_else(|_| "info".into());
@@ -203,9 +212,7 @@ fn init_logging() {
         .with_env_filter(filter)
         .with_target(false)
         .with_ansi(std::io::stdout().is_terminal());
-    if std::env::var_os(service::SERVICE_ENV).is_some()
-        && let Ok(paths) = Paths::resolve()
-    {
+    if service && let Ok(paths) = Paths::resolve() {
         let file = paths.log_file();
         let _ = std::fs::create_dir_all(&paths.data_dir);
         if std::fs::metadata(&file)
@@ -338,7 +345,7 @@ async fn real_main(cli: Cli) -> Result<()> {
                 println!("Saved. A running Runner picks this up within a minute.");
             }
         },
-        Command::Run => {
+        Command::Run { .. } => {
             let cfg = Config::load(&paths)?;
             if cfg.runner_id.is_none() {
                 bail!("not paired yet. Run `sling-runner pair <url> <code>` first.");

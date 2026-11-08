@@ -321,7 +321,7 @@ Each channel keeps its place in `~/.local/share/sling/channels/`. A message stay
 | Command | What it does |
 |---|---|
 | `sling-runner run` | Run in the foreground. |
-| `sling-runner service install` | launchd on macOS, a systemd user unit on Linux, a logon task on Windows. |
+| `sling-runner service install` | launchd on macOS, a systemd user unit on Linux, a logon task on Windows. On Windows it runs without a window, keeps running on battery, and logs to `runner.log`. |
 | `sling-runner service status` / `uninstall` | |
 | `sling-runner gc` | Remove worktrees of finished tasks older than 7 days. Also runs daily on its own. |
 | `sling-runner doctor` | Check git, the agents, and gh, show which repos match across machines, count the found repos Sling can offer, say whether this machine merges and deploys, and check each channel. |
