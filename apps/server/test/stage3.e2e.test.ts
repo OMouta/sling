@@ -529,6 +529,15 @@ describe("routing between machines", () => {
     // ios-mac ran site last, in the label and agent test.
     expect(started.text).toContain('"machine":"ios-mac"');
     expect(started.text).toContain("Runs on ios-mac: it ran site most recently");
+    // The footer task finishes at once and its update gets a reply of its own. Wait for it,
+    // or the update can land after the next message and that turn answers it instead.
+    await until("reply to the task's update", async () => {
+      const d = await api<{ messages: { role: string; text: string }[] }>(
+        "GET",
+        `/api/conversations/${conv.id}`,
+      );
+      return d.messages.some((m) => m.role === "assistant" && m.text === "Noted.");
+    });
 
     plan.push({
       tool: "delegate_coding_task",
