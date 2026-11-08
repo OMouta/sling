@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api.ts";
+import { copyText } from "../lib/clipboard.ts";
 import { canSpeak, speak, stopIfSpeaking, stopSpeaking, useSpeaking } from "../lib/speech.ts";
 import type { ConversationDetail } from "../lib/types.ts";
 import { Button, cx, ErrorText, Textarea } from "./ui.tsx";
@@ -127,8 +128,7 @@ export function ReplyActions({ message, latest }: { message: MessageView; latest
           icon={copied ? Check : Copy}
           label={copied ? "Copied" : "Copy"}
           onClick={async () => {
-            await navigator.clipboard.writeText(message.text);
-            setCopied(true);
+            if (await copyText(message.text)) setCopied(true);
           }}
         />
         {canSpeak() && (

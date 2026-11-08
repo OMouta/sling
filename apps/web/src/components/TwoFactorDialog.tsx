@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { renderSVG } from "uqr";
 import { ApiError, api } from "../lib/api.ts";
 import { authClient } from "../lib/auth.ts";
+import { copyText } from "../lib/clipboard.ts";
 import { Button, Dialog, ErrorText, Field, Input, Spinner } from "./ui.tsx";
 
 interface Setup {
@@ -230,8 +231,7 @@ function Scan({ setup, onVerified }: { setup: Setup; onVerified: () => void }) {
               variant="ghost"
               icon={copied ? Check : Copy}
               onClick={async () => {
-                await navigator.clipboard.writeText(secret);
-                setCopied(true);
+                if (await copyText(secret)) setCopied(true);
               }}
             >
               {copied ? "Copied" : "Copy"}
@@ -282,8 +282,7 @@ function Codes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
         <Button
           icon={copied ? Check : Copy}
           onClick={async () => {
-            await navigator.clipboard.writeText(text);
-            setCopied(true);
+            if (await copyText(text)) setCopied(true);
           }}
         >
           {copied ? "Copied" : "Copy all"}

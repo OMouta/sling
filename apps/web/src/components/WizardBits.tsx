@@ -1,5 +1,6 @@
 import { ArrowUpRight, Check, CircleAlert, CircleCheck, Copy, Info } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
+import { copyText } from "../lib/clipboard.ts";
 import { Button, cx, Spinner } from "./ui.tsx";
 
 const TONE = {
@@ -67,9 +68,7 @@ export function CopyLine({ text, label = "Copy" }: { text: string | undefined; l
         icon={copied === text && text ? Check : Copy}
         disabled={!text}
         onClick={async () => {
-          if (!text) return;
-          await navigator.clipboard.writeText(text);
-          setCopied(text);
+          if (text && (await copyText(text))) setCopied(text);
         }}
       >
         {copied === text && text ? "Copied" : label}

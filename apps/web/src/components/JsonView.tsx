@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { copyText } from "../lib/clipboard.ts";
 import { Button, cx } from "./ui.tsx";
 
 export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
@@ -7,13 +8,9 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
     <Button
       size="sm"
       onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch {
-          // Clipboard access can be refused; the text is still on screen.
-        }
+        if (!(await copyText(text))) return;
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
       }}
     >
       {copied ? "Copied" : label}

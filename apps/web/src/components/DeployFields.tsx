@@ -3,6 +3,7 @@ import type { DeployMethod, DeployTargetView } from "@sling/core";
 import { Link } from "@tanstack/react-router";
 import { Check, ChevronRight, Copy, Lock, Plus, X } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
+import { copyText } from "../lib/clipboard.ts";
 import {
   blankCheck,
   DEFAULT_SETTLE,
@@ -203,8 +204,7 @@ export function CodeLine({ text }: { text: string }) {
         variant="ghost"
         icon={copied ? Check : Copy}
         onClick={async () => {
-          await navigator.clipboard.writeText(text);
-          setCopied(true);
+          if (await copyText(text)) setCopied(true);
         }}
       >
         {copied ? "Copied" : "Copy"}
