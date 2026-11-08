@@ -587,7 +587,9 @@ mod tests {
         assert!(parse_scan_roots("code").is_err());
         assert!(parse_scan_roots("~bob/code").is_err());
         let c = Config::default();
-        assert_eq!(c.scan_roots(), vec![home]);
+        let mut defaults = vec![home];
+        defaults.extend(crate::sys::fixed_drives());
+        assert_eq!(c.scan_roots(), defaults);
     }
 
     #[test]
