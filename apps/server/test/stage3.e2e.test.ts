@@ -549,6 +549,31 @@ describe("routing between machines", () => {
     });
     expect(refused.text).toContain("alpha: Doesn't have the label gpu");
   });
+
+  it("keeps a machine online that reconnects while its old connection's last frame is handled", async () => {
+    const { code } = await api<{ code: string }>("POST", "/api/runners/enrollments");
+    const quick = new FakeRunner({ url: server.url, name: "quick-restart", repos: [] });
+    const id = await quick.pair(code);
+    await quick.connect();
+    // Hold the server on the old connection's last frame.
+    let release = () => {};
+    const held = new Promise<void>((ok) => {
+      release = ok;
+    });
+    const slow = vi.spyOn(server.ctx.tasks, "inventoryUpdated").mockImplementationOnce(() => held);
+    quick.sendInventory();
+    await until("the frame held", async () => slow.mock.calls.length > 0);
+    quick.close();
+    await until("the old connection gone", async () => !server.ctx.runners.isOnline(id));
+    await quick.connect();
+    release();
+    await until("the held frame handled", async () => slow.mock.results[0]?.type === "return");
+    await new Promise((ok) => setTimeout(ok, 300));
+    expect((await machines()).find((m) => m.id === id)?.online).toBe(true);
+    slow.mockRestore();
+    quick.close();
+    await api("DELETE", `/api/runners/${id}`);
+  });
 });
 
 // ---------------------------------------------------------------- sandboxes

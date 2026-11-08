@@ -218,6 +218,10 @@ export class RunnerGateway {
       if (!s || this.#sessions.get(s.runnerId) !== s) return;
       this.#sessions.delete(s.runnerId);
       queue = queue.then(async () => {
+        // The Runner may have reconnected while this connection's last frames
+        // were handled. The new connection owns its state then, as when it
+        // replaces a live one, and marking it offline here would undo that.
+        if (this.#sessions.has(s.runnerId)) return;
         await this.#ctx.db
           .update(schema.runners)
           .set({ online: false, lastSeenAt: new Date() })
