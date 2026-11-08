@@ -149,8 +149,9 @@ enum ConfigCommand {
     /// Keys: max-mode, max-concurrent-tasks, name, labels, codex-bin, claude-bin, gh-bin,
     /// worktree-root, remote-repos (on or off), commands (on or off), deploys (on or off),
     /// files (on or off), channels (on or off),
-    /// scan-roots (comma-separated directories; "" means your home), server-url (Sling's new
-    /// address, keeping the pairing).
+    /// scan-roots (comma-separated directories; "" means your home, and on
+    /// Windows every drive too), server-url (Sling's new address, keeping the
+    /// pairing).
     Set {
         key: String,
         value: String,

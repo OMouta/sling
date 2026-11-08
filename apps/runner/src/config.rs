@@ -291,12 +291,15 @@ impl Config {
     }
 
     /// Directories the repo scan starts from: `scan_roots`, or the home
-    /// directory.
+    /// directory, and on Windows the top of every fixed drive too, since code
+    /// there often lives in places like `D:\code` or `C:\src`.
     pub fn scan_roots(&self) -> Vec<PathBuf> {
         if !self.scan_roots.is_empty() {
             return self.scan_roots.clone();
         }
-        crate::sys::home_dir().into_iter().collect()
+        let mut roots: Vec<PathBuf> = crate::sys::home_dir().into_iter().collect();
+        roots.extend(crate::sys::fixed_drives());
+        roots
     }
 
     /// Labels sent in the inventory: the configured ones plus `os:<os>` and
@@ -365,8 +368,8 @@ pub fn parse_on_off(value: &str) -> Result<bool> {
 }
 
 /// Parses `~/code,/srv/git` into absolute directories. `~` stands for the
-/// home directory. An empty string goes back to the default, the home
-/// directory.
+/// home directory. An empty string goes back to the default: the home
+/// directory, plus every fixed drive on Windows.
 pub fn parse_scan_roots(value: &str) -> Result<Vec<PathBuf>> {
     let mut out: Vec<PathBuf> = Vec::new();
     for raw in value.split(',').map(str::trim).filter(|r| !r.is_empty()) {

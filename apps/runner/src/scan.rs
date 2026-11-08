@@ -38,6 +38,17 @@ const SKIPPED: &[&str] = &[
     "AppData",
 ];
 
+/// Folders at the top of a Windows drive that hold Windows, apps, and every
+/// user's home rather than code. Your own home is scanned on its own.
+const DRIVE_ROOT_SKIPPED: &[&str] = &[
+    "Windows",
+    "Program Files",
+    "Program Files (x86)",
+    "ProgramData",
+    "Users",
+    "PerfLogs",
+];
+
 /// A repo the scan found, before it gets a suggested name.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Found {
@@ -74,10 +85,34 @@ fn skipped_name(name: &OsStr) -> bool {
     name.starts_with('.') || SKIPPED.contains(&name.as_ref())
 }
 
+fn skipped_at_drive_root(name: &OsStr) -> bool {
+    let name = name.to_string_lossy();
+    DRIVE_ROOT_SKIPPED
+        .iter()
+        .any(|s| s.eq_ignore_ascii_case(&name))
+}
+
+/// Hidden or system folders, like `$Recycle.Bin` and `System Volume
+/// Information` at the top of a Windows drive.
+#[cfg(windows)]
+fn hidden_on_windows(entry: &std::fs::DirEntry) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const HIDDEN_OR_SYSTEM: u32 = 0x2 | 0x4;
+    entry
+        .metadata()
+        .is_ok_and(|m| m.file_attributes() & HIDDEN_OR_SYSTEM != 0)
+}
+
+#[cfg(not(windows))]
+fn hidden_on_windows(_: &std::fs::DirEntry) -> bool {
+    false
+}
+
 /// Walks `roots` breadth first and returns the repos under them, sorted.
 /// Never descends into a repo, except that a root which is itself a repo is
 /// both listed and searched. Doesn't follow symlinks, and never enters
-/// anything under `skip`.
+/// anything under `skip`. At the top of a Windows drive it also leaves out
+/// Windows, the apps, the users' homes, and hidden system folders.
 pub fn walk(roots: &[PathBuf], skip: &[PathBuf], limits: &Limits) -> Vec<PathBuf> {
     let started = Instant::now();
     let mut queue: VecDeque<(PathBuf, usize)> = roots.iter().map(|r| (r.clone(), 0)).collect();
@@ -104,10 +139,14 @@ pub fn walk(roots: &[PathBuf], skip: &[PathBuf], limits: &Limits) -> Vec<PathBuf
         let Ok(entries) = std::fs::read_dir(&dir) else {
             continue;
         };
+        let drive_root = cfg!(windows) && dir.parent().is_none();
         let mut children: Vec<PathBuf> = entries
             .flatten()
             .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
             .filter(|e| !skipped_name(&e.file_name()))
+            .filter(|e| {
+                !(drive_root && (skipped_at_drive_root(&e.file_name()) || hidden_on_windows(e)))
+            })
             .map(|e| e.path())
             .collect();
         children.sort();
@@ -279,6 +318,22 @@ mod tests {
             &Limits::default(),
         );
         assert_eq!(rel(&root, &found), ["code/keep"]);
+    }
+
+    #[test]
+    fn leaves_out_windows_apps_and_homes_at_the_top_of_a_drive() {
+        for name in [
+            "Windows",
+            "Program Files",
+            "program files (x86)",
+            "ProgramData",
+            "Users",
+        ] {
+            assert!(skipped_at_drive_root(OsStr::new(name)), "{name}");
+        }
+        for name in ["code", "src", "repos", "Projects"] {
+            assert!(!skipped_at_drive_root(OsStr::new(name)), "{name}");
+        }
     }
 
     #[cfg(unix)]

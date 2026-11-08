@@ -50,12 +50,12 @@ Once the machine connects, the **Add machine** dialog lists the repos it found. 
 
 Sling works only in repos this machine allows. You can allow them in Sling or on the machine.
 
-In Sling, open the machine under **Machines** and pick from the repos it found. The Runner looks for git repos when it connects, when you ask Sling to look again, and after each change. It searches your home directory down to four levels, so `~/code/org/team/repo` is found. It doesn't look inside a repo it found, and it skips hidden folders, `node_modules`, `target`, `vendor`, `dist`, `build`, `Library`, `Applications`, `Movies`, `Music`, `Pictures`, `AppData`, and its own worktrees. A scan stops after 300 repos or about 3 seconds. Sling suggests each folder's name as the repo name, adding `-2`, `-3` and so on when the name is taken.
+In Sling, open the machine under **Machines** and pick from the repos it found. The Runner looks for git repos when it connects, when you ask Sling to look again, and after each change. It searches your home directory down to four levels, so `~/code/org/team/repo` is found. On Windows it also searches the top of every fixed drive, such as `C:\` and `D:\`, so `D:\code\repo` is found too. There it leaves out `Windows`, `Program Files`, `ProgramData`, `Users`, and hidden system folders such as the recycle bin. It doesn't look inside a repo it found, and it skips hidden folders, `node_modules`, `target`, `vendor`, `dist`, `build`, `Library`, `Applications`, `Movies`, `Music`, `Pictures`, `AppData`, and its own worktrees. A scan stops after 300 repos or about 3 seconds. Sling suggests each folder's name as the repo name, adding `-2`, `-3` and so on when the name is taken.
 
-To search other folders instead of your home directory:
+To search other folders instead:
 
 ```sh
-sling-runner config set scan-roots ~/code,~/work   # "" goes back to your home directory
+sling-runner config set scan-roots ~/code,~/work   # "" goes back to the default
 ```
 
 On macOS, Desktop, Documents, and Downloads are protected folders, so the first scan may ask for permission to read them. If you'd rather it didn't, set `scan-roots` to the folders that hold your code.
@@ -98,7 +98,7 @@ sling-runner config set commands off             # on | off
 sling-runner config set deploys off              # on | off
 sling-runner config set files off                # on | off
 sling-runner config set channels off             # on | off
-sling-runner config set scan-roots ~/code,~/work # "" means your home directory
+sling-runner config set scan-roots ~/code,~/work # "" means the default
 sling-runner config set server-url https://sling.tail1234.ts.net
 ```
 

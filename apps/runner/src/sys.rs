@@ -30,6 +30,29 @@ pub fn home_dir() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
 }
 
+/// The top of every fixed drive, like `C:\` and `D:\`. None off Windows.
+pub fn fixed_drives() -> Vec<std::path::PathBuf> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+        const DRIVE_FIXED: u32 = 3;
+        // SAFETY: GetLogicalDrives takes nothing, and GetDriveTypeW gets a
+        // NUL-terminated path that outlives the call.
+        let mask = unsafe { GetLogicalDrives() };
+        (0..26u8)
+            .filter(|i| mask & (1 << i) != 0)
+            .map(|i| format!("{}:\\", (b'A' + i) as char))
+            .filter(|root| {
+                let wide: Vec<u16> = root.encode_utf16().chain([0]).collect();
+                unsafe { GetDriveTypeW(wide.as_ptr()) == DRIVE_FIXED }
+            })
+            .map(std::path::PathBuf::from)
+            .collect()
+    }
+    #[cfg(not(windows))]
+    Vec::new()
+}
+
 pub fn os() -> &'static str {
     std::env::consts::OS
 }
