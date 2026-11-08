@@ -22,7 +22,7 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ConnectorSetupDialog } from "../components/ConnectorSetup.tsx";
 import { ExtensionIcon } from "../components/extensions/ExtensionBits.tsx";
-import { Content, Page } from "../components/Page.tsx";
+import { Page } from "../components/Page.tsx";
 import { Button, Card, cx, Dialog, Dot, ErrorText, Skeleton, Switch } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { isProviderConnector } from "../lib/sandbox.ts";
@@ -132,7 +132,7 @@ export function ConnectorsPage() {
         ) : undefined
       }
     >
-      <Content className="max-w-5xl space-y-9 pt-2">
+      <div className="space-y-9 px-5 pt-2 pb-6">
         {back?.outcome === "failed" && !back.installationId && (
           <p role="alert" className="text-xs text-danger">
             {back.error ?? "Connecting didn't finish."}
@@ -142,7 +142,7 @@ export function ConnectorsPage() {
           <Group id="installed" title="Added">
             {installations.isPending && <Skeleton className="h-24 w-full rounded-xl" />}
             <ErrorText error={installations.error} />
-            <div className="space-y-3">
+            <div className="grid items-start gap-3 2xl:grid-cols-2">
               {installed?.map((i) => (
                 <InstallationCard
                   key={i.id}
@@ -160,7 +160,7 @@ export function ConnectorsPage() {
         <Group id="available" title="Available">
           {connectors.isPending && <Skeleton className="h-28 w-full rounded-xl" />}
           <ErrorText error={connectors.error} />
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {available?.map((c) => (
               <ConnectorCard key={c.id} connector={c} onAdd={() => setForm({ connector: c })} />
             ))}
@@ -170,22 +170,26 @@ export function ConnectorsPage() {
         {(providers.length > 0 || installedProviders.length > 0) && (
           <Group id="sandbox-providers" title="Sandbox providers">
             <ProviderReadiness />
-            {installedProviders.map((i) => (
-              <InstallationCard
-                key={i.id}
-                installation={i}
-                connector={byId.get(i.connectorId)}
-                onEdit={() => edit(i)}
-              />
-            ))}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {installedProviders.length > 0 && (
+              <div className="grid items-start gap-3 2xl:grid-cols-2">
+                {installedProviders.map((i) => (
+                  <InstallationCard
+                    key={i.id}
+                    installation={i}
+                    connector={byId.get(i.connectorId)}
+                    onEdit={() => edit(i)}
+                  />
+                ))}
+              </div>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
               {providers.map((c) => (
                 <ConnectorCard key={c.id} connector={c} onAdd={() => setForm({ connector: c })} />
               ))}
             </div>
           </Group>
         )}
-      </Content>
+      </div>
 
       {form && (
         <ConnectorSetupDialog
