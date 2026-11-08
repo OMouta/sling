@@ -68,6 +68,10 @@ export interface RunningServer {
 export async function startServer(config: Config, opts: StartOptions = {}): Promise<RunningServer> {
   const app = createServer(config);
   const database = createDatabase(config.databaseUrl);
+  // An idle connection the database closes (a restart, or a shutdown while the pool is still
+  // ending) is an "error" event on the pool, and with no listener it would crash the process.
+  // The pool has already dropped that connection, and the next query opens a new one.
+  database.pool.on("error", (err) => app.log.warn({ err }, "database connection dropped"));
 
   await runMigrations(database.db);
   app.log.info("database migrated");
