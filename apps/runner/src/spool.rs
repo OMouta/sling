@@ -90,11 +90,15 @@ impl TaskSpool {
             .unwrap_or(0);
         let path = dir.join("events.bin");
         let (events, good_len) = read_events(&path)?;
-        // Drop a half-written record left by a crash.
-        let file = OpenOptions::new().create(true).append(true).open(&path)?;
-        if file.metadata()?.len() != good_len {
-            file.set_len(good_len)?;
+        // Drop a half-written record left by a crash. Windows refuses to
+        // truncate through a handle opened only to append, so this one writes.
+        if std::fs::metadata(&path).is_ok_and(|m| m.len() != good_len) {
+            OpenOptions::new()
+                .write(true)
+                .open(&path)?
+                .set_len(good_len)?;
         }
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
         let last_seq = events.last().map(|e| e.seq).unwrap_or(0);
         let pending = events.into_iter().filter(|e| e.seq > acked).collect();
         Ok(TaskSpool {
