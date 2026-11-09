@@ -99,7 +99,7 @@ export interface RuleService {
    */
   used(rule: RuleView, call: RuleCall, db?: Db): Promise<void>;
   /** What Always allow on this call's card would make. Null when no rule can cover it. */
-  offer(call: RuleCall): Promise<RuleOfferView | null>;
+  offer(call: RuleCall, streak?: number): Promise<RuleOfferView | null>;
   /**
    * Opens the chats that start rules ask for when a check changes state, and
    * starts their first turns. Returns the chats it opened, for the alert's
@@ -566,7 +566,7 @@ export class Rules implements RuleService {
     void this.#publish(call.workspaceId, rule.id).catch(() => {});
   }
 
-  async offer(call: RuleCall): Promise<RuleOfferView | null> {
+  async offer(call: RuleCall, knownStreak?: number): Promise<RuleOfferView | null> {
     if (!RULE_MODES.includes(call.mode)) return null;
     const cover = this.#cover(call.action);
     if (!cover) return null;
@@ -577,7 +577,7 @@ export class Rules implements RuleService {
       : null;
     const [summary, streak] = await Promise.all([
       this.#allowSummary(call.workspaceId, cover, call.action, match, installation),
-      this.#streak(call),
+      knownStreak === undefined ? this.#streak(call) : Promise.resolve(knownStreak),
     ]);
     return {
       summary,

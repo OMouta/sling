@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import { ENVIRONMENTS } from "../routing/router.ts";
-import { approvalView, taskViews, toEventView } from "../views.ts";
+import { approvalViews, taskViews, toEventView } from "../views.ts";
 import { TaskInputError, TaskRoutingError } from "./service.ts";
 
 const Decision = z.object({ decision: z.enum(["approve", "reject"]) });
@@ -191,8 +191,10 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
         )
         .orderBy(desc(schema.approvals.createdAt))
         .limit(100);
-      const views = await Promise.all(rows.map((a) => approvalView(ctx, a.id)));
-      return views.filter((v) => v !== null);
+      return approvalViews(
+        ctx,
+        rows.map((a) => a.id),
+      );
     },
   );
 

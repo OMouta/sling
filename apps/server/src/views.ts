@@ -13,7 +13,7 @@ import type {
 } from "@sling/core";
 import { isHarness, remoteKey } from "@sling/core";
 import { schema } from "@sling/db";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { actionCheckViews } from "./checks/action-views.ts";
 import type { AppContext } from "./context.ts";
 import { stepRuleOffer } from "./rules/steps.ts";
@@ -365,57 +365,117 @@ export async function approvalView(
   ctx: AppContext,
   approvalId: string,
 ): Promise<ApprovalView | null> {
-  const [row] = await ctx.db
+  return (await approvalViews(ctx, [approvalId]))[0] ?? null;
+}
+
+export async function approvalViews(
+  ctx: AppContext,
+  approvalIds: string[],
+): Promise<ApprovalView[]> {
+  if (!approvalIds.length) return [];
+  const rows = await ctx.db
     .select({
       approval: schema.approvals,
       action: schema.actions,
       task: schema.tasks,
       remoteUrl: schema.repos.remoteUrl,
+      repoKey: sql<
+        string | null
+      >`coalesce(${schema.repos.remoteKey}, ${schema.sandboxes.remoteKey})`,
     })
     .from(schema.approvals)
     .leftJoin(schema.actions, eq(schema.actions.id, schema.approvals.actionId))
     .leftJoin(schema.tasks, eq(schema.tasks.id, schema.approvals.taskId))
     .leftJoin(schema.repos, eq(schema.repos.id, schema.tasks.repoId))
-    .where(eq(schema.approvals.id, approvalId));
-  if (!row) return null;
-  const { approval, action, task } = row;
-  const [[tv], ruleOffer] = await Promise.all([
-    task ? taskViews(ctx, [task]) : Promise.resolve([]),
-    stepRuleOffer(ctx, approval, action, task),
-  ]);
-  const fallback = approval.kind === "sandbox_fallback" ? approval.payload : null;
-  const title =
-    approval.title ??
-    (action && task ? `${STEP_TITLE[action.kind] ?? "Push"}: ${task.title}` : "Approval");
-  return {
-    id: approval.id,
-    kind: approval.kind,
-    title,
-    state: approval.state,
-    expiresAt: approval.expiresAt.toISOString(),
-    createdAt: approval.createdAt.toISOString(),
-    taskId: task?.id ?? null,
-    actionId: action?.id ?? null,
-    actionKind: action?.kind ?? null,
-    task: task
-      ? {
-          title: task.title,
-          repoName: task.repoName,
-          runnerName: tv ? taskPlace(tv) : "unknown",
-          branch: task.branch,
-          remoteUrl:
-            row.remoteUrl ?? (typeof fallback?.cloneUrl === "string" ? fallback.cloneUrl : ""),
-          diffStats: task.diffStats ?? null,
-          summary: task.summary,
-          conversationId: task.conversationId,
-        }
-      : null,
-    prTitle: action?.prTitle ?? null,
-    prBody: action?.prBody ?? null,
-    runId: approval.runId,
-    payload: approval.payload ?? null,
-    ...(ruleOffer ? { ruleOffer } : {}),
-  };
+    .leftJoin(schema.sandboxes, eq(schema.sandboxes.id, schema.tasks.sandboxId))
+    .where(inArray(schema.approvals.id, approvalIds));
+  const tasks = new Map(rows.flatMap((r) => (r.task ? [[r.task.id, r.task] as const] : [])));
+  const views = new Map((await taskViews(ctx, [...tasks.values()])).map((t) => [t.id, t]));
+  const wanted = rows
+    .filter(
+      (r) =>
+        r.repoKey &&
+        r.action &&
+        r.approval.kind === "task_action" &&
+        r.approval.state === "pending",
+    )
+    .map((r) => ({
+      id: r.approval.id,
+      workspace: r.approval.workspaceId,
+      repo: r.repoKey,
+      action: r.action?.kind,
+    }));
+  const streaks = new Map<string, number>();
+  if (wanted.length) {
+    const result = await ctx.db.execute<{ id: string; states: string[] | null }>(sql`
+      select w.id, array_agg(h.state order by h.decided_at desc) filter (where h.state is not null) as states
+      from jsonb_to_recordset(${JSON.stringify(wanted)}::jsonb) as w(id text, workspace text, repo text, action text)
+      left join lateral (
+        select p.state, p.decided_at from approvals p
+        join actions a on a.id = p.action_id join tasks t on t.id = p.task_id
+        left join repos r on r.id = t.repo_id left join sandboxes s on s.id = t.sandbox_id
+        where p.workspace_id = w.workspace and p.kind = 'task_action'
+          and a.kind = w.action and p.state in ('approved', 'rejected')
+          and p.decided_at > now() - interval '30 days'
+          and coalesce(r.remote_key, s.remote_key) = w.repo
+        order by p.decided_at desc limit 100
+      ) h on true group by w.id
+    `);
+    for (const r of result.rows) {
+      const states = r.states ?? [];
+      const denied = states.indexOf("rejected");
+      streaks.set(r.id, denied < 0 ? states.length : denied);
+    }
+  }
+  const result = await Promise.all(
+    rows.map(async (row): Promise<ApprovalView> => {
+      const { approval, action, task } = row;
+      const tv = task ? views.get(task.id) : undefined;
+      const ruleOffer = await stepRuleOffer(
+        ctx,
+        approval,
+        action,
+        task,
+        row.repoKey,
+        streaks.get(approval.id) ?? 0,
+      );
+      const fallback = approval.kind === "sandbox_fallback" ? approval.payload : null;
+      const title =
+        approval.title ??
+        (action && task ? `${STEP_TITLE[action.kind] ?? "Push"}: ${task.title}` : "Approval");
+      return {
+        id: approval.id,
+        kind: approval.kind,
+        title,
+        state: approval.state,
+        expiresAt: approval.expiresAt.toISOString(),
+        createdAt: approval.createdAt.toISOString(),
+        taskId: task?.id ?? null,
+        actionId: action?.id ?? null,
+        actionKind: action?.kind ?? null,
+        task: task
+          ? {
+              title: task.title,
+              repoName: task.repoName,
+              runnerName: tv ? taskPlace(tv) : "unknown",
+              branch: task.branch,
+              remoteUrl:
+                row.remoteUrl ?? (typeof fallback?.cloneUrl === "string" ? fallback.cloneUrl : ""),
+              diffStats: task.diffStats ?? null,
+              summary: task.summary,
+              conversationId: task.conversationId,
+            }
+          : null,
+        prTitle: action?.prTitle ?? null,
+        prBody: action?.prBody ?? null,
+        runId: approval.runId,
+        payload: approval.payload ?? null,
+        ...(ruleOffer ? { ruleOffer } : {}),
+      };
+    }),
+  );
+  const byId = new Map(result.map((v) => [v.id, v]));
+  return approvalIds.flatMap((id) => byId.get(id) ?? []);
 }
 
 /** Billable minutes so far: ready to destroyed, or ready to now while it runs. */

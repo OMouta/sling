@@ -31,9 +31,14 @@ async function repoKey(db: Db, task: TaskRow): Promise<string | null> {
   return null;
 }
 
-async function stepCall(db: Db, task: TaskRow, kind: ActionKind): Promise<RuleCall | null> {
+async function stepCall(
+  db: Db,
+  task: TaskRow,
+  kind: ActionKind,
+  knownRepo?: string | null,
+): Promise<RuleCall | null> {
   if (kind !== "push" && kind !== "open_pr") return null;
-  const repo = await repoKey(db, task);
+  const repo = knownRepo === undefined ? await repoKey(db, task) : knownRepo;
   if (!repo) return null;
   return {
     workspaceId: task.workspaceId,
@@ -65,13 +70,15 @@ export async function stepRuleOffer(
   approval: ApprovalRow,
   action: ActionRow | null,
   task: TaskRow | null,
+  knownRepo?: string | null,
+  streak?: number,
 ): Promise<RuleOfferView | null> {
   if (approval.kind !== "task_action" || approval.state !== "pending" || !action || !task) {
     return null;
   }
-  const call = await stepCall(ctx.db, task, action.kind);
+  const call = await stepCall(ctx.db, task, action.kind, knownRepo);
   if (!call) return null;
-  const offer = await ctx.rules.offer(call).catch((err: unknown) => {
+  const offer = await ctx.rules.offer(call, streak).catch((err: unknown) => {
     ctx.log.warn({ err, approvalId: approval.id }, "rule offer failed");
     return null;
   });
