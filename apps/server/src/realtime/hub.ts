@@ -11,7 +11,14 @@ type Listener = (workspaceId: string, event: ServerEvent) => void;
  * Fans server events out to every open browser tab in a workspace, and to
  * listeners in the server that act on them, such as push notifications.
  */
+export const MAX_BUFFERED_BYTES = 1024 * 1024;
+
 export class Hub {
+  #lastErrorAt = 0;
+  readonly onError: (err: unknown) => void;
+  constructor(onError: (err: unknown) => void = () => {}) {
+    this.onError = onError;
+  }
   readonly #sockets = new Map<string, Set<WebSocket>>();
   readonly #listeners = new Set<Listener>();
 
@@ -28,22 +35,41 @@ export class Hub {
       this.#sockets.set(workspaceId, set);
     }
     set.add(socket);
-    socket.on("close", () => set.delete(socket));
+    socket.on("close", () => {
+      set.delete(socket);
+      if (set.size === 0 && this.#sockets.get(workspaceId) === set) {
+        this.#sockets.delete(workspaceId);
+      }
+    });
   }
 
   publish(workspaceId: string, event: ServerEvent) {
     for (const fn of this.#listeners) {
       try {
         fn(workspaceId, event);
-      } catch {
-        // A listener's failure mustn't keep the event from the browsers.
+      } catch (err) {
+        if (Date.now() - this.#lastErrorAt > 10_000) {
+          this.#lastErrorAt = Date.now();
+          this.onError(err);
+        }
       }
     }
     const set = this.#sockets.get(workspaceId);
     if (!set || set.size === 0) return;
     const data = JSON.stringify(event);
     for (const socket of set) {
-      if (socket.readyState === socket.OPEN) socket.send(data);
+      if (socket.readyState !== socket.OPEN) continue;
+      if (socket.bufferedAmount + Buffer.byteLength(data) > MAX_BUFFERED_BYTES) {
+        socket.terminate();
+        continue;
+      }
+      try {
+        socket.send(data, (err) => {
+          if (err) socket.terminate();
+        });
+      } catch {
+        socket.terminate();
+      }
     }
   }
 

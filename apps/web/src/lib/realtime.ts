@@ -475,6 +475,7 @@ export function connectRealtime(qc: QueryClient): () => void {
   let stopped = false;
   let timer: number | undefined;
   let ping: number | undefined;
+  let lastFrameAt = 0;
 
   const open = () => {
     connection.set("connecting");
@@ -485,12 +486,20 @@ export function connectRealtime(qc: QueryClient): () => void {
       const reconnected = attempt > 0;
       attempt = 0;
       connection.set("open");
+      lastFrameAt = Date.now();
       sendPresence(true);
       // Anything could have changed while we were away.
       if (reconnected) void qc.invalidateQueries();
-      ping = window.setInterval(() => ws?.readyState === 1 && ws.send("ping"), 25_000);
+      ping = window.setInterval(() => {
+        if (Date.now() - lastFrameAt > 60_000) {
+          ws?.close();
+          return;
+        }
+        if (ws?.readyState === 1) ws.send("ping");
+      }, 25_000);
     };
     ws.onmessage = (e) => {
+      lastFrameAt = Date.now();
       try {
         const ev = JSON.parse(e.data as string) as ServerEvent | { type: "pong" };
         if (ev.type !== "pong") apply(qc, ev);
@@ -498,16 +507,27 @@ export function connectRealtime(qc: QueryClient): () => void {
         // Ignore malformed frames.
       }
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       window.clearInterval(ping);
       // A socket closed on purpose, as on unmount, mustn't mark its successor closed.
       if (stopped) return;
       connection.set("closed");
-      const delay = Math.min(30_000, 1000 * 2 ** attempt++);
+      if (event.code === 4401 || event.code === 4403) {
+        void qc.invalidateQueries();
+        return;
+      }
+      const delay =
+        Math.min(30_000, 1000 * 2 ** Math.min(attempt++, 5)) * (0.5 + Math.random() * 0.5);
       timer = window.setTimeout(open, delay);
     };
   };
-  const onVisibility = () => sendPresence();
+  const onVisibility = () => {
+    if (document.visibilityState === "visible") {
+      if (ws?.readyState === 1 && Date.now() - lastFrameAt > 60_000) ws.close();
+      void qc.invalidateQueries();
+    }
+    sendPresence();
+  };
   document.addEventListener("visibilitychange", onVisibility);
   open();
   return () => {
