@@ -406,6 +406,25 @@ export class Sources implements SourceService {
     // An image has no text to read, so it's ready as soon as it's stored.
     const ready = kind.kind === "image";
     const row = await this.#db.transaction(async (tx) => {
+      // Serialize accounting with other uploads in this workspace.
+      await tx
+        .select({ id: schema.workspaces.id })
+        .from(schema.workspaces)
+        .where(eq(schema.workspaces.id, actor.workspaceId))
+        .for("update");
+      const quota = this.#ctx.config.sourceStorageBytes ?? 1024 * 1024 * 1024;
+      if (quota > 0) {
+        const [usage] = await tx
+          .select({ bytes: sql<string>`coalesce(sum(${s.size}), 0)` })
+          .from(s)
+          .where(eq(s.workspaceId, actor.workspaceId));
+        if (Number(usage?.bytes ?? 0) + file.data.byteLength > quota) {
+          throw new SourceInputError(
+            "Workspace storage limit reached. Remove unused sources before uploading more files.",
+            413,
+          );
+        }
+      }
       const [r] = await tx
         .insert(s)
         .values({

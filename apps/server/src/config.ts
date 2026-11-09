@@ -6,6 +6,7 @@ const Env = z.object({
   SLING_PUBLIC_URL: z.url(),
   /** Master secret. Encryption and auth keys are derived from it. */
   SLING_SECRET_KEY: z.string().min(32, "SLING_SECRET_KEY must be at least 32 characters"),
+  SLING_SOURCE_STORAGE_BYTES: z.coerce.number().int().nonnegative().default(1073741824),
   SLING_WEBHOOK_SECRET: z.string().min(32).optional(),
   SLING_WEBHOOK_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
   SLING_HTTP_ALLOWED_ORIGINS: z.string().default(""),
@@ -36,6 +37,7 @@ const Env = z.object({
 });
 
 export interface Config {
+  sourceStorageBytes?: number;
   webhookSecret?: string;
   webhookRequestsPerMinute?: number;
   httpAllowedOrigins?: string[];
@@ -82,6 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   const e = parsed.data;
   return {
+    sourceStorageBytes: e.SLING_SOURCE_STORAGE_BYTES,
     webhookSecret: e.SLING_WEBHOOK_SECRET,
     webhookRequestsPerMinute: e.SLING_WEBHOOK_REQUESTS_PER_MINUTE,
     httpAllowedOrigins: e.SLING_HTTP_ALLOWED_ORIGINS.split(",")
