@@ -12,14 +12,8 @@ import { AppLayout } from "./components/Shell.tsx";
 import { ApprovalsPage } from "./pages/Approvals.tsx";
 import { ChatPage } from "./pages/Chat.tsx";
 import { ChatsPage } from "./pages/Chats.tsx";
-import { ConnectorsPage } from "./pages/Connectors.tsx";
-import { ExtensionsPage } from "./pages/Extensions.tsx";
 import { HomePage } from "./pages/Home.tsx";
 import { LoginPage } from "./pages/Login.tsx";
-import { MachinesPage } from "./pages/Machines.tsx";
-import { PersonalitiesPage, PersonalityEditorPage } from "./pages/Personalities.tsx";
-import { SandboxesPage } from "./pages/Sandboxes.tsx";
-import { SettingsPage } from "./pages/Settings.tsx";
 import { SetupPage } from "./pages/Setup.tsx";
 import { TaskPage } from "./pages/Task.tsx";
 import { TasksPage } from "./pages/Tasks.tsx";
@@ -62,12 +56,12 @@ export const machinesRoute = createRoute({
   // `pair` opens the pairing dialog, for links from the home page.
   validateSearch: (search: Record<string, unknown>): { pair?: boolean } =>
     search.pair === true || search.pair === "true" ? { pair: true } : {},
-  component: MachinesPage,
+  component: lazyRouteComponent(() => import("./pages/Machines.tsx"), "MachinesPage"),
 });
 const sandboxesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/sandboxes",
-  component: SandboxesPage,
+  component: lazyRouteComponent(() => import("./pages/Sandboxes.tsx"), "SandboxesPage"),
 });
 // Visited now and then, so it loads on first visit (or on hover over its link).
 const checksRoute = createRoute({
@@ -98,7 +92,7 @@ export const approvalsRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/settings",
-  component: SettingsPage,
+  component: lazyRouteComponent(() => import("./pages/Settings.tsx"), "SettingsPage"),
 });
 const tasksRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -145,7 +139,7 @@ export const runRoute = createRoute({
 const personalitiesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/personalities",
-  component: PersonalitiesPage,
+  component: lazyRouteComponent(() => import("./pages/Personalities.tsx"), "PersonalitiesPage"),
 });
 const memoryRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -156,12 +150,12 @@ const memoryRoute = createRoute({
 export const personalityRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/personalities/$id",
-  component: PersonalityEditorPage,
+  component: lazyRouteComponent(() => import("./pages/Personalities.tsx"), "PersonalityEditorPage"),
 });
 const connectorsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/connectors",
-  component: ConnectorsPage,
+  component: lazyRouteComponent(() => import("./pages/Connectors.tsx"), "ConnectorsPage"),
 });
 
 export type ExtensionsTab = "installed" | "discover" | "sources";
@@ -170,7 +164,7 @@ export const extensionsRoute = createRoute({
   path: "/extensions",
   validateSearch: (search: Record<string, unknown>): { tab?: "discover" | "sources" } =>
     search.tab === "discover" || search.tab === "sources" ? { tab: search.tab } : {},
-  component: ExtensionsPage,
+  component: lazyRouteComponent(() => import("./pages/Extensions.tsx"), "ExtensionsPage"),
 });
 
 const routeTree = rootRoute.addChildren([
