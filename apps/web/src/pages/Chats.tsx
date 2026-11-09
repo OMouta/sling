@@ -190,7 +190,7 @@ function ChatRow({ c, menu }: { c: ConversationSummaryView; menu: React.ReactNod
         )}
       </div>
       <span className="tabular shrink-0 pt-0.5 text-xs text-subtle">{ago(activityAt(c))}</span>
-      <div className="relative z-10 -my-0.5 shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 has-[[aria-expanded=true]]:opacity-100 focus-within:opacity-100">
+      <div className="relative z-10 -my-0.5 shrink-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100 has-[[aria-expanded=true]]:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
         {menu}
       </div>
     </div>

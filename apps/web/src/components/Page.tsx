@@ -15,14 +15,24 @@ import {
   SquarePen,
   Sun,
 } from "lucide-react";
-import { createContext, type ReactNode, useContext, useEffect } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useId } from "react";
 import { api } from "../lib/api.ts";
 import { decisionCount, useApprovalCounts } from "../lib/approvals.ts";
 import { authClient } from "../lib/auth.ts";
 import { clearDrafts } from "../lib/drafts.ts";
 import { setTheme, type ThemePref, useTheme } from "../lib/theme.ts";
 import type { Status } from "../lib/types.ts";
-import { Avatar, Button, cx, Kbd, Menu, MenuItem, MenuLabel, MenuSeparator } from "./ui.tsx";
+import {
+  Avatar,
+  Button,
+  cx,
+  Kbd,
+  Menu,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  TabPanel,
+} from "./ui.tsx";
 
 /** What the shell lends to pages: the sidebar, the search palette, and new chats. */
 export const ShellContext = createContext<{
@@ -83,12 +93,22 @@ export function Page({
   children: ReactNode;
   bodyClassName?: string;
 }) {
+  const panel = useId();
   return (
     <div className="flex h-full min-h-0 flex-col">
       <TopBar title={title} crumb={crumb} badge={badge} controls={controls} />
-      {tabs && <div className="shrink-0 border-b border-border px-5">{tabs}</div>}
+      {tabs && (
+        <TabPanel.Provider value={panel}>
+          <div className="shrink-0 border-b border-border px-5">{tabs}</div>
+        </TabPanel.Provider>
+      )}
       {toolbar}
-      <div className={cx("min-h-0 flex-1 overflow-y-auto", bodyClassName)}>{children}</div>
+      <div
+        className={cx("min-h-0 flex-1 overflow-y-auto", bodyClassName)}
+        {...(tabs ? { role: "tabpanel", id: panel, "aria-labelledby": `${panel}-tab` } : {})}
+      >
+        {children}
+      </div>
       {footer}
     </div>
   );

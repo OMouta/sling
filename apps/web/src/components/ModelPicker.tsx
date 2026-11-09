@@ -515,7 +515,7 @@ export function ModelPicker({
                         toggleFavorite(r.key);
                       }}
                       className={cx(
-                        "grid size-6 shrink-0 cursor-pointer place-items-center rounded-md opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100",
+                        "hit grid size-6 shrink-0 cursor-pointer place-items-center rounded-md opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
                         fav >= 0 ? "text-warn" : "text-subtle",
                       )}
                     >

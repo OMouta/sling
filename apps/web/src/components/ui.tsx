@@ -58,7 +58,7 @@ export function Button({
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       className={cx(
-        "pressable inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full text-xs font-medium whitespace-nowrap select-none disabled:cursor-not-allowed disabled:opacity-50",
+        "pressable hit inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-full text-xs font-medium whitespace-nowrap select-none disabled:cursor-not-allowed disabled:opacity-50",
         iconOnly
           ? size === "sm"
             ? "size-[26px]"
@@ -264,12 +264,15 @@ export function Count({ children, tone }: { children: ReactNode; tone?: "warn" }
   );
 }
 
+/** A loading wheel. Screen readers hear "Loading" once, where it appears. */
 export function Spinner({ className }: { className?: string }) {
   return (
-    <LoaderCircle
-      aria-hidden="true"
-      className={cx("animate-spin text-muted", className ?? "size-4")}
-    />
+    <span role="status" aria-label="Loading" className="inline-flex">
+      <LoaderCircle
+        aria-hidden="true"
+        className={cx("animate-spin text-muted", className ?? "size-4")}
+      />
+    </span>
   );
 }
 
@@ -305,7 +308,11 @@ export function Avatar({ name, size = 20 }: { name: string; size?: number }) {
 export function ErrorText({ error }: { error: unknown }) {
   if (!error) return null;
   const message = error instanceof Error ? error.message : String(error);
-  return <p className="text-xs leading-4 text-danger">{message}</p>;
+  return (
+    <p role="alert" className="text-xs leading-4 text-danger">
+      {message}
+    </p>
+  );
 }
 
 /** An empty state: an icon tile, a title, and a line or two of help. */
@@ -371,7 +378,7 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cx(
-        "relative inline-flex shrink-0 cursor-pointer items-center rounded-full transition-[background-color,box-shadow] duration-150 ease-out disabled:cursor-not-allowed disabled:opacity-50",
+        "hit relative inline-flex shrink-0 cursor-pointer items-center rounded-full transition-[background-color,box-shadow] duration-150 ease-out before:-inset-y-3 disabled:cursor-not-allowed disabled:opacity-50",
         size === "sm" ? "h-4 w-7" : "h-[18px] w-8",
         checked
           ? "bg-accent shadow-[inset_0_0_0_1px_rgb(255_255_255/0.15)]"
@@ -391,9 +398,18 @@ export function Switch({
 
 /* ------------------------------------------------------------------ Dialog */
 
+/** Open dialogs, the topmost last. Only the topmost takes keys and focus. */
+const openDialogs: HTMLElement[] = [];
+
+const FOCUSABLE =
+  'a[href], button:not(:disabled), input:not(:disabled):not([type=hidden]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
+
 /**
  * A modal panel. Escape and the backdrop close it. On phones it sits at the
- * bottom of the screen like a sheet.
+ * bottom of the screen like a sheet. While it's open, Tab stays inside it,
+ * the page behind can't be reached or scrolled, and closing it puts focus
+ * back where it was. A dialog opened from another takes over until it
+ * closes.
  */
 export function Dialog({
   title,
@@ -411,25 +427,88 @@ export function Dialog({
   wide?: boolean;
 }) {
   const id = useId();
+  const root = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
+    const el = root.current;
+    const box = panel.current;
+    if (!el || !box) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    openDialogs.push(el);
+    const top = () => openDialogs.at(-1) === el;
+
+    // Everything else on the page stops taking focus and clicks.
+    const quieted: HTMLElement[] = [];
+    for (const child of document.body.children) {
+      if (child === el || !(child instanceof HTMLElement) || child.inert) continue;
+      child.inert = true;
+      quieted.push(child);
+    }
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     const onKey = (e: KeyboardEvent) => {
+      if (!top()) return;
       if (e.key === "Escape") {
+        // A menu or picker inside closes first, and says so.
+        if (e.defaultPrevented) return;
         e.stopPropagation();
         close.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
+        (n) => n.offsetParent !== null || n === document.activeElement,
+      );
+      const first = items[0];
+      const last = items.at(-1);
+      if (!first || !last) {
+        e.preventDefault();
+        box.focus();
+      } else if (
+        e.shiftKey &&
+        (document.activeElement === first || !box.contains(document.activeElement))
+      ) {
+        e.preventDefault();
+        last.focus();
+      } else if (
+        !e.shiftKey &&
+        (document.activeElement === last || !box.contains(document.activeElement))
+      ) {
+        e.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener("keydown", onKey);
-    const first = panel.current?.querySelector<HTMLElement>(
-      "input:not([type=hidden]), textarea, select, button[data-autofocus]",
-    );
-    first?.focus();
-    return () => window.removeEventListener("keydown", onKey);
+    const start =
+      box.querySelector<HTMLElement>(
+        "[data-autofocus], input:not([type=hidden]):not(:disabled), textarea:not(:disabled), select:not(:disabled)",
+      ) ?? box;
+    start.focus({ preventScroll: true });
+
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      openDialogs.splice(openDialogs.indexOf(el), 1);
+      for (const child of quieted) child.inert = false;
+      if (openDialogs.length === 0) document.body.style.overflow = overflow;
+      // Back to where focus was, unless it already moved somewhere that still exists.
+      if (
+        opener?.isConnected &&
+        (!document.activeElement ||
+          document.activeElement === document.body ||
+          el.contains(document.activeElement))
+      ) {
+        opener.focus({ preventScroll: true });
+      }
+    };
   }, []);
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center overscroll-contain sm:items-center sm:p-4">
+    <div
+      ref={root}
+      className="fixed inset-0 z-50 flex items-end justify-center overscroll-contain sm:items-center sm:p-4"
+    >
       <button
         type="button"
         aria-label="Close"
@@ -442,8 +521,9 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={id}
+        tabIndex={-1}
         className={cx(
-          "anim-pop relative flex max-h-[90vh] w-full flex-col rounded-t-2xl bg-surface shadow-popover sm:rounded-2xl",
+          "anim-pop relative flex max-h-[90vh] w-full flex-col rounded-t-2xl bg-surface shadow-popover outline-none sm:rounded-2xl",
           wide ? "sm:max-w-4xl" : "sm:max-w-lg",
         )}
       >
@@ -480,7 +560,16 @@ export function Dialog({
 
 /* -------------------------------------------------------------------- Tabs */
 
-/** Underlined tabs, as in a page's tab row. */
+/**
+ * The panel a page's tabs switch, when the tabs sit in a page's tab row:
+ * the tabs say they control it, and it's named after the selected tab.
+ */
+export const TabPanel = createContext<string | null>(null);
+
+/**
+ * Underlined tabs, as in a page's tab row. The arrow keys, Home, and End
+ * move between them and select as they go; Tab moves past the row.
+ */
 export function Tabs<T extends string>({
   tabs,
   value,
@@ -492,12 +581,34 @@ export function Tabs<T extends string>({
   onChange: (id: T) => void;
   className?: string;
 }) {
+  const panel = useContext(TabPanel);
+  const row = useRef<HTMLDivElement>(null);
+  const move = (e: React.KeyboardEvent) => {
+    const i = tabs.findIndex((t) => t.id === value);
+    const next =
+      e.key === "ArrowRight"
+        ? (i + 1) % tabs.length
+        : e.key === "ArrowLeft"
+          ? (i - 1 + tabs.length) % tabs.length
+          : e.key === "Home"
+            ? 0
+            : e.key === "End"
+              ? tabs.length - 1
+              : -1;
+    const tab = tabs[next];
+    if (!tab) return;
+    e.preventDefault();
+    onChange(tab.id);
+    row.current?.querySelectorAll<HTMLElement>("[role=tab]")[next]?.focus();
+  };
   return (
     // Scrolls sideways when the tabs don't fit, and never up and down. The
     // row sits 1px over its container's bottom border, so the active tab's
     // line covers that border without hanging out of the row.
     <div
+      ref={row}
       role="tablist"
+      onKeyDown={move}
       className={cx(
         "-mb-px flex gap-5 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         className,
@@ -512,9 +623,12 @@ export function Tabs<T extends string>({
             type="button"
             role="tab"
             aria-selected={active}
+            tabIndex={active ? 0 : -1}
+            id={active && panel ? `${panel}-tab` : undefined}
+            aria-controls={panel ?? undefined}
             onClick={() => onChange(t.id)}
             className={cx(
-              "relative flex shrink-0 cursor-pointer items-center gap-1.5 py-[15px] text-xs font-medium transition-colors duration-150",
+              "relative flex shrink-0 cursor-pointer items-center gap-1.5 rounded-sm py-[15px] text-xs font-medium transition-colors duration-150 outline-none focus-visible:text-text focus-visible:after:absolute focus-visible:after:inset-x-[-4px] focus-visible:after:inset-y-[9px] focus-visible:after:rounded-md focus-visible:after:shadow-focus",
               active ? "text-text" : "text-subtle hover:text-soft",
             )}
           >
@@ -679,13 +793,23 @@ export function Menu({
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  // Picking an item or pressing Escape puts focus back on the trigger, so a
+  // dialog the item opens returns there when it closes.
+  const closeToTrigger = () => {
+    setOpen(false);
+    root.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
+  };
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       if (!root.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key !== "Escape") return;
+      // Only the menu closes, not a dialog it sits in.
+      e.preventDefault();
+      setOpen(false);
+      root.current?.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
     };
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
@@ -722,7 +846,7 @@ export function Menu({
             items[(next + items.length) % items.length]?.focus();
           }}
         >
-          <MenuClose.Provider value={() => setOpen(false)}>{children}</MenuClose.Provider>
+          <MenuClose.Provider value={closeToTrigger}>{children}</MenuClose.Provider>
         </div>
       )}
     </div>

@@ -283,6 +283,22 @@
     scale: 0.96;
   }
 
+  /*
+   * On a touch screen a small control takes taps from a little around it,
+   * so it's easier to hit, without making desktop rows any taller. A
+   * control placed with absolute or fixed keeps its placement.
+   */
+  @media (pointer: coarse) {
+    .hit {
+      position: relative;
+    }
+    .hit::before {
+      content: "";
+      position: absolute;
+      inset: -7px;
+    }
+  }
+
   /* Overlays enter with a short fade and lift; exits are instant. */
   @keyframes sling-pop {
     from {

@@ -94,7 +94,7 @@ export function useConversationMenu() {
             toggle();
           }}
           className={cx(
-            "grid size-6 cursor-pointer place-items-center rounded-md text-subtle transition-colors duration-150 hover:bg-surface-3 hover:text-icon",
+            "hit grid size-6 cursor-pointer place-items-center rounded-md text-subtle transition-colors duration-150 hover:bg-surface-3 hover:text-icon",
             open && "bg-surface-3 text-icon",
           )}
         >
