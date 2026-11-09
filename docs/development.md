@@ -101,6 +101,53 @@ docker build -f deploy/sandbox/Dockerfile -t sling-sandbox:dev .
 SLING_SANDBOX_IMAGE=sling-sandbox:dev cargo test -p sling-runner --test sandbox
 ```
 
+## Web bundle size
+
+```sh
+pnpm --filter @sling/web build
+node scripts/web-bundle-size.mjs --check
+```
+
+The script lists what the first page load fetches (the entry script, the chunks it
+preloads, and the stylesheet) and each chunk loaded on demand, raw and compressed with
+gzip level 9 and brotli quality 11. With `--check` it fails when the compressed first
+load exceeds `apps/web/bundle-budget.json`; CI runs it after the web build. If growth
+is intended, raise the budget in the same change and say why. Sling's server sends
+these files uncompressed, so behind no compressing proxy the raw column is what
+browsers download.
+
+Measured on 2026-11-09, before route pages were loaded on demand (`4a2de99`) and after:
+
+| First load | Raw | gzip | brotli |
+|---|---:|---:|---:|
+| Before (entry script 778.5 KiB raw) | 1045.3 KiB | 307.6 KiB (315,012 B) | 259.7 KiB (265,914 B) |
+| After (entry script 508.9 KiB raw) | 913.9 KiB | 276.7 KiB (283,358 B) | 239.5 KiB (245,251 B) |
+| Budget | | 292,000 B | 253,000 B |
+
+The first load is 12 files after the change: the entry script, 10 preloaded chunks, and
+the stylesheet (82.7 KiB raw, 15.7 KiB gzip). Two of the preloaded chunks are shared
+code the split pulled out of the entry: `lib` (118.4 KiB raw, 35.7 KiB gzip) and
+`Wizard` (21.6 KiB raw, 6.9 KiB gzip). They're the next candidates for loading on
+demand.
+
+Routes loaded on demand:
+
+| Page | Raw | gzip | brotli |
+|---|---:|---:|---:|
+| Machines | 23.6 KiB | 7.6 KiB | 6.9 KiB |
+| Sandboxes | 6.2 KiB | 2.3 KiB | 2.1 KiB |
+| Checks | 29.6 KiB | 9.6 KiB | 8.7 KiB |
+| Settings | 36.2 KiB | 11.4 KiB | 10.2 KiB |
+| Workflow editor | 40.4 KiB | 12.3 KiB | 11.0 KiB |
+| Workflow run | 6.9 KiB | 2.6 KiB | 2.4 KiB |
+| Personalities (list and editor) | 29.7 KiB | 8.9 KiB | 8.0 KiB |
+| Memory | 7.2 KiB | 2.8 KiB | 2.5 KiB |
+| Connectors | 9.7 KiB | 3.7 KiB | 3.4 KiB |
+| Extensions | 32.3 KiB | 9.0 KiB | 8.1 KiB |
+
+The workflow node catalog (372.2 KiB raw, 115.0 KiB gzip) also loads on demand, with
+the workflow pages.
+
 ## Changing things
 
 - **Database:** edit `packages/db/src/schema/*.ts`, then `pnpm --filter @sling/db generate`. Migrations apply on server start.

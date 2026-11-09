@@ -37,6 +37,8 @@ jobs:
         working-directory: packages/runner-protocol
         run: pnpm exec buf breaking --against "../../.git#ref=origin/${{ github.base_ref }},subdir=packages/runner-protocol"
       - run: pnpm --filter @sling/web build
+      - name: Web bundle stays within budget
+        run: node scripts/web-bundle-size.mjs --check
 
   browser:
     runs-on: ubuntu-latest
