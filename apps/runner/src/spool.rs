@@ -269,12 +269,22 @@ impl TaskSpool {
         if self.skipped.0 > 0 {
             let (count, bytes) = self.skipped;
             let events = if count == 1 { "event" } else { "events" };
-            self.write_event(&self.note(format!(
+            let note = self.note(format!(
                 "Skipped {count} {events} ({}) of this task's output.",
                 size_text(bytes)
-            )))?;
-            self.skipped = (0, 0);
-            event.seq = self.last_seq + 1;
+            ));
+            // The note must not cost the event after it, which may be the
+            // task's finish.
+            match self.write_event(&note) {
+                Ok(()) => {
+                    self.skipped = (0, 0);
+                    event.seq = self.last_seq + 1;
+                }
+                Err(e) => tracing::warn!(
+                    task = self.task_id(),
+                    "could not note skipped output: {e:#}"
+                ),
+            }
         }
         self.write_event(&event)?;
         Ok(Some(event.seq))

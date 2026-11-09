@@ -602,4 +602,19 @@ mod faults {
         assert!(text(&events[2]).starts_with("Skipped 1 event ("));
         assert_eq!(text(&events[3]), "after");
     }
+    #[test]
+    fn a_failed_note_about_skipped_output_does_not_lose_the_finish() {
+        let disk = SimDisk::new(&root());
+        let mut s = TaskSpool::create_on(Arc::new(disk.clone()), &root(), meta(ID)).unwrap();
+        let last = fill(&mut s);
+        disk.fail_after(0);
+        let finished = s.append(Kind::Finished(Default::default())).unwrap();
+        assert_eq!(finished, Some(last + 1));
+        drop(s);
+        let events = replay(&mut open(&disk));
+        assert!(matches!(
+            events.last().unwrap().kind,
+            Some(Kind::Finished(_))
+        ));
+    }
 }
