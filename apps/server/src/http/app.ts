@@ -34,14 +34,16 @@ import { sourceRoutes } from "../sources/routes.ts";
 import { taskRoutes } from "../tasks/routes.ts";
 import { connectorRoutes } from "../workflows/connectors/routes.ts";
 import { webhookRoutes, workflowRoutes } from "../workflows/routes.ts";
+import { requestLog } from "./logging.ts";
 
 export function createServer(config: Config): FastifyInstance {
   const app = Fastify({
     logger: {
       level: config.logLevel,
+      serializers: { req: requestLog },
       redact: ["req.headers.cookie", "req.headers.authorization", 'res.headers["set-cookie"]'],
     },
-    trustProxy: true,
+    trustProxy: config.trustedProxies ?? false,
     bodyLimit: 1024 * 1024,
   });
   app.setValidatorCompiler(validatorCompiler);

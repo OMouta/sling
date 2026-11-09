@@ -1,5 +1,6 @@
 import { NodeError } from "@sling/workflow";
 import { z } from "zod";
+import { outboundRequest } from "../../http/outbound.ts";
 import { defineNode } from "../types.ts";
 
 const METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -92,11 +93,11 @@ export const httpRequestNode = defineNode({
     const started = Date.now();
     let res: Response;
     try {
-      res = await fetch(url, {
+      res = await outboundRequest(url, {
         method: config.method,
         headers,
         body,
-        redirect: "follow",
+        allowedOrigins: ctx.services.app.config.httpAllowedOrigins ?? [],
         signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(config.timeoutMs)]),
       });
     } catch (err) {

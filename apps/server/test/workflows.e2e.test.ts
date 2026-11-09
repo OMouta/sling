@@ -1437,6 +1437,7 @@ describe("http.request", () => {
     });
     await new Promise<void>((ok) => http.listen(0, "127.0.0.1", ok));
     const base = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    server.ctx.config.httpAllowedOrigins = [base];
     try {
       const get = await deploy(
         c,

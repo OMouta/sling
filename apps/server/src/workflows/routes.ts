@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { RunDetailView } from "@sling/core";
 import { schema } from "@sling/db";
 import { parseDefinition, type WorkflowDefinition } from "@sling/workflow";
@@ -7,6 +8,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
+import { AdmissionLimit, validWebhookSignature } from "../http/webhook-security.ts";
 import { WorkflowInputError } from "./service.ts";
 import { webhookTrigger } from "./triggers.ts";
 import { type RunRow, toNodeRunView, toRunView } from "./views.ts";
@@ -337,16 +339,71 @@ const DROPPED_HEADERS = new Set(["cookie", "authorization", "proxy-authorization
 
 /** `POST /hooks/:token`. No session: the token in the URL is the credential. */
 export async function webhookRoutes(app: FastifyInstance, ctx: AppContext) {
-  // Webhook senders use all sorts of content types. Anything that isn't JSON arrives as text.
-  app.addContentTypeParser("*", { parseAs: "string" }, (_req, body, done) => done(null, body));
-  app.addContentTypeParser(
-    "application/x-www-form-urlencoded",
-    { parseAs: "string" },
-    (_req, body, done) => done(null, Object.fromEntries(new URLSearchParams(String(body)))),
-  );
+  const rawBodies = new WeakMap<object, Buffer>();
+  const limit = new AdmissionLimit();
+  app.removeAllContentTypeParsers();
+  app.addContentTypeParser("*", { parseAs: "buffer" }, (req, raw, done) => {
+    const bytes = raw as Buffer;
+    rawBodies.set(req, bytes);
+    const text = bytes.toString("utf8");
+    try {
+      const type = req.headers["content-type"]?.split(";")[0]?.trim();
+      done(
+        null,
+        type === "application/json"
+          ? JSON.parse(text)
+          : type === "application/x-www-form-urlencoded"
+            ? Object.fromEntries(new URLSearchParams(text))
+            : text,
+      );
+    } catch {
+      done(Object.assign(new Error("Invalid webhook JSON"), { statusCode: 400 }));
+    }
+  });
   app.post<{ Params: { token: string } }>("/hooks/:token", async (request, reply) => {
+    if (!limit.take(`ip:${request.ip}`, (ctx.config.webhookRequestsPerMinute ?? 60) * 2)) {
+      return reply
+        .header("retry-after", "60")
+        .code(429)
+        .send({ error: "Webhook rate limit exceeded" });
+    }
+    const raw = rawBodies.get(request) ?? Buffer.alloc(0);
+    if (
+      ctx.config.webhookSecret &&
+      !validWebhookSignature(
+        ctx.config.webhookSecret,
+        String(request.headers["x-sling-timestamp"] ?? ""),
+        String(request.headers["x-sling-signature"] ?? ""),
+        raw,
+      )
+    ) {
+      return reply.code(401).send({ error: "Invalid webhook signature" });
+    }
     const found = await webhookTrigger(ctx, request.params.token);
     if (!found) return reply.code(404).send({ error: "not found" });
+    if (
+      !limit.take(
+        `workspace:${found.workflow.workspaceId}`,
+        ctx.config.webhookRequestsPerMinute ?? 60,
+      )
+    ) {
+      return reply
+        .header("retry-after", "60")
+        .code(429)
+        .send({ error: "Webhook rate limit exceeded" });
+    }
+    const eventId = request.headers["x-sling-event-id"];
+    if (eventId !== undefined && (typeof eventId !== "string" || eventId.length > 200)) {
+      return reply.code(400).send({ error: "Invalid webhook event ID" });
+    }
+    const dedupe =
+      eventId ||
+      (ctx.config.webhookSecret
+        ? createHash("sha256")
+            .update(String(request.headers["x-sling-timestamp"]))
+            .update(raw)
+            .digest("hex")
+        : null);
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(request.headers)) {
       if (!DROPPED_HEADERS.has(k) && typeof v === "string") headers[k] = v;
@@ -357,6 +414,7 @@ export async function webhookRoutes(app: FastifyInstance, ctx: AppContext) {
       ownerId: found.workflow.ownerId,
       versionId: found.trigger.versionId,
       triggerNodeId: found.trigger.nodeId,
+      dedupeKey: dedupe ? `hook:${found.trigger.nodeId}:${dedupe}` : null,
       outputs: {
         body: request.body ?? null,
         headers,
