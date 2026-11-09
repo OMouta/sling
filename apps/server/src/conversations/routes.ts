@@ -418,7 +418,8 @@ function decodeCursor(cursor: string): { at: string; id: string } | null {
 /**
  * What the status filters match, as conditions on a conversations row. A
  * reply being written, and a command or send waiting in a turn, live in
- * this process; the rest is in the database.
+ * this process; the rest is in the database. Each is an `in` over the
+ * workspace's tasks, which Postgres hashes once instead of probing per chat.
  */
 function statusFilters(
   ctx: AppContext,
@@ -431,14 +432,14 @@ function statusFilters(
   const thinking = ctx.agent.thinking();
   return {
     waiting: or(
-      sql`exists (select 1 from ${a} inner join ${t} on ${t.id} = ${a.taskId} where ${a.workspaceId} = ${workspaceId} and ${a.state} = 'pending' and ${t.conversationId} = ${c.id})`,
+      sql`${c.id} in (select ${t.conversationId} from ${a} inner join ${t} on ${t.id} = ${a.taskId} where ${a.workspaceId} = ${workspaceId} and ${a.state} = 'pending')`,
       asking.length ? inArray(c.id, asking) : undefined,
     ) as SQL,
     working: or(
-      sql`exists (select 1 from ${t} where ${t.conversationId} = ${c.id} and ${inArray(t.state, ACTIVE_TASK_STATES)})`,
+      sql`${c.id} in (select ${t.conversationId} from ${t} where ${t.workspaceId} = ${workspaceId} and ${inArray(t.state, ACTIVE_TASK_STATES)})`,
       thinking.length ? inArray(c.id, thinking) : undefined,
     ) as SQL,
-    tasks: sql`exists (select 1 from ${t} where ${t.conversationId} = ${c.id})`,
+    tasks: sql`${c.id} in (select ${t.conversationId} from ${t} where ${t.workspaceId} = ${workspaceId})`,
   };
 }
 
