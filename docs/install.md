@@ -206,7 +206,8 @@ Workflow HTTP requests now accept public destinations by default. Before upgradi
 an installation whose workflows call internal services, set
 `SLING_HTTP_ALLOWED_ORIGINS` to a comma-separated list of exact origins, including
 ports, such as `http://internal-service:8080`. Redirect destinations are checked
-again. Source-link fetching remains public-only.
+again. Link-local addresses and cloud metadata services stay refused even when
+listed. Source-link fetching remains public-only.
 
 A webhook trigger can take signed requests with a secret of its own, set in the editor; see [workflows.md](workflows.md#webhooks). Set `SLING_WEBHOOK_SECRET` to require HMAC-SHA256 authentication on the other webhook requests.
 The sender supplies `x-sling-timestamp` as Unix seconds and `x-sling-signature` as

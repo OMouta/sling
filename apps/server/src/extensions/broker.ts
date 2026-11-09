@@ -158,7 +158,7 @@ function parseV4(s: string): [number, number, number, number] | null {
 }
 
 /** Eight 16-bit groups, or null when it isn't an IPv6 address. */
-function parseV6(input: string): number[] | null {
+export function parseV6(input: string): number[] | null {
   let s = input;
   const zone = s.indexOf("%");
   if (zone >= 0) s = s.slice(0, zone);
@@ -189,14 +189,52 @@ function parseV6(input: string): number[] | null {
   return groups;
 }
 
-function v4FromGroups(hi: number, lo: number): AddressClass {
-  return classifyV4(hi >> 8, hi & 0xff, lo >> 8, lo & 0xff);
+/**
+ * The IPv4 address a connection to this address reaches: an IPv4 address
+ * itself, or the one an IPv6 form carries (mapped, compatible, translated,
+ * NAT64, or 6to4). Null for any other IPv6 address.
+ */
+export function reachedV4(address: string): [number, number, number, number] | null {
+  const bare = address.startsWith("[") ? address.slice(1, -1) : address;
+  const v4 = parseV4(bare);
+  if (v4) return v4;
+  const g = parseV6(bare);
+  if (!g) return null;
+  const at = (hi: number, lo: number): [number, number, number, number] => [
+    hi >> 8,
+    hi & 0xff,
+    lo >> 8,
+    lo & 0xff,
+  ];
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = g as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
+  const zeroTo4 = g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0;
+  // :: and ::1 are IPv6's own unspecified and loopback addresses, not IPv4-compatible ones.
+  if (zeroTo4 && g5 === 0 && g6 === 0 && g7 <= 1) return null;
+  if (zeroTo4 && (g5 === 0xffff || g5 === 0)) return at(g6, g7);
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0xffff && g5 === 0) {
+    return at(g6, g7);
+  }
+  if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
+    return at(g6, g7);
+  }
+  if (g0 === 0x2002) return at(g1, g2);
+  return null;
 }
 
 /** What kind of address this is. Anything not "public" needs `localNetwork`. */
 export function classifyAddress(address: string): AddressClass {
   const bare = address.startsWith("[") ? address.slice(1, -1) : address;
-  const v4 = parseV4(bare);
+  // IPv4, and IPv6 forms that reach an IPv4 address, are judged by that address.
+  const v4 = reachedV4(bare);
   if (v4) return classifyV4(...v4);
   const g = parseV6(bare);
   if (!g) return "reserved";
@@ -210,22 +248,11 @@ export function classifyAddress(address: string): AddressClass {
     number,
     number,
   ];
-  const zeroTo4 = g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0;
-  if (zeroTo4 && g5 === 0 && g6 === 0 && g7 === 0) return "unspecified";
-  if (zeroTo4 && g5 === 0 && g6 === 0 && g7 === 1) return "loopback";
-  // IPv4-mapped (::ffff:a.b.c.d) and IPv4-compatible (::a.b.c.d) forms.
-  if (zeroTo4 && (g5 === 0xffff || g5 === 0)) return v4FromGroups(g6, g7);
-  // IPv4-translated (::ffff:0:a.b.c.d).
-  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0xffff && g5 === 0) {
-    return v4FromGroups(g6, g7);
-  }
-  // NAT64 (64:ff9b::/96 and the local-use 64:ff9b:1::/48) reaches the embedded IPv4 address.
-  if (g0 === 0x64 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
-    return v4FromGroups(g6, g7);
-  }
+  const zeroTo6 = g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0;
+  if (zeroTo6 && g7 === 0) return "unspecified";
+  if (zeroTo6 && g7 === 1) return "loopback";
+  // NAT64's local-use prefix (64:ff9b:1::/48) may embed the IPv4 address anywhere.
   if (g0 === 0x64 && g1 === 0xff9b && g2 === 1) return "reserved";
-  // 6to4 (2002::/16) routes to the IPv4 address in the next 32 bits.
-  if (g0 === 0x2002) return v4FromGroups(g1, g2);
   if ((g0 & 0xfe00) === 0xfc00) return "unique-local";
   if ((g0 & 0xffc0) === 0xfe80) return "link-local";
   // Site-local, deprecated but still routed locally by some networks.

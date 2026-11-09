@@ -78,7 +78,7 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | Approval | Waits for you to approve, reject, or let it expire |
 | Conversation | Finds or creates the conversation for a key |
 | **Actions** | |
-| HTTP request | Calls a URL. GET and HEAD retry on network errors, 429, and 5xx |
+| HTTP request | Calls a URL. GET and HEAD retry on network errors, 429, and 5xx. Internal addresses need their origin in `SLING_HTTP_ALLOWED_ORIGINS`; see [install.md](install.md#automation-admission-and-storage-limits) |
 | Send Discord message | Channel or DM, optionally with Approve and Reject buttons |
 | Send iMessage, Send Signal message | From your machine, to a sender it allows or a group they wrote in |
 | Send email | Plain text over SMTP |

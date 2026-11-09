@@ -1,6 +1,6 @@
 import { NodeError } from "@sling/workflow";
 import { z } from "zod";
-import { outboundRequest } from "../../http/outbound.ts";
+import { OutboundPolicyError, outboundRequest } from "../../http/outbound.ts";
 import { defineNode } from "../types.ts";
 
 const METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] as const;
@@ -101,6 +101,9 @@ export const httpRequestNode = defineNode({
         signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(config.timeoutMs)]),
       });
     } catch (err) {
+      if (err instanceof OutboundPolicyError) {
+        throw new NodeError(err.message, { code: "forbidden_destination", retryable: false });
+      }
       const timedOut = err instanceof Error && err.name === "TimeoutError";
       throw new NodeError(
         timedOut

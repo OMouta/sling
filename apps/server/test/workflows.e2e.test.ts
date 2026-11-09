@@ -1832,6 +1832,56 @@ describe("http.request", () => {
   });
 });
 
+describe("http.request network policy", () => {
+  it("reaches an internal origin only when allowed, never metadata, and doesn't retry a refusal", async () => {
+    let hits = 0;
+    const http = (await import("node:http")).createServer((_req, res) => {
+      hits++;
+      res.end("internal");
+    });
+    await new Promise<void>((ok) => http.listen(0, "127.0.0.1", ok));
+    const base = `http://127.0.0.1:${(http.address() as { port: number }).port}`;
+    const before = server.ctx.config.httpAllowedOrigins;
+    const metadata = "http://169.254.169.254";
+    try {
+      const wf = await deploy(
+        c,
+        def(
+          "Policy",
+          [n("t", "core.manual"), n("h", "http.request", { url: "={{ trigger.input.url }}" })],
+          [x("t.next", "h")],
+        ),
+      );
+      server.ctx.config.httpAllowedOrigins = [];
+      const refused = await settled(c, (await start(c, wf.id, { url: `${base}/` })).id);
+      expect(refused.run.status).toBe("failed");
+      expect(refused.run.error).toMatchObject({ code: "forbidden_destination", nodeId: "h" });
+      expect(refused.run.error?.message).toContain("outside the configured HTTP network policy");
+      expect(byNode(refused, "h")).toHaveLength(1);
+      expect(hits).toBe(0);
+
+      server.ctx.config.httpAllowedOrigins = [base, metadata];
+      const meta = await settled(
+        c,
+        (await start(c, wf.id, { url: `${metadata}/latest/meta-data/` })).id,
+      );
+      expect(meta.run.error).toMatchObject({ code: "forbidden_destination" });
+      expect(meta.run.error?.message).toContain("metadata");
+
+      const ok = await settled(c, (await start(c, wf.id, { url: `${base}/` })).id);
+      expect(ok.run.status).toBe("succeeded");
+      expect(byNode(ok, "h")[0]?.outputs?.response).toMatchObject({
+        status: 200,
+        body: "internal",
+      });
+      expect(hits).toBe(1);
+    } finally {
+      server.ctx.config.httpAllowedOrigins = before;
+      http.close();
+    }
+  });
+});
+
 describe("data and AI nodes", () => {
   it("stores values across runs and caps stored payloads", async () => {
     const setter = await deploy(
