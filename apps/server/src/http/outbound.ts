@@ -57,7 +57,9 @@ export async function outboundRequest(
       });
       const location = res.headers.location;
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && location) {
-        res.body.destroy();
+        // Read and drop the body. Destroying it instead raises an error with no listener,
+        // which would end the process.
+        await res.body.dump();
         const next = new URL(Array.isArray(location) ? (location[0] ?? "") : location, url);
         if (next.origin !== url.origin) {
           headers.delete("authorization");
@@ -79,10 +81,8 @@ export async function outboundRequest(
       let size = 0;
       for await (const chunk of res.body) {
         size += chunk.length;
-        if (size > 2 * 1024 * 1024) {
-          res.body.destroy();
-          throw new Error("HTTP response exceeds 2 MB");
-        }
+        // Leaving the loop closes the body.
+        if (size > 2 * 1024 * 1024) throw new Error("HTTP response exceeds 2 MB");
         chunks.push(chunk);
       }
       const responseHeaders = new Headers();
