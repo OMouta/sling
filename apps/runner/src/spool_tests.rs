@@ -98,6 +98,72 @@ fn reset_sent_resends_unacked() {
     assert_eq!(again[0].seq, 2);
 }
 
+fn events_len(root: &Path, id: &str) -> u64 {
+    std::fs::metadata(root.join(id).join(EVENTS)).unwrap().len()
+}
+
+fn big(i: usize) -> Kind {
+    log(&format!("{i:>8}{}", "x".repeat(8 * 1024)))
+}
+
+#[test]
+fn a_running_task_compacts_what_the_server_acknowledged() {
+    let root = tempfile::tempdir().unwrap();
+    let mut s = TaskSpool::create(root.path(), meta("run")).unwrap();
+    let mut peak = 0;
+    for i in 0..600 {
+        s.append(big(i)).unwrap();
+        if i % 10 == 9 {
+            let sent = s.unsent();
+            s.ack(sent.last().unwrap().seq).unwrap();
+        }
+        peak = peak.max(events_len(root.path(), "run"));
+    }
+    // Without compaction this would be about 5 MB.
+    assert!(peak < 2 * COMPACT_MIN + 64 * 1024, "peak {peak}");
+    drop(s);
+    let mut s = TaskSpool::open(&root.path().join("run")).unwrap();
+    assert_eq!(s.last_seq(), 600);
+    assert!(s.unsent().is_empty());
+    assert_eq!(s.append(log("next")).unwrap(), 601);
+}
+
+#[test]
+fn a_finished_task_keeps_only_its_last_record_once_acknowledged() {
+    let root = tempfile::tempdir().unwrap();
+    let mut s = TaskSpool::create(root.path(), meta("done")).unwrap();
+    for i in 0..5 {
+        s.append(big(i)).unwrap();
+    }
+    s.append(Kind::Finished(Default::default())).unwrap();
+    s.set_meta(|m| m.state = SpoolState::Finished).unwrap();
+    s.ack(5).unwrap();
+    assert!(events_len(root.path(), "done") > 5 * 8 * 1024);
+    s.ack(6).unwrap();
+    assert!(events_len(root.path(), "done") < 100);
+    drop(s);
+    let s = TaskSpool::open(&root.path().join("done")).unwrap();
+    assert_eq!(s.last_seq(), 6);
+}
+
+#[test]
+fn spools_written_before_compaction_are_compacted_on_open() {
+    let root = tempfile::tempdir().unwrap();
+    let mut s = TaskSpool::create(root.path(), meta("old")).unwrap();
+    for i in 0..200 {
+        s.append(big(i)).unwrap();
+    }
+    drop(s);
+    // An older Runner recorded the ack without compacting.
+    std::fs::write(root.path().join("old/acked"), "190").unwrap();
+    let before = events_len(root.path(), "old");
+    let mut s = TaskSpool::open(&root.path().join("old")).unwrap();
+    assert!(events_len(root.path(), "old") < before / 10);
+    let replayed: Vec<u64> = s.unsent().iter().map(|e| e.seq).collect();
+    assert_eq!(replayed, (191..=200).collect::<Vec<_>>());
+    assert_eq!(s.append(log("next")).unwrap(), 201);
+}
+
 /// Tests on a simulated disk: crashes and power cuts at every step, and
 /// states that storage which loses confirmed writes can leave behind.
 mod faults {
@@ -344,5 +410,78 @@ mod faults {
             drop(s);
             assert_eq!(seqs(&replay(&mut open(&disk))), [2, 3, 4], "{name}");
         }
+    }
+    fn big(i: usize) -> String {
+        format!("{i:>8}{}", "x".repeat(60 * 1024))
+    }
+
+    #[test]
+    fn compaction_survives_a_crash_at_every_step() {
+        at_every_crash(
+            |run| {
+                for i in 0..40 {
+                    run.append(&big(i)).unwrap();
+                }
+            },
+            |run| {
+                // About 1.8 MB acknowledged and 0.6 MB not: this compacts.
+                run.ack(30)?;
+                run.append("a")?;
+                run.append("b")?;
+                run.ack(41)?;
+                run.finish()?;
+                // Fully acknowledged and finished: down to the last record.
+                run.ack(42)
+            },
+        );
+    }
+
+    #[test]
+    fn compaction_runs_and_leaves_the_last_acknowledged_record() {
+        let disk = SimDisk::new(&root());
+        let mut s = TaskSpool::create_on(Arc::new(disk.clone()), &root(), meta(ID)).unwrap();
+        for i in 0..40 {
+            s.append(log(&big(i))).unwrap();
+        }
+        s.ack(30).unwrap();
+        assert_eq!(s.first_seq, 30);
+        drop(s);
+        let mut s = open(&disk);
+        assert_eq!(seqs(&replay(&mut s)), (31..=40).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn a_compacted_file_keeps_the_sequence_without_the_acked_file() {
+        for acked in [None, Some(""), Some("garbage"), Some("2")] {
+            let disk = SimDisk::new(&root());
+            let events = [record(ID, 5, "e"), record(ID, 6, "f"), record(ID, 7, "g")].concat();
+            spool_on(&disk, acked, &events);
+            let mut s = open(&disk);
+            // 5 was acknowledged, but sending it again is harmless: Sling
+            // ignores a seq it has.
+            assert_eq!(seqs(&replay(&mut s)), [5, 6, 7], "{acked:?}");
+            assert_eq!(s.append(log("h")).unwrap(), 8, "{acked:?}");
+
+            // A finished task compacted down to its last record.
+            let disk = SimDisk::new(&root());
+            spool_on(&disk, acked, &record(ID, 9, "done"));
+            let mut s = open(&disk);
+            assert_eq!(seqs(&replay(&mut s)), [9], "{acked:?}");
+            assert_eq!(s.append(log("late")).unwrap(), 10, "{acked:?}");
+        }
+    }
+
+    #[test]
+    fn a_leftover_copy_from_an_interrupted_compaction_is_removed() {
+        let disk = SimDisk::new(&root());
+        spool_on(
+            &disk,
+            Some("1"),
+            &[record(ID, 1, "a"), record(ID, 2, "b")].concat(),
+        );
+        disk.put(&dir().join(COMPACTING), &record(ID, 1, "a"));
+        let mut s = open(&disk);
+        assert_eq!(seqs(&replay(&mut s)), [2]);
+        assert!(disk.read(&dir().join(COMPACTING)).is_err());
     }
 }

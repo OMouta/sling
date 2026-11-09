@@ -5,7 +5,13 @@
 //!
 //! Layout: `<spool>/<task_id>/meta.json`, `events.bin` (length-delimited
 //! protobuf `TaskEvent`s), and `acked` (highest acknowledged seq).
+//!
+//! `events.bin` holds a run of consecutive records. Once enough of it is
+//! acknowledged, the spool rewrites it to start at the last acknowledged
+//! record, so it doesn't grow for as long as the task runs. Every record
+//! before the first one in the file is acknowledged.
 
+use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -48,6 +54,14 @@ pub struct TaskMeta {
 
 /// The events file inside a task's spool directory.
 const EVENTS: &str = "events.bin";
+/// The compacted copy of the events file before it replaces the original.
+const COMPACTING: &str = "events.compact";
+/// Compaction waits for an acknowledged prefix this big, and as big as the
+/// rest of the file, so each compaction copies no more than it frees.
+const COMPACT_MIN: u64 = 1024 * 1024;
+/// The spool remembers where a record starts at least this often, so replay
+/// and compaction can skip the acknowledged prefix without reading it.
+const MARK_EVERY: u64 = 64 * 1024;
 /// Records handed to the connection per call, by count and by bytes.
 const BATCH_EVENTS: usize = 128;
 const BATCH_BYTES: u64 = 512 * 1024;
@@ -63,12 +77,24 @@ pub struct TaskSpool {
     file: Option<Box<dyn Writer>>,
     /// Bytes of whole records in the events file.
     len: u64,
+    /// Seq of the first record in the events file, or `last_seq + 1` when it
+    /// is empty.
+    first_seq: u64,
+    /// Where some records start, oldest first. Marks before the last one at
+    /// or before `acked` are dropped.
+    marks: VecDeque<Mark>,
     last_seq: u64,
     acked: u64,
     /// Next byte to scan for this connection. Unacknowledged data stays on disk.
     read_offset: u64,
     /// Highest seq handed to the current connection.
     sent: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Mark {
+    seq: u64,
+    offset: u64,
 }
 
 impl TaskSpool {
@@ -95,6 +121,8 @@ impl TaskSpool {
             meta,
             file: Some(file),
             len: 0,
+            first_seq: 1,
+            marks: VecDeque::new(),
             last_seq: 0,
             acked: 0,
             read_offset: 0,
@@ -118,8 +146,15 @@ impl TaskSpool {
             .and_then(|b| String::from_utf8(b).ok())
             .and_then(|s| s.trim().parse().ok())
             .unwrap_or(0);
+        // A compaction that a crash interrupted before its rename.
+        match disk.remove_file(&dir.join(COMPACTING)) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                tracing::warn!(task = meta.task_id, %e, "could not remove a spool copy")
+            }
+            _ => {}
+        }
         let path = dir.join(EVENTS);
-        let scan = scan(&*disk, &path, &meta.task_id)?;
+        let mut scan = scan(&*disk, &path, &meta.task_id)?;
         let mut len = scan.len;
         if scan.last_seq < acked {
             // Sling acknowledged records this file no longer has, which means
@@ -134,23 +169,37 @@ impl TaskSpool {
                 "spool lost acknowledged events"
             );
             len = 0;
+            scan.marks.clear();
         }
         // Cut off a record a crash left half written.
         if file_len(&*disk, &path)? > len {
             disk.set_len(&path, len)?;
         }
         let file = disk.append(&path)?;
-        Ok(TaskSpool {
+        let last_seq = scan.last_seq.max(acked);
+        let mut spool = TaskSpool {
             disk,
             dir: dir.to_path_buf(),
             meta,
             file: Some(file),
             len,
-            last_seq: scan.last_seq.max(acked),
+            first_seq: if len == 0 {
+                last_seq + 1
+            } else {
+                scan.first_seq
+            },
+            marks: scan.marks,
+            last_seq,
             acked,
             read_offset: 0,
             sent: acked,
-        })
+        };
+        spool.drop_old_marks();
+        // Spools from before compaction existed, or left by a crash, get
+        // compacted here.
+        spool.maybe_compact();
+        spool.reset_sent();
+        Ok(spool)
     }
 
     pub fn task_id(&self) -> &str {
@@ -174,15 +223,26 @@ impl TaskSpool {
             bytes.len() <= MAX_RECORD_BYTES,
             "event exceeds spool record limit"
         );
-        self.write_record(&bytes)?;
+        let start = self.write_record(&bytes)?;
         self.last_seq = event.seq;
+        if self
+            .marks
+            .back()
+            .is_none_or(|m| start - m.offset >= MARK_EVERY)
+        {
+            self.marks.push_back(Mark {
+                seq: event.seq,
+                offset: start,
+            });
+        }
         Ok(event.seq)
     }
 
-    /// Writes and syncs one encoded record. A failed write can leave part of
-    /// the record behind. The next write cuts it off first, so it never sits
-    /// in front of later records, where recovery would stop at it.
-    fn write_record(&mut self, bytes: &[u8]) -> Result<()> {
+    /// Writes and syncs one encoded record, and returns where it starts. A
+    /// failed write can leave part of the record behind. The next write cuts
+    /// it off first, so it never sits in front of later records, where
+    /// recovery would stop at it.
+    fn write_record(&mut self, bytes: &[u8]) -> Result<u64> {
         let file = match &mut self.file {
             Some(file) => file,
             None => {
@@ -197,8 +257,9 @@ impl TaskSpool {
             self.file = None;
             return Err(e.into());
         }
+        let start = self.len;
         self.len += bytes.len() as u64;
-        Ok(())
+        Ok(start)
     }
 
     pub fn ack(&mut self, seq: u64) -> Result<()> {
@@ -212,6 +273,100 @@ impl TaskSpool {
             acked.to_string().as_bytes(),
         )?;
         self.acked = acked;
+        self.drop_old_marks();
+        self.maybe_compact();
+        Ok(())
+    }
+
+    /// Marks before the last one at or before `acked` are no longer needed.
+    fn drop_old_marks(&mut self) {
+        while self.marks.get(1).is_some_and(|m| m.seq <= self.acked) {
+            self.marks.pop_front();
+        }
+    }
+
+    /// The last known record start at or before `seq`.
+    fn mark_before(&self, seq: u64) -> Mark {
+        match self.marks.partition_point(|m| m.seq <= seq) {
+            0 => Mark {
+                seq: self.first_seq,
+                offset: 0,
+            },
+            i => self.marks[i - 1],
+        }
+    }
+
+    /// Compacts when the acknowledged prefix is at least `COMPACT_MIN` and
+    /// as big as the rest, or when a finished task is fully acknowledged.
+    /// A failure leaves the events file as it was, so it is only logged.
+    fn maybe_compact(&mut self) {
+        if self.acked <= self.first_seq {
+            return;
+        }
+        let prefix = self.mark_before(self.acked).offset;
+        let done = self.meta.state == SpoolState::Finished && self.acked == self.last_seq;
+        if (done || (prefix >= COMPACT_MIN && prefix >= self.len - prefix))
+            && let Err(e) = self.compact()
+        {
+            tracing::warn!(task = self.task_id(), "could not compact spool: {e:#}");
+        }
+    }
+
+    /// Rewrites the events file to start at the last acknowledged record.
+    /// That record stays so the file alone shows how far the task got, should
+    /// the `acked` file be lost.
+    ///
+    /// The copy is synced before it is renamed over the original. A crash
+    /// before the rename leaves the original, and the next open deletes the
+    /// copy. A power cut that loses the rename brings back the original,
+    /// which is still valid.
+    fn compact(&mut self) -> Result<()> {
+        let path = self.dir.join(EVENTS);
+        let copy = self.dir.join(COMPACTING);
+        let mark = self.mark_before(self.acked);
+        let mut reader = self.disk.reader(&path)?;
+        reader.seek(SeekFrom::Start(mark.offset))?;
+        let mut start = mark.offset;
+        loop {
+            let (event, size) = read_record(&mut reader)?
+                .context("events file ended before the acknowledged one")?;
+            if event.seq >= self.acked {
+                break;
+            }
+            start += size;
+        }
+        reader.seek(SeekFrom::Start(start))?;
+        let mut out = self.disk.create(&copy)?;
+        let mut buf = vec![0; 256 * 1024];
+        let mut left = self.len - start;
+        while left > 0 {
+            let n = left.min(buf.len() as u64) as usize;
+            reader.read_exact(&mut buf[..n])?;
+            out.write_bytes(&buf[..n])?;
+            left -= n as u64;
+        }
+        out.sync()?;
+        drop(out);
+        drop(reader);
+        // Windows can't replace a file this process still has open. The next
+        // append reopens whichever file is in place.
+        self.file = None;
+        self.disk.rename(&copy, &path)?;
+        self.len -= start;
+        self.first_seq = self.acked;
+        self.read_offset = self.read_offset.saturating_sub(start);
+        let acked = self.acked;
+        let rest = self.marks.iter().filter(|m| m.seq > acked).map(|m| Mark {
+            seq: m.seq,
+            offset: m.offset - start,
+        });
+        self.marks = std::iter::once(Mark {
+            seq: acked,
+            offset: 0,
+        })
+        .chain(rest)
+        .collect();
+        self.disk.sync_dir(&self.dir)?;
         Ok(())
     }
 
@@ -253,7 +408,7 @@ impl TaskSpool {
     /// Called on every new connection: resend everything unacknowledged.
     pub fn reset_sent(&mut self) {
         self.sent = self.acked;
-        self.read_offset = 0;
+        self.read_offset = self.mark_before(self.acked + 1).offset;
     }
 
     pub fn set_meta(&mut self, f: impl FnOnce(&mut TaskMeta)) -> Result<()> {
@@ -262,7 +417,9 @@ impl TaskSpool {
             &*self.disk,
             &self.dir.join("meta.json"),
             &serde_json::to_vec_pretty(&self.meta)?,
-        )
+        )?;
+        self.maybe_compact();
+        Ok(())
     }
 
     pub fn remove(self) -> Result<()> {
@@ -307,8 +464,10 @@ fn read_record(reader: &mut impl Read) -> Result<Option<(TaskEvent, u64)>> {
 
 /// The whole records at the start of an events file.
 struct Scan {
+    first_seq: u64,
     last_seq: u64,
     len: u64,
+    marks: VecDeque<Mark>,
 }
 
 /// Reads records up to the first one that isn't whole, this task's, and next
@@ -318,8 +477,10 @@ struct Scan {
 /// sequence checks are what catch them.
 fn scan(disk: &dyn Disk, path: &Path, task_id: &str) -> Result<Scan> {
     let mut scan = Scan {
+        first_seq: 0,
         last_seq: 0,
         len: 0,
+        marks: VecDeque::new(),
     };
     let mut reader = match disk.reader(path) {
         Ok(reader) => reader,
@@ -334,6 +495,19 @@ fn scan(disk: &dyn Disk, path: &Path, task_id: &str) -> Result<Scan> {
         };
         if event.task_id != task_id || !in_sequence {
             break;
+        }
+        if scan.len == 0 {
+            scan.first_seq = event.seq;
+        }
+        if scan
+            .marks
+            .back()
+            .is_none_or(|m| scan.len - m.offset >= MARK_EVERY)
+        {
+            scan.marks.push_back(Mark {
+                seq: event.seq,
+                offset: scan.len,
+            });
         }
         scan.last_seq = event.seq;
         scan.len += size;
@@ -377,6 +551,7 @@ pub(crate) trait Disk: Send + Sync {
     fn set_len(&self, path: &Path, len: u64) -> io::Result<()>;
     /// Replaces `to` if it exists.
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
+    fn remove_file(&self, path: &Path) -> io::Result<()>;
     fn remove_dir_all(&self, dir: &Path) -> io::Result<()>;
     /// Makes files created in or renamed into `dir` durable.
     fn sync_dir(&self, dir: &Path) -> io::Result<()>;
@@ -442,6 +617,10 @@ impl Disk for Os {
 
     fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
         std::fs::rename(from, to)
+    }
+
+    fn remove_file(&self, path: &Path) -> io::Result<()> {
+        std::fs::remove_file(path)
     }
 
     fn remove_dir_all(&self, dir: &Path) -> io::Result<()> {

@@ -328,6 +328,14 @@ impl Disk for SimDisk {
         Ok(())
     }
 
+    fn remove_file(&self, path: &Path) -> io::Result<()> {
+        let mut s = self.0.lock().unwrap();
+        s.op()?;
+        s.file(path)?;
+        s.names.remove(path);
+        Ok(())
+    }
+
     fn remove_dir_all(&self, dir: &Path) -> io::Result<()> {
         let mut s = self.0.lock().unwrap();
         s.op()?;
