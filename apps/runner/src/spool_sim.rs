@@ -1,8 +1,8 @@
 //! A disk in memory that tracks what has reached stable storage, so tests can
 //! stop the Runner at any write and cut the power in several ways.
 //!
-//! Data written to a file is durable once the file is synced. A new or
-//! renamed name is durable once its directory is synced. A power cut keeps
+//! Data written to a file is durable once the file is synced. When a new or
+//! renamed name is durable depends on the [`Names`] model. A power cut keeps
 //! the durable state plus some part of the rest, chosen by [`Cut`].
 
 use std::collections::BTreeMap;
@@ -30,6 +30,18 @@ pub enum Cut {
     ZeroedTail,
     /// Half of the bytes appended since the last sync.
     TornTail,
+}
+
+/// When new names and renames reach stable storage.
+#[derive(Clone, Copy, Debug, Default)]
+pub enum Names {
+    /// Once their directory is synced, as POSIX promises after `fsync` on
+    /// the directory.
+    #[default]
+    DirectorySync,
+    /// In order, with the next sync of any file, as NTFS commits its
+    /// metadata journal. The Runner can't sync a directory on Windows.
+    Journal,
 }
 
 pub const CUTS: [Cut; 6] = [
@@ -90,6 +102,7 @@ struct State {
     names: BTreeMap<PathBuf, Entry>,
     /// Names as stable storage has them.
     synced_names: BTreeMap<PathBuf, Entry>,
+    model: Names,
     ops: usize,
     crash_at: Option<usize>,
     crashed: bool,
@@ -161,8 +174,13 @@ pub struct SimDisk(Arc<Mutex<State>>);
 impl SimDisk {
     /// An empty disk whose `root` directory already exists.
     pub fn new(root: &Path) -> SimDisk {
+        SimDisk::with_names(root, Names::default())
+    }
+
+    pub fn with_names(root: &Path, model: Names) -> SimDisk {
         SimDisk(Arc::new(Mutex::new(State {
             root: root.to_path_buf(),
+            model,
             ..State::default()
         })))
     }
@@ -195,6 +213,7 @@ impl SimDisk {
         };
         let mut next = State {
             root: s.root.clone(),
+            model: s.model,
             ..State::default()
         };
         for (path, entry) in names {
@@ -268,6 +287,9 @@ impl Writer for SimWriter {
         let mut s = self.disk.0.lock().unwrap();
         s.op()?;
         s.inodes[self.inode].sync();
+        if let Names::Journal = s.model {
+            s.synced_names = s.names.clone();
+        }
         Ok(())
     }
 }
@@ -363,6 +385,9 @@ impl Disk for SimDisk {
     fn sync_dir(&self, dir: &Path) -> io::Result<()> {
         let mut s = self.0.lock().unwrap();
         s.op()?;
+        if let Names::Journal = s.model {
+            return Ok(());
+        }
         let in_dir = |path: &Path| path.parent() == Some(dir);
         s.synced_names.retain(|path, _| !in_dir(path));
         let children: Vec<(PathBuf, Entry)> = s

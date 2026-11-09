@@ -169,7 +169,7 @@ mod faults {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::spool::sim::{CUTS, SimDisk};
+    use crate::spool::sim::{CUTS, Names, SimDisk};
 
     const ID: &str = "tsk_sim";
 
@@ -303,10 +303,21 @@ mod faults {
 
     /// Runs `steps` once for every change they make to the disk, with the
     /// process dying at that change, and checks the spool after each kind of
-    /// power cut. The last run completes and is checked the same way.
+    /// power cut, with names reaching the disk as on Unix and as on Windows.
+    /// The last run completes and is checked the same way.
     fn at_every_crash(setup: impl Fn(&mut Run), steps: impl Fn(&mut Run) -> Result<()>) {
+        for names in [Names::DirectorySync, Names::Journal] {
+            crash_each_step(names, &setup, &steps);
+        }
+    }
+
+    fn crash_each_step(
+        names: Names,
+        setup: &impl Fn(&mut Run),
+        steps: &impl Fn(&mut Run) -> Result<()>,
+    ) {
         for at in 0.. {
-            let disk = SimDisk::new(&root());
+            let disk = SimDisk::with_names(&root(), names);
             let spool = TaskSpool::create_on(Arc::new(disk.clone()), &root(), meta(ID)).unwrap();
             let mut run = Run {
                 spool,
@@ -322,11 +333,8 @@ mod faults {
             let Run { spool, promised } = run;
             drop(spool);
             for cut in CUTS {
-                check(
-                    &disk.power_cut(cut),
-                    &promised,
-                    &format!("crash at {at}, {cut:?}"),
-                );
+                let label = format!("{names:?}, crash at {at}, {cut:?}");
+                check(&disk.power_cut(cut), &promised, &label);
             }
             if !crashed {
                 return;
