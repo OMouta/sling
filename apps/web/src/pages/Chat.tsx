@@ -7,6 +7,7 @@ import type {
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { ArchiveRestore } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AttachmentChips } from "../components/AttachmentChips.tsx";
 import {
@@ -37,9 +38,11 @@ import { ReplySources } from "../components/ReplySources.tsx";
 import { StartedBy } from "../components/StartedBy.tsx";
 import { TaskCard } from "../components/TaskCard.tsx";
 import { UserBubble } from "../components/UserBubble.tsx";
-import { Badge, cx, Dot, ErrorText, Skeleton, type Tone } from "../components/ui.tsx";
+import { Badge, Button, cx, Dot, ErrorText, Skeleton, type Tone } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
+import { conversationsKey } from "../lib/conversations.ts";
 import { useDictation } from "../lib/dictation.ts";
+import { useDraft, useSendId } from "../lib/drafts.ts";
 import { replyAuthor, useMention } from "../lib/mentions.ts";
 import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
 import { usePersonalities } from "../lib/personalities.ts";
@@ -63,7 +66,7 @@ export function ChatPage() {
   const live = useLiveReply(id);
   // For a turn already running when the page opened, before its first event.
   const [openedAt] = useState(Date.now);
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft(id);
   const dictation = useDictation(text, setText);
   const bottom = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -79,18 +82,33 @@ export function ChatPage() {
   const research = useDeepResearch();
   const files = useAttachments();
   const dropOverlay = useFileDrop(files.add);
+  // Sending the same message again after a failure keeps its ID, so the
+  // server saves it once even if the first try got there.
+  const sendId = useSendId();
   const send = useMutation({
     mutationFn: async (message: SendMessageInput) => {
       const attachmentIds = await files.ids();
+      const clientId = sendId.take(JSON.stringify([id, message, attachmentIds]));
       return api.post(`/api/conversations/${id}/messages`, {
         ...message,
         ...(attachmentIds.length ? { attachmentIds } : {}),
+        clientId,
       });
     },
     onSuccess: () => {
+      sendId.done();
       setText("");
       research.off();
       files.clear();
+    },
+  });
+  const restore = useMutation({
+    mutationFn: () => api.post(`/api/conversations/${id}/restore`),
+    onSuccess: () => {
+      qc.setQueryData<ConversationDetail>(["conversation", id], (d) =>
+        d ? { ...d, conversation: { ...d.conversation, archived: false } } : d,
+      );
+      void qc.invalidateQueries({ queryKey: conversationsKey });
     },
   });
   // A follow-up goes out on its own, leaving a draft and its files in the composer.
@@ -261,6 +279,7 @@ export function ChatPage() {
             </span>
           )}
           {conversation.startedBy && <StartedBy by={conversation.startedBy} />}
+          {conversation.archived && <Badge>Archived</Badge>}
           {thinking && (
             <Badge tone="accent" dot>
               Thinking
@@ -269,9 +288,23 @@ export function ChatPage() {
         </span>
       }
       controls={
-        tokens > 0 && (
-          <span className="tabular text-xs text-subtle max-lg:hidden">
-            {tokens.toLocaleString()} tokens
+        (conversation.archived || tokens > 0) && (
+          <span className="flex items-center gap-3">
+            {tokens > 0 && (
+              <span className="tabular text-xs text-subtle max-lg:hidden">
+                {tokens.toLocaleString()} tokens
+              </span>
+            )}
+            {conversation.archived && (
+              <Button
+                size="sm"
+                icon={ArchiveRestore}
+                busy={restore.isPending}
+                onClick={() => restore.mutate()}
+              >
+                Restore
+              </Button>
+            )}
           </span>
         )
       }
@@ -363,7 +396,8 @@ export function ChatPage() {
                 followUp.error ??
                 dictation.error ??
                 setMode.error ??
-                setSettings.error
+                setSettings.error ??
+                restore.error
               }
               overlay={<MentionList mention={mention} />}
               onKeyDown={mention.onKeyDown}

@@ -161,6 +161,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 

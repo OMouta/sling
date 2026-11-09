@@ -1,20 +1,25 @@
 import type { ConversationSummaryView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Ellipsis, Pencil, Trash2, Workflow } from "lucide-react";
+import { Archive, ArchiveRestore, Ellipsis, Pencil, Workflow } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { api } from "../lib/api.ts";
-import { conversationsKey } from "../lib/conversations.ts";
+import {
+  conversationsKey,
+  dropListedConversation,
+  patchListedConversation,
+} from "../lib/conversations.ts";
 import { usePersonalities } from "../lib/personalities.ts";
+import type { ConversationDetail } from "../lib/types.ts";
 import { Button, cx, Dialog, ErrorText, Input, Menu, MenuItem, useConfirm } from "./ui.tsx";
 
 /** What Make this a workflow sends, as your message. */
 export const MAKE_WORKFLOW = "Turn what we did in this chat into a workflow";
 
 /**
- * Rename and delete for conversations, and making one a workflow. Returns
+ * Rename and archive for conversations, and making one a workflow. Returns
  * the "…" menu for a row, and the dialogs it opens, which the caller
- * renders once.
+ * renders once. A failed action says why and offers to try again.
  */
 export function useConversationMenu() {
   const qc = useQueryClient();
@@ -30,25 +35,48 @@ export function useConversationMenu() {
     const p = c.personalityId
       ? list.find((x) => x.id === c.personalityId)
       : list.find((x) => x.isDefault);
-    return c.source === "app" && c.lastMessageAt !== null && Boolean(p?.tools.includes("setup"));
+    return (
+      c.source === "app" &&
+      !c.archived &&
+      c.lastMessageAt !== null &&
+      Boolean(p?.tools.includes("setup"))
+    );
   };
+
+  const failed = async (title: string, error: Error, retry: () => void) => {
+    const again = await confirm({ title, body: error.message, action: "Try again" });
+    if (again) retry();
+  };
+
   const makeWorkflow = useMutation({
     mutationFn: (c: ConversationSummaryView) =>
       api.post(`/api/conversations/${c.id}/messages`, { text: MAKE_WORKFLOW }),
     onSuccess: (_, c) => {
       if (pathname !== `/c/${c.id}`) void navigate({ to: "/c/$id", params: { id: c.id } });
     },
+    onError: (error, c) =>
+      failed(`Couldn't start a workflow from "${c.title}"`, error, () => makeWorkflow.mutate(c)),
   });
 
-  const remove = useMutation({
-    mutationFn: (c: ConversationSummaryView) => api.del(`/api/conversations/${c.id}`),
-    onSuccess: (_, c) => {
-      qc.setQueriesData<ConversationSummaryView[]>({ queryKey: conversationsKey }, (list) =>
-        list?.filter((x) => x.id !== c.id),
+  // The row stays until the server has it, and moves to the other list after.
+  const archive = useMutation({
+    mutationFn: ({ c, archived }: { c: ConversationSummaryView; archived: boolean }) =>
+      api.post(`/api/conversations/${c.id}/${archived ? "archive" : "restore"}`),
+    onSuccess: (_, { c, archived }) => {
+      dropListedConversation(qc, c.id);
+      void qc.invalidateQueries({ queryKey: conversationsKey });
+      qc.setQueryData<ConversationDetail>(["conversation", c.id], (d) =>
+        d ? { ...d, conversation: { ...d.conversation, archived } } : d,
       );
-      if (pathname === `/c/${c.id}`) void navigate({ to: "/" });
     },
+    onError: (error, v) =>
+      failed(`Couldn't ${v.archived ? "archive" : "restore"} "${v.c.title}"`, error, () =>
+        archive.mutate(v),
+      ),
   });
+  const busy = (c: ConversationSummaryView) =>
+    (archive.isPending && archive.variables?.c.id === c.id) ||
+    (makeWorkflow.isPending && makeWorkflow.variables?.id === c.id);
 
   const menu = (c: ConversationSummaryView, className?: string) => (
     <Menu
@@ -75,28 +103,30 @@ export function useConversationMenu() {
       )}
     >
       {canWrite(c) && (
-        <MenuItem icon={Workflow} onSelect={() => makeWorkflow.mutate(c)}>
+        <MenuItem icon={Workflow} disabled={busy(c)} onSelect={() => makeWorkflow.mutate(c)}>
           Make this a workflow
         </MenuItem>
       )}
       <MenuItem icon={Pencil} onSelect={() => setRenaming(c)}>
         Rename
       </MenuItem>
-      <MenuItem
-        icon={Trash2}
-        danger
-        onSelect={async () => {
-          const ok = await confirm({
-            title: `Delete "${c.title}"?`,
-            body: "Tasks it started keep running.",
-            action: "Delete",
-            danger: true,
-          });
-          if (ok) remove.mutate(c);
-        }}
-      >
-        Delete
-      </MenuItem>
+      {c.archived ? (
+        <MenuItem
+          icon={ArchiveRestore}
+          disabled={busy(c)}
+          onSelect={() => archive.mutate({ c, archived: false })}
+        >
+          Restore
+        </MenuItem>
+      ) : (
+        <MenuItem
+          icon={Archive}
+          disabled={busy(c)}
+          onSelect={() => archive.mutate({ c, archived: true })}
+        >
+          Archive
+        </MenuItem>
+      )}
     </Menu>
   );
 
@@ -121,9 +151,7 @@ function RenameDialog({
   const save = useMutation({
     mutationFn: (t: string) => api.patch(`/api/conversations/${conversation.id}`, { title: t }),
     onSuccess: (_, t) => {
-      qc.setQueriesData<ConversationSummaryView[]>({ queryKey: conversationsKey }, (list) =>
-        list?.map((x) => (x.id === conversation.id ? { ...x, title: t } : x)),
-      );
+      patchListedConversation(qc, conversation.id, (x) => ({ ...x, title: t }));
       onClose();
     },
   });

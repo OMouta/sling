@@ -85,6 +85,11 @@ export class Agent {
     return this.#status.get(conversationId) ?? "idle";
   }
 
+  /** Conversations with a reply being written now, in any workspace. */
+  thinking(): string[] {
+    return [...this.#status].filter(([, s]) => s === "thinking").map(([id]) => id);
+  }
+
   /** The reply being written in a conversation, if one is. */
   live(conversationId: string): LiveReplyView | null {
     return this.#live.get(conversationId)?.snapshot() ?? null;
@@ -175,6 +180,8 @@ export class Agent {
       attachmentIds?: readonly string[];
       dispatch?: boolean;
       id?: string;
+      /** The browser's ID for a message it sent: a resend gets the saved one back. */
+      clientId?: string;
     } = {},
   ) {
     const { row, attached, updated } = await this.#ctx.db.transaction(async (tx) => {
@@ -191,13 +198,24 @@ export class Agent {
           usage,
           trace,
           meta: extra.meta ?? null,
+          clientId: extra.clientId ?? null,
         })
         .onConflictDoNothing()
         .returning();
       if (!row) {
         const [existing] = extra.id
           ? await tx.select().from(schema.messages).where(eq(schema.messages.id, extra.id))
-          : [];
+          : extra.clientId
+            ? await tx
+                .select()
+                .from(schema.messages)
+                .where(
+                  and(
+                    eq(schema.messages.conversationId, conv.id),
+                    eq(schema.messages.clientId, extra.clientId),
+                  ),
+                )
+            : [];
         return { row: existing, attached: [], updated: undefined };
       }
       const attached = extra.attachmentIds?.length
@@ -211,7 +229,10 @@ export class Agent {
         : [];
       const [updated] = await tx
         .update(schema.conversations)
-        .set({ updatedAt: new Date() })
+        .set({
+          updatedAt: new Date(),
+          ...(role === "tool" ? {} : { lastMessageAt: row.createdAt }),
+        })
         .where(eq(schema.conversations.id, conv.id))
         .returning();
       if (extra.dispatch) {
@@ -266,6 +287,7 @@ export class Agent {
       meta?: MessageMeta | null;
       attachmentIds?: readonly string[];
       dispatch?: boolean;
+      clientId?: string;
     } = {},
   ) {
     if (opts.once) {
@@ -282,6 +304,7 @@ export class Agent {
       meta: opts.meta ?? null,
       dispatch: opts.dispatch,
       ...(opts.attachmentIds ? { attachmentIds: opts.attachmentIds } : {}),
+      ...(opts.clientId ? { clientId: opts.clientId } : {}),
     });
   }
 

@@ -19,6 +19,7 @@ function row(role: MessageRow["role"], text: string, trace: ReplyTrace | null = 
     usage: null,
     trace,
     meta: null,
+    clientId: null,
     createdAt: new Date(2026, 10, 7, 12, 0, seq),
   };
 }

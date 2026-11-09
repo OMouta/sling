@@ -62,6 +62,7 @@ const conversation: ConversationView = {
   settings: { assistant: null, agent: null },
   personalityId: null,
   startedBy: null,
+  archived: false,
   createdAt: "2026-11-05T10:00:00.000Z",
   updatedAt: "2026-11-05T10:05:00.000Z",
 };
@@ -143,7 +144,7 @@ let approvals: unknown[] = [];
 function routes(path: string): unknown {
   if (path === "/api/status")
     return { needsSetup: false, signedIn, email: "a@b.c", version: "0.1.0", publicUrl };
-  if (path === "/api/conversations") return [conversation];
+  if (path === "/api/conversations") return { items: [], nextCursor: null, counts: null };
   if (path === "/api/approvals") return approvals;
   if (path === "/api/rules") return [];
   if (path === "/api/tasks/tsk_1/approval") return {};
@@ -255,6 +256,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 

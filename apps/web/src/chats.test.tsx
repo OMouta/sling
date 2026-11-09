@@ -25,6 +25,7 @@ function chat(over: Partial<ConversationSummaryView>): ConversationSummaryView {
     settings: { assistant: null, agent: null },
     personalityId: null,
     startedBy: null,
+    archived: false,
     createdAt: ago(60_000),
     updatedAt: ago(60_000),
     preview: "Your Desktop has two files.",
@@ -41,9 +42,20 @@ function chat(over: Partial<ConversationSummaryView>): ConversationSummaryView {
 
 let conversations: ConversationSummaryView[] = [];
 let requests: { method: string; path: string; search: string }[] = [];
+/** What the archive endpoint answers, to try a failure. */
+let archiveStatus = 200;
+
+const MATCH: Record<string, (c: ConversationSummaryView) => boolean> = {
+  all: (c) => !c.archived,
+  waiting: (c) => !c.archived && c.waiting,
+  working: (c) => !c.archived && (c.agentStatus === "thinking" || c.activeTasks > 0),
+  tasks: (c) => !c.archived && c.taskCount > 0,
+  archived: (c) => c.archived,
+};
 
 beforeEach(() => {
   requests = [];
+  archiveStatus = 200;
   conversations = [
     chat({}),
     chat({
@@ -77,9 +89,27 @@ beforeEach(() => {
       }
       if (url.pathname === "/api/conversations") {
         const q = url.searchParams.get("q")?.toLowerCase();
-        return Response.json(
-          q ? conversations.filter((c) => c.preview?.toLowerCase().includes(q)) : conversations,
-        );
+        const matched = q
+          ? conversations.filter((c) => c.preview?.toLowerCase().includes(q))
+          : conversations;
+        const filter = MATCH[url.searchParams.get("filter") ?? "all"] ?? MATCH.all;
+        return Response.json({
+          items: matched.filter(filter as (c: ConversationSummaryView) => boolean),
+          nextCursor: null,
+          counts: {
+            waiting: matched.filter(MATCH.waiting as never).length,
+            working: matched.filter(MATCH.working as never).length,
+          },
+        });
+      }
+      const archive = /^\/api\/conversations\/(\w+)\/(archive|restore)$/.exec(url.pathname);
+      if (archive && init?.method === "POST") {
+        if (archiveStatus !== 200) {
+          return Response.json({ error: "The server is busy." }, { status: archiveStatus });
+        }
+        const c = conversations.find((x) => x.id === archive[1]);
+        if (c) c.archived = archive[2] === "archive";
+        return Response.json(c);
       }
       if (["/api/approvals", "/api/runners", "/api/tasks"].includes(url.pathname)) {
         return Response.json([]);
@@ -91,6 +121,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -140,11 +171,48 @@ describe("chats", () => {
     expect(await main.findByText("Your Desktop has two files.")).toBeTruthy();
     expect(main.getByText("1 of 2 tasks running")).toBeTruthy();
     fireEvent.click(main.getByRole("tab", { name: /Waiting for you/ }));
+    expect(await main.findByText("Fix the footer")).toBeTruthy();
     expect(main.queryByText("Desktop items")).toBeNull();
-    expect(main.getByText("Fix the footer")).toBeTruthy();
+    expect(requests.some((r) => r.search === "?filter=waiting")).toBe(true);
     fireEvent.click(main.getByRole("tab", { name: "All chats" }));
+    expect(await main.findByText("Desktop items")).toBeTruthy();
     fireEvent.change(main.getByLabelText("Search chats"), { target: { value: "two files" } });
     await waitFor(() => expect(main.queryByText("Fix the footer")).toBeNull());
-    expect(requests.some((r) => r.search === "?q=two%20files")).toBe(true);
+    expect(requests.some((r) => r.search === "?filter=all&q=two+files")).toBe(true);
+  });
+
+  it("archives a chat into the Archived tab, and restores it from there", async () => {
+    open("/chats");
+    const main = within(await screen.findByRole("main"));
+    fireEvent.click(await main.findByRole("button", { name: "Actions for Desktop items" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+    await waitFor(() => expect(main.queryByText("Desktop items")).toBeNull());
+    expect(
+      requests.some((r) => r.method === "POST" && r.path === "/api/conversations/cnv_1/archive"),
+    ).toBe(true);
+
+    fireEvent.click(main.getByRole("tab", { name: "Archived" }));
+    fireEvent.click(await main.findByRole("button", { name: "Actions for Desktop items" }));
+    expect(screen.queryByRole("menuitem", { name: "Archive" })).toBeNull();
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Restore" }));
+    await waitFor(() => expect(main.queryByText("Desktop items")).toBeNull());
+    fireEvent.click(main.getByRole("tab", { name: "All chats" }));
+    expect(await main.findByText("Desktop items")).toBeTruthy();
+  });
+
+  it("says why archiving failed, keeps the chat, and tries again", async () => {
+    archiveStatus = 500;
+    open("/chats");
+    const main = within(await screen.findByRole("main"));
+    fireEvent.click(await main.findByRole("button", { name: "Actions for Desktop items" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+    const dialog = within(await screen.findByRole("dialog"));
+    expect(dialog.getByText('Couldn\'t archive "Desktop items"')).toBeTruthy();
+    expect(dialog.getByText("The server is busy.")).toBeTruthy();
+    expect(main.getByText("Desktop items")).toBeTruthy();
+
+    archiveStatus = 200;
+    fireEvent.click(dialog.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(main.queryByText("Desktop items")).toBeNull());
   });
 });

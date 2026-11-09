@@ -5,7 +5,7 @@ import { PanelLeftClose, SquarePen } from "lucide-react";
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api.ts";
 import { decisionCount } from "../lib/approvals.ts";
-import { useConversations } from "../lib/conversations.ts";
+import { useRecentConversations } from "../lib/conversations.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { NEW_CHAT_EVENT } from "../lib/newChat.ts";
 import { connectRealtime, setOpenConversation, useConnection } from "../lib/realtime.ts";
@@ -214,7 +214,7 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
     queryFn: () => api.get<TaskView[]>("/api/tasks"),
   });
   const sandboxes = useSandboxes();
-  const conversations = useConversations();
+  const conversations = useRecentConversations();
   // An open chat is one of the Chats page's.
   const inChat = useRouterState({ select: (s) => s.location.pathname.startsWith("/c/") });
 
@@ -224,7 +224,7 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
     (t) => t.state === "queued" || t.state === "dispatched" || t.state === "running",
   ).length;
   const counts: Partial<Record<NavItem["to"], { n?: number; warn?: boolean }>> = {
-    "/chats": { n: (conversations.data ?? []).filter((c) => c.waiting).length, warn: true },
+    "/chats": { n: conversations.data?.counts?.waiting, warn: true },
     "/tasks": { n: activeTasks },
     "/approvals": { n: decisionCount(approvals.data), warn: true },
     "/machines": { n: online },

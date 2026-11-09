@@ -736,6 +736,7 @@ export function MenuItem({
   danger,
   trailing,
   description,
+  disabled,
 }: {
   icon?: LucideIcon;
   onSelect: () => void;
@@ -744,18 +745,20 @@ export function MenuItem({
   trailing?: ReactNode;
   /** A second, smaller line under the label. */
   description?: ReactNode;
+  disabled?: boolean;
 }) {
   const close = useContext(MenuClose);
   return (
     <button
       type="button"
       role="menuitem"
+      disabled={disabled}
       onClick={() => {
         close();
         onSelect();
       }}
       className={cx(
-        "flex w-full cursor-pointer gap-2 rounded-lg px-2 text-left text-[13px] outline-none focus-visible:bg-surface-3 hover:bg-surface-3",
+        "flex w-full cursor-pointer gap-2 rounded-lg px-2 text-left text-[13px] outline-none focus-visible:bg-surface-3 enabled:hover:bg-surface-3 disabled:cursor-not-allowed disabled:opacity-50",
         description ? "items-start py-1.5" : "h-[30px] items-center",
         danger ? "text-danger" : "text-text",
       )}

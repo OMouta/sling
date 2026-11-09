@@ -348,6 +348,7 @@ export function toConversationView(c: ConversationRow): ConversationView {
     settings: c.settings ?? { assistant: null, agent: null },
     personalityId: c.personalityId,
     startedBy: c.startedBy ?? null,
+    archived: c.archivedAt !== null,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
   };

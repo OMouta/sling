@@ -189,6 +189,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -304,6 +305,7 @@ describe("files in the composer", () => {
       expect(callsTo("POST", "/api/conversations/cnv_1/messages")[0]?.body).toEqual({
         text: "",
         attachmentIds: ["src_att1"],
+        clientId: expect.any(String),
       }),
     );
     await waitFor(() => expect(screen.queryByRole("list", { name: "Files" })).toBeNull());

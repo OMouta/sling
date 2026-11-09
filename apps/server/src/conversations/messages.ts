@@ -1,6 +1,6 @@
 import type { MessageView } from "@sling/core";
 import { schema } from "@sling/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, type SQL, sql } from "drizzle-orm";
 import { toMessageView } from "../agent/history.ts";
 import type { AppContext } from "../context.ts";
 import { toSourceView } from "../sources/views.ts";
@@ -43,4 +43,13 @@ export async function messageViews(
     v.replaceable = replaceableIds.has(v.id);
   }
   return views;
+}
+
+/**
+ * A chat's latest activity, worked out again from its messages, for after
+ * some were removed. Millisecond precision, like the times the app writes.
+ */
+export function lastMessageAt(conversationId: string): SQL<Date | null> {
+  const m = schema.messages;
+  return sql`(select date_trunc('milliseconds', max(${m.createdAt})) from ${m} where ${m.conversationId} = ${conversationId} and ${m.role} in ('user', 'assistant', 'system'))`;
 }

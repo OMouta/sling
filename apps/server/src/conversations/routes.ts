@@ -1,4 +1,6 @@
 import {
+  CONVERSATION_FILTERS,
+  type ConversationPage,
   type ConversationSummaryView,
   MESSAGE_MAX_FILES,
   newId,
@@ -6,7 +8,20 @@ import {
   type TaskState,
 } from "@sling/core";
 import { type MessageMeta, schema } from "@sling/db";
-import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, sum } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  type SQL,
+  sql,
+  sum,
+} from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
@@ -54,41 +69,73 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
     return f?.name ?? "Files";
   }
 
-  // Conversations with at least one message, newest first, each with what
-  // a list needs to show it. `q` searches titles and message text.
+  // Chats with at least one message, newest activity first, a page at a
+  // time, each with what a list needs to show it. `q` searches titles and
+  // message text; `filter` picks what's going on in them.
   r.get(
     "/api/conversations",
-    { schema: { querystring: z.object({ q: z.string().trim().max(200).optional() }) } },
-    async (request) => {
+    {
+      schema: {
+        querystring: z.object({
+          q: z.string().trim().max(200).optional(),
+          filter: z.enum(CONVERSATION_FILTERS).default("all"),
+          cursor: z.string().max(200).optional(),
+          limit: z.coerce.number().int().min(1).max(MAX_PAGE).default(PAGE),
+        }),
+      },
+    },
+    async (request, reply): Promise<ConversationPage> => {
       const actor = actorOf(request);
-      const q = request.query.q;
-      const pattern = q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
-      const hasMessage = sql`exists (select 1 from ${schema.messages} m where m.conversation_id = ${schema.conversations.id} and m.role in ('user', 'assistant', 'system'))`;
+      const { q, filter, limit } = request.query;
+      const after = request.query.cursor ? decodeCursor(request.query.cursor) : null;
+      if (request.query.cursor && !after) return reply.code(400).send({ error: "bad cursor" });
+      const c = schema.conversations;
+      const pattern = q ? `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%` : null;
       const matches = pattern
         ? or(
-            ilike(schema.conversations.title, pattern),
-            sql`exists (select 1 from ${schema.messages} m where m.conversation_id = ${schema.conversations.id} and m.role in ('user', 'assistant') and m.content->>'content' ilike ${pattern})`,
+            ilike(c.title, pattern),
+            sql`exists (select 1 from ${schema.messages} m where m.conversation_id = ${c.id} and m.role in ('user', 'assistant') and m.content->>'content' ilike ${pattern})`,
           )
         : undefined;
+      const status = statusFilters(ctx, actor.workspaceId);
+      const shown = and(eq(c.workspaceId, actor.workspaceId), isNotNull(c.lastMessageAt), matches);
       const rows = await ctx.db
         .select()
-        .from(schema.conversations)
+        .from(c)
         .where(
           and(
-            eq(schema.conversations.workspaceId, actor.workspaceId),
-            isNull(schema.conversations.archivedAt),
-            hasMessage,
-            matches,
+            shown,
+            filter === "archived" ? isNotNull(c.archivedAt) : isNull(c.archivedAt),
+            filter === "waiting" || filter === "working" || filter === "tasks"
+              ? status[filter]
+              : undefined,
+            after
+              ? sql`(${c.lastMessageAt}, ${c.id}) < (${after.at}::timestamptz, ${after.id})`
+              : undefined,
           ),
         )
         // Newest activity first: a rename doesn't move a conversation up.
-        .orderBy(
-          desc(
-            sql`(select max(m.created_at) from ${schema.messages} m where m.conversation_id = ${schema.conversations.id})`,
-          ),
-        )
-        .limit(200);
-      return conversationSummaries(ctx, actor.workspaceId, rows);
+        .orderBy(desc(c.lastMessageAt), desc(c.id))
+        .limit(limit + 1);
+      const page = rows.slice(0, limit);
+      const last = page.at(-1);
+      const [counts] = after
+        ? [null]
+        : await ctx.db
+            .select({
+              waiting: sql<number>`(count(*) filter (where ${status.waiting}))::int`,
+              working: sql<number>`(count(*) filter (where ${status.working}))::int`,
+            })
+            .from(c)
+            .where(and(shown, isNull(c.archivedAt)));
+      return {
+        items: await conversationSummaries(ctx, actor.workspaceId, page),
+        nextCursor:
+          rows.length > limit && last?.lastMessageAt
+            ? encodeCursor(last.lastMessageAt, last.id)
+            : null,
+        counts: counts ?? null,
+      };
     },
   );
 
@@ -244,15 +291,32 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
     },
   );
 
-  r.delete("/api/conversations/:id", { schema: { params: Id } }, async (request, reply) => {
-    const actor = actorOf(request);
-    const conv = await owned(actor.workspaceId, request.params.id);
-    if (!conv) return reply.code(404).send({ error: "not found" });
-    await ctx.db
+  // Archiving hides a chat from the lists and keeps everything in it, so
+  // Restore brings it back as it was. Tasks it started keep running.
+  async function setArchived(workspaceId: string, id: string, archived: boolean) {
+    const [updated] = await ctx.db
       .update(schema.conversations)
-      .set({ archivedAt: new Date() })
-      .where(eq(schema.conversations.id, conv.id));
-    return { ok: true };
+      .set({ archivedAt: archived ? new Date() : null })
+      .where(
+        and(eq(schema.conversations.id, id), eq(schema.conversations.workspaceId, workspaceId)),
+      )
+      .returning();
+    if (!updated) return null;
+    const view = toConversationView(updated);
+    ctx.hub.publish(workspaceId, { type: "conversation.updated", conversation: view });
+    return view;
+  }
+
+  r.post("/api/conversations/:id/archive", { schema: { params: Id } }, async (request, reply) => {
+    const actor = actorOf(request);
+    const view = await setArchived(actor.workspaceId, request.params.id, true);
+    return view ?? reply.code(404).send({ error: "not found" });
+  });
+
+  r.post("/api/conversations/:id/restore", { schema: { params: Id } }, async (request, reply) => {
+    const actor = actorOf(request);
+    const view = await setArchived(actor.workspaceId, request.params.id, false);
+    return view ?? reply.code(404).send({ error: "not found" });
   });
 
   r.post(
@@ -266,6 +330,7 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
           attachmentIds: z.array(z.string().max(64)).max(MESSAGE_MAX_FILES).optional(),
           research: z.boolean().optional(),
           personalityId: z.string().max(64).optional(),
+          clientId: z.string().min(8).max(64).optional(),
         }),
       },
     },
@@ -273,7 +338,21 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
       const actor = actorOf(request);
       let conv = await owned(actor.workspaceId, request.params.id);
       if (!conv) return reply.code(404).send({ error: "not found" });
-      const { personalityId, research, attachmentIds } = request.body;
+      const { personalityId, research, attachmentIds, clientId } = request.body;
+      // The same message sent again, after its response was lost: it's saved
+      // already, with its files, and its turn was queued with it.
+      if (clientId) {
+        const [sent] = await ctx.db
+          .select({ id: schema.messages.id })
+          .from(schema.messages)
+          .where(
+            and(
+              eq(schema.messages.conversationId, conv.id),
+              eq(schema.messages.clientId, clientId),
+            ),
+          );
+        if (sent) return { id: sent.id };
+      }
       if (!request.body.text && !attachmentIds?.length) {
         return reply.code(400).send({ error: "Write a message first." });
       }
@@ -291,6 +370,11 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         ...(research ? { research: true } : {}),
         ...(mentioned ? { personalityId: mentioned.id } : {}),
       };
+      // Writing in an archived chat brings it back.
+      if (conv.archivedAt) {
+        await setArchived(actor.workspaceId, conv.id, false);
+        conv = { ...conv, archivedAt: null };
+      }
       if (conv.title === "New conversation") {
         const title = (request.body.text || (await firstFileName(attachmentIds)))
           .replace(/\s+/g, " ")
@@ -306,6 +390,7 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         meta: Object.keys(meta).length ? meta : null,
         dispatch: true,
         ...(attachmentIds?.length ? { attachmentIds } : {}),
+        ...(clientId ? { clientId } : {}),
       });
       if (!row) throw new Error("insert failed");
       return { id: row.id };
@@ -314,6 +399,48 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
 }
 
 const ACTIVE_TASK_STATES: TaskState[] = ["queued", "dispatched", "running"];
+
+/** Chats a list page holds, unless it asks for fewer. */
+const PAGE = 50;
+const MAX_PAGE = 100;
+
+/** Where a page ended: the last chat's activity time and ID, as an opaque string. */
+function encodeCursor(at: Date, id: string): string {
+  return Buffer.from(`${at.toISOString()}|${id}`).toString("base64url");
+}
+
+function decodeCursor(cursor: string): { at: string; id: string } | null {
+  const [at, id] = Buffer.from(cursor, "base64url").toString().split("|");
+  if (!at || !id || Number.isNaN(Date.parse(at))) return null;
+  return { at, id };
+}
+
+/**
+ * What the status filters match, as conditions on a conversations row. A
+ * reply being written, and a command or send waiting in a turn, live in
+ * this process; the rest is in the database.
+ */
+function statusFilters(
+  ctx: AppContext,
+  workspaceId: string,
+): Record<"waiting" | "working" | "tasks", SQL> {
+  const c = schema.conversations;
+  const t = schema.tasks;
+  const a = schema.approvals;
+  const asking = [...ctx.commands.waitingConversations(workspaceId)];
+  const thinking = ctx.agent.thinking();
+  return {
+    waiting: or(
+      sql`exists (select 1 from ${a} inner join ${t} on ${t.id} = ${a.taskId} where ${a.workspaceId} = ${workspaceId} and ${a.state} = 'pending' and ${t.conversationId} = ${c.id})`,
+      asking.length ? inArray(c.id, asking) : undefined,
+    ) as SQL,
+    working: or(
+      sql`exists (select 1 from ${t} where ${t.conversationId} = ${c.id} and ${inArray(t.state, ACTIVE_TASK_STATES)})`,
+      thinking.length ? inArray(c.id, thinking) : undefined,
+    ) as SQL,
+    tasks: sql`exists (select 1 from ${t} where ${t.conversationId} = ${c.id})`,
+  };
+}
 
 /** One line of a message, for a list. */
 function previewOf(content: unknown, role: string): string {

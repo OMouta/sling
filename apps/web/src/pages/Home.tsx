@@ -25,6 +25,7 @@ import { TaskStateBadge } from "../components/TaskCard.tsx";
 import { Card, cx, Kbd, Skeleton } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { useDictation } from "../lib/dictation.ts";
+import { useDraft, useSendId } from "../lib/drafts.ts";
 import { ago } from "../lib/format.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { useMention } from "../lib/mentions.ts";
@@ -55,7 +56,7 @@ export function HomePage() {
     queryKey: ["tasks"],
     queryFn: () => api.get<TaskView[]>("/api/tasks"),
   });
-  const [text, setText] = useState("");
+  const [text, setText] = useDraft("new");
   const dictation = useDictation(text, setText);
   const input = useRef<HTMLTextAreaElement>(null);
   const catalog = useModelCatalog();
@@ -106,7 +107,7 @@ export function HomePage() {
     if (link.personality) setWanted(link.personality);
     void navigate({ to: "/", search: {}, replace: true });
     input.current?.focus({ preventScroll: true });
-  }, [search, navigate]);
+  }, [search, navigate, setText]);
   useEffect(() => {
     if (wanted === null || list.length === 0) return;
     const p = linkedPersonality(list, wanted);
@@ -136,13 +137,23 @@ export function HomePage() {
     ? canResearch(mention.mentioned, mention.mentioned.assistant ?? chosen)
     : canResearch(picked, chosen);
 
+  // Trying again after a failure reuses the chat the first try made, and
+  // the same message ID, so nothing is started or sent twice.
+  const sendId = useSendId();
+  const started = useRef<{ chat: ConversationView; what: string } | null>(null);
   const start = useMutation({
     mutationFn: async (message: SendMessageInput) => {
       const attachmentIds = await files.ids();
-      const c = await api.post<ConversationView>(
-        "/api/conversations",
-        picked ? { personalityId: picked.id } : {},
-      );
+      const what = JSON.stringify([message, attachmentIds, picked?.id, mode, assistant]);
+      const clientId = sendId.take(what);
+      const c =
+        started.current?.what === what
+          ? started.current.chat
+          : await api.post<ConversationView>(
+              "/api/conversations",
+              picked ? { personalityId: picked.id } : {},
+            );
+      started.current = { chat: c, what };
       if (mode || assistant) {
         await api.patch(`/api/conversations/${c.id}`, {
           ...(mode ? { mode } : {}),
@@ -152,10 +163,14 @@ export function HomePage() {
       await api.post(`/api/conversations/${c.id}/messages`, {
         ...message,
         ...(attachmentIds.length ? { attachmentIds } : {}),
+        clientId,
       });
       return c;
     },
     onSuccess: (c) => {
+      started.current = null;
+      sendId.done();
+      setText("");
       research.off();
       files.clear();
       void qc.invalidateQueries({ queryKey: ["conversations"] });

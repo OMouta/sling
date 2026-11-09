@@ -457,7 +457,9 @@ describe("Stage 2", { timeout: 60_000 }, () => {
     expect(reply.body.content).toBe("Hi from Sling over Discord.");
     expect(sent.filter((m) => m.channelId === DM_CHANNEL)).toHaveLength(1);
 
-    const convs = await api<{ id: string; title: string }[]>("GET", "/api/conversations");
+    const convs = (
+      await api<{ items: { id: string; title: string }[] }>("GET", "/api/conversations")
+    ).items;
     const conv = convs.find((c) => c.title.startsWith("Discord: owner"));
     expect(conv).toBeTruthy();
     const detail = await api<{ messages: { role: string; text: string }[] }>(

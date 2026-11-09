@@ -131,6 +131,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -271,7 +272,10 @@ describe("the mic", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() =>
       expect(posts).toEqual([
-        { path: "/api/conversations/cnv_1/messages", body: { text: "what's on my calendar" } },
+        {
+          path: "/api/conversations/cnv_1/messages",
+          body: { text: "what's on my calendar", clientId: expect.any(String) },
+        },
       ]),
     );
     expect(r.aborted).toBe(true);

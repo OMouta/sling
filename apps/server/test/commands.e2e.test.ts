@@ -14,7 +14,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import type {
-  ConversationSummaryView,
+  ConversationPage,
   LiveReplyView,
   MessageView,
   PermissionMode,
@@ -319,7 +319,7 @@ describe("the conversation list", () => {
     const empty = await api<{ id: string }>("POST", "/api/conversations");
     const id = await conversation("full-access");
     await ask(id, { command: "echo listed", cwd: work });
-    const list = await api<ConversationSummaryView[]>("GET", "/api/conversations");
+    const list = (await api<ConversationPage>("GET", "/api/conversations")).items;
     expect(list.some((c) => c.id === empty.id)).toBe(false);
     const row = list.find((c) => c.id === id);
     expect(row).toMatchObject({
@@ -340,21 +340,24 @@ describe("the conversation list", () => {
     await until("its reply", async () =>
       (await detail(id)).messages.some((m) => m.role === "assistant"),
     );
-    const hits = await api<ConversationSummaryView[]>("GET", "/api/conversations?q=ZEBRA");
+    const hits = (await api<ConversationPage>("GET", "/api/conversations?q=ZEBRA")).items;
     expect(hits.map((c) => c.id)).toEqual([id]);
-    expect(await api<ConversationSummaryView[]>("GET", "/api/conversations?q=100%25")).toEqual([]);
+    expect((await api<ConversationPage>("GET", "/api/conversations?q=100%25")).items).toEqual([]);
   });
 
   it("marks a conversation with a command waiting for the user", async () => {
     const id = await conversation("auto");
     const pending = ask(id, { command: "touch waiting.txt", cwd: work, outsideSandbox: true });
     await until("the approval", async () => {
-      const list = await api<ConversationSummaryView[]>("GET", "/api/conversations");
-      return list.find((c) => c.id === id && c.waiting && c.agentStatus === "thinking");
+      const page = await api<ConversationPage>("GET", "/api/conversations?filter=waiting");
+      return (
+        page.counts?.waiting === 1 &&
+        page.items.find((c) => c.id === id && c.waiting && c.agentStatus === "thinking")
+      );
     });
     await answer(id, "deny");
     await pending;
-    const list = await api<ConversationSummaryView[]>("GET", "/api/conversations");
+    const list = (await api<ConversationPage>("GET", "/api/conversations")).items;
     expect(list.find((c) => c.id === id)?.waiting).toBe(false);
   });
 });

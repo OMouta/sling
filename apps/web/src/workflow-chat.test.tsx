@@ -51,6 +51,7 @@ function chat(over: Partial<ConversationSummaryView>): ConversationSummaryView {
     settings: { assistant: null, agent: null },
     personalityId: null,
     startedBy: null,
+    archived: false,
     createdAt: T,
     updatedAt: T,
     preview: "Done.",
@@ -124,6 +125,7 @@ function route(path: string): unknown {
           settings: { assistant: null, agent: null },
           personalityId: null,
           startedBy: null,
+          archived: false,
           createdAt: T,
           updatedAt: T,
         },
@@ -134,7 +136,7 @@ function route(path: string): unknown {
         usage: { inputTokens: 0, outputTokens: 0 },
       };
     case "/api/conversations":
-      return conversations;
+      return { items: conversations, nextCursor: null, counts: { waiting: 0, working: 0 } };
     case "/api/personalities":
       return personalities;
     case "/api/approvals":
@@ -185,6 +187,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 

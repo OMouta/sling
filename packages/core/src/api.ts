@@ -350,6 +350,8 @@ export interface ConversationView {
   personalityId: string | null;
   /** The start rule that opened it. Null for chats a person or a workflow started. */
   startedBy: ConversationStartedBy | null;
+  /** Archived chats stay readable, and come back with Restore or a new message. */
+  archived: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -368,6 +370,22 @@ export interface ConversationSummaryView extends ConversationView {
   agentStatus: AgentStatus;
   /** Where it comes from: the web app, or a channel such as Discord. */
   source: string;
+}
+
+/** Which chats a list shows. Archived chats show only under `archived`. */
+export const CONVERSATION_FILTERS = ["all", "waiting", "working", "tasks", "archived"] as const;
+export type ConversationFilter = (typeof CONVERSATION_FILTERS)[number];
+
+/** One page of a chat list, newest activity first. */
+export interface ConversationPage {
+  items: ConversationSummaryView[];
+  /** Pass back as `cursor` for the next page. Null on the last one. */
+  nextCursor: string | null;
+  /**
+   * Chats waiting on the user and chats at work, among those not archived
+   * that match the search. Only on the first page.
+   */
+  counts: { waiting: number; working: number } | null;
 }
 
 /** A message as the chat UI shows it. Tool calls are summarized, not raw. */
@@ -405,6 +423,11 @@ export interface SendMessageInput {
   research?: boolean;
   /** The @mentioned personality, who answers this message instead of the chat's. */
   personalityId?: string;
+  /**
+   * The browser's own ID for this message. Sending again with the same one,
+   * after a response was lost, gets the saved message instead of a second.
+   */
+  clientId?: string;
 }
 
 /** One line of a change to Sling's setup: a value as it would be, and as it was when editing. */

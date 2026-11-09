@@ -1,7 +1,7 @@
-import type { ConversationSummaryView } from "@sling/core";
+import type { ConversationPage, ConversationSummaryView } from "@sling/core";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { MessagesSquare, Plus, Search, SearchX } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { Archive, MessagesSquare, Plus, Search, SearchX } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useConversationMenu } from "../components/ConversationMenu.tsx";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, Toolbar } from "../components/Page.tsx";
@@ -20,9 +20,8 @@ import {
   activityAt,
   type ConversationFilter,
   conversationStatus,
-  FILTERS,
   groupByDate,
-  useConversations,
+  useConversationList,
 } from "../lib/conversations.ts";
 import { ago } from "../lib/format.ts";
 import { chatsRoute } from "../router.tsx";
@@ -33,7 +32,7 @@ const SOURCE_LABEL: Record<string, string> = {
   email: "Email",
 };
 
-/** Every chat: search what was said, filter by what's going on, rename or delete. */
+/** Every chat: search what was said, filter by what's going on, rename or archive. */
 export function ChatsPage() {
   const navigate = useNavigate();
   const search = chatsRoute.useSearch();
@@ -55,11 +54,30 @@ export function ChatsPage() {
     return () => clearTimeout(t);
   }, [text, navigate]);
 
-  const conversations = useConversations(q);
-  const all = conversations.data ?? [];
-  const rows = all.filter(FILTERS[filter]);
+  const conversations = useConversationList(q, filter);
+  const pages = conversations.data?.pages;
+  const rows = useMemo(() => pages?.flatMap((p) => p.items) ?? [], [pages]);
   const groups = useMemo(() => groupByDate(rows), [rows]);
-  const count = (f: ConversationFilter) => all.filter(FILTERS[f]).length;
+  // Every tab counts the same chats, so the counts stay put while another tab loads.
+  const lastCounts = useRef<ConversationPage["counts"]>(null);
+  if (pages?.[0]?.counts) lastCounts.current = pages[0].counts;
+  const counts = lastCounts.current;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = conversations;
+
+  // The next page loads as the end of the list scrolls into view.
+  const end = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = end.current;
+    if (!el || !hasNextPage) return;
+    const seen = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage) void fetchNextPage();
+      },
+      { rootMargin: "400px 0px" },
+    );
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
     <Page
@@ -70,9 +88,10 @@ export function ChatsPage() {
           onChange={setFilter}
           tabs={[
             { id: "all", label: "All chats" },
-            { id: "waiting", label: "Waiting for you", count: count("waiting") },
-            { id: "working", label: "Working", count: count("working") },
+            { id: "waiting", label: "Waiting for you", count: counts?.waiting },
+            { id: "working", label: "Working", count: counts?.working },
             { id: "tasks", label: "With tasks" },
+            { id: "archived", label: "Archived" },
           ]}
         />
       }
@@ -111,7 +130,11 @@ export function ChatsPage() {
           </div>
         ) : rows.length === 0 ? (
           <Card>
-            {q || filter !== "all" ? (
+            {q ? (
+              <Empty icon={SearchX} title="No chats match" className="py-12" />
+            ) : filter === "archived" ? (
+              <Empty icon={Archive} title="No archived chats" className="py-12" />
+            ) : filter !== "all" ? (
               <Empty icon={SearchX} title="No chats match" className="py-12" />
             ) : (
               <Empty icon={MessagesSquare} title="No chats yet" className="py-12" />
@@ -129,6 +152,12 @@ export function ChatsPage() {
               </Card>
             </section>
           ))
+        )}
+        <div ref={end} aria-hidden="true" />
+        {isFetchingNextPage && (
+          <div className="flex justify-center pt-4">
+            <Spinner />
+          </div>
         )}
       </div>
       {dialog}

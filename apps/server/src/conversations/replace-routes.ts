@@ -10,7 +10,7 @@ import { textOf } from "../agent/history.ts";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
-import { messageViews } from "./messages.ts";
+import { lastMessageAt, messageViews } from "./messages.ts";
 import { latestExchange, replaceable } from "./replace.ts";
 import { NO_CHAT_WORKFLOW } from "./routes.ts";
 
@@ -63,13 +63,13 @@ export async function replaceRoutes(app: FastifyInstance, ctx: AppContext) {
    */
   async function rerun(conv: Conversation, user: MessageRow, after: MessageRow[], text: string) {
     const ids = after.map((m) => m.id);
-    if (ids.length) {
-      await ctx.db.delete(schema.messages).where(inArray(schema.messages.id, ids));
-    }
-    await ctx.db
-      .update(schema.conversations)
-      .set({ agentSession: null })
-      .where(eq(schema.conversations.id, conv.id));
+    await ctx.db.transaction(async (tx) => {
+      if (ids.length) await tx.delete(schema.messages).where(inArray(schema.messages.id, ids));
+      await tx
+        .update(schema.conversations)
+        .set({ agentSession: null, lastMessageAt: lastMessageAt(conv.id) })
+        .where(eq(schema.conversations.id, conv.id));
+    });
     if (ids.length) {
       ctx.hub.publish(conv.workspaceId, {
         type: "message.removed",

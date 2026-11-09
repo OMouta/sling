@@ -312,9 +312,16 @@ export const conversations = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     archivedAt: ts("archived_at"),
+    /**
+     * When its latest user, assistant, or system message was written, which
+     * orders the lists. Null until the first one. Kept in the transaction that
+     * writes or removes messages, so a rename doesn't move a chat.
+     */
+    lastMessageAt: ts("last_message_at"),
   },
   (t) => [
     index("conversations_workspace_idx").on(t.workspaceId, t.updatedAt),
+    index("conversations_activity_idx").on(t.workspaceId, t.lastMessageAt, t.id),
     uniqueIndex("conversations_external_key_idx")
       .on(t.workspaceId, t.externalKey)
       .where(sql`${t.externalKey} is not null`),
@@ -345,9 +352,19 @@ export const messages = pgTable(
     trace: jsonb("trace").$type<ReplyTrace>(),
     /** What a user message was sent with besides its text. */
     meta: jsonb("meta").$type<MessageMeta>(),
+    /**
+     * The ID the browser gave a message it sent. A resend after a lost
+     * response carries the same one, and gets the message already saved.
+     */
+    clientId: text("client_id"),
     createdAt: createdAt(),
   },
-  (t) => [index("messages_conversation_idx").on(t.conversationId, t.id)],
+  (t) => [
+    index("messages_conversation_idx").on(t.conversationId, t.id),
+    uniqueIndex("messages_client_id_idx")
+      .on(t.conversationId, t.clientId)
+      .where(sql`${t.clientId} is not null`),
+  ],
 );
 
 export interface MessageMeta {

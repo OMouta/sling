@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api.ts";
-import { useConversations } from "../lib/conversations.ts";
+import { useRecentConversations } from "../lib/conversations.ts";
 import { setTheme, useTheme } from "../lib/theme.ts";
 import { qk } from "../lib/workflowApi.ts";
 import { NAV } from "./nav.ts";
@@ -35,7 +35,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const list = useRef<HTMLDivElement>(null);
-  const conversations = useConversations();
+  const conversations = useRecentConversations();
   const workflows = useQuery({
     queryKey: qk.workflows(),
     queryFn: () => api.get<WorkflowSummaryView[]>("/api/workflows"),
@@ -65,7 +65,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         icon: n.icon,
         run: go(n.to),
       })),
-      ...(conversations.data ?? []).slice(0, 30).map((c) => ({
+      ...(conversations.data?.items ?? []).slice(0, 30).map((c) => ({
         id: `c:${c.id}`,
         group: "Conversations",
         label: c.title,

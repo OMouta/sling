@@ -216,6 +216,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -350,7 +351,11 @@ describe("Deep research", () => {
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0]).toEqual({
       path: "/api/conversations/cnv_1/messages",
-      body: { text: "What changed in the EU AI Act this month?", research: true },
+      body: {
+        text: "What changed in the EU AI Act this month?",
+        research: true,
+        clientId: expect.any(String),
+      },
     });
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Turn off Deep research" })).toBeNull(),
@@ -365,7 +370,7 @@ describe("Deep research", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Message" }), { target: { value: "Hi" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(posts).toHaveLength(1));
-    expect(posts[0]?.body).toEqual({ text: "Hi" });
+    expect(posts[0]?.body).toEqual({ text: "Hi", clientId: expect.any(String) });
   });
 
   it("isn't offered without the web, or on a model that can't search", async () => {

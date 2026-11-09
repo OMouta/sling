@@ -16,7 +16,7 @@ import type { WorkflowDetailView } from "@sling/workflow";
 import type { QueryClient } from "@tanstack/react-query";
 import { useMemo, useSyncExternalStore } from "react";
 import { applyCheckEvent, applyToolStepCheck } from "./checks.ts";
-import { byActivity, conversationsKey, previewText } from "./conversations.ts";
+import { conversationsKey, patchListedConversation, previewText } from "./conversations.ts";
 import { applyDeployTargetEvent } from "./deploys.ts";
 import { applyExtension, forgetExtension } from "./extensionApi.ts";
 import { liveText } from "./followUps.ts";
@@ -165,27 +165,29 @@ function refreshConversations(qc: QueryClient) {
 }
 
 /**
- * Changes one conversation in the list. One that isn't there yet, such as a
- * new conversation's first message, makes the list refetch instead, since
- * the server decides what's in it.
+ * Changes one conversation in the lists. One the recent list doesn't have,
+ * such as a new conversation's first message, makes the lists refetch, since
+ * the server decides what's in them. So does a change to what the counts
+ * count: whether it waits on the user, or is at work.
  */
 function patchConversation(
   qc: QueryClient,
   id: string,
   fn: (c: ConversationSummaryView) => ConversationSummaryView,
+  toTop = false,
 ) {
-  let found = false;
-  qc.setQueryData<ConversationSummaryView[]>(conversationsKey, (list) => {
-    if (!list) return list;
-    const i = list.findIndex((c) => c.id === id);
-    const current = list[i];
-    if (!current) return list;
-    found = true;
-    const next = list.slice();
-    next[i] = fn(current);
-    return next.sort(byActivity);
-  });
-  if (!found) refreshConversations(qc);
+  let recount = false;
+  const found = patchListedConversation(
+    qc,
+    id,
+    (c) => {
+      const next = fn(c);
+      recount ||= next.waiting !== c.waiting || next.agentStatus !== c.agentStatus;
+      return next;
+    },
+    toTop,
+  );
+  if (!found || recount) refreshConversations(qc);
 }
 
 function applyTask(qc: QueryClient, task: TaskView) {
@@ -329,20 +331,31 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
       void qc.invalidateQueries({ queryKey: ["approvals"] });
       refreshConversations(qc);
       return;
-    case "conversation.updated":
-      patchConversation(qc, ev.conversation.id, (c) => ({ ...c, ...ev.conversation }));
+    case "conversation.updated": {
+      // Archived or restored: it leaves the lists it was in, and the server
+      // says which it goes in now.
+      const found = patchListedConversation(qc, ev.conversation.id, (c) =>
+        c.archived === ev.conversation.archived ? { ...c, ...ev.conversation } : null,
+      );
+      if (!found) refreshConversations(qc);
       qc.setQueryData<ConversationDetail>(["conversation", ev.conversation.id], (d) =>
         d ? { ...d, conversation: ev.conversation } : d,
       );
       return;
+    }
     case "message.created":
       if (ev.message.role === "assistant") clearStream(ev.message.conversationId);
-      patchConversation(qc, ev.message.conversationId, (c) => ({
-        ...c,
-        preview: previewText(ev.message.text, ev.message.role) || c.preview,
-        previewRole: ev.message.role,
-        lastMessageAt: ev.message.createdAt,
-      }));
+      patchConversation(
+        qc,
+        ev.message.conversationId,
+        (c) => ({
+          ...c,
+          preview: previewText(ev.message.text, ev.message.role) || c.preview,
+          previewRole: ev.message.role,
+          lastMessageAt: ev.message.createdAt,
+        }),
+        true,
+      );
       patchMessages(qc, ev.message.conversationId, (list) => upsert(list, ev.message));
       if (ev.message.role === "assistant") refreshChat(qc, ev.message.conversationId);
       return;

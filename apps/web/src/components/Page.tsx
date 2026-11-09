@@ -20,6 +20,7 @@ import { createContext, type ReactNode, useContext, useEffect } from "react";
 import { api } from "../lib/api.ts";
 import { decisionCount } from "../lib/approvals.ts";
 import { authClient } from "../lib/auth.ts";
+import { clearDrafts } from "../lib/drafts.ts";
 import { setTheme, type ThemePref, useTheme } from "../lib/theme.ts";
 import type { Status } from "../lib/types.ts";
 import { Avatar, Button, cx, Kbd, Menu, MenuItem, MenuLabel, MenuSeparator } from "./ui.tsx";
@@ -304,6 +305,7 @@ function AccountMenu() {
         icon={LogOut}
         onSelect={async () => {
           await authClient.signOut();
+          clearDrafts();
           qc.clear();
           void navigate({ to: "/login" });
         }}

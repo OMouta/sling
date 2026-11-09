@@ -119,6 +119,7 @@ describe("sandbox realtime events", () => {
         settings: { assistant: null, agent: null },
         personalityId: null,
         startedBy: null,
+        archived: false,
         createdAt: "2026-11-05T10:00:00.000Z",
         updatedAt: "2026-11-05T10:00:00.000Z",
       },
