@@ -19,9 +19,18 @@ export async function startJobs(
 ): Promise<PgBoss> {
   const boss = new PgBoss({ connectionString, schema: "pgboss", useListenNotify: true });
   boss.on("error", (err) => ctx.log.error({ err }, "pg-boss error"));
-  await boss.start();
-  if (!opts.schedules) return boss;
+  try {
+    await boss.start();
+    if (opts.schedules) await schedule(ctx, boss);
+  } catch (err) {
+    // The caller never gets this instance, so it can't stop it.
+    await boss.stop({ graceful: false }).catch(() => {});
+    throw err;
+  }
+  return boss;
+}
 
+async function schedule(ctx: AppContext, boss: PgBoss) {
   await boss.createQueue(QUEUES.sweep, { policy: "singleton" });
   await boss.createQueue(QUEUES.pruneEvents, { policy: "singleton" });
   await boss.schedule(QUEUES.sweep, "* * * * *");
@@ -43,5 +52,4 @@ export async function startJobs(
       "pruned old task events and node run payloads",
     );
   });
-  return boss;
 }

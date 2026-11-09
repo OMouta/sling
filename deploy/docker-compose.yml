@@ -14,7 +14,9 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     image: sling:local
-    stop_grace_period: 75s
+    # Keep it at least 15 seconds above SLING_SHUTDOWN_TIMEOUT_SECONDS (default 60), so
+    # the server finishes its own bounded shutdown before Docker kills it.
+    stop_grace_period: ${SLING_STOP_GRACE_PERIOD:-75s}
     env_file: .env
     environment:
       DATABASE_URL: postgres://sling:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/sling

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_SHUTDOWN_MS } from "./lifecycle.ts";
 
 const Env = z.object({
   DATABASE_URL: z.string().min(1),
@@ -14,6 +15,15 @@ const Env = z.object({
   HOST: z.string().default("0.0.0.0"),
   PORT: z.coerce.number().int().positive().default(8080),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+  /**
+   * Longest a stop may take, from the signal to closed connections. Keep it below the
+   * container's stop grace period, or the container is killed before cleanup finishes.
+   */
+  SLING_SHUTDOWN_TIMEOUT_SECONDS: z.coerce
+    .number()
+    .positive()
+    .max(3600)
+    .default(DEFAULT_SHUTDOWN_MS / 1000),
   /** Directory with the built web app. Unset in development, where Vite serves it. */
   SLING_WEB_DIST: z.string().optional(),
   /** Image sandboxes run when their provider doesn't name one. */
@@ -48,6 +58,8 @@ export interface Config {
   host: string;
   port: number;
   logLevel: z.infer<typeof Env>["LOG_LEVEL"];
+  /** Longest a stop may take. Defaults to `DEFAULT_SHUTDOWN_MS`. */
+  shutdownTimeoutMs?: number;
   webDist: string | undefined;
   /** Image sandboxes run when their provider doesn't name one. Defaults to `sling-sandbox:latest`. */
   sandboxImage?: string | undefined;
@@ -100,6 +112,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: e.HOST,
     port: e.PORT,
     logLevel: e.LOG_LEVEL,
+    shutdownTimeoutMs: e.SLING_SHUTDOWN_TIMEOUT_SECONDS * 1000,
     webDist: e.SLING_WEB_DIST,
     sandboxImage: e.SLING_SANDBOX_IMAGE,
     releaseRepo: e.SLING_RELEASE_REPO,

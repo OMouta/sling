@@ -43,6 +43,8 @@ Fill in `.env`:
 | `SLING_BIND` | Where to publish it: `127.0.0.1` (default) for this computer and a tunnel only, `0.0.0.0` for the local network too. |
 | `COMPOSE_PROFILES` | `tailscale` or `cloudflare` to run that tunnel next to Sling. Its secret goes in `deploy/tunnel.env`. |
 | `LOG_LEVEL` | `info` by default. |
+| `SLING_SHUTDOWN_TIMEOUT_SECONDS` | Optional. Longest a stop may take. Default `60`. See [below](#control-plane-topology-and-health). |
+| `SLING_STOP_GRACE_PERIOD` | Optional. How long Compose waits before killing the container. Default `75s`. Keep it at least 15 seconds above the shutdown timeout. |
 | `SLING_RELEASE_REPO` | Optional. The GitHub repo, as `owner/name`, whose releases Sling gets `sling-runner` from for the install command. Default `OMouta/sling`. Set it when you publish your own builds. |
 | `SLING_ALLOW_UNSIGNED_EXTENSIONS` | Optional, for developing extensions. `1` lets you install unsigned packages and add catalogs on loopback addresses. Leave it off otherwise: the web app can't turn it on, which is the point. |
 
@@ -120,7 +122,18 @@ before starting its replacement.
 `/healthz` checks that the HTTP process answers. `/readyz` also checks startup,
 shutdown state, and a bounded database probe. Use readiness for traffic routing;
 do not restart the server solely because Postgres is temporarily unavailable.
-The Compose service has a 75-second stop grace period for in-flight work.
+
+On SIGTERM or SIGINT the server stops reporting ready, refuses new requests, stops
+taking new jobs and connector events, waits for work in progress, and closes
+connections last. The whole stop shares one deadline,
+`SLING_SHUTDOWN_TIMEOUT_SECONDS` (default 60). Work still running at the deadline
+is cut off and picked up again on the next start, and the process exits non-zero.
+A second signal doesn't start cleanup again. Compose waits
+`SLING_STOP_GRACE_PERIOD` (default `75s`) before killing the container; keep it at
+least 15 seconds above the shutdown timeout. If startup fails partway, for example
+during a migration, the server closes its database connections and releases its
+control-plane lock before exiting non-zero, so the restarted container can take
+over.
 
 Forwarded client addresses are trusted only from `SLING_TRUSTED_PROXIES`, a
 comma-separated list of proxy IPs or CIDRs. Leave it empty for direct access.
