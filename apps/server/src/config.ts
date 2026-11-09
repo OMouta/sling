@@ -38,6 +38,15 @@ const Env = z.object({
     .enum(["0", "1", "true", "false", ""])
     .default("")
     .transform((v) => v === "1" || v === "true"),
+  /**
+   * Holds back everything that acts on its own: workflow runs, chat and settlement
+   * deliveries, connector sources, schedules, checks, webhooks, and push. A restored
+   * copy starts this way so it can't repeat what the original already did.
+   */
+  SLING_AUTOMATION_PAUSED: z
+    .enum(["0", "1", "true", "false", ""])
+    .default("")
+    .transform((v) => v === "1" || v === "true"),
   /** Directory with the catalog that ships with Sling: catalog.json and its packages. */
   SLING_INCLUDED_EXTENSIONS: z.string().min(1).optional(),
   /** Where installed extension packages are unpacked for their processes. */
@@ -80,6 +89,11 @@ export interface Config {
   includedExtensionsDir?: string | undefined;
   /** Where packages are unpacked. Defaults to `<tmpdir>/sling-extensions`. */
   extensionCacheDir?: string | undefined;
+  /**
+   * Workflow runs, deliveries, connector sources, schedules, checks, webhooks, and push
+   * are held back. Data is kept; it all resumes on a start without the setting.
+   */
+  automationPaused?: boolean;
   /** Only set by tests. */
   testing?: {
     /** Passed to sandboxes as SLING_CODEX_BIN, so they run a fake Codex. */
@@ -126,6 +140,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     releaseRepo: e.SLING_RELEASE_REPO,
     runnerCacheDir: e.SLING_RUNNER_CACHE,
     allowUnsignedExtensions: e.SLING_ALLOW_UNSIGNED_EXTENSIONS,
+    automationPaused: e.SLING_AUTOMATION_PAUSED,
     includedExtensionsDir: e.SLING_INCLUDED_EXTENSIONS,
     extensionCacheDir: e.SLING_EXTENSION_CACHE,
   };

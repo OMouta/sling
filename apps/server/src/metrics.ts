@@ -53,6 +53,7 @@ export interface DatabaseStats {
 /** What a scrape reads besides this process's own counters. */
 export interface MetricSources {
   runnersConnected(): number;
+  automationPaused?: boolean;
   database(): Promise<DatabaseStats>;
   onDatabaseError?(err: unknown): void;
 }
@@ -130,6 +131,12 @@ export class Metrics {
       "gauge",
       "Runners connected to this control plane. Not part of readiness.",
       [[{}, sources.runnersConnected()]],
+    );
+    out.metric(
+      "sling_automation_paused",
+      "gauge",
+      "1 while SLING_AUTOMATION_PAUSED holds back runs, deliveries, sources, schedules, webhooks, and push.",
+      [[{}, sources.automationPaused ? 1 : 0]],
     );
     this.#renderLoop(out);
     const memory = process.memoryUsage();

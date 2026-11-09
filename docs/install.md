@@ -44,6 +44,7 @@ Fill in `.env`:
 | `COMPOSE_PROFILES` | `tailscale` or `cloudflare` to run that tunnel next to Sling. Its secret goes in `deploy/tunnel.env`. |
 | `LOG_LEVEL` | `info` by default. |
 | `SLING_SHUTDOWN_TIMEOUT_SECONDS` | Optional. Longest a stop may take. Default `60`. See [below](#control-plane-topology-and-health). |
+| `SLING_AUTOMATION_PAUSED` | Optional. `1` holds back workflow runs, chat replies, deliveries, connector sources, schedules, checks, webhooks, and push until a start without it. A restore sets it. See [backup.md](backup.md). |
 | `SLING_METRICS_TOKEN` | Optional. Turns on Prometheus metrics at `/metrics` for requests that send it as a bearer token. See [Metrics](#metrics). |
 | `SLING_STOP_GRACE_PERIOD` | Optional. How long Compose waits before killing the container. Default `75s`. Keep it at least 15 seconds above the shutdown timeout. |
 | `SLING_RELEASE_REPO` | Optional. The GitHub repo, as `owner/name`, whose releases Sling gets `sling-runner` from for the install command. Default `OMouta/sling`. Set it when you publish your own builds. |

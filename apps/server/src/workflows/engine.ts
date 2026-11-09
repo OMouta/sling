@@ -239,8 +239,12 @@ export class Engine {
 
   // ------------------------------------------------------------- lifecycle
 
-  /** Creates queues, recovers interrupted runs, and starts the workers. */
-  async start(boss: PgBoss, opts: { concurrency?: number } = {}): Promise<void> {
+  /**
+   * Creates queues, recovers interrupted runs, and starts the workers. Paused, it only
+   * creates the queues: runs stay as they are, and new ones wait, until a start that
+   * isn't paused.
+   */
+  async start(boss: PgBoss, opts: { concurrency?: number; paused?: boolean } = {}): Promise<void> {
     this.#boss = boss;
     this.#stopping = false;
     await boss.createQueue(RUN_QUEUE, {
@@ -255,6 +259,7 @@ export class Engine {
     // Timer jobs are created long before they're due, so a NOTIFY at creation
     // wakes nobody at the right time. Plain polling keeps them on time.
     await boss.createQueue(TIMER_QUEUE, { retryLimit: 5, retryDelay: 5 });
+    if (opts.paused) return;
     await this.#dropStaleJobs(boss);
     await this.recover();
     // Separate workers, so each can be woken by ID when a key frees up.

@@ -114,7 +114,11 @@ export class ConnectorRuntime {
     const wanted = new Set<string>();
     for (const inst of installs) {
       const connector = this.#ctx.registry.connector(inst.connectorId);
-      const needed = inst.enabled && used.has(inst.id) && connector?.source !== undefined;
+      const needed =
+        !this.#ctx.config.automationPaused &&
+        inst.enabled &&
+        used.has(inst.id) &&
+        connector?.source !== undefined;
       if (needed && connector) {
         wanted.add(inst.id);
         if (!this.#running.has(inst.id)) await this.#start(inst, connector);

@@ -161,6 +161,9 @@ export async function followWorkspaceZone(ctx: AppContext, workspaceId: string):
 export async function startScheduleWorker(ctx: AppContext, boss: PgBoss): Promise<void> {
   await boss.createQueue(SCHEDULE_QUEUE);
   await boss.work<ScheduleJob>(SCHEDULE_QUEUE, async (jobs) => {
+    // While automation is paused, ticks are dropped, as they are while the server is
+    // down. Kept, they would all fire at once when it resumes.
+    if (ctx.config.automationPaused) return;
     for (const job of jobs) await fireSchedule(ctx, job.data.triggerId, job.id);
   });
 }

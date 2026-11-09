@@ -268,6 +268,8 @@ export class PushService {
     payload: PushPayload,
     opts: NotifyOptions = {},
   ): Promise<number> {
+    // A restored copy holds the original's device subscriptions; it must not notify them.
+    if (this.#ctx.config.automationPaused) return 0;
     const m = schema.workspaceMembers;
     const s = schema.pushSubscriptions;
     // One round trip: the member's settings and their devices.

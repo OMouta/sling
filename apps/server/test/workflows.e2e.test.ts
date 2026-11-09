@@ -1689,6 +1689,100 @@ describe("restarts", () => {
     expect(keys).not.toContain("discord-assistant");
   });
 
+  it("holds automation while paused and resumes it on a normal start", async () => {
+    const url = await freshDatabase("paused_restore");
+    const a = await boot(url);
+    const ca = new Client(a.url);
+    await ca.signUp();
+    const inst = await ca.call<{ id: string }>("POST", "/api/installations", {
+      connectorId: "fake",
+      name: "Paused source",
+      credentials: { token: "good-token-123" },
+      config: { label: "paused" },
+    });
+    await deploy(
+      ca,
+      def(
+        "Source while paused",
+        [
+          n("t", "fake.event", { installationId: inst.id, topic: "mail" }),
+          n("rec", "test.record", { tag: "paused-source" }),
+        ],
+        [x("t.next", "rec")],
+      ),
+      { enable: true },
+    );
+    const hook = await deploy(
+      ca,
+      def(
+        "Hook while paused",
+        [n("t", "core.webhook"), n("rec", "test.record", { tag: "paused-hook" })],
+        [x("t.next", "rec")],
+      ),
+      { enable: true },
+    );
+    const timer = await deploy(
+      ca,
+      def(
+        "Timer while paused",
+        [
+          n("t", "core.manual"),
+          n("w", "core.wait", { seconds: 1 }),
+          n("rec", "test.record", { tag: "paused-timer" }),
+        ],
+        [x("t.next", "w"), x("w.next", "rec")],
+      ),
+    );
+    const waiting = await start(ca, timer.id);
+    await settled(ca, waiting.id, ["waiting"]);
+    await a.close();
+
+    const startsBefore = fakeSource.starts;
+    const paused = await startServer(
+      { ...configFor(url), automationPaused: true },
+      { model, jobs: false, nodes: testNodes, connectors: [fakeConnector, fakeDiscord] },
+    );
+    const cp = new Client(paused.url);
+    await cp.call("POST", "/api/auth/sign-in/email", {
+      email: "admin@example.com",
+      password: "correct-horse-battery",
+    });
+    const hookUrl = (hook.webhooks[0]?.url ?? "").replace(/^https?:\/\/[^/]+/, paused.url);
+    const refused = await fetch(hookUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(refused.status).toBe(503);
+    const queued = await start(cp, timer.id);
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    expect((await cp.call<RunDetailView>("GET", `/api/runs/${waiting.id}`)).run.status).toBe(
+      "waiting",
+    );
+    expect((await cp.call<RunDetailView>("GET", `/api/runs/${queued.id}`)).run.status).toBe(
+      "queued",
+    );
+    expect(callsFor(waiting.id)).toHaveLength(0);
+    expect(fakeSource.starts).toBe(startsBefore);
+    const installs = await cp.call<{ id: string; status: string }[]>("GET", "/api/installations");
+    expect(installs.find((i) => i.id === inst.id)?.status).toBe("idle");
+    await paused.close();
+
+    const resumed = await boot(url);
+    extra.push(resumed);
+    const cr = new Client(resumed.url);
+    await cr.call("POST", "/api/auth/sign-in/email", {
+      email: "admin@example.com",
+      password: "correct-horse-battery",
+    });
+    await settled(cr, waiting.id, ["succeeded"], 20_000);
+    await settled(cr, queued.id, ["succeeded"], 20_000);
+    expect(callsFor(waiting.id, "paused-timer")).toHaveLength(1);
+    expect(callsFor(queued.id, "paused-timer")).toHaveLength(1);
+    await until("source started", async () => fakeSource.starts > startsBefore);
+    await resumed.close();
+  });
+
   it("resumes after the executor is killed mid-node: idempotent nodes rerun, others fail", async () => {
     const url = await freshDatabase("crash_test");
     child = spawn(

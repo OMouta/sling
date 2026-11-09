@@ -361,6 +361,13 @@ export async function webhookRoutes(app: FastifyInstance, ctx: AppContext) {
     }
   });
   app.post<{ Params: { token: string } }>("/hooks/:token", async (request, reply) => {
+    // Senders that retry on 503 deliver again once automation resumes.
+    if (ctx.config.automationPaused) {
+      return reply
+        .header("retry-after", "300")
+        .code(503)
+        .send({ error: "Automation is paused on this server" });
+    }
     if (!limit.take(`ip:${request.ip}`, (ctx.config.webhookRequestsPerMinute ?? 60) * 2)) {
       return reply
         .header("retry-after", "60")

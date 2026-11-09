@@ -190,16 +190,22 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     await ensurePersonalities(c);
     await c.workflows.ensureBuiltIns();
     opts.signal?.throwIfAborted();
-    await c.engine.start(boss, { concurrency: opts.runConcurrency ?? 10 });
+    const paused = config.automationPaused === true;
+    if (paused) {
+      app.log.warn(
+        "automation is paused: workflow runs, deliveries, connector sources, schedules, checks, webhooks, and push are held until a start without SLING_AUTOMATION_PAUSED",
+      );
+    }
+    await c.engine.start(boss, { concurrency: opts.runConcurrency ?? 10, paused });
     await c.deploys.start(boss);
-    await c.checks.start(boss, { schedules: opts.jobs !== false });
+    await c.checks.start(boss, { schedules: opts.jobs !== false && !paused });
     await c.sources.start(boss);
 
     await registerRoutes(app, c);
     opts.signal?.throwIfAborted();
     await app.listen({ host: config.host, port: config.port });
     await c.connectors.reconcile();
-    if (opts.deliveries !== false) stopDeliveries = startDeliveries(c);
+    if (opts.deliveries !== false && !paused) stopDeliveries = startDeliveries(c);
     opts.signal?.throwIfAborted();
     ready = true;
   } catch (err) {

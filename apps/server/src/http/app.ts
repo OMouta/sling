@@ -79,6 +79,7 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
     }
     const body = await ctx.metrics.render({
       runnersConnected: () => ctx.runners.connectedCount,
+      automationPaused: ctx.config.automationPaused === true,
       database: () => databaseStats(ctx.db),
       onDatabaseError: (err) => ctx.log.warn({ err }, "metrics couldn't read the database"),
     });
