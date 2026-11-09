@@ -127,6 +127,13 @@
       "when": 1794235289095,
       "tag": "0017_chat_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794236717263,
+      "tag": "0018_workflow_draft_revision",
+      "breakpoints": true
     }
   ]
 }

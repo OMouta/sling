@@ -374,6 +374,7 @@ export const workflowDetail: WorkflowDetailView = {
   activeVersion: 1,
   hasUnpublishedChanges: true,
   draft: definition,
+  draftRevision: 3,
   active: definition,
   webhooks: [],
   createdAt: t0,

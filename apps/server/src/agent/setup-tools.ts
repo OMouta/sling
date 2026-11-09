@@ -1124,7 +1124,11 @@ function changeWorkflow(ctx: AppContext, scope: ToolScope): Tool {
             const renameOnly = !definition && input.name !== undefined && input.name !== wf.name;
             if (definition || (renameOnly && !current.draftDirty)) {
               const def = definition ?? { ...WorkflowDefinitionSchema.parse(current.draft), name };
-              current = await ctx.workflows.saveDraft(current, def);
+              // Only over the draft the card was made from: an edit made since in the
+              // editor fails this instead of being replaced.
+              current = await ctx.workflows.saveDraft(current, def, {
+                revision: wf.draftRevision,
+              });
               const published = await ctx.workflows.publish(actor, current, "Changed from chat");
               if (!published.ok) {
                 return {

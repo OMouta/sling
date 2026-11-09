@@ -1,0 +1,1 @@
+ALTER TABLE "workflows" ADD COLUMN "draft_revision" integer DEFAULT 1 NOT NULL;

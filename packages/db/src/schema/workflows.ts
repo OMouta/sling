@@ -44,6 +44,11 @@ export const workflows = pgTable(
     /** No foreign key: versions reference workflows, and this points back. */
     activeVersionId: text("active_version_id"),
     draft: jsonb("draft").$type<DefinitionJson>().notNull(),
+    /**
+     * Goes up by one with every write to the draft. A save names the revision
+     * it was based on, so an editor can't overwrite a change it hasn't seen.
+     */
+    draftRevision: integer("draft_revision").notNull().default(1),
     /** Set when the draft differs from the active version. */
     draftDirty: boolean("draft_dirty").notNull().default(true),
     templateKey: text("template_key"),

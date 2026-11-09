@@ -11,6 +11,7 @@ import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-
 import type { NodeRunView, RunDetailView, RunView } from "@sling/core";
 import { newId, taskBranch } from "@sling/core";
 import { schema } from "@sling/db";
+import type { WorkflowDefinition } from "@sling/workflow";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { and, eq, sql } from "drizzle-orm";
@@ -233,6 +234,7 @@ interface Detail {
   webhooks: { nodeId: string; url: string }[];
   templateKey: string | null;
   draft: { nodes: Node[] };
+  draftRevision: number;
 }
 
 async function deploy(client: Client, definition: unknown, opts: { enable?: boolean } = {}) {
@@ -404,6 +406,120 @@ describe("catalog and validation", () => {
     const imported = await c.call<Detail>("POST", "/api/workflows/import", exported);
     expect(imported.activeVersion).toBeNull();
     expect(imported.draft.nodes).toHaveLength(3);
+  });
+});
+
+describe("draft revisions", () => {
+  const one = (name: string) =>
+    def(name, [n("t", "core.manual"), n("a", "test.record")], [x("t.next", "a")]);
+  const two = (name: string) =>
+    def(
+      name,
+      [n("t", "core.manual"), n("a", "test.record"), n("b", "test.record")],
+      [x("t.next", "a"), x("a.next", "b")],
+    );
+
+  it("saves only over the revision a save was based on", async () => {
+    const wf = await c.call<Detail>("POST", "/api/workflows", { definition: one("Tabs") });
+    expect(wf.draftRevision).toBe(1);
+
+    // One tab saves, then another tab still on revision 1 saves something else.
+    const saved = two("Tabs");
+    const first = await c.call<Detail>("PUT", `/api/workflows/${wf.id}/draft`, {
+      definition: saved,
+      revision: 1,
+    });
+    expect(first.draftRevision).toBe(2);
+    const stale = await c.raw("PUT", `/api/workflows/${wf.id}/draft`, {
+      definition: one("Tabs from the other tab"),
+      revision: 1,
+    });
+    expect(stale.status).toBe(409);
+    const body = (await stale.json()) as {
+      error: string;
+      conflict: { revision: number; draft: { name: string; nodes: unknown[] } };
+    };
+    expect(body.conflict.revision).toBe(2);
+    expect(body.conflict.draft.nodes).toHaveLength(3);
+    const kept = await c.call<Detail>("GET", `/api/workflows/${wf.id}`);
+    expect([kept.name, kept.draftRevision]).toEqual(["Tabs", 2]);
+
+    // A save repeated after its response was lost isn't a conflict with itself.
+    const repeated = await c.call<Detail>("PUT", `/api/workflows/${wf.id}/draft`, {
+      definition: saved,
+      revision: 1,
+    });
+    expect(repeated.draftRevision).toBe(2);
+
+    // Saving over the conflict on purpose names the revision it was shown.
+    const over = await c.call<Detail>("PUT", `/api/workflows/${wf.id}/draft`, {
+      definition: one("Tabs from the other tab"),
+      revision: body.conflict.revision,
+    });
+    expect([over.name, over.draftRevision]).toEqual(["Tabs from the other tab", 3]);
+
+    // Writes that name no revision still move it on, so an open editor sees them.
+    const bareDraft = two("Bare");
+    const bare = await c.call<Detail>("PUT", `/api/workflows/${wf.id}/draft`, bareDraft);
+    expect(bare.draftRevision).toBe(4);
+    const renamed = await c.call<Detail>("PATCH", `/api/workflows/${wf.id}`, { name: "Renamed" });
+    expect(renamed.draftRevision).toBe(5);
+    const after = await c.raw("PUT", `/api/workflows/${wf.id}/draft`, {
+      definition: bareDraft,
+      revision: 4,
+    });
+    expect(after.status).toBe(409);
+  });
+
+  it("publishes only the revision that was reviewed", async () => {
+    const wf = await c.call<Detail>("POST", "/api/workflows", { definition: one("Reviewed") });
+    await c.call("PUT", `/api/workflows/${wf.id}/draft`, {
+      definition: two("Reviewed"),
+      revision: wf.draftRevision,
+    });
+    const stale = await c.raw("POST", `/api/workflows/${wf.id}/publish`, {
+      note: "what I saw",
+      revision: wf.draftRevision,
+    });
+    expect(stale.status).toBe(409);
+    expect(((await stale.json()) as { conflict: { revision: number } }).conflict.revision).toBe(
+      wf.draftRevision + 1,
+    );
+    const unpublished = await c.call<Detail>("GET", `/api/workflows/${wf.id}`);
+    expect(unpublished.activeVersion).toBeNull();
+
+    const ok = await c.call<{ ok: boolean; version: number }>(
+      "POST",
+      `/api/workflows/${wf.id}/publish`,
+      { note: "what I saw", revision: unpublished.draftRevision },
+    );
+    expect(ok).toMatchObject({ ok: true, version: 1 });
+    const published = await c.call<Detail & { active: { nodes: unknown[] } }>(
+      "GET",
+      `/api/workflows/${wf.id}`,
+    );
+    expect(published.active.nodes).toHaveLength(3);
+    // Publishing doesn't change the draft, so an editor keeps saving on the same revision.
+    expect(published.draftRevision).toBe(unpublished.draftRevision);
+  });
+
+  it("refuses a chat change when the draft moved on after it was proposed", async () => {
+    const wf = await deploy(c, one("Proposed"));
+    const ws = await workspace();
+    const row = await server.ctx.workflows.get(ws.workspaceId, wf.id);
+    if (!row) throw new Error("no workflow");
+    // The editor saves while the card waits for the user.
+    await c.call("PUT", `/api/workflows/${wf.id}/draft`, {
+      definition: two("Proposed"),
+      revision: row.draftRevision,
+    });
+    await expect(
+      server.ctx.workflows.saveDraft(row, one("Proposed by chat") as WorkflowDefinition, {
+        revision: row.draftRevision,
+      }),
+    ).rejects.toThrow("changed somewhere else");
+    const kept = await c.call<Detail>("GET", `/api/workflows/${wf.id}`);
+    expect(kept.draft.nodes).toHaveLength(3);
   });
 });
 

@@ -53,6 +53,8 @@ export interface WorkflowDetailView {
   activeVersion: number | null;
   hasUnpublishedChanges: boolean;
   draft: WorkflowDefinition;
+  /** Goes up with every write to the draft. Saves and publishes send the one they're based on. */
+  draftRevision: number;
   /** Definition of the active version, null before the first publish. */
   active: WorkflowDefinition | null;
   /** Webhook URLs for `core.webhook` triggers of the active version. */
@@ -66,6 +68,20 @@ export interface WorkflowVersionView {
   note: string;
   createdAt: string;
   definition: WorkflowDefinition;
+}
+
+/**
+ * The body of a 409 from `PUT /api/workflows/:id/draft` or `POST .../publish`
+ * when the draft changed after the revision the request was based on: the
+ * draft as it's saved now, to load or to save over.
+ */
+export interface DraftConflictView {
+  error: string;
+  conflict: {
+    revision: number;
+    draft: WorkflowDefinition;
+    updatedAt: string;
+  };
 }
 
 export interface PublishResult {

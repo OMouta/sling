@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import type { RunDetailView } from "@sling/core";
 import { schema } from "@sling/db";
-import { parseDefinition, type WorkflowDefinition } from "@sling/workflow";
+import {
+  type DraftConflictView,
+  parseDefinition,
+  type WorkflowDefinition,
+  WorkflowDefinitionSchema,
+} from "@sling/workflow";
 import { and, asc, desc, eq, lt } from "drizzle-orm";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -9,13 +14,29 @@ import { z } from "zod";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import { AdmissionLimit, validWebhookSignature } from "../http/webhook-security.ts";
-import { WorkflowInputError } from "./service.ts";
+import { DraftConflictError, WorkflowInputError } from "./service.ts";
 import { webhookTrigger } from "./triggers.ts";
 import { type RunRow, toNodeRunView, toRunView } from "./views.ts";
 
 const Id = z.object({ id: z.string() });
 
+const DraftSave = z.object({
+  definition: z.unknown(),
+  revision: z.number().int().nonnegative(),
+});
+
 function sendError(reply: FastifyReply, err: unknown) {
+  if (err instanceof DraftConflictError) {
+    const body: DraftConflictView = {
+      error: err.message,
+      conflict: {
+        revision: err.current.draftRevision,
+        draft: WorkflowDefinitionSchema.parse(err.current.draft),
+        updatedAt: err.current.updatedAt.toISOString(),
+      },
+    };
+    return reply.code(409).send(body);
+  }
   if (err instanceof WorkflowInputError) {
     return reply.code(err.status).send({ error: err.message, issues: err.issues });
   }
@@ -116,15 +137,30 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     return wfs.detail(wf);
   });
 
+  // The body is `{ definition, revision }`, which saves only over that
+  // revision, or a bare definition, which saves over whatever is there.
   r.put(
     "/api/workflows/:id/draft",
     { schema: { params: Id, body: z.unknown() } },
     async (request, reply) => {
       const wf = await load(request, actorOf(request).workspaceId, reply);
       if (!wf) return reply;
-      const definition = definitionOr400(request.body, reply);
+      const conditional = DraftSave.safeParse(request.body);
+      const definition = definitionOr400(
+        conditional.success ? conditional.data.definition : request.body,
+        reply,
+      );
       if (!definition) return reply;
-      return wfs.detail(await wfs.saveDraft(wf, definition));
+      try {
+        const row = await wfs.saveDraft(
+          wf,
+          definition,
+          conditional.success ? { revision: conditional.data.revision } : {},
+        );
+        return wfs.detail(row);
+      } catch (err) {
+        return sendError(reply, err);
+      }
     },
   );
 
@@ -139,15 +175,31 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     {
       schema: {
         params: Id,
-        body: z.object({ note: z.string().max(500).default("") }).default({ note: "" }),
+        body: z
+          .object({
+            note: z.string().max(500).default(""),
+            /** The draft revision the publisher reviewed. A newer draft gets a 409. */
+            revision: z.number().int().nonnegative().optional(),
+          })
+          .default({ note: "" }),
       },
     },
     async (request, reply) => {
       const actor = actorOf(request);
       const wf = await load(request, actor.workspaceId, reply);
       if (!wf) return reply;
-      const result = await wfs.publish(actor, wf, request.body.note);
-      return reply.code(result.ok ? 200 : 422).send(result);
+      try {
+        const { note, revision } = request.body;
+        const result = await wfs.publish(
+          actor,
+          wf,
+          note,
+          revision === undefined ? {} : { revision },
+        );
+        return reply.code(result.ok ? 200 : 422).send(result);
+      } catch (err) {
+        return sendError(reply, err);
+      }
     },
   );
 

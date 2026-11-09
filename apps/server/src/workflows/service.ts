@@ -41,6 +41,18 @@ export class WorkflowInputError extends Error {
   }
 }
 
+/**
+ * A save or publish based on a draft revision that's no longer the latest.
+ * Carries the workflow as it's saved now, so the caller can show it.
+ */
+export class DraftConflictError extends WorkflowInputError {
+  readonly current: WorkflowRow;
+  constructor(current: WorkflowRow) {
+    super("The draft was changed somewhere else.", 409);
+    this.current = current;
+  }
+}
+
 interface Actor {
   userId: string;
   workspaceId: string;
@@ -148,6 +160,7 @@ export class WorkflowService {
       activeVersion: active?.number ?? null,
       hasUnpublishedChanges: wf.draftDirty,
       draft: WorkflowDefinitionSchema.parse(wf.draft),
+      draftRevision: wf.draftRevision,
       active: active?.definition ?? null,
       webhooks,
       createdAt: wf.createdAt.toISOString(),
@@ -294,20 +307,44 @@ export class WorkflowService {
     return row;
   }
 
-  async saveDraft(wf: WorkflowRow, definition: WorkflowDefinition): Promise<WorkflowRow> {
+  /**
+   * Replaces the draft and moves its revision on. With `revision`, it saves
+   * only over that revision and throws DraftConflictError when the draft has
+   * moved on since. Saving what's already there succeeds without a new
+   * revision, so a save repeated after a lost response doesn't conflict with
+   * itself.
+   */
+  async saveDraft(
+    wf: WorkflowRow,
+    definition: WorkflowDefinition,
+    opts: { revision?: number } = {},
+  ): Promise<WorkflowRow> {
     const active = wf.activeVersionId ? await this.#ctx.engine.version(wf.activeVersionId) : null;
     const dirty = !active || canonical(active.definition) !== canonical(definition);
     const [row] = await this.#ctx.db
       .update(schema.workflows)
       .set({
         draft: definition as unknown as Record<string, unknown>,
+        draftRevision: sql`${schema.workflows.draftRevision} + 1`,
         draftDirty: dirty,
         name: definition.name,
         description: definition.description,
       })
-      .where(eq(schema.workflows.id, wf.id))
+      .where(
+        and(
+          eq(schema.workflows.id, wf.id),
+          opts.revision === undefined
+            ? undefined
+            : eq(schema.workflows.draftRevision, opts.revision),
+        ),
+      )
       .returning();
-    if (!row) throw new WorkflowInputError("not found", 404);
+    if (!row) {
+      const current = await this.get(wf.workspaceId, wf.id);
+      if (!current) throw new WorkflowInputError("not found", 404);
+      if (canonical(current.draft) === canonical(definition)) return current;
+      throw new DraftConflictError(current);
+    }
     await this.#published(row);
     return row;
   }
@@ -331,18 +368,33 @@ export class WorkflowService {
     return [...issues, ...passed.map(({ when: _when, ...issue }) => issue)];
   }
 
-  /** Validates the draft and, if it passes, makes it the next version and re-subscribes triggers. */
-  async publish(actor: Actor, wf: WorkflowRow, note: string): Promise<PublishResult> {
+  /**
+   * Validates the draft and, if it passes, makes it the next version and
+   * re-subscribes triggers. It publishes the draft at `revision`, by default
+   * the one `wf` was read at, and throws DraftConflictError if the draft has
+   * moved on, so what's published is what was reviewed and validated.
+   */
+  async publish(
+    actor: Actor,
+    wf: WorkflowRow,
+    note: string,
+    opts: { revision?: number } = {},
+  ): Promise<PublishResult> {
+    const revision = opts.revision ?? wf.draftRevision;
+    if (wf.draftRevision !== revision) throw new DraftConflictError(wf);
     const issues = await this.validateDraft(wf);
     if (issues.length > 0) return { ok: false, version: null, issues };
     const definition = WorkflowDefinitionSchema.parse(wf.draft);
     const number = await this.#ctx.db.transaction(async (tx) => {
-      // Lock the workflow so two publishes can't take the same number.
-      await tx
-        .select({ id: schema.workflows.id })
+      // Lock the workflow so two publishes can't take the same number, and a
+      // save can't land between the check and the new version.
+      const [locked] = await tx
+        .select({ revision: schema.workflows.draftRevision })
         .from(schema.workflows)
         .where(eq(schema.workflows.id, wf.id))
         .for("update");
+      if (!locked) throw new WorkflowInputError("not found", 404);
+      if (locked.revision !== revision) return null;
       const [m] = await tx
         .select({ n: max(schema.workflowVersions.number) })
         .from(schema.workflowVersions)
@@ -369,6 +421,10 @@ export class WorkflowService {
         .where(eq(schema.workflows.id, wf.id));
       return n;
     });
+    if (number === null) {
+      const current = await this.get(wf.workspaceId, wf.id);
+      throw current ? new DraftConflictError(current) : new WorkflowInputError("not found", 404);
+    }
     await syncTriggers(this.#ctx, wf.id);
     await audit(this.#ctx, {
       workspaceId: wf.workspaceId,
