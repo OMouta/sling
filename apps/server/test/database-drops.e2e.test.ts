@@ -27,10 +27,13 @@ it("keeps working after the database closes its idle connections", async () => {
     const { db } = server.ctx;
     // A few at once, so the pool keeps more than the one connection the next query takes.
     await Promise.all([1, 2, 3].map(() => db.execute(sql`select pg_sleep(0.1)`)));
+    // The connection holding the control-plane lock is spared: losing it is meant to stop
+    // the server, since another process could then take over.
     const { rowCount } = await db.execute(
       sql`select pg_terminate_backend(pid) from pg_stat_activity
            where datname = current_database() and pid <> pg_backend_pid()
-             and backend_type = 'client backend'`,
+             and backend_type = 'client backend'
+             and pid not in (select pid from pg_locks where locktype = 'advisory')`,
     );
     expect(rowCount).toBeGreaterThan(1);
     await new Promise((ok) => setTimeout(ok, 200));
