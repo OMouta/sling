@@ -7,7 +7,7 @@ export const personalitiesKey = ["personalities"] as const;
 export function usePersonalities() {
   return useQuery({
     queryKey: personalitiesKey,
-    queryFn: () => api.get<PersonalityView[]>("/api/personalities"),
+    queryFn: ({ signal }) => api.get<PersonalityView[]>("/api/personalities", { signal }),
     staleTime: 60_000,
   });
 }
@@ -16,7 +16,8 @@ export function usePersonalities() {
 export function usePersonalityTemplates() {
   return useQuery({
     queryKey: ["personality-templates"],
-    queryFn: () => api.get<PersonalityTemplateView[]>("/api/personalities/templates"),
+    queryFn: ({ signal }) =>
+      api.get<PersonalityTemplateView[]>("/api/personalities/templates", { signal }),
     staleTime: Number.POSITIVE_INFINITY,
   });
 }

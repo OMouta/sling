@@ -20,7 +20,7 @@ import { qk } from "./workflowApi.ts";
 export function useExtensions(enabled = true) {
   return useQuery({
     queryKey: qk.extensions(),
-    queryFn: () => api.get<ExtensionView[]>("/api/extensions"),
+    queryFn: ({ signal }) => api.get<ExtensionView[]>("/api/extensions", { signal }),
     enabled,
   });
 }
@@ -28,7 +28,8 @@ export function useExtensions(enabled = true) {
 export function useExtension(id: string | null) {
   return useQuery({
     queryKey: qk.extension(id ?? ""),
-    queryFn: () => api.get<ExtensionDetailView>(`/api/extensions/${encodeURIComponent(id ?? "")}`),
+    queryFn: ({ signal }) =>
+      api.get<ExtensionDetailView>(`/api/extensions/${encodeURIComponent(id ?? "")}`, { signal }),
     enabled: id !== null,
   });
 }
@@ -37,7 +38,7 @@ export function useExtension(id: string | null) {
 export function useDiscover(enabled = true) {
   return useQuery({
     queryKey: qk.discover(),
-    queryFn: () => api.get<DiscoverEntryView[]>("/api/extensions/discover"),
+    queryFn: ({ signal }) => api.get<DiscoverEntryView[]>("/api/extensions/discover", { signal }),
     enabled,
   });
 }
@@ -45,7 +46,7 @@ export function useDiscover(enabled = true) {
 export function useCatalogs(enabled = true) {
   return useQuery({
     queryKey: qk.catalogs(),
-    queryFn: () => api.get<CatalogView[]>("/api/extension-catalogs"),
+    queryFn: ({ signal }) => api.get<CatalogView[]>("/api/extension-catalogs", { signal }),
     enabled,
   });
 }
@@ -53,7 +54,7 @@ export function useCatalogs(enabled = true) {
 export function usePublishers(enabled = true) {
   return useQuery({
     queryKey: qk.publishers(),
-    queryFn: () => api.get<PublisherView[]>("/api/extension-publishers"),
+    queryFn: ({ signal }) => api.get<PublisherView[]>("/api/extension-publishers", { signal }),
     enabled,
   });
 }

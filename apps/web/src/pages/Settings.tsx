@@ -79,7 +79,7 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
 export function SettingsPage() {
   const settings = useQuery({
     queryKey: ["settings"],
-    queryFn: () => api.get<Settings>("/api/settings"),
+    queryFn: ({ signal }) => api.get<Settings>("/api/settings", { signal }),
   });
   const [current, setCurrent] = useState("general");
   const nav = useRef<HTMLElement>(null);

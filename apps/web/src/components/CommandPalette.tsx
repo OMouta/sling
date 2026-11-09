@@ -38,7 +38,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   const conversations = useRecentConversations();
   const workflows = useQuery({
     queryKey: qk.workflows(),
-    queryFn: () => api.get<WorkflowSummaryView[]>("/api/workflows"),
+    queryFn: ({ signal }) => api.get<WorkflowSummaryView[]>("/api/workflows", { signal }),
   });
 
   const items = useMemo<Item[]>(() => {

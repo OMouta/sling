@@ -23,7 +23,10 @@ const CommandPalette = lazy(() =>
 );
 
 export function useStatus() {
-  return useQuery({ queryKey: ["status"], queryFn: () => api.get<Status>("/api/status") });
+  return useQuery({
+    queryKey: ["status"],
+    queryFn: ({ signal }) => api.get<Status>("/api/status", { signal }),
+  });
 }
 
 /** Gate for the signed-in app: setup, then login, then the shell. */
@@ -205,7 +208,7 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
   const approvals = useApprovalCounts();
   const runners = useQuery({
     queryKey: ["runners"],
-    queryFn: () => api.get<RunnerView[]>("/api/runners"),
+    queryFn: ({ signal }) => api.get<RunnerView[]>("/api/runners", { signal }),
   });
   const tasks = useRecentTasks();
   const sandboxes = useSandboxes();

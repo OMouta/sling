@@ -11,7 +11,7 @@ export const MEMORY_LIST_MAX = 2_000;
 export function useMemories() {
   return useQuery({
     queryKey: memoriesKey,
-    queryFn: () => api.get<MemoryView[]>("/api/memories"),
+    queryFn: ({ signal }) => api.get<MemoryView[]>("/api/memories", { signal }),
   });
 }
 
@@ -19,7 +19,8 @@ export function useMemories() {
 export function useMemorySearch(q: string, enabled: boolean) {
   return useQuery({
     queryKey: [...memoriesKey, q],
-    queryFn: () => api.get<MemoryView[]>(`/api/memories?q=${encodeURIComponent(q)}`),
+    queryFn: ({ signal }) =>
+      api.get<MemoryView[]>(`/api/memories?q=${encodeURIComponent(q)}`, { signal }),
     enabled: enabled && q.length > 0,
     placeholderData: (prev) => prev,
   });

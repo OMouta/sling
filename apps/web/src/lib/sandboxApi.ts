@@ -17,21 +17,21 @@ export type SandboxSettingsInput = Omit<SandboxSettingsView, "secrets">;
 export function useSandboxes() {
   return useQuery({
     queryKey: qk.sandboxes(),
-    queryFn: () => api.get<SandboxListView>("/api/sandboxes"),
+    queryFn: ({ signal }) => api.get<SandboxListView>("/api/sandboxes", { signal }),
   });
 }
 
 export function useSandboxRepos() {
   return useQuery({
     queryKey: qk.sandboxRepos(),
-    queryFn: () => api.get<SandboxRepoView[]>("/api/sandbox-repos"),
+    queryFn: ({ signal }) => api.get<SandboxRepoView[]>("/api/sandbox-repos", { signal }),
   });
 }
 
 export function useSandboxSettings() {
   return useQuery({
     queryKey: qk.sandboxSettings(),
-    queryFn: () => api.get<SandboxSettingsView>("/api/settings/sandboxes"),
+    queryFn: ({ signal }) => api.get<SandboxSettingsView>("/api/settings/sandboxes", { signal }),
   });
 }
 

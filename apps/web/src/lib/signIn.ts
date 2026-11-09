@@ -28,7 +28,7 @@ export function connectUrl(signIn: ConnectorSignInView, installationId: string):
 export function useOAuthConnections(enabled: boolean) {
   return useQuery({
     queryKey: oauthConnectionsKey,
-    queryFn: () => api.get<OAuthConnectionView[]>("/api/oauth/connections"),
+    queryFn: ({ signal }) => api.get<OAuthConnectionView[]>("/api/oauth/connections", { signal }),
     enabled,
   });
 }

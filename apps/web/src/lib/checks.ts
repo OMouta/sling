@@ -23,7 +23,7 @@ export const checkResultsKey = (id: string) => ["checks", id, "results"] as cons
 export function useChecks(enabled = true) {
   return useQuery({
     queryKey: checksKey,
-    queryFn: () => api.get<CheckView[]>("/api/checks"),
+    queryFn: ({ signal }) => api.get<CheckView[]>("/api/checks", { signal }),
     staleTime: 60_000,
     enabled,
   });
@@ -32,7 +32,7 @@ export function useChecks(enabled = true) {
 export function useCheckResults(id: string, enabled: boolean) {
   return useQuery({
     queryKey: checkResultsKey(id),
-    queryFn: () => api.get<CheckResultView[]>(`/api/checks/${id}/results`),
+    queryFn: ({ signal }) => api.get<CheckResultView[]>(`/api/checks/${id}/results`, { signal }),
     enabled,
   });
 }

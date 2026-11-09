@@ -8,7 +8,7 @@ export const devicesKey = ["push-subscriptions"] as const;
 export function usePushDevices() {
   return useQuery({
     queryKey: devicesKey,
-    queryFn: () => api.get<PushSubscriptionView[]>("/api/push/subscriptions"),
+    queryFn: ({ signal }) => api.get<PushSubscriptionView[]>("/api/push/subscriptions", { signal }),
   });
 }
 

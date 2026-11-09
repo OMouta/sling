@@ -76,7 +76,7 @@ export function useDefaultTimeZone() {
   const qc = useQueryClient();
   const settings = useQuery({
     queryKey: settingsKey,
-    queryFn: () => api.get<Settings>("/api/settings"),
+    queryFn: ({ signal }) => api.get<Settings>("/api/settings", { signal }),
   });
   const unset = settings.data ? settings.data.timeZone === null : false;
   useEffect(() => {

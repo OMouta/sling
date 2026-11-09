@@ -21,7 +21,8 @@ export function PersonalityFeedback({ personality }: { personality: PersonalityV
   const summary = useQuery({
     // The revision is in the key: new instructions start their counts over.
     queryKey: [...feedbackKey(id), personality.revision],
-    queryFn: () => api.get<FeedbackSummaryView>(`/api/personalities/${id}/feedback`),
+    queryFn: ({ signal }) =>
+      api.get<FeedbackSummaryView>(`/api/personalities/${id}/feedback`, { signal }),
   });
   const [suggestion, setSuggestion] = useState<InstructionsSuggestionView | null>(null);
   const suggest = useMutation({

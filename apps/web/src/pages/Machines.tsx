@@ -137,7 +137,7 @@ type SandboxAccess = ReturnType<typeof useSandboxAccess>;
 export function MachinesPage() {
   const runners = useQuery({
     queryKey: ["runners"],
-    queryFn: () => api.get<RunnerView[]>("/api/runners"),
+    queryFn: ({ signal }) => api.get<RunnerView[]>("/api/runners", { signal }),
   });
   const access = useSandboxAccess();
   const search = machinesRoute.useSearch();

@@ -176,7 +176,7 @@ export function CheckDialog({
 
   const runners = useQuery({
     queryKey: ["runners"],
-    queryFn: () => api.get<RunnerView[]>("/api/runners"),
+    queryFn: ({ signal }) => api.get<RunnerView[]>("/api/runners", { signal }),
     refetchInterval: kind === "site" && draft.method === "command" ? 4_000 : false,
   });
   const sandboxRepos = useSandboxRepos();

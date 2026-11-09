@@ -218,7 +218,7 @@ function DeployApprovalGroup({ taskId, approvals }: { taskId: string; approvals:
   const targets = useDeployTargets();
   const runners = useQuery({
     queryKey: ["runners"],
-    queryFn: () => api.get<RunnerView[]>("/api/runners"),
+    queryFn: ({ signal }) => api.get<RunnerView[]>("/api/runners", { signal }),
   });
   // The task has the PR's URL and the target its steps name.
   const detail = useTaskDetail(taskId);

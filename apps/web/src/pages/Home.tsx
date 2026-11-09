@@ -46,11 +46,11 @@ export function HomePage() {
   const navigate = useNavigate();
   const settings = useQuery({
     queryKey: ["settings"],
-    queryFn: () => api.get<Settings>("/api/settings"),
+    queryFn: ({ signal }) => api.get<Settings>("/api/settings", { signal }),
   });
   const runners = useQuery({
     queryKey: ["runners"],
-    queryFn: () => api.get<RunnerView[]>("/api/runners"),
+    queryFn: ({ signal }) => api.get<RunnerView[]>("/api/runners", { signal }),
   });
   const tasks = useRecentTasks();
   const [text, setText] = useDraft("new");

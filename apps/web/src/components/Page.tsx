@@ -274,7 +274,7 @@ function AccountMenu() {
   const theme = useTheme();
   const status = useQuery({
     queryKey: ["status"],
-    queryFn: () => api.get<Status>("/api/status"),
+    queryFn: ({ signal }) => api.get<Status>("/api/status", { signal }),
   });
   const email = status.data?.email ?? "";
   const name = email.split("@")[0] || "Account";

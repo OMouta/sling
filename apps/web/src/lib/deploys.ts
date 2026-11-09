@@ -24,7 +24,7 @@ export const deployTargetsKey = ["deploy-targets"] as const;
 export function useDeployTargets(enabled = true) {
   return useQuery({
     queryKey: deployTargetsKey,
-    queryFn: () => api.get<DeployTargetView[]>("/api/deploy-targets"),
+    queryFn: ({ signal }) => api.get<DeployTargetView[]>("/api/deploy-targets", { signal }),
     // Realtime events keep it current, and a reconnect refetches everything.
     staleTime: 60_000,
     enabled,

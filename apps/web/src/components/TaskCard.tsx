@@ -178,7 +178,7 @@ export function TaskCard({
   const targets = useDeployTargets(wantsTarget);
   const runners = useQuery({
     queryKey: ["runners"],
-    queryFn: () => api.get<RunnerView[]>("/api/runners"),
+    queryFn: ({ signal }) => api.get<RunnerView[]>("/api/runners", { signal }),
     enabled: wantsTarget,
   });
   const target = wantsTarget ? targetForTask(task, targets.data, runners.data) : undefined;

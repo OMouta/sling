@@ -7,7 +7,7 @@ export const rulesKey = ["rules"] as const;
 export function useRules(enabled = true) {
   return useQuery({
     queryKey: rulesKey,
-    queryFn: () => api.get<RuleView[]>("/api/rules"),
+    queryFn: ({ signal }) => api.get<RuleView[]>("/api/rules", { signal }),
     enabled,
     staleTime: 30_000,
   });

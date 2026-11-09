@@ -17,7 +17,8 @@ export const sourcesKey = (personalityId: string) => ["sources", personalityId] 
 export function useSources(personalityId: string) {
   return useQuery({
     queryKey: sourcesKey(personalityId),
-    queryFn: () => api.get<SourceView[]>(`/api/personalities/${personalityId}/sources`),
+    queryFn: ({ signal }) =>
+      api.get<SourceView[]>(`/api/personalities/${personalityId}/sources`, { signal }),
   });
 }
 

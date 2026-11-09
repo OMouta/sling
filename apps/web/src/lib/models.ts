@@ -20,7 +20,7 @@ export const CHAT_WIDTH = "max-w-[920px]";
 export function useModelCatalog() {
   return useQuery({
     queryKey: modelsKey,
-    queryFn: () => api.get<ModelCatalogView>("/api/models"),
+    queryFn: ({ signal }) => api.get<ModelCatalogView>("/api/models", { signal }),
     staleTime: 5 * 60_000,
   });
 }
