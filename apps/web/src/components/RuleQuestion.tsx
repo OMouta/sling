@@ -1,6 +1,7 @@
 import { RULE_SUGGEST_AFTER, type RuleOfferView } from "@sling/core";
 import { useMutation } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
+import { lateAnswer } from "../lib/api.ts";
 import { streakOf, useAlwaysAllow } from "../lib/rules.ts";
 import { Button, cx, ErrorText } from "./ui.tsx";
 
@@ -33,6 +34,14 @@ export function RuleQuestion({
   const always = useAlwaysAllow(offers, approvalId, () => onDecide(true));
   const streak = streakOf(offers);
   const busy = decide.isPending || always.isPending;
+  const late = lateAnswer(decide.error ?? always.error);
+  if (late) {
+    return (
+      <div className={cx("border-t border-border", className)}>
+        <p className="text-xs text-muted">{late}</p>
+      </div>
+    );
+  }
 
   return (
     <div className={cx("space-y-1.5 border-t border-border", className)}>

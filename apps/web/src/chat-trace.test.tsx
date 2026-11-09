@@ -48,6 +48,8 @@ let messages: MessageView[] = [];
 let tasks: TaskView[] = [];
 let live: LiveReplyView | null = null;
 let posts: { path: string; body: unknown }[] = [];
+/** What answering an approval gets back, to try one that came too late. */
+let decision: { status: number; body: unknown } = { status: 200, body: { ok: true } };
 
 function route(path: string): unknown {
   switch (path) {
@@ -100,6 +102,7 @@ beforeEach(() => {
   tasks = [];
   live = null;
   posts = [];
+  decision = { status: 200, body: { ok: true } };
   socket = null;
   vi.stubGlobal("WebSocket", FakeSocket);
   vi.stubGlobal(
@@ -109,6 +112,9 @@ beforeEach(() => {
       if (url.pathname.startsWith("/api/auth/")) return new Response("null", { status: 200 });
       if (init?.method === "POST") {
         posts.push({ path: url.pathname, body: JSON.parse(String(init.body ?? "null")) });
+        if (url.pathname.includes("/commands/")) {
+          return Response.json(decision.body, { status: decision.status });
+        }
         return Response.json({ ok: true });
       }
       return Response.json(route(url.pathname));
@@ -264,6 +270,46 @@ describe("chat replies", () => {
         body: { decision: "approve" },
       }),
     );
+  });
+
+  it("says why an answer came too late, in place of the buttons", async () => {
+    decision = {
+      status: 409,
+      body: {
+        error: "Sling restarted while this waited, so it was cancelled.",
+        state: "expired",
+        reason: "restart",
+      },
+    };
+    agentStatus = "thinking";
+    open();
+    await screen.findAllByText("Thinking");
+    emit({ type: "agent.status", conversationId: "cnv_1", status: "thinking" });
+    emit({
+      type: "agent.tool",
+      conversationId: "cnv_1",
+      step: {
+        kind: "tool",
+        id: "t9",
+        name: "run_command",
+        input: { command: "rm ~/Desktop/old.txt", outsideSandbox: true },
+        status: "running",
+        output: null,
+        approval: {
+          id: "cap_9",
+          kind: "command",
+          state: "pending",
+          machine: "devbox",
+          summary: "",
+        },
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Run it" }));
+    expect(
+      await screen.findByText("Sling restarted while this waited, so it was cancelled."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Run it" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
   });
 
   it("asks before the assistant sends something, showing what would go out", async () => {

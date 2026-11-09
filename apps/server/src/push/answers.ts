@@ -1,7 +1,6 @@
 import { createHmac } from "node:crypto";
 import type {
   ActionKind,
-  CommandApprovalView,
   NotificationAnswerInput,
   NotificationAnswerResult,
   PushPayload,
@@ -104,20 +103,10 @@ const OPENS_SLING = "This one can only be answered in Sling.";
 export class NotificationAnswers {
   readonly #ctx: AppContext;
   readonly #key: Buffer;
-  /**
-   * How chat sends that ended went, so a late answer can say. They live in
-   * memory for 5 minutes, so an hour of them is plenty.
-   */
-  readonly #ended = new Map<string, { state: CommandApprovalView["state"]; at: number }>();
 
   constructor(ctx: AppContext) {
     this.#ctx = ctx;
     this.#key = answerKey(ctx.config.secretKey);
-    ctx.hub.listen((_workspaceId, ev) => {
-      if (ev.type !== "agent.tool") return;
-      const a = ev.step.approval;
-      if (a?.kind === "send" && a.state !== "pending") this.#end(a.id, a.state);
-    });
   }
 
   /** The answer a task's push carries, for its first push or PR step. */
@@ -297,16 +286,8 @@ export class NotificationAnswers {
   }
 
   /** A chat send that's no longer waiting: answered, or ended with its turn or its time. */
-  #endedOutcome(approvalId: string): NotificationAnswerResult {
-    const state = this.#ended.get(approvalId)?.state;
+  async #endedOutcome(approvalId: string): Promise<NotificationAnswerResult> {
+    const state = (await this.#ctx.commands.outcome(approvalId))?.state;
     return { outcome: state === "approved" || state === "denied" ? "already_answered" : "expired" };
-  }
-
-  #end(id: string, state: CommandApprovalView["state"]) {
-    const now = Date.now();
-    this.#ended.set(id, { state, at: now });
-    if (this.#ended.size > 2000) {
-      for (const [k, v] of this.#ended) if (v.at < now - 60 * 60_000) this.#ended.delete(k);
-    }
   }
 }

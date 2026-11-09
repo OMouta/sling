@@ -938,8 +938,42 @@ export const oauthFlows = pgTable(
 );
 
 /** Approvals answered from a notification, so each notification's token works once. */
+/**
+ * What a chat asked the user to approve while a turn waited: a command
+ * outside the sandbox, a send, or a setup change, and how it ended. The
+ * wait itself lives in the turn, so a restart can't resume it; this keeps
+ * the outcome, so a late answer hears why it was too late. Never holds
+ * what a card's fields were filled with.
+ */
+export const chatApprovals = pgTable(
+  "chat_approvals",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"command" | "send" | "change">().notNull(),
+    state: text("state")
+      .$type<"pending" | "approved" | "denied" | "expired">()
+      .notNull()
+      .default("pending"),
+    /** Why an expired one ended: nobody answered, its turn stopped, or Sling restarted. */
+    reason: text("reason").$type<"timeout" | "stopped" | "restart">(),
+    expiresAt: ts("expires_at").notNull(),
+    decidedAt: ts("decided_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("chat_approvals_pending_idx").on(t.state).where(sql`${t.state} = 'pending'`),
+    index("chat_approvals_created_idx").on(t.createdAt),
+  ],
+);
+
 export const notificationAnswers = pgTable("notification_answers", {
-  /** A task step's approval or a chat send's. Chat approvals live in memory, so no foreign key. */
+  /** A task step's approval or a chat send's, which lives in `chat_approvals`, so no foreign key. */
   approvalId: text("approval_id").primaryKey(),
   workspaceId: text("workspace_id")
     .notNull()

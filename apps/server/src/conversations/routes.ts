@@ -25,6 +25,7 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { ChatSettingsPatch, mergeSettings } from "../agent/chat-settings.ts";
+import type { ApprovalOutcome } from "../agent/commands.ts";
 import { textOf } from "../agent/history.ts";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
@@ -306,7 +307,12 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         request.body.secrets,
       );
       if (result === "gone") {
-        return reply.code(409).send({ error: "That isn't waiting for an answer anymore." });
+        const ended = await ctx.commands.outcome(request.params.approvalId);
+        const mine = ended?.workspaceId === actor.workspaceId && ended.conversationId === conv.id;
+        return reply.code(409).send({
+          error: mine ? lateAnswer(ended) : "That isn't waiting for an answer anymore.",
+          ...(mine ? { state: ended.state, reason: ended.reason } : {}),
+        });
       }
       if (result === "bad_secrets") {
         return reply.code(400).send({ error: "That approval doesn't take those fields." });
@@ -457,6 +463,14 @@ function statusFilters(
     ) as SQL,
     tasks: sql`${c.id} in (select ${t.conversationId} from ${t} where ${t.workspaceId} = ${workspaceId})`,
   };
+}
+
+/** Why an answer came too late, from how the approval ended. */
+function lateAnswer(ended: ApprovalOutcome): string {
+  if (ended.state === "approved" || ended.state === "denied") return "That was already answered.";
+  if (ended.reason === "restart") return "Sling restarted while this waited, so it was cancelled.";
+  if (ended.reason === "stopped") return "The reply that asked was stopped, so it was cancelled.";
+  return "Nobody answered in time, so it was cancelled.";
 }
 
 /** One line of a message, for a list. */

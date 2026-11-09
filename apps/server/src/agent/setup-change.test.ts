@@ -4,6 +4,7 @@ import type {
   ServerEvent,
   SetupChangeView,
 } from "@sling/core";
+import { schema } from "@sling/db";
 import { connector as email } from "@sling/integration-email";
 import { describe, expect, it, vi } from "vitest";
 import type { AppContext } from "../context.ts";
@@ -31,11 +32,13 @@ function fake(mode: PermissionMode) {
   const ctx = {
     db: {
       select: () => ({ from: () => ({ where: async () => [{ mode }] }) }),
-      insert: () => ({
+      // A chat approval's own record isn't an audit entry.
+      insert: (table: unknown) => ({
         values: async (v: Record<string, unknown>) => {
-          audits.push(v);
+          if (table !== schema.chatApprovals) audits.push(v);
         },
       }),
+      update: () => ({ set: () => ({ where: async () => {} }) }),
     },
     log: { error: () => {} },
   } as unknown as AppContext;

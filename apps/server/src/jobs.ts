@@ -34,6 +34,7 @@ export async function startJobs(
   await boss.work(QUEUES.pruneEvents, async () => {
     const n = await ctx.tasks.pruneEvents();
     const payloads = await ctx.engine.prunePayloads();
+    await ctx.commands.pruneOutcomes();
     ctx.log.info(
       { deleted: n, nodeRunPayloads: payloads },
       "pruned old task events and node run payloads",

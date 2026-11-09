@@ -120,6 +120,13 @@
       "when": 1794225847454,
       "tag": "0016_conversation_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794235289095,
+      "tag": "0017_chat_approvals",
+      "breakpoints": true
     }
   ]
 }

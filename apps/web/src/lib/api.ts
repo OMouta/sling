@@ -11,6 +11,14 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Why an answer to an approval came too late, when the server said so: it
+ * was answered elsewhere, expired, or a restart ended it. Null otherwise.
+ */
+export function lateAnswer(error: unknown): string | null {
+  return error instanceof ApiError && error.status === 409 ? error.message : null;
+}
+
 export interface RequestOptions {
   signal?: AbortSignal;
   timeoutMs?: number;

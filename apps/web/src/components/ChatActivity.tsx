@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
-import { api } from "../lib/api.ts";
+import { api, lateAnswer } from "../lib/api.ts";
 import { duration, readableLocalDate } from "../lib/format.ts";
 import { useMadeRule } from "../lib/rules.ts";
 import { useNow } from "../lib/useNow.ts";
@@ -455,6 +455,10 @@ function ChatApproval({
     mutationFn: (decision: "approve" | "deny") =>
       api.post(`/api/conversations/${ctx.conversationId}/commands/${approvalId}`, { decision }),
   });
+  const late = lateAnswer(decide.error);
+  if (late) {
+    return <p className="border-t border-border px-2.5 py-1.5 text-xs text-muted">{late}</p>;
+  }
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border bg-surface px-2.5 py-2">
       <p className="mr-auto min-w-0 text-[13px] text-soft">
@@ -783,14 +787,18 @@ function ChangeApproval({
             }
           : {}),
       }),
-    // Nothing typed stays in the page once it's sent.
+    // Nothing typed stays in the page once it's sent, or once it can't be.
     onSuccess: () => setValues({}),
+    onError: (error) => {
+      if (lateAnswer(error)) setValues({});
+    },
   });
   const ready = change.secrets.every((f) => !f.required || (values[f.key] ?? "").trim() !== "");
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (ready && !decide.isPending) decide.mutate("approve");
   };
+  const late = lateAnswer(decide.error);
   return (
     <form onSubmit={submit}>
       <ChangeDetails change={change}>
@@ -830,25 +838,29 @@ function ChangeApproval({
           </div>
         )}
       </ChangeDetails>
-      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-border bg-surface px-2.5 py-2">
-        <div className="mr-auto min-w-0">
-          <ErrorText error={decide.error} />
+      {late ? (
+        <p className="border-t border-border px-2.5 py-1.5 text-xs text-muted">{late}</p>
+      ) : (
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2 border-t border-border bg-surface px-2.5 py-2">
+          <div className="mr-auto min-w-0">
+            <ErrorText error={decide.error} />
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("deny")}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              type="submit"
+              variant="primary"
+              busy={decide.isPending}
+              disabled={!ready}
+            >
+              Apply
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("deny")}>
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            type="submit"
-            variant="primary"
-            busy={decide.isPending}
-            disabled={!ready}
-          >
-            Apply
-          </Button>
-        </div>
-      </div>
+      )}
     </form>
   );
 }

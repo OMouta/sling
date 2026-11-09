@@ -5,7 +5,9 @@ import type {
   RuleOfferView,
   SetupChangeView,
 } from "@sling/core";
+import { schema } from "@sling/db";
 import { create, EnvelopeSchema, type ExecResult } from "@sling/runner-protocol";
+import { and, eq, lt } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import { modeToProto } from "../runners/convert.ts";
 import type { RunnerSession } from "../runners/gateway.ts";
@@ -68,6 +70,21 @@ interface Approval {
   settle: (d: Decision, secrets?: SecretValues) => void;
 }
 
+/** Why an approval expired: nobody answered, its turn stopped, or Sling restarted while it waited. */
+export type ExpiredReason = "timeout" | "stopped" | "restart";
+
+/** How a chat's approval went, as stored. */
+export interface ApprovalOutcome {
+  workspaceId: string;
+  conversationId: string;
+  kind: CommandApprovalView["kind"];
+  state: "pending" | "approved" | "denied" | "expired";
+  reason: ExpiredReason | null;
+}
+
+/** Keep the outcomes of chat approvals this long, for late answers and the audit of a chat. */
+const OUTCOME_DAYS = 30;
+
 function toResult(r: ExecResult): CommandResult {
   return {
     exitCode: r.exitCode ?? null,
@@ -84,8 +101,9 @@ function toResult(r: ExecResult): CommandResult {
 /**
  * The assistant's shell commands: sends each to its machine and waits for
  * the answer. It also holds what waits in a chat for the user's approval: a
- * command that wants to leave the sandbox, or a send such as an email.
- * Nothing here is stored: an approval lives as long as the turn that asked.
+ * command that wants to leave the sandbox, or a send such as an email. The
+ * wait lives as long as the turn that asked, so a restart ends it; each
+ * approval's outcome is stored, so a late answer can say why it came late.
  */
 export class Commands {
   readonly #ctx: AppContext;
@@ -238,6 +256,20 @@ export class Commands {
     view: (id: string, state: CommandApprovalView["state"]) => CommandApprovalView,
   ): Promise<{ decision: Decision; secrets?: SecretValues }> {
     const id = `cap_${randomBytes(12).toString("hex")}`;
+    const kind = view(id, "pending").kind;
+    const expiresAt = Date.now() + this.approvalWaitMs;
+    // Stored before the card shows, so any answer to it finds how it went.
+    await this.#ctx.db
+      .insert(schema.chatApprovals)
+      .values({
+        id,
+        workspaceId: opts.workspaceId,
+        conversationId: opts.conversationId,
+        kind,
+        expiresAt: new Date(expiresAt),
+      })
+      .catch((err) => this.#ctx.log.error({ err, id }, "couldn't store a chat approval"));
+    let reason: ExpiredReason | null = null;
     const out = await new Promise<{ decision: Decision; secrets?: SecretValues }>((resolve) => {
       const settle = (d: Decision, typed?: SecretValues) => {
         clearTimeout(timer);
@@ -245,21 +277,72 @@ export class Commands {
         opts.signal?.removeEventListener("abort", onAbort);
         resolve(typed ? { decision: d, secrets: typed } : { decision: d });
       };
-      const timer = setTimeout(() => settle("expired"), this.approvalWaitMs);
-      const onAbort = () => settle("expired");
+      const timer = setTimeout(() => {
+        reason = "timeout";
+        settle("expired");
+      }, this.approvalWaitMs);
+      const onAbort = () => {
+        reason = "stopped";
+        settle("expired");
+      };
       opts.signal?.addEventListener("abort", onAbort, { once: true });
       this.#approvals.set(id, {
         workspaceId: opts.workspaceId,
         conversationId: opts.conversationId,
-        kind: view(id, "pending").kind,
-        expiresAt: Date.now() + this.approvalWaitMs,
+        kind,
+        expiresAt,
         secrets,
         settle,
       });
       opts.onChange(view(id, "pending"));
     });
+    await this.#ctx.db
+      .update(schema.chatApprovals)
+      .set({ state: out.decision, reason, decidedAt: new Date() })
+      .where(and(eq(schema.chatApprovals.id, id), eq(schema.chatApprovals.state, "pending")))
+      .catch((err) => this.#ctx.log.error({ err, id }, "couldn't store a chat approval's outcome"));
     opts.onChange(view(id, out.decision));
     return out;
+  }
+
+  /** How an approval went, from what was stored. Null for an ID Sling never asked. */
+  async outcome(id: string): Promise<ApprovalOutcome | null> {
+    const a = schema.chatApprovals;
+    const [row] = await this.#ctx.db
+      .select({
+        workspaceId: a.workspaceId,
+        conversationId: a.conversationId,
+        kind: a.kind,
+        state: a.state,
+        reason: a.reason,
+      })
+      .from(a)
+      .where(eq(a.id, id));
+    return row ?? null;
+  }
+
+  /**
+   * Ends every approval that was waiting when Sling stopped. Their turns are
+   * gone, so nothing they asked for can happen; a late answer hears why.
+   */
+  async expireInterrupted(): Promise<number> {
+    const a = schema.chatApprovals;
+    const ended = await this.#ctx.db
+      .update(a)
+      .set({ state: "expired", reason: "restart", decidedAt: new Date() })
+      .where(eq(a.state, "pending"))
+      .returning({ id: a.id });
+    return ended.length;
+  }
+
+  /** Forgets outcomes older than a month, in the daily prune. */
+  async pruneOutcomes(): Promise<number> {
+    const a = schema.chatApprovals;
+    const gone = await this.#ctx.db
+      .delete(a)
+      .where(lt(a.createdAt, new Date(Date.now() - OUTCOME_DAYS * 24 * 60 * 60_000)))
+      .returning({ id: a.id });
+    return gone.length;
   }
 
   /** What waits under this ID, while it waits. */
