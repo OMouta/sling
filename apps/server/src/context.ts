@@ -13,6 +13,7 @@ import type { DeployService } from "./deploys/service.ts";
 import type { ExtensionService } from "./extensions/service.ts";
 import type { FileService } from "./files/service.ts";
 import type { MemoryService } from "./memory/service.ts";
+import type { Metrics } from "./metrics.ts";
 import type { OAuthService } from "./oauth/service.ts";
 import type { PushService } from "./push/service.ts";
 import type { Hub } from "./realtime/hub.ts";
@@ -36,6 +37,8 @@ export interface AppContext {
   /** Key for credentials at rest (AES-256-GCM). */
   secretsKey: Buffer;
   hub: Hub;
+  /** Request timings and delivery failures, for `/metrics`. */
+  metrics: Metrics;
   runners: RunnerGateway;
   tasks: TaskService;
   sandboxes: SandboxService;

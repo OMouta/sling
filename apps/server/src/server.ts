@@ -24,6 +24,7 @@ import { createServer, registerRoutes } from "./http/app.ts";
 import { startJobs } from "./jobs.ts";
 import { DEFAULT_SHUTDOWN_MS, deadline, onceAsync, within } from "./lifecycle.ts";
 import { Memories } from "./memory/service.ts";
+import { Metrics } from "./metrics.ts";
 import { OAuth } from "./oauth/service.ts";
 import { ensurePersonalities } from "./personalities/service.ts";
 import { PushService } from "./push/service.ts";
@@ -77,6 +78,8 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   // ending) is an "error" event on the pool, and with no listener it would crash the process.
   // The pool has already dropped that connection, and the next query opens a new one.
   database.pool.on("error", (err) => app.log.warn({ err }, "database connection dropped"));
+  const metrics = new Metrics();
+  metrics.observe(app);
 
   // What startup has brought up so far. Shutdown stops only these, so the same sequence
   // cleans up after a start that failed partway.
@@ -154,6 +157,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
       await step("runner disconnects", () => s.runners.idle(), Number.POSITIVE_INFINITY, overall);
     releaseOwner?.();
     await step("database", () => database.close(), Number.POSITIVE_INFINITY, overall);
+    metrics.stop();
     if (errors.length) throw new AggregateError(errors, "Server shutdown failed");
   });
 
@@ -174,7 +178,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     app.log.info("database migrated");
     opts.signal?.throwIfAborted();
 
-    const c = createContext(app, database, config, opts);
+    const c = createContext(app, database, config, metrics, opts);
     ctx = c;
     c.runners.start();
     boss = await startJobs(c, config.databaseUrl, { schedules: opts.jobs !== false });
@@ -213,6 +217,7 @@ function createContext(
   app: FastifyInstance,
   database: Database,
   config: Config,
+  metrics: Metrics,
   opts: StartOptions,
 ): AppContext {
   const registry = new NodeRegistry();
@@ -236,6 +241,7 @@ function createContext(
     log: app.log,
     secretsKey: deriveKey(config.secretKey, "credentials-v1"),
     hub: new Hub((err) => app.log.warn({ err }, "realtime listener failed")),
+    metrics,
     registry,
     boss: null,
     modelOverride: opts.model,

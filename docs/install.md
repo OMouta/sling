@@ -44,6 +44,7 @@ Fill in `.env`:
 | `COMPOSE_PROFILES` | `tailscale` or `cloudflare` to run that tunnel next to Sling. Its secret goes in `deploy/tunnel.env`. |
 | `LOG_LEVEL` | `info` by default. |
 | `SLING_SHUTDOWN_TIMEOUT_SECONDS` | Optional. Longest a stop may take. Default `60`. See [below](#control-plane-topology-and-health). |
+| `SLING_METRICS_TOKEN` | Optional. Turns on Prometheus metrics at `/metrics` for requests that send it as a bearer token. See [Metrics](#metrics). |
 | `SLING_STOP_GRACE_PERIOD` | Optional. How long Compose waits before killing the container. Default `75s`. Keep it at least 15 seconds above the shutdown timeout. |
 | `SLING_RELEASE_REPO` | Optional. The GitHub repo, as `owner/name`, whose releases Sling gets `sling-runner` from for the install command. Default `OMouta/sling`. Set it when you publish your own builds. |
 | `SLING_ALLOW_UNSIGNED_EXTENSIONS` | Optional, for developing extensions. `1` lets you install unsigned packages and add catalogs on loopback addresses. Leave it off otherwise: the web app can't turn it on, which is the point. |
@@ -142,6 +143,58 @@ network, and prevent direct public access to the application port. Avoid trustin
 all addresses. Do not log full webhook URLs or OAuth callback query strings in
 your proxy: those contain credentials, even though Sling redacts its own request
 URLs.
+
+## Metrics
+
+`/metrics` is off by default and answers 404. To turn it on, set
+`SLING_METRICS_TOKEN` in `deploy/.env` to a random string of at least 32
+characters (`openssl rand -hex 32`) and restart. The endpoint then answers in the
+Prometheus text format to requests with `Authorization: Bearer <token>`, and 401 to
+anything else. It's served on the same port as the app, so it's reachable wherever
+Sling is. Keep the token secret, or block `/metrics` at your proxy and scrape over
+a private network.
+
+```yaml
+scrape_configs:
+  - job_name: sling
+    scheme: https
+    authorization:
+      credentials: <SLING_METRICS_TOKEN>
+    static_configs:
+      - targets: [sling.example.com]
+```
+
+| Metric | What it shows |
+|---|---|
+| `sling_http_request_duration_seconds` | Histogram of request time by method, route pattern (`/api/tasks/:id`, never the raw URL), and status. |
+| `sling_job_queue_jobs{queue,state}` | Background jobs per queue: `waiting` (due), `deferred` (scheduled for later), `active`. |
+| `sling_job_queue_lag_seconds{queue}` | How long the oldest due job has waited for a worker. A stalled worker shows up here. |
+| `sling_job_queue_age_seconds{queue}` | Age of the oldest waiting job, including time spent between retries. |
+| `sling_deliveries_pending{kind}`, `sling_deliveries_failing{kind}` | Chat dispatches and task-settlement deliveries not yet done, and those that failed at least once and are retrying. |
+| `sling_delivery_lag_seconds{kind}` | How long the oldest due delivery has waited. |
+| `sling_delivery_failures_total{kind}` | Failed delivery attempts since the process started. |
+| `sling_runners_connected`, `sling_runners_registered` | Runners connected to this process, and paired runners that aren't revoked. |
+| `sling_event_loop_delay_p50_seconds`, `_p99_seconds`, `_max_seconds` | Event loop delay since the previous scrape. |
+| `sling_process_resident_memory_bytes`, `sling_process_heap_used_bytes` | Process memory. |
+| `sling_scrape_collector_success{collector="database"}` | 0 when the scrape couldn't read the database. The queue and delivery series are missing from that scrape. |
+
+Counters and the request histogram start from zero when the process restarts. The
+queue and delivery numbers come from Postgres on each scrape, bounded to two
+seconds. The event loop numbers cover the time since the last scrape by anyone,
+so scrape from one Prometheus.
+
+Runner connectivity is reported here only. An offline runner never makes `/readyz`
+fail, since the API, chats through API keys, and workflows keep working without it.
+
+Starting points for alerts:
+
+| Condition | Meaning |
+|---|---|
+| `sling_job_queue_lag_seconds{queue="workflow-run"} > 60` for 5 minutes | Workflow runs aren't being picked up. |
+| `sling_deliveries_failing > 0` for 15 minutes | A consumer keeps failing. The log has the delivery ID and attempt count. |
+| `sling_scrape_collector_success{collector="database"} == 0` | Sling can't reach Postgres. `/readyz` fails too; don't restart Sling for it. |
+| `sling_runners_connected` below the number of machines you expect | A machine is offline. |
+| `sling_event_loop_delay_p99_seconds > 0.2` | The server is CPU-bound or blocked; requests and live updates slow down. |
 
 ## Automation admission and storage limits
 

@@ -8,6 +8,10 @@ import { currentSteps, type SettleReason } from "./tasks/service.ts";
 import type { BusEvent } from "./workflows/events.ts";
 import { emitTaskSettled } from "./workflows/sling-events.ts";
 
+const SETTLEMENT_CONSUMERS = ["sandbox", "agent", "workflow", "push"] as const;
+/** Every kind of delivery row this server writes. */
+export const DELIVERY_KINDS = ["chat", ...SETTLEMENT_CONSUMERS.map((c) => `settle.${c}`)];
+
 /** One active control plane owns this loop. Rows survive process restarts. */
 export function startDeliveries(ctx: AppContext) {
   let stopped = false;
@@ -88,6 +92,7 @@ export async function drainDeliveries(ctx: AppContext) {
         .set({ completedAt: new Date() })
         .where(eq(schema.deliveries.id, row.id));
     } catch (err) {
+      ctx.metrics.deliveryFailed(row.kind);
       ctx.log.error(
         { err, deliveryId: row.id, attempts: row.attempts + 1 },
         "delivery failed; retrying",
@@ -169,7 +174,7 @@ export async function enqueueSettlement(ctx: AppContext, taskId: string, reason:
   await ctx.db
     .insert(schema.deliveries)
     .values(
-      ["sandbox", "agent", "workflow", "push"].map((consumer) => ({
+      SETTLEMENT_CONSUMERS.map((consumer) => ({
         id: `settle:${taskId}:${reason}:${version}:${consumer}`,
         kind: `settle.${consumer}`,
         payload: { taskId, reason, noteId: newId("msg") },

@@ -5,13 +5,17 @@ export function onceAsync(action: () => Promise<void>): () => Promise<void> {
 }
 
 /** A deadline whose timer is always removed, including when work rejects. */
-export async function within<T>(work: Promise<T>, ms: number): Promise<T> {
+export async function within<T>(
+  work: Promise<T>,
+  ms: number,
+  message = "Shutdown deadline exceeded",
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       work,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("Shutdown deadline exceeded")), ms);
+        timer = setTimeout(() => reject(new Error(message)), ms);
       }),
     ]);
   } finally {

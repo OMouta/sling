@@ -18,6 +18,7 @@ import { deployRoutes } from "../deploys/routes.ts";
 import { extensionRoutes } from "../extensions/routes.ts";
 import { feedbackRoutes } from "../feedback/routes.ts";
 import { memoryRoutes } from "../memory/routes.ts";
+import { bearerMatches, databaseStats } from "../metrics.ts";
 import { oauthRoutes } from "../oauth/routes.ts";
 import { personalityRoutes } from "../personalities/routes.ts";
 import { personalityTransferRoutes } from "../personalities/transfer.ts";
@@ -69,6 +70,20 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   });
 
   app.get("/healthz", { logLevel: "silent" }, async () => ({ ok: true }));
+  // Off unless the operator sets a token, and then only for requests that carry it.
+  app.get("/metrics", { logLevel: "silent" }, async (request, reply) => {
+    const token = ctx.config.metricsToken;
+    if (!token) return reply.code(404).send({ error: "not found" });
+    if (!bearerMatches(request.headers.authorization, token)) {
+      return reply.code(401).header("www-authenticate", "Bearer").send({ error: "unauthorized" });
+    }
+    const body = await ctx.metrics.render({
+      runnersConnected: () => ctx.runners.connectedCount,
+      database: () => databaseStats(ctx.db),
+      onDatabaseError: (err) => ctx.log.warn({ err }, "metrics couldn't read the database"),
+    });
+    return reply.type("text/plain; version=0.0.4; charset=utf-8").send(body);
+  });
 
   await app.register(async (scope) => authRoutes(scope, ctx));
   await app.register(async (scope) => installRoutes(scope, ctx));

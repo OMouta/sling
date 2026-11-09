@@ -70,6 +70,11 @@ export function ed25519KeyFromRaw(raw: Buffer) {
 
 export class RunnerGateway {
   readonly #sessions = new Map<string, RunnerSession>();
+
+  /** Runners connected to this process right now. */
+  get connectedCount(): number {
+    return this.#sessions.size;
+  }
   /** Repo changes sent to a Runner and waiting for its RepoChangeResult. */
   readonly #repoChanges = new Map<
     string,

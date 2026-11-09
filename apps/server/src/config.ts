@@ -9,6 +9,11 @@ const Env = z.object({
   SLING_SECRET_KEY: z.string().min(32, "SLING_SECRET_KEY must be at least 32 characters"),
   SLING_SOURCE_STORAGE_BYTES: z.coerce.number().int().nonnegative().default(1073741824),
   SLING_WEBHOOK_SECRET: z.string().min(32).optional(),
+  /** Bearer token for `/metrics`. Unset, the endpoint answers 404. */
+  SLING_METRICS_TOKEN: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().min(32, "SLING_METRICS_TOKEN must be at least 32 characters").optional(),
+  ),
   SLING_WEBHOOK_REQUESTS_PER_MINUTE: z.coerce.number().int().positive().default(60),
   SLING_HTTP_ALLOWED_ORIGINS: z.string().default(""),
   SLING_TRUSTED_PROXIES: z.string().default(""),
@@ -49,6 +54,8 @@ const Env = z.object({
 export interface Config {
   sourceStorageBytes?: number;
   webhookSecret?: string;
+  /** Bearer token that unlocks `/metrics`. Without it the endpoint doesn't exist. */
+  metricsToken?: string;
   webhookRequestsPerMinute?: number;
   httpAllowedOrigins?: string[];
   trustedProxies?: string[];
@@ -98,6 +105,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   return {
     sourceStorageBytes: e.SLING_SOURCE_STORAGE_BYTES,
     webhookSecret: e.SLING_WEBHOOK_SECRET,
+    metricsToken: e.SLING_METRICS_TOKEN,
     webhookRequestsPerMinute: e.SLING_WEBHOOK_REQUESTS_PER_MINUTE,
     httpAllowedOrigins: e.SLING_HTTP_ALLOWED_ORIGINS.split(",")
       .map((v) => v.trim())
