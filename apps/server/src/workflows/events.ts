@@ -31,7 +31,10 @@ export class EventBus {
   }
 
   /** Returns the runs the event started. */
-  async emit(event: BusEvent): Promise<RunRow[]> {
+  async emit(
+    event: BusEvent,
+    opts: { strict?: boolean; onMatch?: () => void } = {},
+  ): Promise<RunRow[]> {
     const ctx = this.#ctx;
     if (event.waitKey) await ctx.engine.onEvent(event.type, event.waitKey, event.payload);
     const at = event.at ?? new Date();
@@ -56,11 +59,15 @@ export class EventBus {
         const version = await ctx.engine.version(trigger.versionId);
         const node = version?.graph.nodes.get(trigger.nodeId);
         const spec = node ? ctx.registry.get(node.type, node.version) : undefined;
-        if (!node || !spec?.trigger) continue;
+        if (!node || !spec?.trigger) {
+          if (opts.strict) throw new Error("Trigger implementation unavailable");
+          continue;
+        }
         const parsed = (
           spec.configSchema as { safeParse(v: unknown): { success: boolean; data?: unknown } }
         ).safeParse(node.config);
         if (!parsed.success) {
+          if (opts.strict) throw new Error("Trigger configuration is invalid");
           ctx.log.warn({ triggerId: trigger.id }, "trigger config no longer parses; skipping");
           continue;
         }
@@ -75,6 +82,7 @@ export class EventBus {
           parsed.data,
         );
         if (!match) continue;
+        opts.onMatch?.();
         const run = await ctx.engine.startRun({
           workflowId: trigger.workflowId,
           workspaceId: trigger.workspaceId,
@@ -88,6 +96,7 @@ export class EventBus {
         });
         if (run) runs.push(run);
       } catch (err) {
+        if (opts.strict) throw err;
         ctx.log.error(
           { err, triggerId: trigger.id, event: event.type },
           "trigger failed to start a run",

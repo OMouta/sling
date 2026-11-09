@@ -91,7 +91,7 @@ export class Agent {
   }
 
   /** Task service hook: note what happened in the conversation, and tell its workflow. */
-  async onTaskSettled(taskId: string, reason: SettleReason): Promise<void> {
+  async onTaskSettled(taskId: string, reason: SettleReason, noteId?: string): Promise<void> {
     const t = await taskView(this.#ctx, taskId);
     if (!t?.conversationId) return;
     const [conv] = await this.#ctx.db
@@ -131,25 +131,36 @@ export class Agent {
     }
     lines.push(...deployOutcome(t.repoName, steps));
     const note = lines.join("\n");
-    const row = await this.addMessage(conv, "system", { role: "system", content: note }, taskId);
+    const row = await this.addMessage(
+      conv,
+      "system",
+      { role: "system", content: note },
+      taskId,
+      null,
+      null,
+      { id: noteId },
+    );
 
     // Follow-ups go back to the workflow that owns the conversation. Conversations
     // from before workflows belong to Sling Assistant.
     const workflowId = conv.workflowId ?? (await this.#ctx.workflows.assistantId(conv.workspaceId));
     if (!workflowId) return;
-    await this.#ctx.events.emit({
-      type: SLING_EVENTS.conversationUpdate,
-      workspaceId: conv.workspaceId,
-      workflowId,
-      payload: {
-        conversation: conversationObject(conv),
-        key: conversationKey(conv),
-        note,
-        taskId,
-        reason,
+    await this.#ctx.events.emit(
+      {
+        type: SLING_EVENTS.conversationUpdate,
+        workspaceId: conv.workspaceId,
+        workflowId,
+        payload: {
+          conversation: conversationObject(conv),
+          key: conversationKey(conv),
+          note,
+          taskId,
+          reason,
+        },
+        ...(row ? { dedupeKey: `note:${row.id}` } : {}),
       },
-      ...(row ? { dedupeKey: `note:${row.id}` } : {}),
-    });
+      { strict: true },
+    );
   }
 
   async addMessage(
@@ -159,37 +170,74 @@ export class Agent {
     taskId: string | null = null,
     usage: TokenUsage | null = null,
     trace: ReplyTrace | null = null,
-    extra: { meta?: MessageMeta | null; attachmentIds?: readonly string[] } = {},
+    extra: {
+      meta?: MessageMeta | null;
+      attachmentIds?: readonly string[];
+      dispatch?: boolean;
+      id?: string;
+    } = {},
   ) {
-    const [row] = await this.#ctx.db
-      .insert(schema.messages)
-      .values({
-        id: newId("msg"),
-        workspaceId: conv.workspaceId,
-        ownerId: conv.ownerId,
-        conversationId: conv.id,
-        role,
-        content,
-        taskId,
-        usage,
-        trace,
-        meta: extra.meta ?? null,
-      })
-      .returning();
-    const attached =
-      row && extra.attachmentIds?.length
+    const { row, attached, updated } = await this.#ctx.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(schema.messages)
+        .values({
+          id: extra.id ?? newId("msg"),
+          workspaceId: conv.workspaceId,
+          ownerId: conv.ownerId,
+          conversationId: conv.id,
+          role,
+          content,
+          taskId,
+          usage,
+          trace,
+          meta: extra.meta ?? null,
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (!row) {
+        const [existing] = extra.id
+          ? await tx.select().from(schema.messages).where(eq(schema.messages.id, extra.id))
+          : [];
+        return { row: existing, attached: [], updated: undefined };
+      }
+      const attached = extra.attachmentIds?.length
         ? await this.#ctx.sources.attach(
             { workspaceId: conv.workspaceId, userId: conv.ownerId },
             conv.id,
             row.id,
             extra.attachmentIds,
+            tx,
           )
         : [];
-    const [updated] = await this.#ctx.db
-      .update(schema.conversations)
-      .set({ updatedAt: new Date() })
-      .where(eq(schema.conversations.id, conv.id))
-      .returning();
+      const [updated] = await tx
+        .update(schema.conversations)
+        .set({ updatedAt: new Date() })
+        .where(eq(schema.conversations.id, conv.id))
+        .returning();
+      if (extra.dispatch) {
+        await tx.insert(schema.deliveries).values({
+          id: row.id,
+          kind: "chat",
+          payload: {
+            conversationId: conv.id,
+            messageId: row.id,
+            fallbackId: newId("msg"),
+            event: {
+              type: SLING_EVENTS.chatMessage,
+              workspaceId: conv.workspaceId,
+              payload: {
+                conversation: conversationObject(conv),
+                key: conversationKey(conv),
+                message: content.content,
+                messageId: row.id,
+              },
+              dedupeKey: row.id,
+            },
+          },
+        });
+      }
+      return { row, attached, updated };
+    });
     if (row) {
       const view = toMessageView(row);
       if (view) {
@@ -213,7 +261,12 @@ export class Agent {
   async addUserMessage(
     conv: typeof schema.conversations.$inferSelect,
     text: string,
-    opts: { once?: boolean; meta?: MessageMeta | null; attachmentIds?: readonly string[] } = {},
+    opts: {
+      once?: boolean;
+      meta?: MessageMeta | null;
+      attachmentIds?: readonly string[];
+      dispatch?: boolean;
+    } = {},
   ) {
     if (opts.once) {
       const [last] = await this.#ctx.db
@@ -227,6 +280,7 @@ export class Agent {
     }
     return this.addMessage(conv, "user", { role: "user", content: text }, null, null, null, {
       meta: opts.meta ?? null,
+      dispatch: opts.dispatch,
       ...(opts.attachmentIds ? { attachmentIds: opts.attachmentIds } : {}),
     });
   }

@@ -14,6 +14,7 @@ import { Checks } from "./checks/service.ts";
 import type { Config } from "./config.ts";
 import type { AppContext } from "./context.ts";
 import { deriveKey } from "./crypto.ts";
+import { enqueueSettlement, startDeliveries } from "./deliveries.ts";
 import { DeployService } from "./deploys/service.ts";
 import { ProcessRuntime } from "./extensions/process-runtime.ts";
 import type { ExtensionRuntime } from "./extensions/runtime.ts";
@@ -38,7 +39,6 @@ import { EventBus } from "./workflows/events.ts";
 import { registerCoreNodes } from "./workflows/nodes/index.ts";
 import { NodeRegistry } from "./workflows/registry.ts";
 import { WorkflowService } from "./workflows/service.ts";
-import { emitTaskSettled } from "./workflows/sling-events.ts";
 import { startScheduleWorker } from "./workflows/triggers.ts";
 
 export interface StartOptions {
@@ -46,6 +46,8 @@ export interface StartOptions {
   model?: LanguageModel;
   /** Skip the sweep and prune schedules (tests call them directly). */
   jobs?: boolean;
+  /** Tests can pause durable deliveries to simulate a crash before dispatch. */
+  deliveries?: boolean;
   /** Connectors to register. */
   connectors?: AnyConnector[];
   /** Extra node types to register. Tests use them. */
@@ -75,6 +77,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   database.pool.on("error", (err) => app.log.warn({ err }, "database connection dropped"));
 
   let releaseOwner: (() => void) | undefined;
+  let stopDeliveries: (() => Promise<void>) | undefined;
   let stopServer: (() => Promise<void>) | undefined;
   let draining = false;
   let ready = false;
@@ -187,14 +190,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   ctx.oauth = new OAuth(ctx);
   ctx.sources = new Sources(ctx);
   ctx.runners.handlers = ctx.tasks;
-  ctx.tasks.onSettled = async (taskId, reason) => {
-    // First, so a failing hook below can't keep a sandbox alive.
-    await ctx.sandboxes.onTaskSettled(taskId);
-    // Sends in the background, so a slow push service never holds up the rest.
-    ctx.push.taskSettled(taskId, reason);
-    await ctx.agent.onTaskSettled(taskId, reason);
-    await emitTaskSettled(ctx, taskId, reason);
-  };
+  ctx.tasks.onSettled = (taskId, reason) => enqueueSettlement(ctx, taskId, reason);
   ctx.tasks.onWorkflowApproval = (approval) => ctx.engine.onApprovalSettled(approval);
   ctx.runners.start();
 
@@ -215,6 +211,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     await registerRoutes(app, ctx);
     await app.listen({ host: config.host, port: config.port });
     await ctx.connectors.reconcile();
+    if (opts.deliveries !== false) stopDeliveries = startDeliveries(ctx);
     ready = true;
   } catch (err) {
     await ctx.extensions.stop();
@@ -242,6 +239,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     };
     // Stop new connector events and engine claims before waiting on jobs.
     await attempt(() => within(Promise.all([ctx.connectors.stopAll(), ctx.engine.stop()]), 10_000));
+    await attempt(() => within(stopDeliveries?.() ?? Promise.resolve(), 10_000));
     await attempt(() => boss?.stop({ graceful: true, timeout: 10_000 }) ?? Promise.resolve());
     await attempt(() =>
       within(

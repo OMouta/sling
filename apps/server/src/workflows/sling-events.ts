@@ -131,7 +131,12 @@ async function pendingFallback(ctx: AppContext, taskId: string): Promise<boolean
  * Task service hook: wakes runs waiting on the task, then offers
  * `sling.task_settled` and, for new approvals, `sling.approval_requested`.
  */
-export async function emitTaskSettled(ctx: AppContext, taskId: string, reason: string) {
+export async function emitTaskSettled(
+  ctx: AppContext,
+  taskId: string,
+  reason: string,
+  strict = false,
+) {
   const t = await taskView(ctx, taskId);
   if (!t) return;
   const [row] = await ctx.db
@@ -141,12 +146,15 @@ export async function emitTaskSettled(ctx: AppContext, taskId: string, reason: s
   if (!row) return;
   const task = taskObject(t, reason);
   await ctx.engine.onTaskSettled(taskId, task, reason);
-  await ctx.events.emit({
-    type: SLING_EVENTS.taskSettled,
-    workspaceId: row.workspaceId,
-    payload: { task, reason },
-    dedupeKey: `task:${taskId}:${reason}`,
-  });
+  await ctx.events.emit(
+    {
+      type: SLING_EVENTS.taskSettled,
+      workspaceId: row.workspaceId,
+      payload: { task, reason },
+      dedupeKey: `task:${taskId}:${reason}`,
+    },
+    { strict },
+  );
   if (reason !== "approval_needed") return;
   const pending = await ctx.db
     .select({ id: schema.approvals.id })
@@ -155,11 +163,14 @@ export async function emitTaskSettled(ctx: AppContext, taskId: string, reason: s
   for (const p of pending) {
     const view = await approvalView(ctx, p.id);
     if (!view) continue;
-    await ctx.events.emit({
-      type: SLING_EVENTS.approvalRequested,
-      workspaceId: row.workspaceId,
-      payload: { approval: approvalObject(ctx, view) },
-      dedupeKey: `approval:${p.id}`,
-    });
+    await ctx.events.emit(
+      {
+        type: SLING_EVENTS.approvalRequested,
+        workspaceId: row.workspaceId,
+        payload: { approval: approvalObject(ctx, view) },
+        dedupeKey: `approval:${p.id}`,
+      },
+      { strict },
+    );
   }
 }

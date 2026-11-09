@@ -6,7 +6,7 @@ import {
   PERSONALITY_MAX_SOURCES,
   SOURCE_MAX_BYTES,
 } from "@sling/core";
-import { schema } from "@sling/db";
+import { type Db, schema } from "@sling/db";
 import { and, asc, count, eq, inArray, isNull, lt, or, type SQL, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import { audit } from "../audit.ts";
@@ -103,6 +103,7 @@ export interface SourceService {
     conversationId: string,
     messageId: string,
     ids: readonly string[],
+    db?: Pick<Db, "update">,
   ): Promise<SourceRow[]>;
   /** Waits up to `ms` for these to finish processing, and returns them as they are then. */
   settled(workspaceId: string, ids: readonly string[], ms: number): Promise<SourceRow[]>;
@@ -538,9 +539,10 @@ export class Sources implements SourceService {
     conversationId: string,
     messageId: string,
     ids: readonly string[],
+    db: Pick<Db, "update"> = this.#db,
   ): Promise<SourceRow[]> {
     if (ids.length === 0) return [];
-    return this.#db
+    return db
       .update(s)
       .set({ conversationId, messageId })
       .where(

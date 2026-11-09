@@ -6,7 +6,6 @@ import {
   type TaskState,
 } from "@sling/core";
 import { type MessageMeta, schema } from "@sling/db";
-import { SLING_EVENTS } from "@sling/workflow";
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, sum } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
@@ -23,7 +22,6 @@ import {
   usablePersonality,
 } from "../personalities/service.ts";
 import { taskViews, toConversationView } from "../views.ts";
-import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
 import { messageViews } from "./messages.ts";
 
 const Id = z.object({ id: z.string() });
@@ -306,26 +304,10 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
       }
       const row = await ctx.agent.addUserMessage(conv, request.body.text, {
         meta: Object.keys(meta).length ? meta : null,
+        dispatch: true,
         ...(attachmentIds?.length ? { attachmentIds } : {}),
       });
       if (!row) throw new Error("insert failed");
-      const runs = await ctx.events.emit({
-        type: SLING_EVENTS.chatMessage,
-        workspaceId: actor.workspaceId,
-        payload: {
-          conversation: conversationObject(conv),
-          key: conversationKey(conv),
-          message: request.body.text,
-          messageId: row.id,
-        },
-        dedupeKey: row.id,
-      });
-      if (runs.length === 0) {
-        await ctx.agent.addMessage(conv, "assistant", {
-          role: "assistant",
-          content: NO_CHAT_WORKFLOW,
-        });
-      }
       return { id: row.id };
     },
   );

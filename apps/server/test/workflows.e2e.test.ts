@@ -1275,11 +1275,13 @@ describe("assistant", () => {
     expect((await c.raw("DELETE", `/api/workflows/${assistant?.id}`)).status).toBe(409);
     await c.call("PATCH", `/api/workflows/${assistant?.id}`, { enabled: false });
     await c.call("POST", `/api/conversations/${conv.id}/messages`, { text: "anyone?" });
-    const dd = await c.call<{ messages: { role: string; text: string }[] }>(
-      "GET",
-      `/api/conversations/${conv.id}`,
-    );
-    expect(dd.messages.at(-1)?.text).toMatch(/No workflow handles chat messages/);
+    await until("no-workflow explanation", async () => {
+      const latest = await c.call<{ messages: { text: string }[] }>(
+        "GET",
+        `/api/conversations/${conv.id}`,
+      );
+      return latest.messages.at(-1)?.text.includes("No workflow handles chat messages");
+    });
     await c.call("PATCH", `/api/workflows/${assistant?.id}`, { enabled: true });
   });
 
@@ -1775,4 +1777,39 @@ describe("restarts", () => {
     ]);
     expect(callsFor(r2.id, "safe-after").map((x) => x.value)).toEqual([2]);
   }, 60_000);
+});
+
+describe("durable chat acceptance", () => {
+  it("dispatches an accepted message after the process restarts before delivery", async () => {
+    const url = await freshDatabase("chat_outbox");
+    const first = await boot(url, { deliveries: false });
+    const client = new Client(first.url);
+    await client.signUp();
+    const conv = await client.call<{ id: string }>("POST", "/api/conversations", {});
+    const msg = await client.call<{ id: string }>(
+      "POST",
+      `/api/conversations/${conv.id}/messages`,
+      { text: "hello after restart" },
+    );
+    const [delivery] = await first.ctx.db
+      .select()
+      .from(schema.deliveries)
+      .where(eq(schema.deliveries.id, msg.id));
+    expect(delivery?.completedAt).toBeNull();
+    await first.close();
+    const second = await boot(url);
+    extra.push(second);
+    await until("durable dispatch", async () => {
+      const [row] = await second.ctx.db
+        .select()
+        .from(schema.deliveries)
+        .where(eq(schema.deliveries.id, msg.id));
+      return row?.completedAt;
+    });
+    const runs = await second.ctx.db
+      .select()
+      .from(schema.workflowRuns)
+      .where(eq(schema.workflowRuns.dedupeKey, msg.id));
+    expect(runs).toHaveLength(1);
+  });
 });
