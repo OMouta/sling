@@ -258,8 +258,9 @@ export class Commands {
     const id = `cap_${randomBytes(12).toString("hex")}`;
     const kind = view(id, "pending").kind;
     const expiresAt = Date.now() + this.approvalWaitMs;
-    // Stored before the card shows, so any answer to it finds how it went.
-    await this.#ctx.db
+    // The card shows at once; its record is written alongside, and how it
+    // ended is written only after that, so the outcome always lands on it.
+    const stored = this.#ctx.db
       .insert(schema.chatApprovals)
       .values({
         id,
@@ -268,7 +269,13 @@ export class Commands {
         kind,
         expiresAt: new Date(expiresAt),
       })
-      .catch((err) => this.#ctx.log.error({ err, id }, "couldn't store a chat approval"));
+      .then(
+        () => true,
+        (err) => {
+          this.#ctx.log.error({ err, id }, "couldn't store a chat approval");
+          return false;
+        },
+      );
     let reason: ExpiredReason | null = null;
     const out = await new Promise<{ decision: Decision; secrets?: SecretValues }>((resolve) => {
       const settle = (d: Decision, typed?: SecretValues) => {
@@ -296,11 +303,15 @@ export class Commands {
       });
       opts.onChange(view(id, "pending"));
     });
-    await this.#ctx.db
-      .update(schema.chatApprovals)
-      .set({ state: out.decision, reason, decidedAt: new Date() })
-      .where(and(eq(schema.chatApprovals.id, id), eq(schema.chatApprovals.state, "pending")))
-      .catch((err) => this.#ctx.log.error({ err, id }, "couldn't store a chat approval's outcome"));
+    if (await stored) {
+      await this.#ctx.db
+        .update(schema.chatApprovals)
+        .set({ state: out.decision, reason, decidedAt: new Date() })
+        .where(and(eq(schema.chatApprovals.id, id), eq(schema.chatApprovals.state, "pending")))
+        .catch((err) =>
+          this.#ctx.log.error({ err, id }, "couldn't store a chat approval's outcome"),
+        );
+    }
     opts.onChange(view(id, out.decision));
     return out;
   }

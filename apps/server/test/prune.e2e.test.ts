@@ -127,20 +127,29 @@ it("prunes a large backlog in whole batches and resumes after an interruption", 
   await new Promise((r) => setTimeout(r, 1_000));
   const baseline = await idle();
 
-  // Cut the prune off mid-batch by killing its database connection.
+  // Cut the prune off mid-batch: once a few batches have committed, a table
+  // lock holds its next batch, and that batch's connection is killed while
+  // it waits, so the cut always lands inside a batch.
   const admin = server.ctx.db;
-  const interrupted = server.ctx.tasks.pruneEvents();
-  let killed = false;
-  for (let i = 0; i < 2_000 && !killed; i++) {
+  // Its failure is caught right away, so it never counts as unhandled while this waits.
+  const interrupted = server.ctx.tasks.pruneEvents().then(
+    () => null,
+    (err: unknown) => err,
+  );
+  while ((await count("expired")) > EXPIRED - 2 * BATCH) {
     await new Promise((r) => setTimeout(r, 5));
-    if (i < 40) continue; // let a few batches commit first
-    const { rows } = await admin.execute<{ n: number }>(sql`
-      select count(pg_terminate_backend(pid))::int as n from pg_stat_activity
-      where state = 'active' and query like '%with batch as%' and pid <> pg_backend_pid()`);
-    killed = (rows[0]?.n ?? 0) > 0;
   }
-  expect(killed).toBe(true);
-  await expect(interrupted).rejects.toThrow();
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`lock table task_events in exclusive mode`);
+    for (;;) {
+      const { rows } = await admin.execute<{ n: number }>(sql`
+        select count(pg_terminate_backend(pid))::int as n from pg_stat_activity
+        where wait_event_type = 'Lock' and query like '%with batch as%' and pid <> pg_backend_pid()`);
+      if ((rows[0]?.n ?? 0) > 0) break;
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  });
+  expect(await interrupted).toBeInstanceOf(Error);
   const afterInterrupt = await count("expired");
   // Every batch commits on its own: the cut-off batch rolled back and nothing partial remains.
   expect((EXPIRED - afterInterrupt) % BATCH).toBe(0);
