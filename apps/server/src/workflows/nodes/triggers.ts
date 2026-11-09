@@ -119,14 +119,55 @@ export const scheduleTrigger = defineNode({
   },
 });
 
+/** An HTTP header name (RFC 9110 token), as a webhook's event ID header. */
+const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
+
+const RUN_LIMITS = [1, 2, 3, 5, 10, 25, 50] as const;
+
+export const webhookConfig = z.object({
+  auth: z
+    .union([
+      z.literal("token").meta({ title: "URL only" }),
+      z.literal("signed").meta({ title: "Signed" }),
+    ])
+    .default("token")
+    .describe(
+      "Signed requests also need X-Sling-Timestamp and X-Sling-Signature, made with the signing secret.",
+    )
+    .meta({ title: "Requests", widget: "segmented" }),
+  eventIdHeader: z
+    .string()
+    .trim()
+    .max(100)
+    .default("x-sling-event-id")
+    .describe("A second request with the same event ID in this header starts no run.")
+    .meta({ title: "Event ID header" }),
+  maxConcurrentRuns: z
+    .union([
+      z.literal(0).meta({ title: "No limit" }),
+      ...RUN_LIMITS.map((n) => z.literal(n).meta({ title: String(n) })),
+    ])
+    .default(0)
+    .describe("Requests while this many runs are unfinished get 429 Too Many Requests.")
+    .meta({ title: "Runs at once" }),
+});
+
+export type WebhookConfig = z.infer<typeof webhookConfig>;
+
 export const webhookTrigger = defineNode({
   type: "core.webhook",
   version: 1,
   title: "Webhook",
   description:
-    "Starts the workflow when something POSTs to its URL. The URL appears in the workflow once it's published. Anyone with the URL can start a run, so treat it like a password.",
+    "Starts the workflow when something POSTs to its URL. The URL appears in the workflow once it's published. Unless it takes signed requests only, anyone with the URL can start a run, so treat it like a password.",
   category: "trigger",
-  configSchema: z.object({}),
+  configSchema: webhookConfig,
+  checkConfig: (config) => {
+    const header = typeof config.eventIdHeader === "string" ? config.eventIdHeader.trim() : "";
+    return header && !HEADER_NAME.test(header)
+      ? [{ field: "eventIdHeader", message: `${header} isn't a header name` }]
+      : [];
+  },
   inputs: [],
   outputs: [
     { name: "body", type: "json", description: "The request body, parsed if it was JSON." },

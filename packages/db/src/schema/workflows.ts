@@ -138,10 +138,40 @@ export const workflowRuns = pgTable(
     index("workflow_runs_workflow_idx").on(t.workflowId, t.createdAt),
     index("workflow_runs_status_idx").on(t.status),
     index("workflow_runs_key_idx").on(t.concurrencyKey, t.createdAt),
+    // Counting a trigger's unfinished runs, for its concurrency budget.
+    index("workflow_runs_active_idx")
+      .on(t.workflowId, t.triggerNodeId)
+      .where(sql`${t.status} in ('queued', 'running', 'waiting')`),
     uniqueIndex("workflow_runs_dedupe_idx")
       .on(t.workflowId, t.dedupeKey)
       .where(sql`${t.dedupeKey} is not null`),
   ],
+);
+
+/**
+ * A webhook trigger's signing secrets, apart from its URL token so either can
+ * change alone. The credential holds the current secret and, for a while
+ * after a rotation, the one before it.
+ */
+export const webhookSecrets = pgTable(
+  "webhook_secrets",
+  {
+    workflowId: text("workflow_id")
+      .notNull()
+      .references(() => workflows.id, { onDelete: "cascade" }),
+    nodeId: text("node_id").notNull(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    credentialId: text("credential_id")
+      .notNull()
+      .references(() => credentials.id, { onDelete: "cascade" }),
+    /** Until when the secret from before the last rotation is still accepted. */
+    previousUntil: ts("previous_until"),
+    createdAt: createdAt(),
+    rotatedAt: ts("rotated_at"),
+  },
+  (t) => [primaryKey({ columns: [t.workflowId, t.nodeId] })],
 );
 
 export const nodeRuns = pgTable(

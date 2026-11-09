@@ -1,4 +1,4 @@
-import { newId } from "@sling/core";
+import { newId, type RunStatus } from "@sling/core";
 import { schema } from "@sling/db";
 import {
   advance,
@@ -88,7 +88,24 @@ export interface StartRunInput {
   installationId?: string | null;
   parentRunId?: string | null;
   parentNodeRunId?: string | null;
+  /**
+   * At most this many unfinished runs (queued, running, or waiting) from the
+   * same trigger. Counted in the transaction that adds the run, so it holds
+   * across processes and restarts. 0 or absent is no limit.
+   */
+  maxActiveRuns?: number;
 }
+
+/** A trigger already has as many unfinished runs as it allows. */
+export class RunBudgetError extends Error {
+  readonly limit: number;
+  constructor(limit: number) {
+    super(`This trigger already has ${limit} unfinished run${limit === 1 ? "" : "s"}.`);
+    this.limit = limit;
+  }
+}
+
+const ACTIVE: RunStatus[] = ["queued", "running", "waiting"];
 
 /** Stored in `workflow_runs.trigger_payload`, so a retry can start the same way. */
 interface TriggerPayload {
@@ -381,7 +398,38 @@ export class Engine {
       installationId: input.installationId ?? null,
     };
     const now = new Date();
+    const limit = input.maxActiveRuns ?? 0;
     const run = await this.#db.transaction(async (tx) => {
+      if (limit > 0) {
+        // One admission per trigger at a time, so two can't both see a free slot.
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${`run-admission:${input.workflowId}:${trigger.id}`}, 0))`,
+        );
+        // A repeat of an admitted event is a duplicate, not one run too many.
+        if (input.dedupeKey) {
+          const [seen] = await tx
+            .select({ id: schema.workflowRuns.id })
+            .from(schema.workflowRuns)
+            .where(
+              and(
+                eq(schema.workflowRuns.workflowId, input.workflowId),
+                eq(schema.workflowRuns.dedupeKey, input.dedupeKey),
+              ),
+            );
+          if (seen) return null;
+        }
+        const [active] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(schema.workflowRuns)
+          .where(
+            and(
+              eq(schema.workflowRuns.workflowId, input.workflowId),
+              eq(schema.workflowRuns.triggerNodeId, trigger.id),
+              inArray(schema.workflowRuns.status, ACTIVE),
+            ),
+          );
+        if ((active?.n ?? 0) >= limit) throw new RunBudgetError(limit);
+      }
       const [row] = await tx
         .insert(schema.workflowRuns)
         .values({

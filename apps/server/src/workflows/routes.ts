@@ -14,9 +14,12 @@ import { z } from "zod";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import { AdmissionLimit, validWebhookSignature } from "../http/webhook-security.ts";
+import { RunBudgetError } from "./engine.ts";
+import { webhookConfig } from "./nodes/triggers.ts";
 import { DraftConflictError, WorkflowInputError } from "./service.ts";
 import { webhookTrigger } from "./triggers.ts";
 import { type RunRow, toNodeRunView, toRunView } from "./views.ts";
+import { acceptedSecrets, rotateSigningSecret, signingStatus } from "./webhook-secrets.ts";
 
 const Id = z.object({ id: z.string() });
 
@@ -239,6 +242,45 @@ export async function workflowRoutes(app: FastifyInstance, ctx: AppContext) {
     }
   });
 
+  // A webhook trigger's signing secret, in the draft or the active version.
+  const HookParams = z.object({ id: z.string(), nodeId: z.string().min(1).max(200) });
+  async function webhookNode(wf: NonNullable<Awaited<ReturnType<typeof load>>>, nodeId: string) {
+    const draft = parseDefinition(wf.draft);
+    const active = wf.activeVersionId ? await ctx.engine.version(wf.activeVersionId) : null;
+    const nodes = [
+      ...(draft.ok ? draft.definition.nodes : []),
+      ...(active?.definition.nodes ?? []),
+    ];
+    return nodes.some((n) => n.id === nodeId && n.type === "core.webhook");
+  }
+
+  r.get(
+    "/api/workflows/:id/webhooks/:nodeId/secret",
+    { schema: { params: HookParams } },
+    async (request, reply) => {
+      const wf = await load(request, actorOf(request).workspaceId, reply);
+      if (!wf) return reply;
+      if (!(await webhookNode(wf, request.params.nodeId))) {
+        return reply.code(404).send({ error: "No webhook trigger with that ID." });
+      }
+      return { signing: await signingStatus(ctx, wf.id, request.params.nodeId) };
+    },
+  );
+
+  r.post(
+    "/api/workflows/:id/webhooks/:nodeId/secret",
+    { schema: { params: HookParams } },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const wf = await load(request, actor.workspaceId, reply);
+      if (!wf) return reply;
+      if (!(await webhookNode(wf, request.params.nodeId))) {
+        return reply.code(404).send({ error: "No webhook trigger with that ID." });
+      }
+      return rotateSigningSecret(ctx, actor, wf.id, request.params.nodeId);
+    },
+  );
+
   r.get("/api/workflows/:id/versions", { schema: { params: Id } }, async (request, reply) => {
     const wf = await load(request, actorOf(request).workspaceId, reply);
     if (!wf) return reply;
@@ -412,6 +454,8 @@ export async function webhookRoutes(app: FastifyInstance, ctx: AppContext) {
       done(Object.assign(new Error("Invalid webhook JSON"), { statusCode: 400 }));
     }
   });
+  const tooMany = (reply: FastifyReply, error: string) =>
+    reply.header("retry-after", "60").code(429).send({ error });
   app.post<{ Params: { token: string } }>("/hooks/:token", async (request, reply) => {
     // Senders that retry on 503 deliver again once automation resumes.
     if (ctx.config.automationPaused) {
@@ -421,65 +465,71 @@ export async function webhookRoutes(app: FastifyInstance, ctx: AppContext) {
         .send({ error: "Automation is paused on this server" });
     }
     if (!limit.take(`ip:${request.ip}`, (ctx.config.webhookRequestsPerMinute ?? 60) * 2)) {
-      return reply
-        .header("retry-after", "60")
-        .code(429)
-        .send({ error: "Webhook rate limit exceeded" });
-    }
-    const raw = rawBodies.get(request) ?? Buffer.alloc(0);
-    if (
-      ctx.config.webhookSecret &&
-      !validWebhookSignature(
-        ctx.config.webhookSecret,
-        String(request.headers["x-sling-timestamp"] ?? ""),
-        String(request.headers["x-sling-signature"] ?? ""),
-        raw,
-      )
-    ) {
-      return reply.code(401).send({ error: "Invalid webhook signature" });
+      return tooMany(reply, "Webhook rate limit exceeded");
     }
     const found = await webhookTrigger(ctx, request.params.token);
     if (!found) return reply.code(404).send({ error: "not found" });
+    // The trigger's settings as published. Ones from before it had settings get the defaults.
+    const parsed = webhookConfig.safeParse(found.trigger.config ?? {});
+    const config = parsed.success ? parsed.data : webhookConfig.parse({});
+
+    // A signed trigger checks its own secrets; any other falls back to the server's, if set.
+    const raw = rawBodies.get(request) ?? Buffer.alloc(0);
+    const timestamp = String(request.headers["x-sling-timestamp"] ?? "");
+    const signature = String(request.headers["x-sling-signature"] ?? "");
+    const secrets =
+      config.auth === "signed"
+        ? await acceptedSecrets(ctx, found.workflow.id, found.trigger.nodeId)
+        : ctx.config.webhookSecret
+          ? [ctx.config.webhookSecret]
+          : null;
+    if (secrets && !secrets.some((key) => validWebhookSignature(key, timestamp, signature, raw))) {
+      return reply.code(401).send({ error: "Invalid webhook signature" });
+    }
+
     if (
       !limit.take(
         `workspace:${found.workflow.workspaceId}`,
         ctx.config.webhookRequestsPerMinute ?? 60,
       )
     ) {
-      return reply
-        .header("retry-after", "60")
-        .code(429)
-        .send({ error: "Webhook rate limit exceeded" });
+      return tooMany(reply, "Webhook rate limit exceeded");
     }
-    const eventId = request.headers["x-sling-event-id"];
+    const eventId = config.eventIdHeader
+      ? request.headers[config.eventIdHeader.toLowerCase()]
+      : undefined;
     if (eventId !== undefined && (typeof eventId !== "string" || eventId.length > 200)) {
       return reply.code(400).send({ error: "Invalid webhook event ID" });
     }
+    // Without an event ID, a signed request is told apart by its timestamp and body, so
+    // replaying one within its five minutes starts nothing.
     const dedupe =
       eventId ||
-      (ctx.config.webhookSecret
-        ? createHash("sha256")
-            .update(String(request.headers["x-sling-timestamp"]))
-            .update(raw)
-            .digest("hex")
-        : null);
+      (secrets ? createHash("sha256").update(timestamp).update(raw).digest("hex") : null);
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries(request.headers)) {
       if (!DROPPED_HEADERS.has(k) && typeof v === "string") headers[k] = v;
     }
-    const run = await ctx.engine.startRun({
-      workflowId: found.workflow.id,
-      workspaceId: found.workflow.workspaceId,
-      ownerId: found.workflow.ownerId,
-      versionId: found.trigger.versionId,
-      triggerNodeId: found.trigger.nodeId,
-      dedupeKey: dedupe ? `hook:${found.trigger.nodeId}:${dedupe}` : null,
-      outputs: {
-        body: request.body ?? null,
-        headers,
-        query: (request.query ?? {}) as Record<string, unknown>,
-      },
-    });
+    let run: Awaited<ReturnType<typeof ctx.engine.startRun>>;
+    try {
+      run = await ctx.engine.startRun({
+        workflowId: found.workflow.id,
+        workspaceId: found.workflow.workspaceId,
+        ownerId: found.workflow.ownerId,
+        versionId: found.trigger.versionId,
+        triggerNodeId: found.trigger.nodeId,
+        dedupeKey: dedupe ? `hook:${found.trigger.nodeId}:${dedupe}` : null,
+        maxActiveRuns: config.maxConcurrentRuns,
+        outputs: {
+          body: request.body ?? null,
+          headers,
+          query: (request.query ?? {}) as Record<string, unknown>,
+        },
+      });
+    } catch (err) {
+      if (err instanceof RunBudgetError) return tooMany(reply, err.message);
+      throw err;
+    }
     if (!run) return reply.code(409).send({ error: "duplicate" });
     return reply.code(202).send({ runId: run.id });
   });

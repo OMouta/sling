@@ -123,7 +123,8 @@ export type CredentialKind =
   | "harness_openai"
   | "harness_anthropic"
   | "git_token"
-  | "deploy_hook";
+  | "deploy_hook"
+  | "webhook_signing";
 
 export const credentials = pgTable("credentials", {
   id: text("id").primaryKey(),
@@ -131,7 +132,8 @@ export const credentials = pgTable("credentials", {
   /**
    * `model_api_key` for the assistant's model, `connector` for an installation's
    * blob, the sandbox secrets (`harness_openai`, `harness_anthropic`, `git_token`),
-   * and `deploy_hook` for a deploy target's hook.
+   * `deploy_hook` for a deploy target's hook, and `webhook_signing` for a
+   * webhook trigger's signing secrets.
    */
   kind: text("kind").$type<CredentialKind>().notNull(),
   /** base64 of iv | auth tag | ciphertext, AES-256-GCM. */

@@ -6,6 +6,7 @@
  * Needs Docker.
  */
 import { type ChildProcess, spawn } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { join } from "node:path";
 import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import type { NodeRunView, RunDetailView, RunView } from "@sling/core";
@@ -1054,6 +1055,214 @@ describe("triggers", () => {
     expect(
       (await fetch(`${server.url}/hooks/not-a-token`, { method: "POST", body: "x" })).status,
     ).toBe(404);
+  });
+
+  describe("webhook settings", () => {
+    const local = (url: string) => url.replace(/^https?:\/\/[^/]+/, server.url);
+    const signed = (secret: string, body: string, ts = Math.floor(Date.now() / 1000)) => ({
+      "content-type": "application/json",
+      "x-sling-timestamp": String(ts),
+      "x-sling-signature": createHmac("sha256", secret).update(`${ts}.`).update(body).digest("hex"),
+    });
+    const post = (url: string, body: string, headers: Record<string, string> = {}) =>
+      fetch(local(url), {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body,
+      });
+    const runsOf = async (workflowId: string) =>
+      (
+        await server.ctx.db
+          .select({ id: schema.workflowRuns.id })
+          .from(schema.workflowRuns)
+          .where(eq(schema.workflowRuns.workflowId, workflowId))
+      ).length;
+
+    it("checks a signed hook's own secret, refuses replays, and rotates without a new URL", async () => {
+      const definition = def(
+        "Signed hook",
+        [n("t", "core.webhook", { auth: "signed" }), n("rec", "test.record", { tag: "signed" })],
+        [x("t.next", "rec")],
+      );
+      const wf = await c.call<Detail>("POST", "/api/workflows", { definition });
+      // Taking signed requests only, it can't publish without a secret.
+      const refused = await c.raw("POST", `/api/workflows/${wf.id}/publish`, {});
+      expect(refused.status).toBe(422);
+      expect(await refused.json()).toMatchObject({
+        issues: [expect.objectContaining({ code: "missing_signing_secret", nodeId: "t" })],
+      });
+      expect(await c.call("GET", `/api/workflows/${wf.id}/webhooks/t/secret`)).toEqual({
+        signing: null,
+      });
+      const first = await c.call<{ secret: string; rotatedAt: string | null }>(
+        "POST",
+        `/api/workflows/${wf.id}/webhooks/t/secret`,
+      );
+      expect(first.secret).toMatch(/^whsec_/);
+      expect(first.rotatedAt).toBeNull();
+      expect((await c.raw("POST", `/api/workflows/${wf.id}/webhooks/nope/secret`)).status).toBe(
+        404,
+      );
+      await c.call("POST", `/api/workflows/${wf.id}/publish`, {});
+      await c.call("PATCH", `/api/workflows/${wf.id}`, { enabled: true });
+      const url = (await c.call<Detail>("GET", `/api/workflows/${wf.id}`)).webhooks[0]?.url ?? "";
+
+      expect((await post(url, "{}")).status).toBe(401);
+      const body = '{"n":1}';
+      const headers = signed(first.secret, body);
+      expect((await post(url, body, headers)).status).toBe(202);
+      // The same signed request again is a replay.
+      expect((await post(url, body, headers)).status).toBe(409);
+      expect(
+        (await post(url, body, signed(first.secret, body, Date.now() / 1000 - 600))).status,
+      ).toBe(401);
+      expect((await post(url, '{"n":2}', signed("whsec_not-the-secret", '{"n":2}'))).status).toBe(
+        401,
+      );
+      // The secret is never sent back.
+      const status = await c.call<{ signing: Record<string, unknown> }>(
+        "GET",
+        `/api/workflows/${wf.id}/webhooks/t/secret`,
+      );
+      expect(JSON.stringify(status)).not.toContain(first.secret);
+
+      const second = await c.call<{ secret: string; previousValidUntil: string | null }>(
+        "POST",
+        `/api/workflows/${wf.id}/webhooks/t/secret`,
+      );
+      expect(second.secret).not.toBe(first.secret);
+      expect(second.previousValidUntil).not.toBeNull();
+      expect((await c.call<Detail>("GET", `/api/workflows/${wf.id}`)).webhooks[0]?.url).toBe(url);
+      // Both work while the old one overlaps.
+      expect((await post(url, '{"n":3}', signed(first.secret, '{"n":3}'))).status).toBe(202);
+      expect((await post(url, '{"n":4}', signed(second.secret, '{"n":4}'))).status).toBe(202);
+      // Once the overlap is over, only the new one does.
+      await server.ctx.db
+        .update(schema.webhookSecrets)
+        .set({ previousUntil: new Date(Date.now() - 60_000) })
+        .where(eq(schema.webhookSecrets.workflowId, wf.id));
+      expect((await post(url, '{"n":5}', signed(first.secret, '{"n":5}'))).status).toBe(401);
+      expect((await post(url, '{"n":6}', signed(second.secret, '{"n":6}'))).status).toBe(202);
+      expect(await runsOf(wf.id)).toBe(4);
+
+      // Deleting the workflow takes its stored secret with it.
+      const [link] = await server.ctx.db
+        .select({ credentialId: schema.webhookSecrets.credentialId })
+        .from(schema.webhookSecrets)
+        .where(eq(schema.webhookSecrets.workflowId, wf.id));
+      await c.call("DELETE", `/api/workflows/${wf.id}`);
+      const left = await server.ctx.db
+        .select({ id: schema.credentials.id })
+        .from(schema.credentials)
+        .where(eq(schema.credentials.id, link?.credentialId ?? ""));
+      expect(left).toEqual([]);
+    });
+
+    it("starts at most one run per event ID, from the header the hook names", async () => {
+      const wf = await deploy(
+        c,
+        def(
+          "Deduped hook",
+          [n("t", "core.webhook", { eventIdHeader: "X-GitHub-Delivery" }), n("rec", "test.record")],
+          [x("t.next", "rec")],
+        ),
+        { enable: true },
+      );
+      const url = wf.webhooks[0]?.url ?? "";
+      const once = await Promise.all(
+        [1, 2, 3].map(() => post(url, "{}", { "x-github-delivery": "delivery-1" })),
+      );
+      expect(once.map((r) => r.status).sort()).toEqual([202, 409, 409]);
+      expect((await post(url, "{}", { "x-github-delivery": "delivery-2" })).status).toBe(202);
+      // Another header isn't this hook's event ID.
+      expect((await post(url, "{}", { "x-sling-event-id": "delivery-2" })).status).toBe(202);
+      expect(await runsOf(wf.id)).toBe(3);
+
+      const off = await deploy(
+        c,
+        def("Hook without event IDs", [n("t", "core.webhook", { eventIdHeader: "" })], []),
+        { enable: true },
+      );
+      const offUrl = off.webhooks[0]?.url ?? "";
+      expect((await post(offUrl, "{}", { "x-sling-event-id": "same" })).status).toBe(202);
+      expect((await post(offUrl, "{}", { "x-sling-event-id": "same" })).status).toBe(202);
+      expect(await runsOf(off.id)).toBe(2);
+
+      const bad = await c.call<Detail>("POST", "/api/workflows", {
+        definition: def(
+          "Bad header",
+          [n("t", "core.webhook", { eventIdHeader: "Not a header" })],
+          [],
+        ),
+      });
+      const issues = await c.call<{ issues: { message: string }[] }>(
+        "POST",
+        `/api/workflows/${bad.id}/validate`,
+      );
+      expect(issues.issues.map((i) => i.message)).toContain(
+        "eventIdHeader: Not a header isn't a header name",
+      );
+    });
+
+    it("keeps a hook's unfinished runs within its budget, counted in the database", async () => {
+      const wf = await deploy(
+        c,
+        def(
+          "Budgeted hook",
+          [
+            n("t", "core.webhook", { maxConcurrentRuns: 2 }),
+            n("w", "test.wait_event", { key: "budget", timeoutMs: 60_000 }),
+          ],
+          [x("t.next", "w")],
+        ),
+        { enable: true },
+      );
+      const url = wf.webhooks[0]?.url ?? "";
+      const burst = await Promise.all([1, 2, 3, 4, 5, 6].map((i) => post(url, `{"i":${i}}`)));
+      const codes = burst.map((r) => r.status).sort();
+      expect(codes).toEqual([202, 202, 429, 429, 429, 429]);
+      const refused = burst.find((r) => r.status === 429);
+      expect(refused?.headers.get("retry-after")).toBe("60");
+      expect(await refused?.json()).toEqual({
+        error: "This trigger already has 2 unfinished runs.",
+      });
+      expect(await runsOf(wf.id)).toBe(2);
+
+      // Waiting runs hold their place; a finished one frees it.
+      const ids = await Promise.all(
+        burst
+          .filter((r) => r.status === 202)
+          .map(async (r) => ((await r.json()) as { runId: string }).runId),
+      );
+      await Promise.all(ids.map((id) => settled(c, id, ["waiting"])));
+      expect((await post(url, "{}")).status).toBe(429);
+      await c.call("POST", `/api/runs/${ids[0]}/cancel`);
+      await settled(c, ids[0] ?? "", ["cancelled"]);
+      expect((await post(url, "{}")).status).toBe(202);
+      expect((await post(url, "{}")).status).toBe(429);
+    });
+
+    it("falls back to the server's secret for hooks without their own", async () => {
+      const wf = await deploy(
+        c,
+        def(
+          "Server-signed hook",
+          [n("t", "core.webhook"), n("rec", "test.record")],
+          [x("t.next", "rec")],
+        ),
+        { enable: true },
+      );
+      const url = wf.webhooks[0]?.url ?? "";
+      const key = "server-wide-webhook-secret-for-the-test-0123456789";
+      server.ctx.config.webhookSecret = key;
+      try {
+        expect((await post(url, "{}")).status).toBe(401);
+        expect((await post(url, "{}", signed(key, "{}"))).status).toBe(202);
+      } finally {
+        server.ctx.config.webhookSecret = undefined;
+      }
+      expect((await post(url, '{"plain":true}')).status).toBe(202);
+    });
   });
 
   it("runs manually, and needs a published version", async () => {

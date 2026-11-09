@@ -208,14 +208,15 @@ an installation whose workflows call internal services, set
 ports, such as `http://internal-service:8080`. Redirect destinations are checked
 again. Source-link fetching remains public-only.
 
-Set `SLING_WEBHOOK_SECRET` to require HMAC-SHA256 authentication on webhook requests.
+A webhook trigger can take signed requests with a secret of its own, set in the editor; see [workflows.md](workflows.md#webhooks). Set `SLING_WEBHOOK_SECRET` to require HMAC-SHA256 authentication on the other webhook requests.
 The sender supplies `x-sling-timestamp` as Unix seconds and `x-sling-signature` as
 hexadecimal HMAC over the timestamp, a period, and the exact request bytes.
 Signatures expire after five minutes. Rotate this secret through the server's
 environment and coordinate the change with senders. Without this setting, webhook
-URLs remain bearer credentials. `x-sling-event-id` deduplicates repeated deliveries
-within a workflow trigger. Signed requests without an event ID deduplicate by
-timestamp and body. Duplicate events return 409.
+URLs remain bearer credentials. `x-sling-event-id`, or the header a trigger names
+instead, deduplicates repeated deliveries within a workflow trigger. Signed requests
+without an event ID deduplicate by timestamp and body. Duplicate events return 409.
+A trigger's limit on unfinished runs is kept in the database and survives restarts.
 
 `SLING_WEBHOOK_REQUESTS_PER_MINUTE` defaults to 60 per workspace, with an additional
 per-IP limit of twice that value. Excess requests return 429 and Retry-After.

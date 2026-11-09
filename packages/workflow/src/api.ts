@@ -63,6 +63,19 @@ export interface WorkflowDetailView {
   updatedAt: string;
 }
 
+/** `GET /api/workflows/:id/webhooks/:nodeId/secret`: a webhook trigger's signing secret, without the secret. */
+export interface WebhookSigningView {
+  createdAt: string;
+  rotatedAt: string | null;
+  /** Until when the secret from before the last rotation is still accepted, while it is. */
+  previousValidUntil: string | null;
+}
+
+/** A new signing secret, as `POST .../secret` returns it. It isn't shown again. */
+export interface WebhookSecretView extends WebhookSigningView {
+  secret: string;
+}
+
 export interface WorkflowVersionView {
   number: number;
   note: string;

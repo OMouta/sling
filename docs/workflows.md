@@ -51,7 +51,7 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 | **Triggers** | |
 | Manual run | Starts from the **Run** button, the API, or another workflow |
 | Schedule | Cron schedule, or once at a date and time, in the time zone you set on the node, or the workspace's (**Settings → General**) when it's empty. See [one-time schedules](#one-time-schedules) |
-| Webhook | `POST` to the URL shown once published. Anyone with the URL can start the workflow |
+| Webhook | `POST` to the URL shown once published. Anyone with the URL can start the workflow, unless it takes signed requests only. See [webhooks](#webhooks) |
 | Chat message | A message sent in the web app |
 | Conversation update | A note Sling adds to a conversation this workflow owns, for example a task finishing |
 | Task settled | Any coding task finishing, waiting for approval, or finishing delivery |
@@ -89,6 +89,16 @@ Runs that belong to one conversation or one Discord channel run one at a time, i
 ### One-time schedules
 
 Put a local date and time in a **Schedule** node's **At**, such as `2026-11-09T17:00`, and leave **Cron** empty. The workflow runs once at that time, in the node's time zone or the workspace's, and then turns itself off. A time that has already passed can't be published or turned back on: set a new one first. If Sling is off at that time, the run starts when Sling is back.
+
+### Webhooks
+
+A **Webhook** trigger's settings say who may start it and how much at once. They take effect when you publish.
+
+- **Requests**: **URL only** accepts any request to the URL. **Signed** also wants `X-Sling-Timestamp`, the Unix time in seconds, and `X-Sling-Signature`, the hex HMAC-SHA256 of the timestamp, a period, and the exact request body, made with the trigger's signing secret. A signature more than five minutes from the server's clock is refused with 401. **Create secret** makes the secret and shows it once. **Rotate** replaces it without changing the URL, and the old secret keeps working for an hour so senders can switch over. Rotating twice in a row retires the old one at once. A signed trigger can't be published without a secret.
+- **Event ID header**: the header a sender puts its delivery ID in, such as `X-GitHub-Delivery`. A second request with the same ID answers 409 and starts nothing. It's `X-Sling-Event-Id` unless you pick another, or **None**. A signed request without one is told apart by its timestamp and body, so replaying it answers 409 too.
+- **Runs at once**: while this many runs from the trigger are unfinished (queued, running, or waiting on an approval, a timer, or a task), further requests answer 429 with `Retry-After` and start nothing. The count is kept in the database, so it holds across restarts.
+
+Triggers left on **URL only** follow the server's `SLING_WEBHOOK_SECRET` when it's set, and every webhook shares the per-workspace and per-address rate limits. See [install.md](install.md#automation-admission-and-storage-limits).
 
 ## From a chat
 

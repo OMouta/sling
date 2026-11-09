@@ -27,6 +27,7 @@ import {
 } from "./templates.ts";
 import { syncTriggers, webhookUrl } from "./triggers.ts";
 import { type WorkflowRow, workflowSummary } from "./views.ts";
+import { dropSigningSecrets, nodesWithSecrets } from "./webhook-secrets.ts";
 
 /** The template every workspace gets: web chat runs through it. */
 export const ASSISTANT_TEMPLATE = "sling-assistant";
@@ -357,7 +358,25 @@ export class WorkflowService {
         message: `${i.path.join(".") || "definition"}: ${i.message}`,
       }));
     }
-    return this.issues(wf.workspaceId, parsed.data);
+    const issues = await this.issues(wf.workspaceId, parsed.data);
+    // A webhook that takes signed requests only would refuse every one without a secret.
+    const signed = parsed.data.nodes.filter(
+      (n) => n.type === "core.webhook" && n.config.auth === "signed",
+    );
+    const have = await nodesWithSecrets(
+      this.#ctx,
+      wf.id,
+      signed.map((n) => n.id),
+    );
+    for (const n of signed) {
+      if (have.has(n.id)) continue;
+      issues.push({
+        code: "missing_signing_secret",
+        message: "Create a signing secret for this webhook, or accept requests by URL only.",
+        nodeId: n.id,
+      });
+    }
+    return issues;
   }
 
   /** What stops a definition from publishing: the validator's issues, and one-time schedules already past. */
@@ -530,6 +549,7 @@ export class WorkflowService {
       .set({ enabled: false })
       .where(eq(schema.workflows.id, wf.id));
     await syncTriggers(this.#ctx, wf.id);
+    await dropSigningSecrets(this.#ctx, wf.id);
     await this.#ctx.db.delete(schema.workflows).where(eq(schema.workflows.id, wf.id));
     await audit(this.#ctx, {
       workspaceId: wf.workspaceId,
