@@ -7,8 +7,9 @@
 //! protobuf `TaskEvent`s), and `acked` (highest acknowledged seq).
 
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use prost::Message;
@@ -46,6 +47,7 @@ pub struct TaskMeta {
 }
 
 pub struct TaskSpool {
+    disk: Arc<dyn Disk>,
     dir: PathBuf,
     pub meta: TaskMeta,
     last_seq: u64,
@@ -53,27 +55,30 @@ pub struct TaskSpool {
     /// Next byte to scan for this connection. Unacknowledged data stays on disk.
     read_offset: u64,
     /// Highest seq handed to the current connection.
-    pub sent: u64,
-    file: File,
+    sent: u64,
+    file: Box<dyn Writer>,
 }
 
 impl TaskSpool {
     pub fn create(root: &Path, meta: TaskMeta) -> Result<TaskSpool> {
+        TaskSpool::create_on(Arc::new(Os), root, meta)
+    }
+
+    pub(crate) fn create_on(disk: Arc<dyn Disk>, root: &Path, meta: TaskMeta) -> Result<TaskSpool> {
         let dir = root.join(&meta.task_id);
-        std::fs::create_dir_all(&dir)?;
-        write_atomic(&dir.join("meta.json"), &serde_json::to_vec_pretty(&meta)?)?;
-        write_atomic(&dir.join("acked"), b"0")?;
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(dir.join("events.bin"))?;
-        file.sync_all()?;
-        #[cfg(unix)]
-        {
-            File::open(&dir)?.sync_all()?;
-            File::open(root)?.sync_all()?;
-        }
+        disk.create_dir_all(&dir)?;
+        write_atomic(
+            &*disk,
+            &dir.join("meta.json"),
+            &serde_json::to_vec_pretty(&meta)?,
+        )?;
+        write_atomic(&*disk, &dir.join("acked"), b"0")?;
+        let mut file = disk.append(&dir.join("events.bin"))?;
+        file.sync()?;
+        disk.sync_dir(&dir)?;
+        disk.sync_dir(root)?;
         Ok(TaskSpool {
+            disk,
             dir,
             meta,
             last_seq: 0,
@@ -85,27 +90,31 @@ impl TaskSpool {
     }
 
     pub fn open(dir: &Path) -> Result<TaskSpool> {
+        TaskSpool::open_on(Arc::new(Os), dir)
+    }
+
+    pub(crate) fn open_on(disk: Arc<dyn Disk>, dir: &Path) -> Result<TaskSpool> {
         let meta: TaskMeta = serde_json::from_slice(
-            &std::fs::read(dir.join("meta.json"))
+            &disk
+                .read(&dir.join("meta.json"))
                 .with_context(|| format!("reading {}", dir.display()))?,
         )?;
-        let acked: u64 = std::fs::read_to_string(dir.join("acked"))
+        let acked: u64 = disk
+            .read(&dir.join("acked"))
             .ok()
+            .and_then(|b| String::from_utf8(b).ok())
             .and_then(|s| s.trim().parse().ok())
             .unwrap_or(0);
         let path = dir.join("events.bin");
-        let (last_seq, good_len) = scan_events(&path)?;
-        // Drop a half-written record left by a crash. Windows refuses to
-        // truncate through a handle opened only to append, so this one writes.
-        if std::fs::metadata(&path).is_ok_and(|m| m.len() != good_len) {
-            OpenOptions::new()
-                .write(true)
-                .open(&path)?
-                .set_len(good_len)?;
+        let (last_seq, good_len) = scan_events(&*disk, &path)?;
+        // Drop a half-written record left by a crash.
+        if disk.len(&path).is_ok_and(|len| len != good_len) {
+            disk.set_len(&path, good_len)?;
         }
-        let file = OpenOptions::new().create(true).append(true).open(&path)?;
+        let file = disk.append(&path)?;
         let acked = acked.min(last_seq);
         Ok(TaskSpool {
+            disk,
             dir: dir.to_path_buf(),
             meta,
             last_seq,
@@ -137,8 +146,8 @@ impl TaskSpool {
             bytes.len() <= MAX_RECORD_BYTES,
             "event exceeds spool record limit"
         );
-        self.file.write_all(&bytes)?;
-        self.file.sync_data()?;
+        self.file.write_bytes(&bytes)?;
+        self.file.sync()?;
         self.last_seq = event.seq;
         Ok(event)
     }
@@ -148,7 +157,11 @@ impl TaskSpool {
             return Ok(());
         }
         let acked = seq.min(self.last_seq);
-        write_atomic(&self.dir.join("acked"), acked.to_string().as_bytes())?;
+        write_atomic(
+            &*self.disk,
+            &self.dir.join("acked"),
+            acked.to_string().as_bytes(),
+        )?;
         self.acked = acked;
         Ok(())
     }
@@ -165,7 +178,7 @@ impl TaskSpool {
     }
 
     fn read_batch(&mut self) -> Result<Vec<TaskEvent>> {
-        let mut reader = BufReader::new(File::open(self.dir.join("events.bin"))?);
+        let mut reader = self.disk.reader(&self.dir.join("events.bin"))?;
         reader.seek(SeekFrom::Start(self.read_offset))?;
         let mut out = Vec::new();
         let mut bytes = 0;
@@ -193,6 +206,7 @@ impl TaskSpool {
     pub fn set_meta(&mut self, f: impl FnOnce(&mut TaskMeta)) -> Result<()> {
         f(&mut self.meta);
         write_atomic(
+            &*self.disk,
             &self.dir.join("meta.json"),
             &serde_json::to_vec_pretty(&self.meta)?,
         )
@@ -200,7 +214,7 @@ impl TaskSpool {
 
     pub fn remove(self) -> Result<()> {
         drop(self.file);
-        std::fs::remove_dir_all(&self.dir)?;
+        self.disk.remove_dir_all(&self.dir)?;
         Ok(())
     }
 }
@@ -236,11 +250,12 @@ fn read_record(reader: &mut impl Read) -> Result<Option<TaskEvent>> {
     Ok(None)
 }
 
-fn scan_events(path: &Path) -> Result<(u64, u64)> {
-    if !path.exists() {
-        return Ok((0, 0));
-    }
-    let mut reader = BufReader::new(File::open(path)?);
+fn scan_events(disk: &dyn Disk, path: &Path) -> Result<(u64, u64)> {
+    let mut reader = match disk.reader(path) {
+        Ok(reader) => reader,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((0, 0)),
+        Err(e) => return Err(e.into()),
+    };
     let mut last_seq = 0;
     let mut good = 0;
     while let Some(event) = read_record(&mut reader)? {
@@ -250,18 +265,117 @@ fn scan_events(path: &Path) -> Result<(u64, u64)> {
     Ok((last_seq, good))
 }
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
+fn write_atomic(disk: &dyn Disk, path: &Path, bytes: &[u8]) -> Result<()> {
     let tmp = path.with_extension("tmp");
-    let mut file = File::create(&tmp)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
+    let mut file = disk.create(&tmp)?;
+    file.write_bytes(bytes)?;
+    file.sync()?;
     drop(file);
-    std::fs::rename(&tmp, path)?;
-    #[cfg(unix)]
+    disk.rename(&tmp, path)?;
     if let Some(parent) = path.parent() {
-        File::open(parent)?.sync_all()?;
+        disk.sync_dir(parent)?;
     }
     Ok(())
+}
+
+/// The file operations the spool uses. The Runner uses the real filesystem.
+/// Tests use a simulated disk that can lose or tear anything not yet synced,
+/// to check what a crash leaves behind at every step.
+pub(crate) trait Disk: Send + Sync {
+    fn create_dir_all(&self, dir: &Path) -> io::Result<()>;
+    fn read(&self, path: &Path) -> io::Result<Vec<u8>>;
+    fn reader(&self, path: &Path) -> io::Result<Box<dyn Reader>>;
+    /// Opens a file for appending, creating it if it's missing.
+    fn append(&self, path: &Path) -> io::Result<Box<dyn Writer>>;
+    /// Creates a file, or empties an existing one, for writing.
+    fn create(&self, path: &Path) -> io::Result<Box<dyn Writer>>;
+    fn len(&self, path: &Path) -> io::Result<u64>;
+    fn set_len(&self, path: &Path, len: u64) -> io::Result<()>;
+    /// Replaces `to` if it exists.
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()>;
+    fn remove_dir_all(&self, dir: &Path) -> io::Result<()>;
+    /// Makes files created in or renamed into `dir` durable.
+    fn sync_dir(&self, dir: &Path) -> io::Result<()>;
+}
+
+pub(crate) trait Reader: Read + Seek + Send {}
+
+impl<T: Read + Seek + Send> Reader for T {}
+
+pub(crate) trait Writer: Send {
+    fn write_bytes(&mut self, bytes: &[u8]) -> io::Result<()>;
+    /// Returns once the data written so far and the file's length are on
+    /// stable storage.
+    fn sync(&mut self) -> io::Result<()>;
+}
+
+impl Writer for File {
+    fn write_bytes(&mut self, bytes: &[u8]) -> io::Result<()> {
+        self.write_all(bytes)
+    }
+
+    fn sync(&mut self) -> io::Result<()> {
+        // F_FULLFSYNC on macOS, fdatasync on Linux, FlushFileBuffers on Windows.
+        self.sync_data()
+    }
+}
+
+/// The real filesystem.
+pub(crate) struct Os;
+
+impl Disk for Os {
+    fn create_dir_all(&self, dir: &Path) -> io::Result<()> {
+        std::fs::create_dir_all(dir)
+    }
+
+    fn read(&self, path: &Path) -> io::Result<Vec<u8>> {
+        std::fs::read(path)
+    }
+
+    fn reader(&self, path: &Path) -> io::Result<Box<dyn Reader>> {
+        Ok(Box::new(BufReader::new(File::open(path)?)))
+    }
+
+    fn append(&self, path: &Path) -> io::Result<Box<dyn Writer>> {
+        Ok(Box::new(
+            OpenOptions::new().create(true).append(true).open(path)?,
+        ))
+    }
+
+    fn create(&self, path: &Path) -> io::Result<Box<dyn Writer>> {
+        Ok(Box::new(File::create(path)?))
+    }
+
+    fn len(&self, path: &Path) -> io::Result<u64> {
+        Ok(std::fs::metadata(path)?.len())
+    }
+
+    fn set_len(&self, path: &Path, len: u64) -> io::Result<()> {
+        // Windows refuses to truncate through a handle opened only to append,
+        // so this one opens its own.
+        OpenOptions::new().write(true).open(path)?.set_len(len)
+    }
+
+    fn rename(&self, from: &Path, to: &Path) -> io::Result<()> {
+        std::fs::rename(from, to)
+    }
+
+    fn remove_dir_all(&self, dir: &Path) -> io::Result<()> {
+        std::fs::remove_dir_all(dir)
+    }
+
+    #[cfg(unix)]
+    fn sync_dir(&self, dir: &Path) -> io::Result<()> {
+        File::open(dir)?.sync_all()
+    }
+
+    /// Windows can't open a directory to sync it without extra flags, and
+    /// NTFS journals renames itself. See docs/runner.md for what that means
+    /// after a power cut.
+    #[cfg(not(unix))]
+    fn sync_dir(&self, _dir: &Path) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// Opens every spool under `root`. Broken ones are skipped with a warning.
@@ -283,104 +397,5 @@ pub fn open_all(root: &Path) -> Vec<TaskSpool> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use sling_runner_protocol::{LogLine, TaskAccepted};
-
-    fn meta(id: &str) -> TaskMeta {
-        TaskMeta {
-            task_id: id.into(),
-            repo: "site".into(),
-            title: "t".into(),
-            objective: "o".into(),
-            mode: Mode::Auto,
-            harness: "codex".into(),
-            branch: "sling/x".into(),
-            default_branch: "main".into(),
-            worktree: None,
-            base_sha: None,
-            harness_pid: None,
-            state: SpoolState::Running,
-            created_ms: 0,
-        }
-    }
-
-    fn log(text: &str) -> Kind {
-        Kind::Log(LogLine {
-            stream: 1,
-            text: text.into(),
-        })
-    }
-
-    #[test]
-    fn replay_is_batched_and_acknowledged_history_is_not_retained() {
-        let root = tempfile::tempdir().unwrap();
-        let mut s = TaskSpool::create(root.path(), meta("batch")).unwrap();
-        for _ in 0..300 {
-            s.append(log("line")).unwrap();
-        }
-        s.ack(100).unwrap();
-        drop(s);
-        let mut s = TaskSpool::open(&root.path().join("batch")).unwrap();
-        let first = s.unsent();
-        assert_eq!(first.len(), 128);
-        assert_eq!(first[0].seq, 101);
-        assert_eq!(s.unsent().len(), 72);
-        assert!(s.unsent().is_empty());
-        s.reset_sent();
-        assert_eq!(s.unsent()[0].seq, 101);
-    }
-
-    #[test]
-    fn events_survive_reopen_until_acked() {
-        let root = tempfile::tempdir().unwrap();
-        let mut s = TaskSpool::create(root.path(), meta("tsk_1")).unwrap();
-        s.append(Kind::Accepted(TaskAccepted {})).unwrap();
-        s.append(log("a")).unwrap();
-        s.append(log("b")).unwrap();
-        assert_eq!(s.unsent().len(), 3);
-        assert!(s.unsent().is_empty());
-        s.ack(2).unwrap();
-        drop(s);
-
-        let mut s = TaskSpool::open(&root.path().join("tsk_1")).unwrap();
-        assert_eq!(s.last_seq(), 3);
-        let unsent = s.unsent();
-        assert_eq!(unsent.len(), 1);
-        assert_eq!(unsent[0].seq, 3);
-        let e = s.append(log("c")).unwrap();
-        assert_eq!(e.seq, 4);
-    }
-
-    #[test]
-    fn a_torn_write_is_dropped() {
-        let root = tempfile::tempdir().unwrap();
-        let mut s = TaskSpool::create(root.path(), meta("tsk_2")).unwrap();
-        s.append(log("whole")).unwrap();
-        drop(s);
-        let path = root.path().join("tsk_2/events.bin");
-        let mut f = OpenOptions::new().append(true).open(&path).unwrap();
-        f.write_all(&[0x40, 0x01, 0x02]).unwrap();
-        drop(f);
-        let mut s = TaskSpool::open(&root.path().join("tsk_2")).unwrap();
-        assert_eq!(s.last_seq(), 1);
-        assert_eq!(s.append(log("next")).unwrap().seq, 2);
-        drop(s);
-        let s = TaskSpool::open(&root.path().join("tsk_2")).unwrap();
-        assert_eq!(s.last_seq(), 2);
-    }
-
-    #[test]
-    fn reset_sent_resends_unacked() {
-        let root = tempfile::tempdir().unwrap();
-        let mut s = TaskSpool::create(root.path(), meta("tsk_3")).unwrap();
-        s.append(log("a")).unwrap();
-        s.append(log("b")).unwrap();
-        s.unsent();
-        s.ack(1).unwrap();
-        s.reset_sent();
-        let again = s.unsent();
-        assert_eq!(again.len(), 1);
-        assert_eq!(again[0].seq, 2);
-    }
-}
+#[path = "spool_tests.rs"]
+mod tests;
