@@ -180,6 +180,11 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
 
     const c = createContext(app, database, config, metrics, opts);
     ctx = c;
+    // Approvals that waited in turns a restart ended can't happen anymore.
+    const interrupted = await c.commands.expireInterrupted();
+    if (interrupted > 0) {
+      app.log.info({ count: interrupted }, "ended chat approvals a restart cut off");
+    }
     c.runners.start();
     boss = await startJobs(c, config.databaseUrl, { schedules: opts.jobs !== false });
     c.boss = boss;
@@ -279,10 +284,6 @@ function createContext(
   ctx.agent = new Agent(ctx, opts.model);
   ctx.cliChat = new CliChat(ctx);
   ctx.commands = new Commands(ctx);
-  // Approvals that waited in turns a restart ended can't happen anymore.
-  const interrupted = await ctx.commands.expireInterrupted();
-  if (interrupted > 0)
-    app.log.info({ count: interrupted }, "ended chat approvals a restart cut off");
   ctx.engine = new Engine(ctx);
   ctx.events = new EventBus(ctx);
   ctx.workflows = new WorkflowService(ctx, opts.templatesDir);
