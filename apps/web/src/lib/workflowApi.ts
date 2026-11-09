@@ -79,14 +79,14 @@ export const qk = {
 export function useWorkflows() {
   return useQuery({
     queryKey: qk.workflows(),
-    queryFn: () => api.get<WorkflowSummaryView[]>("/api/workflows"),
+    queryFn: ({ signal }) => api.get<WorkflowSummaryView[]>("/api/workflows", { signal }),
   });
 }
 
 export function useWorkflow(id: string) {
   return useQuery({
     queryKey: qk.workflow(id),
-    queryFn: () => api.get<WorkflowDetailView>(`/api/workflows/${id}`),
+    queryFn: ({ signal }) => api.get<WorkflowDetailView>(`/api/workflows/${id}`, { signal }),
   });
 }
 
@@ -94,7 +94,7 @@ export function useWorkflow(id: string) {
 export function useCatalog() {
   return useQuery({
     queryKey: qk.catalog(),
-    queryFn: () => api.get<NodeCatalog>("/api/workflow-nodes"),
+    queryFn: ({ signal }) => api.get<NodeCatalog>("/api/workflow-nodes", { signal }),
     staleTime: 5 * 60_000,
   });
 }
@@ -102,14 +102,14 @@ export function useCatalog() {
 export function useRuns(workflowId: string) {
   return useQuery({
     queryKey: qk.runs(workflowId),
-    queryFn: () => api.get<RunView[]>(`/api/workflows/${workflowId}/runs`),
+    queryFn: ({ signal }) => api.get<RunView[]>(`/api/workflows/${workflowId}/runs`, { signal }),
   });
 }
 
 export function useRun(runId: string | null) {
   return useQuery({
     queryKey: qk.run(runId ?? ""),
-    queryFn: () => api.get<RunDetailView>(`/api/runs/${runId}`),
+    queryFn: ({ signal }) => api.get<RunDetailView>(`/api/runs/${runId}`, { signal }),
     enabled: runId !== null,
   });
 }
@@ -117,14 +117,16 @@ export function useRun(runId: string | null) {
 export function useVersions(workflowId: string) {
   return useQuery({
     queryKey: qk.versions(workflowId),
-    queryFn: () => api.get<WorkflowVersionView[]>(`/api/workflows/${workflowId}/versions`),
+    queryFn: ({ signal }) =>
+      api.get<WorkflowVersionView[]>(`/api/workflows/${workflowId}/versions`, { signal }),
   });
 }
 
 export function useVersion(workflowId: string, n: number | null) {
   return useQuery({
     queryKey: qk.version(workflowId, n ?? 0),
-    queryFn: () => api.get<WorkflowVersionView>(`/api/workflows/${workflowId}/versions/${n}`),
+    queryFn: ({ signal }) =>
+      api.get<WorkflowVersionView>(`/api/workflows/${workflowId}/versions/${n}`, { signal }),
     enabled: n !== null,
     // Versions never change.
     staleTime: Number.POSITIVE_INFINITY,
@@ -134,7 +136,7 @@ export function useVersion(workflowId: string, n: number | null) {
 export function useTemplates(enabled = true) {
   return useQuery({
     queryKey: qk.templates(),
-    queryFn: () => api.get<TemplateView[]>("/api/templates"),
+    queryFn: ({ signal }) => api.get<TemplateView[]>("/api/templates", { signal }),
     enabled,
   });
 }
@@ -142,7 +144,7 @@ export function useTemplates(enabled = true) {
 export function useConnectors() {
   return useQuery({
     queryKey: qk.connectors(),
-    queryFn: () => api.get<ConnectorView[]>("/api/connectors"),
+    queryFn: ({ signal }) => api.get<ConnectorView[]>("/api/connectors", { signal }),
     staleTime: 5 * 60_000,
   });
 }
@@ -150,7 +152,7 @@ export function useConnectors() {
 export function useInstallations() {
   return useQuery({
     queryKey: qk.installations(),
-    queryFn: () => api.get<InstallationView[]>("/api/installations"),
+    queryFn: ({ signal }) => api.get<InstallationView[]>("/api/installations", { signal }),
   });
 }
 
