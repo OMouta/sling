@@ -1407,6 +1407,9 @@ describe("the Site down alert", () => {
     }[] = [];
     const notify = server.ctx.push.notify;
     server.ctx.push.notify = async (_w, _u, payload, opts = {}) => {
+      // An earlier test's task can still be settling, and its push lands here
+      // a moment later; only the alert's own pushes count.
+      if (payload.tag?.startsWith("task:")) return 1;
       notified.push({ payload, ...(opts.urgency ? { urgency: opts.urgency } : {}) });
       return 1;
     };
