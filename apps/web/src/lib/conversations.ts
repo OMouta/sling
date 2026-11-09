@@ -9,9 +9,10 @@ export function useConversations(q = "") {
   const query = q.trim();
   return useQuery({
     queryKey: query ? [...conversationsKey, { q: query }] : conversationsKey,
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       api.get<ConversationSummaryView[]>(
         query ? `/api/conversations?q=${encodeURIComponent(query)}` : "/api/conversations",
+        { signal },
       ),
     placeholderData: keepPreviousData,
   });

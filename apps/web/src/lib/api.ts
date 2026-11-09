@@ -11,10 +11,23 @@ export class ApiError extends Error {
   }
 }
 
-function send(method: string, path: string, body?: unknown): Promise<Response> {
+export interface RequestOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+function send(
+  method: string,
+  path: string,
+  body?: unknown,
+  options: RequestOptions = {},
+): Promise<Response> {
   const raw = body instanceof Blob;
   return fetch(path, {
     method,
+    signal: options.signal
+      ? AbortSignal.any([options.signal, AbortSignal.timeout(options.timeoutMs ?? 60_000)])
+      : AbortSignal.timeout(options.timeoutMs ?? 60_000),
     credentials: "same-origin",
     headers:
       body === undefined
@@ -36,8 +49,13 @@ async function failure(res: Response): Promise<ApiError> {
   return new ApiError(res.status, message, data);
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await send(method, path, body);
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  options?: RequestOptions,
+): Promise<T> {
+  const res = await send(method, path, body, options);
   if (!res.ok) throw await failure(res);
   const text = await res.text();
   return (text ? JSON.parse(text) : null) as T;
@@ -55,12 +73,16 @@ async function download(path: string, body: unknown, fallbackName: string) {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>("GET", path),
+  get: <T>(path: string, options?: RequestOptions) => request<T>("GET", path, undefined, options),
   /** A `Blob` body goes up as raw bytes; anything else as JSON. */
-  post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
-  put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
-  patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
-  del: <T>(path: string) => request<T>("DELETE", path),
+  post: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>("POST", path, body ?? {}, options),
+  put: <T>(path: string, body: unknown, options?: RequestOptions) =>
+    request<T>("PUT", path, body, options),
+  patch: <T>(path: string, body: unknown, options?: RequestOptions) =>
+    request<T>("PATCH", path, body, options),
+  del: <T>(path: string, options?: RequestOptions) =>
+    request<T>("DELETE", path, undefined, options),
   download,
 };
 
