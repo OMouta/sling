@@ -53,7 +53,7 @@ import {
   environmentSummary,
   sortConsidered,
 } from "../lib/taskEnvironment.ts";
-import type { TaskDetail } from "../lib/types.ts";
+import { useTaskDetail } from "../lib/tasks.ts";
 import { useNow } from "../lib/useNow.ts";
 import { ActionCheckLine } from "./ActionCheck.tsx";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
@@ -469,10 +469,7 @@ function activityLine(e: TaskEventView): { key: string; icon: ReactNode; text: R
 
 /** The agent's latest steps, live, for a running task's card in the chat. */
 function TaskActivity({ task }: { task: TaskView }) {
-  const detail = useQuery({
-    queryKey: ["task", task.id],
-    queryFn: () => api.get<TaskDetail>(`/api/tasks/${task.id}`),
-  });
+  const detail = useTaskDetail(task.id);
   const lines = new Map<string, NonNullable<ReturnType<typeof activityLine>>>();
   for (const e of detail.data?.events ?? []) {
     const line = activityLine(e);

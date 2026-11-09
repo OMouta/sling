@@ -10,7 +10,6 @@ import {
 import { type MessageMeta, schema } from "@sling/db";
 import {
   and,
-  asc,
   desc,
   eq,
   ilike,
@@ -39,6 +38,7 @@ import {
 } from "../personalities/service.ts";
 import { taskViews, toConversationView } from "../views.ts";
 import { messageViews } from "./messages.ts";
+import { messagePage } from "./pages.ts";
 
 const Id = z.object({ id: z.string() });
 
@@ -174,39 +174,65 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
     },
   );
 
-  r.get("/api/conversations/:id", { schema: { params: Id } }, async (request, reply) => {
-    const actor = actorOf(request);
-    const conv = await owned(actor.workspaceId, request.params.id);
-    if (!conv) return reply.code(404).send({ error: "not found" });
-    const rows = await ctx.db
-      .select()
-      .from(schema.messages)
-      .where(eq(schema.messages.conversationId, conv.id))
-      .orderBy(asc(schema.messages.id));
-    const tasks = await ctx.db
-      .select()
-      .from(schema.tasks)
-      .where(eq(schema.tasks.conversationId, conv.id))
-      .orderBy(asc(schema.tasks.createdAt));
-    const [usage] = await ctx.db
-      .select({
-        input: sum(sql`(${schema.messages.usage}->>'inputTokens')::bigint`),
-        output: sum(sql`(${schema.messages.usage}->>'outputTokens')::bigint`),
-      })
-      .from(schema.messages)
-      .where(eq(schema.messages.conversationId, conv.id));
-    // Even when archived: the chat keeps the personality it started with.
-    const personality = await conversationPersonality(ctx.db, conv);
-    return {
-      conversation: toConversationView(conv),
-      personality: personality ? toPersonalityView(personality) : null,
-      messages: await messageViews(ctx, actor.workspaceId, actor.userId, rows),
-      tasks: await taskViews(ctx, tasks),
-      agentStatus: ctx.agent.status(conv.id),
-      live: ctx.agent.live(conv.id),
-      usage: { inputTokens: Number(usage?.input ?? 0), outputTokens: Number(usage?.output ?? 0) },
-    };
-  });
+  // A chat with its latest page of messages and the tasks that go with
+  // them. With `from`, every message from that one on, so a refresh keeps
+  // what the reader already scrolled back to.
+  r.get(
+    "/api/conversations/:id",
+    { schema: { params: Id, querystring: z.object({ from: z.string().max(64).optional() }) } },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const conv = await owned(actor.workspaceId, request.params.id);
+      if (!conv) return reply.code(404).send({ error: "not found" });
+      const page = await messagePage(ctx, conv.id, { from: request.query.from });
+      const [usage] = await ctx.db
+        .select({
+          input: sum(sql`(${schema.messages.usage}->>'inputTokens')::bigint`),
+          output: sum(sql`(${schema.messages.usage}->>'outputTokens')::bigint`),
+        })
+        .from(schema.messages)
+        .where(eq(schema.messages.conversationId, conv.id));
+      // Even when archived: the chat keeps the personality it started with.
+      const personality = await conversationPersonality(ctx.db, conv);
+      return {
+        conversation: toConversationView(conv),
+        personality: personality ? toPersonalityView(personality) : null,
+        messages: await messageViews(ctx, actor.workspaceId, actor.userId, page.rows),
+        tasks: await taskViews(ctx, page.tasks),
+        olderCursor: page.olderCursor,
+        agentStatus: ctx.agent.status(conv.id),
+        live: ctx.agent.live(conv.id),
+        usage: {
+          inputTokens: Number(usage?.input ?? 0),
+          outputTokens: Number(usage?.output ?? 0),
+        },
+      };
+    },
+  );
+
+  // The page of a chat before `before`, for scrolling back.
+  r.get(
+    "/api/conversations/:id/messages",
+    {
+      schema: {
+        params: Id,
+        querystring: z.object({ before: z.string().min(1).max(64) }),
+      },
+    },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const conv = await owned(actor.workspaceId, request.params.id);
+      if (!conv) return reply.code(404).send({ error: "not found" });
+      const page = await messagePage(ctx, conv.id, { before: request.query.before });
+      return {
+        messages: await messageViews(ctx, actor.workspaceId, actor.userId, page.rows, {
+          latest: false,
+        }),
+        tasks: await taskViews(ctx, page.tasks),
+        olderCursor: page.olderCursor,
+      };
+    },
+  );
 
   r.patch(
     "/api/conversations/:id",

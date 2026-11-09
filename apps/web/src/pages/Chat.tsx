@@ -38,7 +38,16 @@ import { ReplySources } from "../components/ReplySources.tsx";
 import { StartedBy } from "../components/StartedBy.tsx";
 import { TaskCard } from "../components/TaskCard.tsx";
 import { UserBubble } from "../components/UserBubble.tsx";
-import { Badge, Button, cx, Dot, ErrorText, Skeleton, type Tone } from "../components/ui.tsx";
+import {
+  Badge,
+  Button,
+  cx,
+  Dot,
+  ErrorText,
+  Skeleton,
+  Spinner,
+  type Tone,
+} from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
 import { conversationsKey } from "../lib/conversations.ts";
 import { useDictation } from "../lib/dictation.ts";
@@ -48,7 +57,7 @@ import { CHAT_WIDTH, useModelCatalog } from "../lib/models.ts";
 import { usePersonalities } from "../lib/personalities.ts";
 import { seedLiveReply, useLiveReply } from "../lib/realtime.ts";
 import { canResearch } from "../lib/research.ts";
-import type { ConversationDetail, MessageView, TaskView } from "../lib/types.ts";
+import type { ConversationDetail, MessageView, OlderMessages, TaskView } from "../lib/types.ts";
 import { useAttachments } from "../lib/useAttachments.ts";
 import { chatRoute } from "../router.tsx";
 
@@ -59,9 +68,17 @@ type Item =
 export function ChatPage() {
   const { id } = chatRoute.useParams();
   const qc = useQueryClient();
+  // A refresh asks for every message from the oldest one loaded, so what
+  // the reader scrolled back to stays.
   const detail = useQuery({
     queryKey: ["conversation", id],
-    queryFn: () => api.get<ConversationDetail>(`/api/conversations/${id}`),
+    queryFn: ({ signal }) => {
+      const from = qc.getQueryData<ConversationDetail>(["conversation", id])?.messages[0]?.id;
+      return api.get<ConversationDetail>(
+        `/api/conversations/${id}${from ? `?from=${encodeURIComponent(from)}` : ""}`,
+        { signal },
+      );
+    },
   });
   const live = useLiveReply(id);
   // For a turn already running when the page opened, before its first event.
@@ -152,6 +169,58 @@ export function ChatPage() {
     },
     onError: () => qc.invalidateQueries({ queryKey: ["conversation", id] }),
   });
+
+  // Older messages load as the reader scrolls up, and the view stays where
+  // it was: `anchor` is the distance from the bottom before they came in.
+  const top = useRef<HTMLDivElement>(null);
+  const anchor = useRef<number | null>(null);
+  const olderCursor = detail.data?.olderCursor ?? null;
+  const older = useMutation({
+    mutationFn: (before: string) =>
+      api.get<OlderMessages>(
+        `/api/conversations/${id}/messages?before=${encodeURIComponent(before)}`,
+      ),
+    onSuccess: (page) =>
+      qc.setQueryData<ConversationDetail>(["conversation", id], (d) => {
+        if (!d) return d;
+        const have = new Set(d.messages.map((m) => m.id));
+        const known = new Set(d.tasks.map((t) => t.id));
+        return {
+          ...d,
+          messages: [...page.messages.filter((m) => !have.has(m.id)), ...d.messages],
+          tasks: [...page.tasks.filter((t) => !known.has(t.id)), ...d.tasks],
+          olderCursor: page.olderCursor,
+        };
+      }),
+    onError: () => {
+      anchor.current = null;
+    },
+  });
+  const loadingOlder = older.isPending;
+  const loadOlder = older.mutate;
+  useEffect(() => {
+    const el = top.current;
+    const scroller = el?.closest(".overflow-y-auto");
+    if (!el || !scroller || !olderCursor || loadingOlder) return;
+    const seen = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((e) => e.isIntersecting)) return;
+        anchor.current = scroller.scrollHeight - scroller.scrollTop;
+        loadOlder(olderCursor);
+      },
+      { root: scroller, rootMargin: "600px 0px 0px 0px" },
+    );
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, [olderCursor, loadingOlder, loadOlder]);
+  const firstId = detail.data?.messages[0]?.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: restore the place when older messages arrive.
+  useLayoutEffect(() => {
+    const scroller = top.current?.closest(".overflow-y-auto");
+    if (!scroller || anchor.current === null) return;
+    scroller.scrollTop = scroller.scrollHeight - anchor.current;
+    anchor.current = null;
+  }, [firstId]);
 
   const tasks = useMemo(
     () => new Map<string, TaskView>((detail.data?.tasks ?? []).map((t) => [t.id, t])),
@@ -311,6 +380,17 @@ export function ChatPage() {
     >
       <div className="flex min-h-full flex-col">
         <div className="w-full flex-1 px-5 py-8">
+          {olderCursor && (
+            <div ref={top} className="-mt-4 flex h-8 items-start justify-center">
+              {older.isPending ? (
+                <Spinner />
+              ) : older.isError ? (
+                <Button size="sm" variant="ghost" onClick={() => older.mutate(olderCursor)}>
+                  Load earlier messages
+                </Button>
+              ) : null}
+            </div>
+          )}
           <div className={cx("mx-auto space-y-6", CHAT_WIDTH)}>
             {items.map((item) =>
               item.kind === "task" ? (

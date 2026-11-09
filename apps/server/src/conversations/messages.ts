@@ -8,12 +8,17 @@ import { replaceable } from "./replace.ts";
 
 type MessageRow = typeof schema.messages.$inferSelect;
 
-/** What the chat shows for a conversation's messages, as `userId` sees them. */
+/**
+ * What the chat shows for a conversation's messages, as `userId` sees them.
+ * Only the latest messages can hold the exchange Retry and Edit replace, so
+ * an older page says `latest: false`.
+ */
 export async function messageViews(
   ctx: AppContext,
   workspaceId: string,
   userId: string,
   rows: MessageRow[],
+  { latest = true }: { latest?: boolean } = {},
 ): Promise<MessageView[]> {
   const views = rows.map(toMessageView).filter((m) => m !== null);
   const users = views.filter((m) => m.role === "user").map((m) => m.id);
@@ -34,7 +39,7 @@ export async function messageViews(
             ),
           )
       : [],
-    replaceable(ctx, rows),
+    latest ? replaceable(ctx, rows) : new Set<string>(),
   ]);
   const ratings = new Map(feedback.map((f) => [f.messageId, f.rating]));
   for (const v of views) {

@@ -12,7 +12,7 @@ import {
   type TaskState,
 } from "@sling/core";
 import { schema } from "@sling/db";
-import { and, asc, desc, eq, inArray, lt, ne, or, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, ne, or, type SQL, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
@@ -102,28 +102,49 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
     },
   );
 
+  async function ownedTask(workspaceId: string, id: string) {
+    const [row] = await ctx.db
+      .select()
+      .from(schema.tasks)
+      .where(and(eq(schema.tasks.id, id), eq(schema.tasks.workspaceId, workspaceId)));
+    return row ?? null;
+  }
+
+  // A task with its latest events. With `from`, every event from that one
+  // on, so a refresh keeps the earlier events a reader already opened.
   r.get(
     "/api/tasks/:id",
-    { schema: { params: z.object({ id: z.string() }) } },
+    {
+      schema: {
+        params: z.object({ id: z.string() }),
+        querystring: z.object({ from: z.coerce.number().int().min(0).optional() }),
+      },
+    },
     async (request, reply) => {
       const actor = actorOf(request);
-      const [row] = await ctx.db
-        .select()
-        .from(schema.tasks)
-        .where(
-          and(
-            eq(schema.tasks.id, request.params.id),
-            eq(schema.tasks.workspaceId, actor.workspaceId),
-          ),
-        );
+      const row = await ownedTask(actor.workspaceId, request.params.id);
       if (!row) return reply.code(404).send({ error: "not found" });
       const [task] = await taskViews(ctx, [row]);
-      const events = await ctx.db
-        .select()
-        .from(schema.taskEvents)
-        .where(eq(schema.taskEvents.taskId, row.id))
-        .orderBy(asc(schema.taskEvents.seq));
-      return { task, events: events.map(toEventView) };
+      const page = await eventPage(ctx, row.id, { from: request.query.from });
+      return { task, events: page.events.map(toEventView), olderCursor: page.olderCursor };
+    },
+  );
+
+  // The events before `before`, for showing earlier ones.
+  r.get(
+    "/api/tasks/:id/events",
+    {
+      schema: {
+        params: z.object({ id: z.string() }),
+        querystring: z.object({ before: z.coerce.number().int().min(0) }),
+      },
+    },
+    async (request, reply) => {
+      const actor = actorOf(request);
+      const row = await ownedTask(actor.workspaceId, request.params.id);
+      if (!row) return reply.code(404).send({ error: "not found" });
+      const page = await eventPage(ctx, row.id, { before: request.query.before });
+      return { events: page.events.map(toEventView), olderCursor: page.olderCursor };
     },
   );
 
@@ -361,4 +382,58 @@ function approvalKindFilters(): Record<ApprovalListKind, SQL | undefined> {
     tasks,
     workflows: and(ne(a.kind, "sandbox_fallback"), sql`not (${tasks})`) as SQL,
   };
+}
+
+/** Events a page of a task's timeline holds at most. */
+export const EVENT_PAGE = 500;
+/** Roughly how many bytes of event payloads a page holds; it always has at least one. */
+export const EVENT_PAGE_BYTES = 1024 * 1024;
+/** Most events a refresh from a loaded event returns before it falls back to the latest page. */
+const EVENT_FROM_MAX = 20_000;
+
+/**
+ * A page of a task's events, oldest first: the newest ones before `before`
+ * (or the newest of all), cut by count and size, or with `from` every event
+ * from that sequence number on.
+ */
+export async function eventPage(
+  ctx: AppContext,
+  taskId: string,
+  opts: { before?: number; from?: number },
+): Promise<{ events: (typeof schema.taskEvents.$inferSelect)[]; olderCursor: number | null }> {
+  const e = schema.taskEvents;
+  if (opts.from !== undefined) {
+    const since = await ctx.db
+      .select()
+      .from(e)
+      .where(and(eq(e.taskId, taskId), gte(e.seq, opts.from)))
+      .orderBy(asc(e.seq))
+      .limit(EVENT_FROM_MAX + 1);
+    if (since.length <= EVENT_FROM_MAX) {
+      const [older] = await ctx.db
+        .select({ seq: e.seq })
+        .from(e)
+        .where(and(eq(e.taskId, taskId), lt(e.seq, opts.from)))
+        .limit(1);
+      return { events: since, olderCursor: older && since[0] ? since[0].seq : null };
+    }
+  }
+  const newest = await ctx.db
+    .select()
+    .from(e)
+    .where(
+      and(eq(e.taskId, taskId), opts.before !== undefined ? lt(e.seq, opts.before) : undefined),
+    )
+    .orderBy(desc(e.seq))
+    .limit(EVENT_PAGE + 1);
+  const kept: (typeof schema.taskEvents.$inferSelect)[] = [];
+  let bytes = 0;
+  for (const row of newest.slice(0, EVENT_PAGE)) {
+    bytes += JSON.stringify(row.payload).length;
+    if (kept.length > 0 && bytes > EVENT_PAGE_BYTES) break;
+    kept.push(row);
+  }
+  const more = newest.length > kept.length;
+  kept.reverse();
+  return { events: kept, olderCursor: more && kept[0] ? kept[0].seq : null };
 }

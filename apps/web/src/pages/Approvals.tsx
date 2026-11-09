@@ -49,7 +49,7 @@ import {
 } from "../lib/deploys.ts";
 import { ago, plural } from "../lib/format.ts";
 import { useLoadMore } from "../lib/pages.ts";
-import type { TaskDetail } from "../lib/types.ts";
+import { useTaskDetail } from "../lib/tasks.ts";
 import { useRun } from "../lib/workflowApi.ts";
 import { type ApprovalsTab, approvalsRoute } from "../router.tsx";
 
@@ -221,10 +221,7 @@ function DeployApprovalGroup({ taskId, approvals }: { taskId: string; approvals:
     queryFn: () => api.get<RunnerView[]>("/api/runners"),
   });
   // The task has the PR's URL and the target its steps name.
-  const detail = useQuery({
-    queryKey: ["task", taskId],
-    queryFn: () => api.get<TaskDetail>(`/api/tasks/${taskId}`),
-  });
+  const detail = useTaskDetail(taskId);
   const t = approvals[0]?.task;
   if (!t) return null;
   const task = detail.data?.task;

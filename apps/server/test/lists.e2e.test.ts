@@ -423,3 +423,120 @@ describe("the approval list", () => {
     expect(decided.counts).toBeNull();
   });
 });
+
+describe("chat and task history", () => {
+  it("pages a long chat back without gaps, puts each task on one page, and refreshes from a message", async () => {
+    const owner = await me();
+    const created = await api<ConversationView>("POST", "/api/conversations");
+    const id = created.id;
+    const start = Date.parse("2026-03-01T10:00:00.000Z");
+    const ids: string[] = [];
+    const taskIds: string[] = [];
+    for (let i = 0; i < 150; i++) {
+      const at = start + i * 60_000;
+      const msgId = newId("msg", at);
+      ids.push(msgId);
+      // One message far bigger than the rest makes its page stop early.
+      const text = i === 120 ? "x".repeat(600 * 1024) : `message ${i}`;
+      await server.ctx.db.insert(schema.messages).values({
+        id: msgId,
+        ...owner,
+        conversationId: id,
+        role: i % 2 ? "assistant" : "user",
+        content: { role: i % 2 ? "assistant" : "user", content: text },
+        createdAt: new Date(at),
+      });
+      if (i % 10 === 3) {
+        const taskId = newId("tsk", at + 1_000);
+        taskIds.push(taskId);
+        await server.ctx.db.insert(schema.tasks).values({
+          id: taskId,
+          ...owner,
+          conversationId: id,
+          repoName: "site",
+          title: `Task after message ${i}`,
+          objective: "Do it",
+          mode: "auto",
+          branch: `sling/h${i}`,
+          state: "succeeded",
+          createdAt: new Date(at + 1_000),
+        });
+      }
+    }
+
+    type Page = {
+      messages: { id: string }[];
+      tasks: { id: string }[];
+      olderCursor: string | null;
+    };
+    const latest = await api<Page>("GET", `/api/conversations/${id}`);
+    // The first page stops before the big message, which then has a page to itself.
+    expect(latest.messages.map((m) => m.id)).toEqual(ids.slice(121));
+    expect(latest.olderCursor).toBe(ids[121]);
+    const seen = [...latest.messages.map((m) => m.id)];
+    const tasksSeen = [...latest.tasks.map((t) => t.id)];
+    let cursor = latest.olderCursor;
+    let pages = 1;
+    while (cursor) {
+      const page = await api<Page>("GET", `/api/conversations/${id}/messages?before=${cursor}`);
+      expect(page.messages.length).toBeLessThanOrEqual(60);
+      if (cursor === ids[121]) expect(page.messages.map((m) => m.id)).toEqual([ids[120]]);
+      seen.unshift(...page.messages.map((m) => m.id));
+      tasksSeen.push(...page.tasks.map((t) => t.id));
+      cursor = page.olderCursor;
+      pages++;
+    }
+    expect(pages).toBe(4);
+    expect(seen).toEqual(ids);
+    expect([...tasksSeen].sort()).toEqual([...taskIds].sort());
+
+    // A refresh from a message scrolled back to returns everything since.
+    const refreshed = await api<Page>("GET", `/api/conversations/${id}?from=${ids[30]}`);
+    expect(refreshed.messages.map((m) => m.id)).toEqual(ids.slice(30));
+    expect(refreshed.olderCursor).toBe(ids[30]);
+    expect(refreshed.tasks.map((t) => t.id).sort()).toEqual(taskIds.slice(3).sort());
+  });
+
+  it("pages a task's events back from the newest, and refreshes from an event", async () => {
+    const owner = await me();
+    const taskId = newId("tsk");
+    await server.ctx.db.insert(schema.tasks).values({
+      id: taskId,
+      ...owner,
+      repoName: "site",
+      title: "Chatty task",
+      objective: "Do it",
+      mode: "auto",
+      branch: "sling/events",
+      state: "running",
+    });
+    const total = 1_200;
+    const rows = Array.from({ length: total }, (_, seq) => ({
+      taskId,
+      workspaceId: owner.workspaceId,
+      seq,
+      type: "agent_message",
+      payload: { text: `step ${seq}` },
+      at: new Date(Date.parse("2026-03-01T10:00:00.000Z") + seq * 1_000),
+    }));
+    for (let i = 0; i < rows.length; i += 400) {
+      await server.ctx.db.insert(schema.taskEvents).values(rows.slice(i, i + 400));
+    }
+    type Page = { events: { seq: number }[]; olderCursor: number | null };
+    const latest = await api<Page>("GET", `/api/tasks/${taskId}`);
+    expect(latest.events).toHaveLength(500);
+    expect(latest.events.at(-1)?.seq).toBe(total - 1);
+    const seen = latest.events.map((e) => e.seq);
+    let cursor = latest.olderCursor;
+    while (cursor !== null) {
+      const page = await api<Page>("GET", `/api/tasks/${taskId}/events?before=${cursor}`);
+      seen.unshift(...page.events.map((e) => e.seq));
+      cursor = page.olderCursor;
+    }
+    expect(seen).toEqual(rows.map((r) => r.seq));
+
+    const refreshed = await api<Page>("GET", `/api/tasks/${taskId}?from=100`);
+    expect(refreshed.events).toHaveLength(total - 100);
+    expect(refreshed.olderCursor).toBe(100);
+  });
+});

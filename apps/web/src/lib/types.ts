@@ -31,11 +31,22 @@ export interface ConversationDetail {
   /** The reply being written, when the page opens mid-turn. */
   live?: LiveReplyView | null;
   usage: { inputTokens: number; outputTokens: number };
+  /** The oldest loaded message's ID when there are older ones to load. */
+  olderCursor?: string | null;
+}
+
+/** A page of a chat's messages from before the loaded ones. */
+export interface OlderMessages {
+  messages: MessageView[];
+  tasks: TaskView[];
+  olderCursor: string | null;
 }
 
 export interface TaskDetail {
   task: TaskView;
   events: TaskEventView[];
+  /** The oldest loaded event's sequence number when there are earlier ones. */
+  olderCursor?: number | null;
 }
 
 export interface ProviderInfo {

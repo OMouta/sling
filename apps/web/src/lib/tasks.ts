@@ -1,6 +1,14 @@
-import type { Harness, TaskListView, TaskPage } from "@sling/core";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import type { Harness, TaskEventView, TaskListView, TaskPage } from "@sling/core";
+import {
+  type QueryClient,
+  queryOptions,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api } from "./api.ts";
+import type { TaskDetail } from "./types.ts";
 
 /** Every task list in the cache starts with this. */
 export const tasksKey = ["tasks"] as const;
@@ -32,5 +40,47 @@ export function useTaskList(filters: TaskFilters) {
     },
     initialPageParam: "",
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+
+/**
+ * A task with its latest events. A refresh asks for every event from the
+ * oldest one loaded, so earlier events a reader opened stay open.
+ */
+export function taskDetailQuery(qc: QueryClient, id: string) {
+  return queryOptions({
+    queryKey: ["task", id],
+    queryFn: ({ signal }) => {
+      const from = qc.getQueryData<TaskDetail>(["task", id])?.events[0]?.seq;
+      return api.get<TaskDetail>(`/api/tasks/${id}${from !== undefined ? `?from=${from}` : ""}`, {
+        signal,
+      });
+    },
+  });
+}
+
+export function useTaskDetail(id: string) {
+  const qc = useQueryClient();
+  return useQuery(taskDetailQuery(qc, id));
+}
+
+/** Loads the events before the loaded ones, into the task's cached detail. */
+export function useEarlierEvents(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (before: number) =>
+      api.get<{ events: TaskEventView[]; olderCursor: number | null }>(
+        `/api/tasks/${id}/events?before=${before}`,
+      ),
+    onSuccess: (page) =>
+      qc.setQueryData<TaskDetail>(["task", id], (d) => {
+        if (!d) return d;
+        const first = d.events[0]?.seq ?? Number.POSITIVE_INFINITY;
+        return {
+          ...d,
+          events: [...page.events.filter((e) => e.seq < first), ...d.events],
+          olderCursor: page.olderCursor,
+        };
+      }),
   });
 }

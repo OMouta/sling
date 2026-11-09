@@ -1,15 +1,13 @@
 import { type Delivery, HARNESS_LABELS, type TaskView } from "@sling/core";
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft, ScrollText } from "lucide-react";
 import { Page } from "../components/Page.tsx";
 import { TaskCard, TaskStateBadge } from "../components/TaskCard.tsx";
 import { Timeline } from "../components/Timeline.tsx";
-import { Card, Empty, ErrorText, Mono, Skeleton, Stat } from "../components/ui.tsx";
-import { api } from "../lib/api.ts";
+import { Button, Card, Empty, ErrorText, Mono, Skeleton, Stat } from "../components/ui.tsx";
 import { isDeployStep } from "../lib/deploys.ts";
 import { between, duration, shortSha } from "../lib/format.ts";
-import type { TaskDetail } from "../lib/types.ts";
+import { useEarlierEvents, useTaskDetail } from "../lib/tasks.ts";
 import { taskRoute } from "../router.tsx";
 
 const DELIVER: Record<Delivery, string> = {
@@ -53,10 +51,8 @@ function when(iso: string | null): string {
 
 export function TaskPage() {
   const { id } = taskRoute.useParams();
-  const detail = useQuery({
-    queryKey: ["task", id],
-    queryFn: () => api.get<TaskDetail>(`/api/tasks/${id}`),
-  });
+  const detail = useTaskDetail(id);
+  const earlier = useEarlierEvents(id);
 
   if (detail.isPending) {
     return (
@@ -76,7 +72,7 @@ export function TaskPage() {
         </div>
       </Page>
     );
-  const { task, events } = detail.data;
+  const { task, events, olderCursor } = detail.data;
   const ran = between(task.startedAt, task.finishedAt);
 
   return (
@@ -117,7 +113,21 @@ export function TaskPage() {
                 <Empty icon={ScrollText} title="No events yet" className="py-10" />
               </Card>
             ) : (
-              <Timeline events={events} harness={task.harness} />
+              <>
+                {olderCursor != null && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="-ml-2.5"
+                    busy={earlier.isPending}
+                    onClick={() => earlier.mutate(olderCursor)}
+                  >
+                    Show earlier events
+                  </Button>
+                )}
+                <ErrorText error={earlier.error} />
+                <Timeline events={events} harness={task.harness} />
+              </>
             )}
           </section>
         </div>
