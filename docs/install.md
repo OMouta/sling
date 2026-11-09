@@ -108,3 +108,57 @@ docker compose exec postgres pg_dump -U sling sling > sling-$(date +%F).sql
 ```
 
 Back up `deploy/.env` too. Without `SLING_SECRET_KEY` the stored API keys can't be decrypted.
+
+## Control-plane topology and health
+
+Run one active Sling control-plane process per database. Runner connections, live
+replies, and temporary chat approvals belong to that process. A shared Postgres
+queue does not make multiple API replicas safe, and sticky browser sessions do
+not route background work to the process that owns a runner. Stop the old process
+before starting its replacement.
+
+`/healthz` checks that the HTTP process answers. `/readyz` also checks startup,
+shutdown state, and a bounded database probe. Use readiness for traffic routing;
+do not restart the server solely because Postgres is temporarily unavailable.
+The Compose service has a 75-second stop grace period for in-flight work.
+
+Forwarded client addresses are trusted only from `SLING_TRUSTED_PROXIES`, a
+comma-separated list of proxy IPs or CIDRs. Leave it empty for direct access.
+For a tunnel or reverse proxy, list its actual source address or isolated proxy
+network, and prevent direct public access to the application port. Avoid trusting
+all addresses. Do not log full webhook URLs or OAuth callback query strings in
+your proxy: those contain credentials, even though Sling redacts its own request
+URLs.
+
+## Automation admission and storage limits
+
+Workflow HTTP requests now accept public destinations by default. Before upgrading
+an installation whose workflows call internal services, set
+`SLING_HTTP_ALLOWED_ORIGINS` to a comma-separated list of exact origins, including
+ports, such as `http://internal-service:8080`. Redirect destinations are checked
+again. Source-link fetching remains public-only.
+
+Set `SLING_WEBHOOK_SECRET` to require HMAC-SHA256 authentication on webhook requests.
+The sender supplies `x-sling-timestamp` as Unix seconds and `x-sling-signature` as
+hexadecimal HMAC over the timestamp, a period, and the exact request bytes.
+Signatures expire after five minutes. Rotate this secret through the server's
+environment and coordinate the change with senders. Without this setting, webhook
+URLs remain bearer credentials. `x-sling-event-id` deduplicates repeated deliveries
+within a workflow trigger. Signed requests without an event ID deduplicate by
+timestamp and body. Duplicate events return 409.
+
+`SLING_WEBHOOK_REQUESTS_PER_MINUTE` defaults to 60 per workspace, with an additional
+per-IP limit of twice that value. Excess requests return 429 and Retry-After.
+These admission counters reset on process restart; they are not billing quotas.
+
+`SLING_SOURCE_STORAGE_BYTES` defaults to 1073741824 bytes per workspace. Uploads
+serialize their quota check with insertion, so simultaneous uploads cannot both
+spend the same free space. Set zero to disable the quota. Existing files remain
+available when usage exceeds a newly lowered limit; remove unused sources before
+uploading more. There is no new storage-management screen in this change.
+
+Chat messages and attachments commit with a durable dispatch record. Failed
+workflow dispatches retry with exponential backoff capped at five minutes.
+Task settlement consumers have independent delivery receipts. Delivery failures
+are logged with the delivery ID and attempt count. Temporary command approvals
+still fail closed on restart; they are not resumable executions.
