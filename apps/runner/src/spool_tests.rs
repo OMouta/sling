@@ -625,4 +625,15 @@ mod faults {
             Some(Kind::Finished(_))
         ));
     }
+    #[test]
+    fn an_acknowledgement_that_cannot_be_saved_still_counts() {
+        let disk = SimDisk::new(&root());
+        let mut s = TaskSpool::create_on(Arc::new(disk.clone()), &root(), meta(ID)).unwrap();
+        for text in ["a", "b", "c"] {
+            s.append(log(text)).unwrap();
+        }
+        disk.fail_after(0);
+        assert!(s.ack(2).is_err());
+        assert_eq!(seqs(&replay(&mut s)), [3]);
+    }
 }

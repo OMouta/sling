@@ -197,7 +197,7 @@ impl TaskSpool {
             len = 0;
             scan.marks.clear();
         }
-        // Cut off a record a crash left half written.
+        // Cut off a record a crash left half written, or the stale records.
         if file_len(&*disk, &path)? > len {
             disk.set_len(&path, len)?;
         }
@@ -381,23 +381,22 @@ impl TaskSpool {
         if seq <= self.acked {
             return Ok(());
         }
-        let acked = seq.min(self.last_seq);
+        self.acked = seq.min(self.last_seq);
+        self.drop_old_marks();
         // Not synced: losing it to a power cut only means resending events
         // Sling already has, which it ignores by seq. Compaction keeps the
         // last acknowledged record, so the sequence carries on regardless.
         // Syncing every acknowledgement would cap them at the disk's flush
         // rate, around 120 a second on a Mac, and a long backlog of them
         // would hold up the heartbeat replies queued behind it.
-        replace_file(
+        let saved = replace_file(
             &*self.disk,
             &self.dir.join("acked"),
-            acked.to_string().as_bytes(),
+            self.acked.to_string().as_bytes(),
             false,
-        )?;
-        self.acked = acked;
-        self.drop_old_marks();
+        );
         self.maybe_compact();
-        Ok(())
+        saved
     }
 
     /// Marks before the last one at or before `acked` are no longer needed.
