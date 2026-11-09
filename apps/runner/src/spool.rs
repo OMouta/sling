@@ -128,12 +128,13 @@ impl TaskSpool {
     pub(crate) fn create_on(disk: Arc<dyn Disk>, root: &Path, meta: TaskMeta) -> Result<TaskSpool> {
         let dir = root.join(&meta.task_id);
         disk.create_dir_all(&dir)?;
-        write_atomic(
+        replace_file(
             &*disk,
             &dir.join("meta.json"),
             &serde_json::to_vec_pretty(&meta)?,
+            true,
         )?;
-        write_atomic(&*disk, &dir.join("acked"), b"0")?;
+        replace_file(&*disk, &dir.join("acked"), b"0", false)?;
         let mut file = disk.append(&dir.join(EVENTS))?;
         file.sync()?;
         disk.sync_dir(&dir)?;
@@ -371,10 +372,17 @@ impl TaskSpool {
             return Ok(());
         }
         let acked = seq.min(self.last_seq);
-        write_atomic(
+        // Not synced: losing it to a power cut only means resending events
+        // Sling already has, which it ignores by seq. Compaction keeps the
+        // last acknowledged record, so the sequence carries on regardless.
+        // Syncing every acknowledgement would cap them at the disk's flush
+        // rate, around 120 a second on a Mac, and a long backlog of them
+        // would hold up the heartbeat replies queued behind it.
+        replace_file(
             &*self.disk,
             &self.dir.join("acked"),
             acked.to_string().as_bytes(),
+            false,
         )?;
         self.acked = acked;
         self.drop_old_marks();
@@ -517,10 +525,11 @@ impl TaskSpool {
 
     pub fn set_meta(&mut self, f: impl FnOnce(&mut TaskMeta)) -> Result<()> {
         f(&mut self.meta);
-        write_atomic(
+        replace_file(
             &*self.disk,
             &self.dir.join("meta.json"),
             &serde_json::to_vec_pretty(&self.meta)?,
+            true,
         )?;
         self.maybe_compact();
         Ok(())
@@ -685,14 +694,20 @@ fn file_len(disk: &dyn Disk, path: &Path) -> io::Result<u64> {
     }
 }
 
-fn write_atomic(disk: &dyn Disk, path: &Path, bytes: &[u8]) -> Result<()> {
+/// Writes a small file through a temporary file and a rename, so a crash
+/// leaves the old contents or the new, never a mix. `durable` also syncs the
+/// new contents before the rename and the directory after it, so a power cut
+/// can't leave the file empty.
+fn replace_file(disk: &dyn Disk, path: &Path, bytes: &[u8], durable: bool) -> Result<()> {
     let tmp = path.with_extension("tmp");
     let mut file = disk.create(&tmp)?;
     file.write_bytes(bytes)?;
-    file.sync()?;
+    if durable {
+        file.sync()?;
+    }
     drop(file);
     disk.rename(&tmp, path)?;
-    if let Some(parent) = path.parent() {
+    if durable && let Some(parent) = path.parent() {
         disk.sync_dir(parent)?;
     }
     Ok(())
