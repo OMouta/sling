@@ -2,7 +2,7 @@
 
 Review date: 2026-11-09. Source revision: `e2f75f8`.
 
-The original review was read-only. The implementation pass below now records code changes made at the user's request, without changing UI layout, controls, or copy. The review covered the web app, API, database access, workflow execution, realtime delivery, runner event storage, and selected operating documentation. It used repeated passes through the source to check initial findings against the implementation.
+The original review was read-only. A first implementation pass made the changes that needed no UI work, without changing layout, controls, or copy. A second pass took on the rest, UI included, after the user decided four questions: Delete becomes Archive with Restore; an approval cut off by a restart expires with a visible reason rather than resuming; unsent drafts live in the tab's session storage; and the decision-point explanations in S04 aren't added. Each item's status line says what's done and what wasn't verified. The review covered the web app, API, database access, workflow execution, realtime delivery, runner event storage, and selected operating documentation. It used repeated passes through the source to check initial findings against the implementation.
 
 This is a broad engineering review, not a claim that every execution path has been audited. No live service, customer data, external integration, or browser session was exercised. Performance effects below are hypotheses unless they follow directly from an unbounded operation or repeated query. There are no measured production latency or bundle-size results.
 
@@ -30,7 +30,7 @@ Effort is relative scope, not a delivery estimate. Small means a local change; m
 
 ### R01. Persist message acceptance and workflow delivery together
 
-Status: Implemented; integration validation in progress. Message, attachment association, and dispatch record now commit together. A retry worker distinguishes matched/deduplicated dispatch from no handler. Restart regression added.
+Status: Done. The message, its attachments, its dispatch record, and a client message ID commit together, so a resend after a lost response returns the saved message instead of a second one. A retry worker separates matched, deduplicated, and unhandled dispatch, and a chat whose reply fails to start three times gets one note saying Sling keeps trying; the model never sees it. End-to-end tests cover a restart before delivery and a trigger that fails four times: one run, one note, no no-workflow message.
 
 P1 · Risk · Large
 
@@ -49,7 +49,7 @@ Acceptance: terminate the process between message insertion and dispatch, restar
 
 ### R02. Make task settlement side effects independently retryable
 
-Status: Implemented; further fault-injection coverage needed. Each settlement consumer has a durable receipt and independent retry. System notes use stable IDs. The task state transition and settlement enqueue are still separate transactions; closing that crash window remains open.
+Status: Done. Each settlement consumer has a durable receipt and its own retries, and system notes use stable IDs. A reconcile in the per-minute sweep queues settlements that a crash cut off between a task's state change and its enqueue. It looks only at tasks that ended in the last day and have been unchanged for two minutes, and only at settle points, so a step still on its way is never announced. Completed deliveries are pruned after 30 days. Unit and end-to-end tests cover it; a real process kill between the two writes hasn't been injected.
 
 P1 · Risk · Medium
 
@@ -77,7 +77,7 @@ Acceptance: two-process tests must cover a browser on A, runner on B, job execut
 
 ### R04. Give temporary chat approvals an explicit restart contract
 
-Status: Open. Existing fail-closed behavior is documented; persisted lifecycle outcomes and explanatory card changes remain outstanding.
+Status: Done, by expiring with a reason. Each chat approval is stored with how it ended, never with what was typed into its card. On start, Sling ends the ones a restart cut off. A late answer says whether it was already answered, timed out, its reply was stopped, or Sling restarted, and the card shows that in place of its buttons. Notification answers read the same record. An end-to-end test answers once, replays the answer, lets one time out, and restarts the server while one waits. Resuming an approval after a restart was declined.
 
 P1 · Confirmed · Medium to large
 
@@ -91,7 +91,7 @@ Acceptance: restart while each approval kind is pending. The old card must becom
 
 ### R05. Fix browser connection recovery for half-open sockets
 
-Status: Implemented; dedicated transport tests still needed. Added stale-connection deadlines, reconnect jitter, resume reconciliation, and terminal handling of authentication close codes. No visual changes.
+Status: Done. Stale-connection deadline, reconnect jitter, refetch on resume, sign-out close codes, and the browser's offline and online events, which drop and restore the socket at once. Dedicated transport tests cover each, and a real-browser journey drops the network and comes back live.
 
 P2 · Confirmed gap · Medium
 
@@ -119,7 +119,7 @@ Acceptance: throttle one client while others stay fast. Memory must remain bound
 
 ### R07. Drain shutdown in a defined order
 
-Status: Implemented; full lifecycle validation in progress. Idempotent close, readiness withdrawal, job drain, bounded service waits, runner disconnect drain, and Compose grace period. Full startup-failure cleanup and one global shutdown deadline remain open.
+Status: Implemented. A failed startup closes the pool, releases the control-plane lock, stops jobs and timers, and exits non-zero. One deadline (`SLING_SHUTDOWN_TIMEOUT_SECONDS`, default 60 s, inside a configurable 75 s Compose grace period) bounds the whole stop, and repeated signals don't rerun cleanup. Unit and end-to-end tests cover a failed migration, a failed initialization, an aborted startup, and a stuck drain. A stop during a live task, source extraction, or workflow wait hasn't been exercised end to end. Losing the control-plane lock to a Postgres restart shuts Sling down with exit code 0.
 
 P2 · Risk · Medium
 
@@ -135,7 +135,7 @@ Acceptance: stop during a task, source extraction, and workflow wait; send two s
 
 ### P01. Page conversation messages and task events
 
-Status: Open. The complete proposal requires UI or interaction changes and was excluded from this implementation pass.
+Status: Done. A chat opens on its latest 60 messages, cut short at about 512 KB, and older pages load as the reader scrolls up while the view stays on the same message. Each task belongs to one page by when it started, and a note about an older task brings that task along. A task page opens on its latest 500 events, cut at about 1 MB, with Show earlier events. A refresh asks for everything from the oldest loaded item, so new messages never leave a gap. End-to-end tests page a 150-message chat in four pages and 1,200 events in three, with no gaps or repeats; a browser check scrolled a 200-message chat back to its start. The paged UI hasn't been profiled, and virtualization wasn't added.
 
 P1 for long-running use · Confirmed · Large
 
@@ -149,7 +149,7 @@ Acceptance: use a synthetic conversation with 10,000 messages and a task with 10
 
 ### P02. Replace silent list caps with pagination and server-side filters
 
-Status: Open. The complete proposal requires UI or interaction changes and was excluded from this implementation pass.
+Status: Done. Chats, tasks, and approvals come a page at a time with stable cursors, the filters apply before the limit, and the first page carries counts and totals for everything that matches. Pending approvals list soonest to expire first, with Newest first as the other order, and a task card asks only for its own task's approvals. End-to-end tests reach every item past the old limits, including an old chat with a task and approvals that expire in a different order than they were made.
 
 P1 for approvals · Confirmed · Medium
 
@@ -177,7 +177,7 @@ Acceptance: record query counts for 1, 20, and 100 approvals. Related-record que
 
 ### P04. Measure and improve conversation activity and search queries
 
-Status: Open. Query-plan measurement and indexing changes have not been completed.
+Status: Done. Chats keep a `last_message_at` column, written in the transaction that writes or removes messages and backfilled, with a workspace/activity/ID index, and search uses pg_trgm indexes on titles and message text when the database allows the extension. On 20,000 chats and 1M messages (376 MB): the old list query took 3.8–4.9 s and the first page now takes 1.0 ms (10 ms at row 15,000). The tab counts went from 90 ms to 9 ms. Searching a rare term went from 386 ms to 17 ms, and `#19999.4` from 469 ms to 24 ms. A common phrase that matches one message in seven still takes 230–325 ms (from 445–495 ms). Search stays a case-insensitive substring match, so non-English words and punctuation match as typed. Renaming doesn't move a chat; an end-to-end test checks it.
 
 P2 · Confirmed query shape, unmeasured cost · Medium
 
@@ -191,7 +191,7 @@ Acceptance: benchmark empty, common, and rare queries across growing history siz
 
 ### P05. Make retention deletion incremental
 
-Status: Implemented; large-backlog measurement still needed. Retention deletes batches of 1,000 within a ten-second sweep budget and returns only counts.
+Status: Implemented and measured. 300,000 expired events were pruned in 1.0 s, and 3,000,000 in 30.2 s over four bounded runs, with task-detail p95 at 24 ms during the prune (16.5 ms idle). An interrupted prune rolled back only the batch in flight and resumed cleanly. A multi-million backlog takes several daily runs, and node-run payload pruning is still one statement.
 
 P2 · Confirmed · Medium
 
@@ -205,7 +205,7 @@ Acceptance: prune a large synthetic backlog while recording API latency and data
 
 ### P06. Stream and bound runner replay memory
 
-Status: Implemented; disk compaction remains open. Runner recovery decodes one record at a time; replay batches are bounded by count and bytes. Unacknowledged history stays on disk. Batch/restart tests pass.
+Status: Implemented; Linux and Windows disk timings unmeasured. Acknowledged prefixes are compacted once they're at least 1 MiB and half the file, and a finished task keeps one record; crash tests cover every step. Each spool holds at most 32 MiB unacknowledged and then skips droppable events with notes in the task log, never terminal, usage, or push and PR events. Records are capped at 1 MiB to fit the server's 4 MiB frame. Before this, records over 4 MiB were lost, finishes included.
 
 P2 · Confirmed operation, impact depends on event volume · Medium to large
 
@@ -219,7 +219,7 @@ Acceptance: replay a spool substantially larger than the intended memory budget.
 
 ### P07. State the spool's power-loss durability guarantee
 
-Status: Implemented; power-loss fault injection remains open. Event writes sync data before advancing sequence state; metadata writes sync before rename, and Unix directories are synced. Existing torn-write and restart tests pass.
+Status: Implemented; real power-loss testing remains open. A simulated disk stops at every write and cuts power six ways, under Unix and NTFS rename models. Recovery rejects zeroed and stale tails and never reuses a sequence number when metadata outlives event data; both were real bugs. Acknowledgements are no longer synced (8.2 ms to 0.15 ms), since losing one only causes resends. docs/runner.md states the guarantee per platform.
 
 P2 · Risk · Medium
 
@@ -233,7 +233,7 @@ Acceptance: test truncated and reordered durable state through a fault-injection
 
 ### P08. Expand route-level lazy loading where measurements justify it
 
-Status: Implemented; bundle measurement still needed. Administrative routes now use lazy imports while preserving route components and intent preloading.
+Status: Measured and budgeted. The first load fell from 315,012 to 283,358 bytes gzip (265,914 to 245,251 brotli), and CI fails above 292,000 / 253,000 bytes. Sling serves the files uncompressed unless a proxy compresses them. Cold navigation and parse time haven't been measured.
 
 P2 · Proposal grounded in imports · Small to medium
 
@@ -245,7 +245,7 @@ Acceptance: record before/after entry size, cold navigation, and first visit to 
 
 ### P09. Add upload storage budgets before changing storage systems
 
-Status: Backend quota implemented; UI portion excluded. Configurable workspace upload quota is checked under a workspace row lock. Usage screen, concurrency stress tests, and broader retained-link accounting remain open.
+Status: Done. The quota is checked under a workspace row lock: eight uploads at once for three slots stored three and refused five, and removing a file freed its space; an end-to-end test covers both. Settings → Storage shows the total against the limit, a meter, and the split between files in chats, personalities' sources, and files not sent yet. A refusal says how much is used of how much and to remove sources from a personality. Files in archived chats still count, and only personalities' sources can be removed.
 
 P2 · Confirmed per-file checks; aggregate limits need design · Medium
 
@@ -261,7 +261,7 @@ Acceptance: concurrent uploads must not bypass the quota; deletion must update a
 
 ### U01. Make Delete match its actual retention behavior
 
-Status: Open. The complete proposal requires UI or interaction changes and was excluded from this implementation pass.
+Status: Done, as archive and restore. Delete is now Archive, the Chats page has an Archived tab with Restore, an archived chat opens from a link with an Archived badge and Restore, and writing in it brings it back. Archived chats still keep their files, as the threat model says. Permanent deletion wasn't added. Server, web, and real-browser tests cover archive and restore.
 
 P1 · Confirmed · Small for wording, large for permanent deletion
 
@@ -273,7 +273,7 @@ Acceptance: archive and restore a chat, open it from a deep link, and verify cop
 
 ### U02. Complete the shared dialog's keyboard behavior
 
-Status: Open. The complete proposal requires UI or interaction changes and was excluded from this implementation pass.
+Status: Done. Dialogs keep Tab inside, focus the panel when there's nothing to type, make the page behind inert and unscrollable, return focus to what opened them, and close only the topmost on Escape; Escape in a menu inside a dialog closes just the menu, and menus return focus to their trigger. DOM tests and a real-browser keyboard journey cover it. Not checked with a screen reader.
 
 P1 · Confirmed · Medium
 
@@ -285,7 +285,7 @@ Acceptance: keyboard-only checks for empty confirmation, form, and stacked dialo
 
 ### U03. Protect workflow drafts across tabs and failed navigation saves
 
-Status: Open. The complete proposal requires UI or interaction changes and was excluded from this implementation pass.
+Status: Done. Drafts carry a persisted revision; saves and publishes only land on the revision they were based on and answer 409 with the current draft otherwise, and chat and API writes move the revision on. The editor offers load theirs, download mine, or overwrite; holds in-app navigation with retry, stay, or discard; and keeps a final save that failed after close for the next open. End-to-end, web, and browser checks cover it; two real tabs weren't driven at once by hand.
 
 P1 · Confirmed concurrency gap; navigation loss is a risk · Large
 
@@ -299,7 +299,7 @@ Acceptance: edit the same workflow in two tabs, delay responses, and disconnect 
 
 ### U04. Preserve unsent chat drafts deliberately
 
-Status: Open. The complete proposal requires UI or interaction changes and was excluded from this implementation pass.
+Status: Done. Each chat's unsent text is kept in this tab's session storage: it survives switching chats and reloading, and goes when it's sent, when the tab closes, and on sign-out. Files added but not sent aren't kept. Unit tests and a real-browser journey cover it, and the threat model says where drafts live.
 
 P2 · Confirmed local state · Medium
 
@@ -311,7 +311,7 @@ Acceptance: navigate away and back, reload if supported, fail a send, and sign o
 
 ### U05. Make ambiguous message sends safe to retry
 
-Status: Open. The complete proposal requires UI or interaction changes and was excluded from this implementation pass.
+Status: Done. Each send carries a client ID unique within its chat. Sending the same message again after a failure keeps the ID, so the server returns the saved message, and a deliberate second message gets a new one. A new chat's failed first try reuses the chat it made. An end-to-end test and a real-browser journey that drops the response after the server commits both see one message and one dispatch.
 
 P1 · Risk · Medium
 
@@ -325,7 +325,7 @@ Acceptance: drop the response after commit, retry, and verify one message and on
 
 ### U06. Surface failures from conversation menu actions
 
-Status: Open. The complete proposal requires UI or interaction changes and was excluded from this implementation pass.
+Status: Done. A failed archive, restore, or Make this a workflow says why and offers Try again; the row stays until the server confirms, and the menu items are disabled while one runs. Web tests return a server error and retry.
 
 P2 · Confirmed · Small
 
@@ -337,7 +337,7 @@ Acceptance: return 403, 409, and 500 for both mutations. The user must see what 
 
 ### U07. Complete tabs and review touch interaction
 
-Status: Open. The complete proposal requires UI or interaction changes and was excluded from this implementation pass.
+Status: Done for keyboard and announcements; touch measured only in emulation. Tabs have one tab stop, move and select with the arrow keys, Home, and End, show a focus ring, and name the page's panel after the selected tab. On touch screens, small buttons, switches, and row menus take taps from about 7 px around them without making desktop rows taller, and the chat row menu and model favorite star show without hover. Errors are announced as they appear and spinners say Loading. Checked in Chromium with a coarse pointer at 390 px wide, not on a real phone; contrast hasn't been measured.
 
 P2 · Confirmed component behavior, usability needs browser validation · Medium
 
@@ -351,7 +351,7 @@ Acceptance: arrow keys move between tabs predictably, focus is visible, panels h
 
 ### O01. Make outbound network permissions explicit per use case
 
-Status: Implemented; security integration coverage still needed. Workflow HTTP uses checked DNS addresses, pinned connections, redirect revalidation, public-only defaults, explicit internal origins, and metadata refusal. Upgrade configuration is documented.
+Status: Done. Integration tests on real sockets cover redirects, IPv4 and IPv6 forms, DNS answers that change, cloud metadata, and a deliberately allowed internal service. They found and fixed an uncaught error on redirects that could stop the server, metadata services reachable through allowed origins or IPv4 forms embedded in IPv6, and retried refusals.
 
 P1 when workflow inputs are untrusted · Confirmed documented gap · Large
 
@@ -363,7 +363,7 @@ Acceptance: test redirects to loopback, IPv4 and IPv6 forms, DNS answer changes,
 
 ### O02. Add webhook authentication options, deduplication, and admission limits
 
-Status: Partially implemented. Added optional timestamped HMAC, event-ID deduplication, bounded admission counters, and independent signing-secret rotation through environment configuration. Per-hook configuration and durable concurrency budgets remain open.
+Status: Done. Webhook auth (URL only, or signed with the trigger's own encrypted secret), the event-ID header, and a runs-at-once budget live on the trigger and are edited in its panel. Signing secrets rotate separately with a one-hour overlap. The budget is counted in Postgres in the transaction that admits the run, and excess gets 429 before any run exists. `SLING_WEBHOOK_SECRET` stays the fallback. Per-minute rate limits still reset on restart, and GitHub- or Stripe-style signatures can't use this format.
 
 P1 for publicly reachable automation · Confirmed gap in inspected route · Medium to large
 
@@ -387,7 +387,7 @@ Acceptance: send uniquely recognizable test credentials through webhook and OAut
 
 ### O04. Separate readiness from liveness and expose useful health signals
 
-Status: Readiness implemented; metrics remain open. Added readiness with a bounded database probe and startup/shutdown state. The proposed metrics and alerting are not yet implemented.
+Status: Implemented. `/metrics` is off by default (404) and token-protected. It reports request duration by route pattern, job queue depth, lag, and age, pending and failing deliveries, runner connectivity (never part of readiness), event-loop delay, and memory. Alerts are documented, not deployed, and runner replay backlog isn't reported. A real Postgres outage and a real Prometheus server haven't been exercised.
 
 P2 · Confirmed · Medium
 
@@ -399,7 +399,7 @@ Acceptance: disconnect Postgres, stall a worker, and initiate shutdown. Each con
 
 ### O05. Provide a tested backup and restore procedure
 
-Status: Open. A full backup/restore implementation and restore drill have not been completed.
+Status: Implemented and drilled. Backups are encrypted and kept on a retention schedule, and a restore checks the key and starts with automation paused until the operator resumes it. On 2026-11-09 a fresh project restored and was ready in 8.6 s (16.3 s for a 257 MB database). Login, credential decryption, sources byte for byte, workflow versions, and the pause were verified. Passkeys at a new hostname, runner reconnection, cross-version restores, and the scripts on Linux weren't drilled.
 
 P1 for valuable installations · Proposal based on documentation gap · Medium
 
@@ -425,7 +425,7 @@ Acceptance: test direct, single-proxy, and tunnel access with spoofed forwarding
 
 ### S01. Split large modules around lifecycle responsibilities
 
-Status: Partial. Delivery processing, lifecycle helpers, outbound HTTP policy, request-log serialization, and webhook admission now have separate modules. The wider task/engine decomposition remains open.
+Status: Partial. Chat paging, list cursors, the settlement reconcile, startup and shutdown, metrics, and webhook auth went into their own modules as they changed. The task service and workflow engine are still large; split them when their behavior next changes.
 
 P2 · Proposal · Medium, delivered incrementally
 
@@ -439,7 +439,7 @@ Acceptance: preserved public behavior, existing tests passing, and new unit test
 
 ### S02. Carry cancellation through the API client
 
-Status: Partial. API requests accept cancellation and timeout options; conversation search propagates its query signal. Remaining query call sites and cancellation regression tests remain open.
+Status: Done. Every API read passes its query's cancellation signal, so a search replaced by a newer one, or a slow page left before it answered, stops; cancellation never shows as an error. Regression tests cover both.
 
 P2 · Confirmed gap · Small to medium
 
@@ -451,7 +451,7 @@ Acceptance: change search text rapidly and navigate away from slow pages. Obsole
 
 ### S03. Add browser, recovery, and performance checks to the existing CI
 
-Status: Partial. Added durable-chat restart, singleton-owner, hub buffering, log redaction, webhook signature/admission, and runner batch tests. Real-browser CI and performance budgets remain open.
+Status: Done for the narrow suite. End-to-end tests now cover restarts, settlement reconciliation, approval outcomes, list and history paging, the upload quota race, dispatch retries, webhook signatures and budgets, network policy, startup failures, and metrics. A new CI job runs seven real-browser journeys on a fresh Postgres, and CI holds the first load to a bundle budget. Browser performance budgets beyond bundle size remain open.
 
 P2 · Proposal · Medium to large
 
@@ -463,7 +463,7 @@ Acceptance: failures should identify the broken journey or budget and attach use
 
 ### S04. Turn documented trust gaps into visible product choices
 
-Status: Open. The complete proposal requires UI or interaction changes and was excluded from this implementation pass.
+Status: Declined. Adding explanations at decision points goes against how the app is written, so the user chose to leave these screens as they are.
 
 P2 · Proposal · Medium
 
@@ -540,3 +540,16 @@ The report intentionally does not claim missing encryption, missing tenant check
 - `git diff --check` passed. No UI component markup or styling was changed. Administrative route loading and client transport behavior did change.
 
 This implementation pass is not complete for every non-UI proposal. In particular, search-plan optimization, backup/restore automation, full lifecycle/fault coverage, metrics, and the remaining items marked Partial or Open still need work. Those entries are deliberately not marked Done.
+
+## Second implementation pass, 2026-11-09
+
+- Lint and every package's type check pass.
+- Web suite: 41 files, 421 tests. Server unit suite: 52 files, 564 tests.
+- Server end-to-end suite, run file by file against disposable Postgres: 369 of 370 passed. The one failure, the Site down alert in `deploys.e2e`, came from an earlier test's settlement push landing during it. The test now counts only the alert's own pushes, and the file passes in full.
+- Runner: `cargo fmt --check` and clippy with warnings denied are clean, with 178 unit tests (one ignored) and 6 integration tests passing on macOS. Compaction and the crash tests haven't run on Linux or Windows yet.
+- Real-browser journeys: 7 of 7 pass against a server serving the production build on a fresh database, both before and after merging the parallel branches. CI now runs them on every push.
+- The first page load is 292,138 bytes gzip (254,756 brotli), under the raised budget of 301,000 / 263,000.
+- Migrations apply in order on a database that already had the earlier ones, and Drizzle reports no drift between the schema and them.
+- Every UI change was checked in Chromium in light and dark, and at phone width where layout differs. Nothing was checked on a real phone or with a screen reader.
+
+Measured during this pass: the P04 query numbers on 20,000 chats and 1M messages, the P05 prune timings, the P08 bundle sizes, and the O05 restore drill, each in its item above. Not run: a real power cut, cross-platform runner timings, a two-process deployment, or a live Prometheus scrape.
