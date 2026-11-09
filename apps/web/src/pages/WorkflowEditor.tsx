@@ -41,6 +41,7 @@ import { GraphCanvas } from "../components/workflow/Canvas.tsx";
 import { Inspector } from "../components/workflow/Inspector.tsx";
 import { RunsTab } from "../components/workflow/RunsTab.tsx";
 import { VersionsTab } from "../components/workflow/VersionsTab.tsx";
+import { webhookField } from "../components/workflow/WebhookSettings.tsx";
 import { ApiError, api } from "../lib/api.ts";
 import { ago, plural } from "../lib/format.ts";
 import { useIsPhone } from "../lib/useMedia.ts";
@@ -630,6 +631,8 @@ function CanvasView({ detail, issuesOpen, onCloseIssues, onDeleted }: CanvasProp
     );
   };
 
+  const nodeField = webhookField(detail.id);
+
   const rf = useReactFlow();
   const [adding, setAdding] = useState<"step" | "trigger" | null>(null);
   const [details, setDetails] = useState(false);
@@ -776,6 +779,7 @@ function CanvasView({ detail, issuesOpen, onCloseIssues, onDeleted }: CanvasProp
             <Inspector
               empty={<WorkflowPanel detail={detail} onDeleted={onDeleted} />}
               nodeExtra={nodeExtra}
+              nodeField={nodeField}
             />
           </div>
         </aside>
@@ -792,7 +796,7 @@ function CanvasView({ detail, issuesOpen, onCloseIssues, onDeleted }: CanvasProp
               Close
             </Button>
           </div>
-          <Inspector empty={null} nodeExtra={nodeExtra} />
+          <Inspector empty={null} nodeExtra={nodeExtra} nodeField={nodeField} />
         </div>
       )}
     </div>

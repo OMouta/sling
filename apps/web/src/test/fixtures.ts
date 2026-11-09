@@ -81,6 +81,40 @@ export const catalog: NodeCatalog = {
       outputs: [{ name: "body", type: "json" }],
       execInput: false,
       isTrigger: true,
+      configSchema: {
+        $schema: SCHEMA,
+        type: "object",
+        properties: {
+          auth: {
+            default: "token",
+            description: "Signed requests also need a signature.",
+            title: "Requests",
+            widget: "segmented",
+            anyOf: [
+              { type: "string", const: "token", title: "URL only" },
+              { type: "string", const: "signed", title: "Signed" },
+            ],
+          },
+          eventIdHeader: {
+            default: "x-sling-event-id",
+            description: "A repeated event ID starts no run.",
+            title: "Event ID header",
+            type: "string",
+            maxLength: 100,
+          },
+          maxConcurrentRuns: {
+            default: 0,
+            description: "More get 429.",
+            title: "Runs at once",
+            anyOf: [
+              { type: "number", const: 0, title: "No limit" },
+              { type: "number", const: 1, title: "1" },
+              { type: "number", const: 5, title: "5" },
+            ],
+          },
+        },
+        additionalProperties: false,
+      },
     }),
     spec({
       type: "email.received",

@@ -41,6 +41,23 @@ function json(status: number, data: unknown) {
   });
 }
 
+/** A workflow started by a webhook, with nothing set on it yet. */
+const hookDetail = {
+  ...workflowDetail,
+  id: "wf_hook",
+  webhooks: [{ nodeId: "hook", url: "https://sling.test/hooks/abc" }],
+  draft: {
+    ...workflowDetail.draft,
+    nodes: [{ id: "hook", type: "core.webhook", version: 1, position: { x: 0, y: 0 }, config: {} }],
+    edges: [],
+  },
+};
+let secretMade: {
+  createdAt: string;
+  rotatedAt: string | null;
+  previousValidUntil: string | null;
+} | null = null;
+
 /** The draft as another tab saved it: the fixture without its last step. */
 const theirs = {
   ...workflowDetail.draft,
@@ -68,6 +85,25 @@ function route(method: string, path: string, body: unknown): unknown {
       return [workflowSummary, assistantSummary];
     case "GET /api/workflows/wf_1":
       return workflowDetail;
+    case "GET /api/workflows/wf_hook":
+      return hookDetail;
+    case "PUT /api/workflows/wf_hook/draft": {
+      const b = body as { definition: unknown; revision: number };
+      return { ...hookDetail, draft: b.definition, draftRevision: b.revision + 1 };
+    }
+    case "GET /api/workflows/wf_hook/runs":
+      return [];
+    case "GET /api/workflows/wf_hook/webhooks/hook/secret":
+      return { signing: secretMade };
+    case "POST /api/workflows/wf_hook/webhooks/hook/secret": {
+      const rotated = secretMade !== null;
+      secretMade = {
+        createdAt: "2026-11-05T10:00:00.000Z",
+        rotatedAt: rotated ? new Date().toISOString() : null,
+        previousValidUntil: rotated ? new Date(Date.now() + 3_600_000).toISOString() : null,
+      };
+      return { ...secretMade, secret: rotated ? "whsec_second" : "whsec_first" };
+    }
     case "GET /api/workflow-nodes":
       return catalog;
     case "GET /api/installations":
@@ -149,6 +185,7 @@ beforeEach(() => {
   calls = [];
   approvals = [];
   respond = null;
+  secretMade = null;
   publishResult = { ok: true, version: 2, issues: [] };
   vi.stubGlobal("WebSocket", FakeSocket);
   // React Flow measures nodes and reads the viewport transform with these.
@@ -565,6 +602,55 @@ describe("workflow editor", () => {
     expect(saved.revision).toBe(3);
     expect(saved.definition.nodes.find((n) => n.id === "n_if")?.label).toBe("Kept");
     expect(await screen.findByText("Saved")).toBeTruthy();
+  });
+
+  it("sets who may call a webhook, and makes and rotates its signing secret", async () => {
+    renderAt("/workflows/wf_hook");
+    fireEvent.click(await findNode("hook"));
+    const settings = await screen.findByRole("complementary", { name: "Step settings" });
+    const panel = within(settings);
+    expect(panel.getByText("https://sling.test/hooks/abc")).toBeTruthy();
+    const requests = panel.getByRole("radiogroup", { name: "Requests" });
+    expect(
+      within(requests).getByRole("radio", { name: "URL only" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(panel.queryByText("Signing secret")).toBeNull();
+
+    fireEvent.click(within(requests).getByRole("radio", { name: "Signed" }));
+    fireEvent.click(await panel.findByRole("button", { name: "Create secret" }));
+    expect(await panel.findByText("whsec_first")).toBeTruthy();
+    expect(panel.getByText("Shown once")).toBeTruthy();
+
+    fireEvent.click(panel.getByRole("button", { name: "Rotate" }));
+    const confirm = await screen.findByRole("dialog", { name: "Rotate the signing secret?" });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Rotate" }));
+    expect(await panel.findByText("whsec_second")).toBeTruthy();
+    expect(panel.queryByText("whsec_first")).toBeNull();
+    expect(callsTo("POST", "/api/workflows/wf_hook/webhooks/hook/secret")).toHaveLength(2);
+
+    // The event ID header is picked, or typed when it's another one.
+    const header = panel.getByLabelText("Event ID header") as HTMLSelectElement;
+    expect(header.value).toBe("x-sling-event-id");
+    fireEvent.change(header, {
+      target: { value: header.options[header.options.length - 1]?.value },
+    });
+    fireEvent.change(await panel.findByLabelText("Header name"), {
+      target: { value: "X-Delivery" },
+    });
+    const runs = panel.getByLabelText("Runs at once") as HTMLSelectElement;
+    expect([...runs.options].map((o) => o.textContent)).toEqual(["No limit", "1", "5"]);
+    fireEvent.change(runs, { target: { value: "2" } });
+
+    await waitFor(
+      () => expect(callsTo("PUT", "/api/workflows/wf_hook/draft").length).toBeGreaterThan(0),
+      { timeout: 3000 },
+    );
+    const saved = callsTo("PUT", "/api/workflows/wf_hook/draft").at(-1)?.body as DraftSave;
+    expect(saved.definition.nodes[0]?.config).toEqual({
+      auth: "signed",
+      eventIdHeader: "X-Delivery",
+      maxConcurrentRuns: 5,
+    });
   });
 
   it("switches a field between a fixed value and an expression", async () => {

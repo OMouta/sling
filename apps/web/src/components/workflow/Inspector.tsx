@@ -24,14 +24,26 @@ function selectionKey(s: g.GraphState): string {
  * Settings for the selected node. With nothing selected it shows `empty`,
  * typically the workflow's own settings.
  */
+/** A control for one of a node's settings, in place of the form's own, or null for the form's. */
+export type NodeFieldOverride = (
+  nodeId: string,
+  spec: NodeSpecView | undefined,
+  field: FormField,
+  value: unknown,
+  set: (v: unknown) => void,
+  editable: boolean,
+) => FieldOverride | null;
+
 export function Inspector({
   empty,
   nodeExtra,
+  nodeField,
   readOnly,
 }: {
   empty: ReactNode;
   /** Extra content for a node, such as its webhook URL. */
   nodeExtra?: (nodeId: string, spec: NodeSpecView | undefined) => ReactNode;
+  nodeField?: NodeFieldOverride;
   readOnly?: boolean;
 }) {
   const store = useGraphStore();
@@ -43,7 +55,13 @@ export function Inspector({
 
   if (nodeIds.length === 1 && nodeIds[0]) {
     return (
-      <NodeInspector key={nodeIds[0]} nodeId={nodeIds[0]} editable={editable} extra={nodeExtra} />
+      <NodeInspector
+        key={nodeIds[0]}
+        nodeId={nodeIds[0]}
+        editable={editable}
+        extra={nodeExtra}
+        field={nodeField}
+      />
     );
   }
   if (nodeIds.length > 1 || edgeIds.length > 0) {
@@ -69,10 +87,12 @@ function NodeInspector({
   nodeId,
   editable,
   extra,
+  field: fieldFor,
 }: {
   nodeId: string;
   editable: boolean;
   extra?: (nodeId: string, spec: NodeSpecView | undefined) => ReactNode;
+  field?: NodeFieldOverride;
 }) {
   const store = useGraphStore();
   const data = useGraph((s) => g.nodeById(s.graph, nodeId)?.data);
@@ -87,7 +107,8 @@ function NodeInspector({
     );
 
   const override = (field: FormField, value: unknown, set: (v: unknown) => void) =>
-    spec ? fieldOverride(spec, nodeId, field, value, set, editable) : null;
+    fieldFor?.(nodeId, spec, field, value, set, editable) ??
+    (spec ? fieldOverride(spec, nodeId, field, value, set, editable) : null);
 
   return (
     <div className="space-y-5 p-4">

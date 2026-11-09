@@ -294,7 +294,10 @@ function Control({
             set(i === "" ? undefined : field.options[Number(i)]?.value);
           }}
         >
-          {(index === -1 || !field.required) && <option value="">—</option>}
+          {/* A default stands in for nothing picked, so an empty choice would mean the same. */}
+          {(index === -1 || (!field.required && field.default === undefined)) && (
+            <option value="">—</option>
+          )}
           {field.options.map((o, i) => (
             <option key={String(o.value)} value={String(i)}>
               {o.label}

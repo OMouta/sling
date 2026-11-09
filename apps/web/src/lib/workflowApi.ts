@@ -11,6 +11,8 @@ import type {
   PublishResult,
   TemplateView,
   ValidationIssue,
+  WebhookSecretView,
+  WebhookSigningView,
   WorkflowDefinition,
   WorkflowDetailView,
   WorkflowVersionView,
@@ -28,6 +30,7 @@ import { ApiError, api, saveBlob } from "./api.ts";
  *   ["workflow-versions", workflowId]   WorkflowVersionView[]  GET /api/workflows/:id/versions
  *   ["workflow-version", workflowId, n] WorkflowVersionView    GET /api/workflows/:id/versions/:n
  *   ["run", runId]                      RunDetailView          GET /api/runs/:id
+ *   ["webhook-secret", id, nodeId]      { signing }            GET /api/workflows/:id/webhooks/:nodeId/secret
  *   ["workflow-nodes"]                  NodeCatalog            GET /api/workflow-nodes
  *   ["templates"]                       TemplateView[]         GET /api/templates
  *   ["connectors"]                      ConnectorView[]        GET /api/connectors
@@ -57,6 +60,8 @@ export const qk = {
   versions: (workflowId: string) => ["workflow-versions", workflowId] as const,
   version: (workflowId: string, n: number) => ["workflow-version", workflowId, n] as const,
   run: (runId: string) => ["run", runId] as const,
+  webhookSecret: (workflowId: string, nodeId: string) =>
+    ["webhook-secret", workflowId, nodeId] as const,
   catalog: () => ["workflow-nodes"] as const,
   templates: () => ["templates"] as const,
   connectors: () => ["connectors"] as const,
@@ -222,6 +227,15 @@ export const workflowApi = {
     api.post<RunView | { run: RunView }>(`/api/workflows/${id}/run`, { input }).then(runIdOf),
   patch: (id: string, body: { name?: string; description?: string; enabled?: boolean }) =>
     api.patch<WorkflowSummaryView | WorkflowDetailView>(`/api/workflows/${id}`, body),
+  signingSecret: (id: string, nodeId: string) =>
+    api.get<{ signing: WebhookSigningView | null }>(
+      `/api/workflows/${id}/webhooks/${encodeURIComponent(nodeId)}/secret`,
+    ),
+  /** Makes the trigger's signing secret, or replaces it. The secret comes back this once. */
+  rotateSecret: (id: string, nodeId: string) =>
+    api.post<WebhookSecretView>(
+      `/api/workflows/${id}/webhooks/${encodeURIComponent(nodeId)}/secret`,
+    ),
 };
 
 /** Strips characters file systems reject, for `<name>.workflow.json`. */
