@@ -6,9 +6,8 @@
 //! Layout: `<spool>/<task_id>/meta.json`, `events.bin` (length-delimited
 //! protobuf `TaskEvent`s), and `acked` (highest acknowledged seq).
 
-use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
-use std::io::{BufReader, Read, Write};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -51,8 +50,8 @@ pub struct TaskSpool {
     pub meta: TaskMeta,
     last_seq: u64,
     acked: u64,
-    /// Events with seq > acked, oldest first.
-    pending: VecDeque<TaskEvent>,
+    /// Next byte to scan for this connection. Unacknowledged data stays on disk.
+    read_offset: u64,
     /// Highest seq handed to the current connection.
     pub sent: u64,
     file: File,
@@ -68,12 +67,18 @@ impl TaskSpool {
             .create(true)
             .append(true)
             .open(dir.join("events.bin"))?;
+        file.sync_all()?;
+        #[cfg(unix)]
+        {
+            File::open(&dir)?.sync_all()?;
+            File::open(root)?.sync_all()?;
+        }
         Ok(TaskSpool {
             dir,
             meta,
             last_seq: 0,
             acked: 0,
-            pending: VecDeque::new(),
+            read_offset: 0,
             sent: 0,
             file,
         })
@@ -89,7 +94,7 @@ impl TaskSpool {
             .and_then(|s| s.trim().parse().ok())
             .unwrap_or(0);
         let path = dir.join("events.bin");
-        let (events, good_len) = read_events(&path)?;
+        let (last_seq, good_len) = scan_events(&path)?;
         // Drop a half-written record left by a crash. Windows refuses to
         // truncate through a handle opened only to append, so this one writes.
         if std::fs::metadata(&path).is_ok_and(|m| m.len() != good_len) {
@@ -99,14 +104,13 @@ impl TaskSpool {
                 .set_len(good_len)?;
         }
         let file = OpenOptions::new().create(true).append(true).open(&path)?;
-        let last_seq = events.last().map(|e| e.seq).unwrap_or(0);
-        let pending = events.into_iter().filter(|e| e.seq > acked).collect();
+        let acked = acked.min(last_seq);
         Ok(TaskSpool {
             dir: dir.to_path_buf(),
             meta,
             last_seq,
             acked,
-            pending,
+            read_offset: 0,
             sent: acked,
             file,
         })
@@ -122,17 +126,20 @@ impl TaskSpool {
 
     /// Appends an event and returns it.
     pub fn append(&mut self, kind: Kind) -> Result<TaskEvent> {
-        self.last_seq += 1;
         let event = TaskEvent {
             task_id: self.meta.task_id.clone(),
-            seq: self.last_seq,
+            seq: self.last_seq + 1,
             at_ms: now_ms(),
             kind: Some(kind),
         };
         let bytes = event.encode_length_delimited_to_vec();
+        anyhow::ensure!(
+            bytes.len() <= MAX_RECORD_BYTES,
+            "event exceeds spool record limit"
+        );
         self.file.write_all(&bytes)?;
-        self.file.flush()?;
-        self.pending.push_back(event.clone());
+        self.file.sync_data()?;
+        self.last_seq = event.seq;
         Ok(event)
     }
 
@@ -140,30 +147,47 @@ impl TaskSpool {
         if seq <= self.acked {
             return Ok(());
         }
-        self.acked = seq.min(self.last_seq);
-        while self.pending.front().is_some_and(|e| e.seq <= self.acked) {
-            self.pending.pop_front();
-        }
-        write_atomic(&self.dir.join("acked"), self.acked.to_string().as_bytes())
+        let acked = seq.min(self.last_seq);
+        write_atomic(&self.dir.join("acked"), acked.to_string().as_bytes())?;
+        self.acked = acked;
+        Ok(())
     }
 
     /// Events not yet handed to the current connection.
     pub fn unsent(&mut self) -> Vec<TaskEvent> {
-        let out: Vec<_> = self
-            .pending
-            .iter()
-            .filter(|e| e.seq > self.sent)
-            .cloned()
-            .collect();
-        if let Some(last) = out.last() {
-            self.sent = last.seq;
+        match self.read_batch() {
+            Ok(events) => events,
+            Err(err) => {
+                tracing::warn!(task = self.task_id(), %err, "could not read spool");
+                Vec::new()
+            }
         }
-        out
+    }
+
+    fn read_batch(&mut self) -> Result<Vec<TaskEvent>> {
+        let mut reader = BufReader::new(File::open(self.dir.join("events.bin"))?);
+        reader.seek(SeekFrom::Start(self.read_offset))?;
+        let mut out = Vec::new();
+        let mut bytes = 0;
+        while out.len() < 128 && bytes < 512 * 1024 {
+            let Some(event) = read_record(&mut reader)? else {
+                break;
+            };
+            self.read_offset = reader.stream_position()?;
+            if event.seq <= self.sent {
+                continue;
+            }
+            bytes += event.encoded_len();
+            self.sent = event.seq;
+            out.push(event);
+        }
+        Ok(out)
     }
 
     /// Called on every new connection: resend everything unacknowledged.
     pub fn reset_sent(&mut self) {
         self.sent = self.acked;
+        self.read_offset = 0;
     }
 
     pub fn set_meta(&mut self, f: impl FnOnce(&mut TaskMeta)) -> Result<()> {
@@ -181,31 +205,62 @@ impl TaskSpool {
     }
 }
 
-fn read_events(path: &Path) -> Result<(Vec<TaskEvent>, u64)> {
-    let mut buf = Vec::new();
-    if path.exists() {
-        BufReader::new(File::open(path)?).read_to_end(&mut buf)?;
-    }
-    let mut events = Vec::new();
-    let mut slice = buf.as_slice();
-    let mut good = 0u64;
-    while !slice.is_empty() {
-        let before = slice.len();
-        match TaskEvent::decode_length_delimited(&mut slice) {
-            Ok(e) => {
-                good += (before - slice.len()) as u64;
-                events.push(e);
+const MAX_RECORD_BYTES: usize = 4 * 1024 * 1024;
+
+/// Decode one record without loading the history. An incomplete final record is ignored.
+fn read_record(reader: &mut impl Read) -> Result<Option<TaskEvent>> {
+    let mut len = 0u64;
+    for shift in (0..70).step_by(7) {
+        let mut byte = [0];
+        match reader.read_exact(&mut byte) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+            Err(e) => return Err(e.into()),
+        }
+        if shift == 63 && byte[0] > 1 {
+            return Ok(None);
+        }
+        len |= u64::from(byte[0] & 0x7f) << shift;
+        if byte[0] & 0x80 == 0 {
+            if len > MAX_RECORD_BYTES as u64 {
+                return Ok(None);
             }
-            Err(_) => break,
+            let mut bytes = vec![0; len as usize];
+            match reader.read_exact(&mut bytes) {
+                Ok(()) => return Ok(TaskEvent::decode(bytes.as_slice()).ok()),
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+                Err(e) => return Err(e.into()),
+            }
         }
     }
-    Ok((events, good))
+    Ok(None)
+}
+
+fn scan_events(path: &Path) -> Result<(u64, u64)> {
+    if !path.exists() {
+        return Ok((0, 0));
+    }
+    let mut reader = BufReader::new(File::open(path)?);
+    let mut last_seq = 0;
+    let mut good = 0;
+    while let Some(event) = read_record(&mut reader)? {
+        last_seq = event.seq;
+        good = reader.stream_position()?;
+    }
+    Ok((last_seq, good))
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes)?;
+    let mut file = File::create(&tmp)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    drop(file);
     std::fs::rename(&tmp, path)?;
+    #[cfg(unix)]
+    if let Some(parent) = path.parent() {
+        File::open(parent)?.sync_all()?;
+    }
     Ok(())
 }
 
@@ -255,6 +310,25 @@ mod tests {
             stream: 1,
             text: text.into(),
         })
+    }
+
+    #[test]
+    fn replay_is_batched_and_acknowledged_history_is_not_retained() {
+        let root = tempfile::tempdir().unwrap();
+        let mut s = TaskSpool::create(root.path(), meta("batch")).unwrap();
+        for _ in 0..300 {
+            s.append(log("line")).unwrap();
+        }
+        s.ack(100).unwrap();
+        drop(s);
+        let mut s = TaskSpool::open(&root.path().join("batch")).unwrap();
+        let first = s.unsent();
+        assert_eq!(first.len(), 128);
+        assert_eq!(first[0].seq, 101);
+        assert_eq!(s.unsent().len(), 72);
+        assert!(s.unsent().is_empty());
+        s.reset_sent();
+        assert_eq!(s.unsent()[0].seq, 101);
     }
 
     #[test]

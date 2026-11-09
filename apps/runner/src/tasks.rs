@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use prost::Message;
 use sling_runner_protocol::envelope::Body;
 use sling_runner_protocol::{
     ActionRequest, ActionResult, DiffStats, HeldTask, LogLine, RepoChange, RepoChangeResult,
@@ -297,8 +298,14 @@ impl Manager {
     pub fn unsent(&self) -> Vec<TaskEvent> {
         let spools: Vec<SharedSpool> = self.spools.lock().unwrap().values().cloned().collect();
         let mut out = Vec::new();
+        let mut bytes = 0;
         for s in spools {
-            out.extend(s.lock().unwrap().unsent());
+            let batch = s.lock().unwrap().unsent();
+            bytes += batch.iter().map(Message::encoded_len).sum::<usize>();
+            out.extend(batch);
+            if out.len() >= 128 || bytes >= 512 * 1024 {
+                break;
+            }
         }
         out
     }

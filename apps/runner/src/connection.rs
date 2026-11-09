@@ -267,7 +267,11 @@ type Stream = futures_util::stream::SplitStream<
 >;
 
 async fn flush(mgr: &Arc<Manager>, sink: &mut Sink) -> Result<()> {
-    for event in mgr.unsent() {
+    let events = mgr.unsent();
+    if !events.is_empty() {
+        mgr.outbox.notify_one();
+    }
+    for event in events {
         send(sink, Body::TaskEvent(event)).await?;
     }
     for body in mgr.repo_actions.unsent() {
