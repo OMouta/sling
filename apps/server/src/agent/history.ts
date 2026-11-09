@@ -36,6 +36,7 @@ export function toModelMessages(rows: MessageRow[]): ModelMessage[] {
   const out: ModelMessage[] = [];
   for (const row of recent) {
     const msg = row.content as ModelMessage;
+    if (row.meta?.notice) continue;
     if (row.role === "system") {
       // Notes are shown to the model as user-side context, clearly marked.
       out.push({ role: "user", content: `${UPDATE_PREFIX} ${textOf(msg.content)}` });

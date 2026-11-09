@@ -92,6 +92,12 @@ export async function drainDeliveries(ctx: AppContext) {
         { err, deliveryId: row.id, attempts: row.attempts + 1 },
         "delivery failed; retrying",
       );
+      // A message that keeps failing to start its reply says so in the chat, once.
+      if (row.kind === "chat" && row.attempts + 1 === RETRY_NOTE_AFTER) {
+        await noteRetrying(ctx, row.payload).catch((noteErr) =>
+          ctx.log.error({ err: noteErr, deliveryId: row.id }, "couldn't note a retried message"),
+        );
+      }
       await ctx.db
         .update(schema.deliveries)
         .set({
@@ -130,6 +136,29 @@ async function orderedSteps(ctx: AppContext, taskId: string) {
     .from(schema.actions)
     .where(eq(schema.actions.taskId, taskId))
     .orderBy(schema.actions.position);
+}
+
+/** Failed tries before a chat says its message is taking longer to answer. */
+export const RETRY_NOTE_AFTER = 3;
+
+/** Text of the note a chat gets when its message keeps failing to start a reply. */
+export const RETRYING_NOTE = "Sling couldn't start a reply yet and keeps trying.";
+
+async function noteRetrying(ctx: AppContext, payload: Record<string, unknown>) {
+  const [conv] = await ctx.db
+    .select()
+    .from(schema.conversations)
+    .where(eq(schema.conversations.id, String(payload.conversationId)));
+  if (!conv) return;
+  await ctx.agent.addMessage(
+    conv,
+    "system",
+    { role: "system", content: RETRYING_NOTE },
+    null,
+    null,
+    null,
+    { id: `${String(payload.fallbackId)}r`, meta: { notice: true } },
+  );
 }
 
 /** Separate receipts prevent one failed consumer from suppressing the others. */

@@ -77,6 +77,16 @@ describe("what Retry and Edit may replace", () => {
     expect(replaceableIds([...rows, row("system", "Task finished.")]).size).toBe(0);
   });
 
+  it("still allows it after a notice that only told the person something", () => {
+    const user = row("user", "Do it");
+    const notice = {
+      ...row("system", "Sling couldn't start a reply yet and keeps trying."),
+      meta: { notice: true },
+    };
+    const reply = row("assistant", "Done.", { steps: [], ms: 10 });
+    expect(replaceableIds([user, notice, reply])).toEqual(new Set([user.id, reply.id]));
+  });
+
   it("is nothing when a task started since the message", () => {
     expect(replaceableIds(chat().rows, { taskStarted: true }).size).toBe(0);
   });

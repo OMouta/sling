@@ -372,6 +372,8 @@ export interface MessageMeta {
   research?: boolean;
   /** The @mentioned personality, who answers this message. */
   personalityId?: string;
+  /** A note from Sling for the person only, such as a slow start: the model never sees it. */
+  notice?: boolean;
 }
 
 export interface DiffStats {

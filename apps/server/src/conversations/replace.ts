@@ -88,7 +88,8 @@ export function replaceableIds(
   if (!exchange || opts.taskStarted) return new Set();
   const { user, after } = exchange;
   if (!after.some((r) => r.role === "assistant")) return new Set();
-  if (after.some((r) => r.role === "system")) return new Set();
+  // A notice for the person, such as a slow start, did nothing outside the chat.
+  if (after.some((r) => r.role === "system" && !r.meta?.notice)) return new Set();
   for (const r of after) {
     for (const step of r.trace?.steps ?? []) {
       if (step.kind === "tool" && hadSideEffect(step, opts.reads)) return new Set();

@@ -16,6 +16,8 @@ import { convertArrayToReadableStream, MockLanguageModelV4 } from "ai/test";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Config } from "../src/config.ts";
+import { NO_CHAT_WORKFLOW } from "../src/conversations/routes.ts";
+import { drainDeliveries, RETRY_NOTE_AFTER, RETRYING_NOTE } from "../src/deliveries.ts";
 import { type RunningServer, type StartOptions, startServer } from "../src/server.ts";
 import { fireSchedule, SCHEDULE_QUEUE } from "../src/workflows/triggers.ts";
 import { withinBudget } from "./fixtures/budget.ts";
@@ -1814,5 +1816,62 @@ describe("durable chat acceptance", () => {
       .from(schema.workflowRuns)
       .where(eq(schema.workflowRuns.dedupeKey, msg.id));
     expect(runs).toHaveLength(1);
+  });
+
+  it("retries a message whose reply fails to start, says so once, and starts it once", async () => {
+    const url = await freshDatabase("chat_retry");
+    const server = await boot(url, { deliveries: false });
+    extra.push(server);
+    const client = new Client(server.url);
+    await client.signUp();
+    const conv = await client.call<{ id: string }>("POST", "/api/conversations", {});
+    const msg = await client.call<{ id: string }>(
+      "POST",
+      `/api/conversations/${conv.id}/messages`,
+      { text: "hello through a flaky start" },
+    );
+    const emit = server.ctx.events.emit.bind(server.ctx.events);
+    let failures = 0;
+    server.ctx.events.emit = (async (...args: Parameters<typeof emit>) => {
+      if (failures < RETRY_NOTE_AFTER + 1) {
+        failures++;
+        throw new Error("trigger start failed");
+      }
+      return emit(...args);
+    }) as typeof emit;
+    const notes = async () =>
+      (
+        await server.ctx.db
+          .select()
+          .from(schema.messages)
+          .where(eq(schema.messages.conversationId, conv.id))
+      ).filter((m) => m.role !== "user");
+    const tryNow = async () => {
+      await server.ctx.db
+        .update(schema.deliveries)
+        .set({ availableAt: new Date(0) })
+        .where(eq(schema.deliveries.id, msg.id));
+      await drainDeliveries(server.ctx);
+    };
+    for (let i = 0; i < RETRY_NOTE_AFTER + 1; i++) await tryNow();
+    const said = await notes();
+    expect(said.map((m) => (m.content as { content: string }).content)).toEqual([RETRYING_NOTE]);
+
+    await tryNow();
+    const [delivery] = await server.ctx.db
+      .select()
+      .from(schema.deliveries)
+      .where(eq(schema.deliveries.id, msg.id));
+    expect(delivery?.completedAt).not.toBeNull();
+    expect(delivery?.attempts).toBe(RETRY_NOTE_AFTER + 1);
+    const runs = await server.ctx.db
+      .select()
+      .from(schema.workflowRuns)
+      .where(eq(schema.workflowRuns.dedupeKey, msg.id));
+    expect(runs).toHaveLength(1);
+    // It found its workflow, so the no-workflow message never shows.
+    expect(
+      (await notes()).some((m) => (m.content as { content: string }).content === NO_CHAT_WORKFLOW),
+    ).toBe(false);
   });
 });
