@@ -335,7 +335,7 @@ On Linux, `loginctl enable-linger $USER` keeps the service running while you're 
 |---|---|
 | `~/.config/sling/runner.toml` | Settings, repos, and shared folders |
 | `~/.config/sling/runner.key` | The machine's private key, readable only by you |
-| `~/.local/share/sling/spool/` | Task events not yet acknowledged by the server |
+| `~/.local/share/sling/spool/` | Each task's events until Sling acknowledges them. See [Task events on disk](#task-events-on-disk) |
 | `~/.local/share/sling/worktrees/` | One git worktree per task |
 | `~/.local/share/sling/chat/` | One empty directory per running chat turn, deleted when the turn ends |
 | `~/.local/share/sling/actions/` | Temporary worktrees for merges and deploys, deleted when each one ends |
@@ -343,6 +343,44 @@ On Linux, `loginctl enable-linger $USER` keeps the service running while you're 
 | `~/.local/share/sling/runner.log` | Log when running as a service |
 
 On Windows these live under `%APPDATA%\Sling` and `%LOCALAPPDATA%\Sling`. `SLING_RUNNER_HOME` puts everything in one directory, which lets you run two Runners on one machine.
+
+## Task events on disk
+
+The Runner writes each task event to `spool/<task id>/events.bin` before sending it, and keeps it until Sling acknowledges it. After a reconnect or a restart, the Runner sends everything Sling hasn't acknowledged again. Each event carries a sequence number, and Sling ignores a number it already has, so an event sent twice is stored once.
+
+### Disk use
+
+Once Sling has acknowledged at least 1 MiB of a task's events, and at least as much as is still waiting, the Runner rewrites the file without the acknowledged part. When a finished task is fully acknowledged, the file shrinks to the task's last event. The task's directory goes the next time the Runner connects and Sling says it's done with the task.
+
+While Sling isn't acknowledging, for example while the machine is offline, a task's spool holds up to 32 MiB of waiting events. Past that, the Runner skips log lines, commands, agent messages, file changes, and plan updates, and says so in the task's log. It always keeps a task's acceptance or rejection, its start and finish, token usage, and push and PR results. Once less than 16 MiB is waiting, it logs how many events it skipped and keeps everything again. Sling itself stores at most 20 MiB of a task's events and drops the same kinds past that, so the limit rarely costs output Sling would have kept.
+
+Most events are small before they reach the spool. As the Runner reads an agent, it cuts a command's output to its last 8 KiB and each line of the agent's error output to its last 2 KiB. Agent messages, plans, and a task's summary have no limit of their own. Sling refuses messages over 4 MiB, so the Runner cuts the text of any event over 1 MiB to 256 KiB per field, and skips a plan or file change that is still too big.
+
+### What survives a crash
+
+If the Runner process dies, every event it wrote survives. A crash in the middle of a write loses only that event, which the Runner hadn't sent. On the next start, the Runner cuts off the half-written event, sends what Sling hasn't acknowledged, and reports a task that was running as interrupted.
+
+A power cut or an OS crash also loses whatever the disk hadn't stored yet. The Runner flushes each event to the disk before sending it, and flushes `meta.json`, which holds the task's details, each time it changes. It doesn't flush `acked`, the record of what Sling acknowledged.
+
+| | Each event | `meta.json` | `acked` |
+|---|---|---|---|
+| macOS | Flushed with `F_FULLFSYNC` | Flushed, and its directory too | Not flushed |
+| Linux | Flushed with `fdatasync` | Flushed, and its directory too | Not flushed |
+| Windows | Flushed with `FlushFileBuffers` | Flushed, but not the rename that saves it | Not flushed |
+
+After a power cut:
+
+- Every event the Runner sent and Sling hasn't acknowledged is still on disk, under the same number.
+- The next event gets a number Sling hasn't seen, so Sling stores it. This holds even if the disk lost events.
+- `acked` may be older than what Sling acknowledged, or empty. The Runner then sends some events again, and Sling ignores them. Flushing each acknowledgement takes about 8 ms on a Mac, which would hold up the connection while it works through a long backlog.
+- A rewrite of the events file that the power cut interrupted leaves the previous file, which is still complete.
+- On Windows, the Runner can't flush a directory, so a power cut can undo the latest change to `meta.json`. A finished task may then come back as running. The Runner reports it interrupted, and Sling keeps the outcome it already recorded. The Runner's tests assume NTFS commits renames in order, no later than the next flush of a file.
+
+All of this needs a disk that keeps what it reports as flushed. Some consumer drives, and virtual machines with unsafe write caching, don't. On those, a power cut can lose recent events, though the events after them still reach Sling.
+
+If the disk is full, the Runner logs `could not write task event` and loses that event, even when it is a task's finish.
+
+Flushing every event has a cost. On a Mac's internal SSD each event takes about 4 ms, so one task can write about 250 events a second.
 
 ## Sandboxes
 
