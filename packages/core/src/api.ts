@@ -388,6 +388,41 @@ export interface ConversationPage {
   counts: { waiting: number; working: number } | null;
 }
 
+/** Which tasks a list shows: all, still going, failed or waiting on you, or finished well. */
+export const TASK_VIEWS = ["all", "active", "attention", "done"] as const;
+export type TaskListView = (typeof TASK_VIEWS)[number];
+
+/** One page of tasks, newest first. */
+export interface TaskPage {
+  items: TaskView[];
+  nextCursor: string | null;
+  /** Running tasks and tasks that need attention, with the agent and place filters. First page only. */
+  counts: { active: number; attention: number } | null;
+  /** Totals over every task the filters match, not only this page. First page only. */
+  stats: {
+    total: number;
+    insertions: number;
+    deletions: number;
+    succeeded: number;
+    failed: number;
+  } | null;
+}
+
+/** Which approvals a list shows, by what they're for. */
+export const APPROVAL_KINDS = ["all", "tasks", "workflows", "sandboxes"] as const;
+export type ApprovalListKind = (typeof APPROVAL_KINDS)[number];
+
+/** One page of approvals. */
+export interface ApprovalPage {
+  items: ApprovalView[];
+  nextCursor: string | null;
+  /**
+   * Decisions waiting, by kind: a task's push and PR count once. Pending
+   * approvals only, on the first page.
+   */
+  counts: { tasks: number; workflows: number; sandboxes: number } | null;
+}
+
 /** A message as the chat UI shows it. Tool calls are summarized, not raw. */
 export interface MessageView {
   id: string;

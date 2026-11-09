@@ -5,7 +5,6 @@ import type {
   PersonalityView,
   RunnerView,
   SendMessageInput,
-  TaskView,
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
@@ -38,6 +37,7 @@ import {
   usePersonalities,
 } from "../lib/personalities.ts";
 import { canResearch } from "../lib/research.ts";
+import { useRecentTasks } from "../lib/tasks.ts";
 import type { Settings } from "../lib/types.ts";
 import { useAttachments } from "../lib/useAttachments.ts";
 
@@ -52,10 +52,7 @@ export function HomePage() {
     queryKey: ["runners"],
     queryFn: () => api.get<RunnerView[]>("/api/runners"),
   });
-  const tasks = useQuery({
-    queryKey: ["tasks"],
-    queryFn: () => api.get<TaskView[]>("/api/tasks"),
-  });
+  const tasks = useRecentTasks();
   const [text, setText] = useDraft("new");
   const dictation = useDictation(text, setText);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -188,7 +185,7 @@ export function HomePage() {
   useEffect(() => {
     if (ready) input.current?.focus({ preventScroll: true });
   }, [ready]);
-  const recent = (tasks.data ?? []).slice(0, 5);
+  const recent = tasks.data?.items ?? [];
 
   return (
     <Page title="Chat">

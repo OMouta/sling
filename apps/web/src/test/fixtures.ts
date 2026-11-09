@@ -4,6 +4,7 @@
  */
 import type {
   ActionView,
+  ApprovalPage,
   ApprovalView,
   CatalogView,
   ConnectorView,
@@ -23,6 +24,7 @@ import type {
   SandboxRepoView,
   SandboxSettingsView,
   SandboxView,
+  TaskPage,
   TaskView,
   WorkflowSummaryView,
 } from "@sling/core";
@@ -35,6 +37,7 @@ import {
   type WorkflowDetailView,
   type WorkflowVersionView,
 } from "@sling/workflow";
+import { groupApprovals } from "../lib/approvals.ts";
 
 const SCHEMA = "https://json-schema.org/draft/2020-12/schema";
 
@@ -1781,3 +1784,19 @@ export const ntfyAssistantUpdate: ExtensionPreview = {
   },
   diff: { fromVersion: "1.0.0", added: [], removed: [] },
 };
+
+/** A list as one page of the paged approvals endpoint, with its counts. */
+export function approvalPage(list: ApprovalView[]): ApprovalPage {
+  const pending = list.filter((a) => a.state === "pending");
+  const g = groupApprovals(pending);
+  return {
+    items: list,
+    nextCursor: null,
+    counts: { tasks: g.byTask.size, workflows: g.workflow.length, sandboxes: g.fallback.length },
+  };
+}
+
+/** A list as one page of the paged tasks endpoint. */
+export function taskPage(list: TaskView[]): TaskPage {
+  return { items: list, nextCursor: null, counts: null, stats: null };
+}

@@ -2,13 +2,12 @@ import {
   HARNESS_LABELS,
   HARNESSES,
   type Harness,
-  type TaskState,
+  type TaskListView,
   type TaskView,
 } from "@sling/core";
-import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Bot, Box, CircleDot, ListChecks, Plus } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
 import { TaskStateBadge } from "../components/TaskCard.tsx";
@@ -19,63 +18,40 @@ import {
   ErrorText,
   FilterSelect,
   Skeleton,
+  Spinner,
   Table,
   Tabs,
   Td,
   Th,
   Tr,
 } from "../components/ui.tsx";
-import { api } from "../lib/api.ts";
 import { ago, between, duration } from "../lib/format.ts";
+import { useLoadMore, useStickyCounts } from "../lib/pages.ts";
 import { environmentSummary } from "../lib/taskEnvironment.ts";
-
-type View = "all" | "active" | "attention" | "done";
-
-const ACTIVE: ReadonlySet<TaskState> = new Set(["queued", "dispatched", "running"]);
-const PROBLEM: ReadonlySet<TaskState> = new Set(["failed", "rejected", "interrupted"]);
-
-function needsAttention(t: TaskView): boolean {
-  return PROBLEM.has(t.state) || t.actions.some((a) => a.state === "awaiting_approval");
-}
-
-const VIEWS: Record<View, (t: TaskView) => boolean> = {
-  all: () => true,
-  active: (t) => ACTIVE.has(t.state),
-  attention: needsAttention,
-  done: (t) => t.state === "succeeded",
-};
+import { useTaskList } from "../lib/tasks.ts";
 
 export function TasksPage() {
   const navigate = useNavigate();
-  const tasks = useQuery({
-    queryKey: ["tasks"],
-    queryFn: () => api.get<TaskView[]>("/api/tasks"),
-  });
-  const [view, setView] = useState<View>("all");
+  const [view, setView] = useState<TaskListView>("all");
   const [agent, setAgent] = useState<Harness | "any">("any");
   const [where, setWhere] = useState<"any" | "machine" | "sandbox">("any");
-
-  const all = tasks.data ?? [];
-  const rows = all.filter(
-    (t) =>
-      VIEWS[view](t) &&
-      (agent === "any" || t.harness === agent) &&
-      (where === "any" || t.environment.kind === where),
-  );
-  const count = (v: View) => all.filter(VIEWS[v]).length;
-  const added = rows.reduce((n, t) => n + (t.diffStats?.insertions ?? 0), 0);
-  const removed = rows.reduce((n, t) => n + (t.diffStats?.deletions ?? 0), 0);
-  const finished = rows.filter((t) => t.state === "succeeded" || t.state === "failed");
-  const successRate = finished.length
-    ? Math.round((finished.filter((t) => t.state === "succeeded").length / finished.length) * 100)
-    : null;
+  const tasks = useTaskList({ view, harness: agent, environment: where });
+  const pages = tasks.data?.pages;
+  const rows = useMemo(() => pages?.flatMap((p) => p.items) ?? [], [pages]);
+  const counts = useStickyCounts(pages?.[0]?.counts);
+  // Totals over every task the filters match, not only the pages loaded.
+  const stats = pages?.[0]?.stats;
+  const finished = (stats?.succeeded ?? 0) + (stats?.failed ?? 0);
+  const successRate = stats && finished > 0 ? Math.round((stats.succeeded / finished) * 100) : null;
+  const filtered = view !== "all" || agent !== "any" || where !== "any";
+  const end = useLoadMore(tasks);
 
   return (
     <Page
       title="Tasks"
       badge={
-        count("active") > 0 ? (
-          <span className="tabular text-xs text-subtle">{count("active")} running</span>
+        counts && counts.active > 0 ? (
+          <span className="tabular text-xs text-subtle">{counts.active} running</span>
         ) : undefined
       }
       tabs={
@@ -84,8 +60,8 @@ export function TasksPage() {
           onChange={setView}
           tabs={[
             { id: "all", label: "All tasks" },
-            { id: "active", label: "Running", count: count("active") },
-            { id: "attention", label: "Needs attention", count: count("attention") },
+            { id: "active", label: "Running", count: counts?.active },
+            { id: "attention", label: "Needs attention", count: counts?.attention },
             { id: "done", label: "Done" },
           ]}
         />
@@ -122,15 +98,16 @@ export function TasksPage() {
         </Toolbar>
       }
       footer={
-        rows.length > 0 && (
+        stats &&
+        stats.total > 0 && (
           <StatsBar
             items={[
               <>
-                <span className="text-text">{rows.length}</span> tasks in view
+                <span className="text-text">{stats.total.toLocaleString()}</span> tasks in view
               </>,
               <>
-                <span className="text-ok">+{added.toLocaleString()}</span>
-                <span className="text-danger">-{removed.toLocaleString()}</span> lines
+                <span className="text-ok">+{stats.insertions.toLocaleString()}</span>
+                <span className="text-danger">-{stats.deletions.toLocaleString()}</span> lines
               </>,
               successRate !== null && (
                 <>
@@ -150,11 +127,7 @@ export function TasksPage() {
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <Empty
-          fill
-          icon={ListChecks}
-          title={all.length === 0 ? "No tasks yet" : "No tasks match"}
-        />
+        <Empty fill icon={ListChecks} title={filtered ? "No tasks match" : "No tasks yet"} />
       ) : (
         <Table className="border-t border-border">
           <thead>
@@ -179,6 +152,12 @@ export function TasksPage() {
             ))}
           </tbody>
         </Table>
+      )}
+      <div ref={end} aria-hidden="true" />
+      {tasks.isFetchingNextPage && (
+        <div className="flex justify-center py-4">
+          <Spinner />
+        </div>
       )}
     </Page>
   );

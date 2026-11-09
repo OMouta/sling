@@ -332,7 +332,7 @@ describe("Stage 1", () => {
       return t.actions[0]?.state === "awaiting_approval" ? t : null;
     });
     expect(waiting.state).toBe("succeeded");
-    const pending = await api<{ taskId: string }[]>("GET", "/api/approvals");
+    const pending = (await api<{ items: { taskId: string }[] }>("GET", "/api/approvals")).items;
     expect(pending.some((a) => a.taskId === id)).toBe(true);
 
     await api("POST", `/api/tasks/${id}/approval`, { decision: "approve" });

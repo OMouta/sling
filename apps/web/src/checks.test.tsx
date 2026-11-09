@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router.tsx";
 import {
   apiTarget,
+  approvalPage,
   deliveredPrTask,
   deployApprovals,
   deployFailedTask,
@@ -28,6 +29,7 @@ import {
   lockedMac,
   step,
   studioMac,
+  taskPage,
   websiteTarget,
 } from "./test/fixtures.ts";
 
@@ -212,9 +214,9 @@ function route(method: string, path: string, body: unknown): unknown {
     case "GET /api/sandbox-repos":
       return sandboxRepos;
     case "GET /api/approvals":
-      return approvals;
+      return approvalPage(approvals);
     case "GET /api/tasks":
-      return tasks;
+      return taskPage(tasks);
     case "GET /api/conversations":
     case "GET /api/personalities":
       return [];

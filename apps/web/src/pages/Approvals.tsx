@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Activity,
+  ArrowDownUp,
   ExternalLink,
   GitMerge,
   GitPullRequest,
@@ -11,9 +12,10 @@ import {
   Upload,
   Workflow,
 } from "lucide-react";
+import { useMemo, useState } from "react";
 import { ActionCheckLine } from "../components/ActionCheck.tsx";
 import { DeployPlanText } from "../components/DeployBits.tsx";
-import { Content, Page } from "../components/Page.tsx";
+import { Content, Page, Toolbar } from "../components/Page.tsx";
 import { RuleQuestion } from "../components/RuleQuestion.tsx";
 import { RulesList } from "../components/RulesList.tsx";
 import { SandboxFallbackCard } from "../components/SandboxFallbackCard.tsx";
@@ -24,13 +26,20 @@ import {
   CardFooter,
   Empty,
   ErrorText,
+  FilterSelect,
   Kicker,
   Mono,
   Skeleton,
+  Spinner,
   Tabs,
 } from "../components/ui.tsx";
 import { api } from "../lib/api.ts";
-import { groupApprovals } from "../lib/approvals.ts";
+import {
+  decisionCount,
+  groupApprovals,
+  useApprovalCounts,
+  useApprovalList,
+} from "../lib/approvals.ts";
 import {
   deployPlan,
   targetForRemote,
@@ -39,6 +48,7 @@ import {
   useDeployTargets,
 } from "../lib/deploys.ts";
 import { ago, plural } from "../lib/format.ts";
+import { useLoadMore } from "../lib/pages.ts";
 import type { TaskDetail } from "../lib/types.ts";
 import { useRun } from "../lib/workflowApi.ts";
 import { type ApprovalsTab, approvalsRoute } from "../router.tsx";
@@ -52,18 +62,19 @@ const LABEL = {
 };
 
 export function ApprovalsPage() {
-  const approvals = useQuery({
-    queryKey: ["approvals"],
-    queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
-  });
-  const { byTask, workflow, fallback, decisions } = groupApprovals(approvals.data ?? []);
-
   const search = approvalsRoute.useSearch();
   const navigate = approvalsRoute.useNavigate();
   const tab: ApprovalsTab = search.tab ?? "all";
   const setTab = (t: ApprovalsTab) =>
     void navigate({ search: t === "all" ? {} : { tab: t }, replace: true });
-  const total = decisions;
+  const [order, setOrder] = useState<"expiring" | "newest">("expiring");
+  const approvals = useApprovalList(tab === "rules" ? "all" : tab, order, tab !== "rules");
+  const pages = approvals.data?.pages;
+  const items = useMemo(() => pages?.flatMap((p) => p.items) ?? [], [pages]);
+  const { byTask, workflow, fallback } = groupApprovals(items);
+  const counts = useApprovalCounts().data;
+  const total = decisionCount(counts);
+  const end = useLoadMore(approvals);
   const show = (t: typeof tab) => tab === "all" || tab === t;
 
   return (
@@ -82,17 +93,34 @@ export function ApprovalsPage() {
           onChange={setTab}
           tabs={[
             { id: "all", label: "All", count: total },
-            { id: "tasks", label: "Tasks", count: byTask.size },
-            { id: "workflows", label: "Workflows", count: workflow.length },
-            { id: "sandboxes", label: "Sandboxes", count: fallback.length },
+            { id: "tasks", label: "Tasks", count: counts?.tasks },
+            { id: "workflows", label: "Workflows", count: counts?.workflows },
+            { id: "sandboxes", label: "Sandboxes", count: counts?.sandboxes },
             { id: "rules", label: "Rules" },
           ]}
         />
       }
+      toolbar={
+        tab !== "rules" &&
+        items.length > 1 && (
+          <Toolbar>
+            <FilterSelect
+              label="Order"
+              icon={ArrowDownUp}
+              value={order}
+              onChange={setOrder}
+              options={[
+                { value: "expiring", label: "Expiring first" },
+                { value: "newest", label: "Newest first" },
+              ]}
+            />
+          </Toolbar>
+        )
+      }
     >
       {tab === "rules" ? (
         <RulesList />
-      ) : approvals.data?.length === 0 ? (
+      ) : !approvals.isPending && items.length === 0 && !approvals.error ? (
         <Empty fill icon={ShieldCheck} title="Nothing waiting" />
       ) : (
         <Content className="space-y-4">
@@ -105,6 +133,12 @@ export function ApprovalsPage() {
               <ApprovalGroup key={taskId} taskId={taskId} approvals={list} />
             ))}
           {show("workflows") && workflow.map((a) => <WorkflowApproval key={a.id} approval={a} />)}
+          <div ref={end} aria-hidden="true" />
+          {approvals.isFetchingNextPage && (
+            <div className="flex justify-center">
+              <Spinner />
+            </div>
+          )}
         </Content>
       )}
     </Page>

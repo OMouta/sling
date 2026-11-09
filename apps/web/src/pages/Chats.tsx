@@ -1,7 +1,7 @@
-import type { ConversationPage, ConversationSummaryView } from "@sling/core";
+import type { ConversationSummaryView } from "@sling/core";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Archive, MessagesSquare, Plus, Search, SearchX } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useConversationMenu } from "../components/ConversationMenu.tsx";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, Toolbar } from "../components/Page.tsx";
@@ -24,6 +24,7 @@ import {
   useConversationList,
 } from "../lib/conversations.ts";
 import { ago } from "../lib/format.ts";
+import { useLoadMore, useStickyCounts } from "../lib/pages.ts";
 import { chatsRoute } from "../router.tsx";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -58,26 +59,9 @@ export function ChatsPage() {
   const pages = conversations.data?.pages;
   const rows = useMemo(() => pages?.flatMap((p) => p.items) ?? [], [pages]);
   const groups = useMemo(() => groupByDate(rows), [rows]);
-  // Every tab counts the same chats, so the counts stay put while another tab loads.
-  const lastCounts = useRef<ConversationPage["counts"]>(null);
-  if (pages?.[0]?.counts) lastCounts.current = pages[0].counts;
-  const counts = lastCounts.current;
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = conversations;
-
-  // The next page loads as the end of the list scrolls into view.
-  const end = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const el = end.current;
-    if (!el || !hasNextPage) return;
-    const seen = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((e) => e.isIntersecting) && !isFetchingNextPage) void fetchNextPage();
-      },
-      { rootMargin: "400px 0px" },
-    );
-    seen.observe(el);
-    return () => seen.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+  const counts = useStickyCounts(pages?.[0]?.counts);
+  const end = useLoadMore(conversations);
+  const { isFetchingNextPage } = conversations;
 
   return (
     <Page

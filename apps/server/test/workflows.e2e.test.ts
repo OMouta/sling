@@ -596,9 +596,12 @@ describe("waits", () => {
     );
     const run = await start(c, wf.id, { what: "v2" });
     await settled(c, run.id, ["waiting"]);
-    const pending = await c.call<
-      { id: string; kind: string; title: string; runId: string | null }[]
-    >("GET", "/api/approvals");
+    const pending = (
+      await c.call<{ items: { id: string; kind: string; title: string; runId: string | null }[] }>(
+        "GET",
+        "/api/approvals",
+      )
+    ).items;
     const approval = pending.find((a) => a.runId === run.id);
     expect(approval).toMatchObject({ kind: "workflow", title: "Ship v2?" });
     const requested = await until("approval announced", async () => {
@@ -622,9 +625,9 @@ describe("waits", () => {
     // Rejecting through the API takes the other branch.
     const second = await start(c, wf.id, { what: "v3" });
     await settled(c, second.id, ["waiting"]);
-    const p2 = (await c.call<{ id: string; runId: string }[]>("GET", "/api/approvals")).find(
-      (a) => a.runId === second.id,
-    );
+    const p2 = (
+      await c.call<{ items: { id: string; runId: string }[] }>("GET", "/api/approvals")
+    ).items.find((a) => a.runId === second.id);
     await c.call("POST", `/api/approvals/${p2?.id}`, { decision: "reject" });
     await settled(c, second.id, ["succeeded"]);
     expect(callsFor(second.id).map((x) => x.tag)).toEqual(["rejected"]);
@@ -1133,9 +1136,9 @@ describe("connectors", () => {
     );
     const run = await start(c, wf.id);
     await settled(c, run.id, ["waiting"]);
-    const approval = (await c.call<{ id: string; runId: string }[]>("GET", "/api/approvals")).find(
-      (a) => a.runId === run.id,
-    );
+    const approval = (
+      await c.call<{ items: { id: string; runId: string }[] }>("GET", "/api/approvals")
+    ).items.find((a) => a.runId === run.id);
     if (!approval) throw new Error("no approval");
     const actor = { via: "fake", externalUserId: "u-42" };
     await src.approvals.reportRefused({

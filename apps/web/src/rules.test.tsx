@@ -14,6 +14,7 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router.tsx";
+import { approvalPage } from "./test/fixtures.ts";
 
 vi.mock("./lib/auth.ts", () => ({
   authClient: {
@@ -101,7 +102,7 @@ function route(path: string): unknown {
     case "/api/rules":
       return rules;
     case "/api/approvals":
-      return approvals;
+      return approvalPage(approvals);
     case "/api/conversations":
     case "/api/runners":
     case "/api/deploy-targets":

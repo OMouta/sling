@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router.tsx";
 import {
   sandboxRepos as allowedRepos,
+  approvalPage,
   buildbox,
   busySandbox,
   devbox,
@@ -67,7 +68,7 @@ function route(method: string, path: string, body: unknown): unknown {
     case "GET /api/conversations":
       return [];
     case "GET /api/approvals":
-      return approvals;
+      return approvalPage(approvals);
     case "GET /api/sandboxes":
       return sandboxes;
     case "GET /api/connectors":

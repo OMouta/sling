@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
-import type { ConversationView, RunnerView, TaskView } from "@sling/core";
+import type { ApprovalView, ConversationView, RunnerView, TaskView } from "@sling/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from "./router.tsx";
+import { approvalPage } from "./test/fixtures.ts";
 
 const runner: RunnerView = {
   id: "rnr_1",
@@ -145,7 +146,7 @@ function routes(path: string): unknown {
   if (path === "/api/status")
     return { needsSetup: false, signedIn, email: "a@b.c", version: "0.1.0", publicUrl };
   if (path === "/api/conversations") return { items: [], nextCursor: null, counts: null };
-  if (path === "/api/approvals") return approvals;
+  if (path === "/api/approvals") return approvalPage(approvals as ApprovalView[]);
   if (path === "/api/rules") return [];
   if (path === "/api/tasks/tsk_1/approval") return {};
   if (path === "/api/runners") return runners;

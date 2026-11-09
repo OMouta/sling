@@ -1,11 +1,12 @@
 /**
- * The chat list end to end on real Postgres: pages without gaps or repeats,
- * filters applied before paging, search, archive and restore, and a message
- * sent again after its response was lost.
+ * The chat, task, and approval lists end to end on real Postgres: pages
+ * without gaps or repeats, filters applied before paging, counts over
+ * everything that matches, search, archive and restore, and a message sent
+ * again after its response was lost.
  */
 import { createServer } from "node:net";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import type { ConversationPage, ConversationView } from "@sling/core";
+import type { ApprovalPage, ConversationPage, ConversationView, TaskPage } from "@sling/core";
 import { newId } from "@sling/core";
 import { schema } from "@sling/db";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
@@ -268,5 +269,157 @@ describe("the chat list", () => {
       .from(schema.deliveries)
       .where(eq(schema.deliveries.id, first.id));
     expect(queued).toHaveLength(1);
+  });
+});
+
+/** The signed-in user's workspace and ID, for rows written straight to the database. */
+async function me() {
+  const [m] = await server.ctx.db.select().from(schema.workspaceMembers);
+  if (!m) throw new Error("no workspace");
+  return { workspaceId: m.workspaceId, ownerId: m.userId };
+}
+
+/** Every item a list gives, following its cursors. */
+async function everything<T extends { id: string }>(path: string, limit: number): Promise<T[]> {
+  const items: T[] = [];
+  let cursor: string | null = null;
+  for (let pages = 0; pages < 50; pages++) {
+    const sep = path.includes("?") ? "&" : "?";
+    const page: { items: T[]; nextCursor: string | null } = await api(
+      "GET",
+      `${path}${sep}limit=${limit}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+    );
+    expect(page.items.length).toBeLessThanOrEqual(limit);
+    items.push(...page.items);
+    cursor = page.nextCursor;
+    if (!cursor) return items;
+  }
+  throw new Error("too many pages");
+}
+
+describe("the task list", () => {
+  it("pages newest first, filters before the limit, and totals every match", async () => {
+    const owner = await me();
+    // Its own chat keeps other tests' tasks out of the counts.
+    const conversationId = await chat("tasks for the list");
+    const q = `/api/tasks?conversationId=${conversationId}`;
+    const made: string[] = [];
+    const task = async (over: Partial<typeof schema.tasks.$inferInsert>) => {
+      const id = newId("tsk");
+      made.push(id);
+      await server.ctx.db.insert(schema.tasks).values({
+        id,
+        ...owner,
+        conversationId,
+        repoName: "site",
+        title: `Task ${made.length}`,
+        objective: "Do it",
+        mode: "auto",
+        branch: `sling/t${made.length}`,
+        state: "succeeded",
+        ...over,
+      });
+      await new Promise((ok) => setTimeout(ok, 2));
+      return id;
+    };
+    const oldFailure = await task({ state: "failed", harness: "claude-code" });
+    for (let i = 0; i < 5; i++) {
+      await task({ diffStats: { filesChanged: 1, insertions: 10, deletions: 2 } });
+    }
+    const running = await task({ state: "running", environment: "sandbox" });
+
+    const all = await everything<{ id: string }>(q, 2);
+    expect(all.map((t) => t.id)).toEqual([...made].reverse());
+
+    const first = await api<TaskPage>("GET", `${q}&limit=2`);
+    expect(first.counts).toEqual({ active: 1, attention: 1 });
+    expect(first.stats).toEqual({
+      total: 7,
+      insertions: 50,
+      deletions: 10,
+      succeeded: 5,
+      failed: 1,
+    });
+    expect((await everything<{ id: string }>(`${q}&view=attention`, 2)).map((t) => t.id)).toEqual([
+      oldFailure,
+    ]);
+    expect((await everything<{ id: string }>(`${q}&view=active`, 2)).map((t) => t.id)).toEqual([
+      running,
+    ]);
+    expect(
+      (await everything<{ id: string }>(`${q}&harness=claude-code`, 2)).map((t) => t.id),
+    ).toEqual([oldFailure]);
+    expect(
+      (await everything<{ id: string }>(`${q}&environment=sandbox`, 2)).map((t) => t.id),
+    ).toEqual([running]);
+    const done = await api<TaskPage>("GET", `${q}&view=done&limit=1`);
+    expect(done.stats?.total).toBe(5);
+    expect(done.counts).toEqual({ active: 1, attention: 1 });
+  });
+});
+
+describe("the approval list", () => {
+  it("lists soonest to expire first, keeps every one reachable, and counts decisions", async () => {
+    const owner = await me();
+    const taskIds = [newId("tsk"), newId("tsk")];
+    for (const [i, id] of taskIds.entries()) {
+      await server.ctx.db.insert(schema.tasks).values({
+        id,
+        ...owner,
+        repoName: "site",
+        title: `Needs a push ${i}`,
+        objective: "Do it",
+        mode: "auto",
+        branch: `sling/a${i}`,
+        state: "succeeded",
+      });
+    }
+    const base = Date.now() + 3_600_000;
+    const approval = async (
+      minutes: number,
+      over: Partial<typeof schema.approvals.$inferInsert>,
+    ) => {
+      const id = newId("apr");
+      await server.ctx.db.insert(schema.approvals).values({
+        id,
+        ...owner,
+        expiresAt: new Date(base + minutes * 60_000),
+        ...over,
+      });
+      return id;
+    };
+    // The one that expires first was made last, so newest first would bury it.
+    const ids = [
+      await approval(30, { kind: "task_action", taskId: taskIds[0] }),
+      await approval(31, { kind: "task_action", taskId: taskIds[0] }),
+      await approval(20, { kind: "task_action", taskId: taskIds[1] }),
+      await approval(40, { kind: "workflow", title: "Ship it?" }),
+      await approval(10, { kind: "workflow", title: "Send it?" }),
+      await approval(50, { kind: "sandbox_fallback", taskId: taskIds[1] }),
+      await approval(5, { kind: "workflow", title: "Same time as the next" }),
+      await approval(5, { kind: "workflow", title: "Same time as the last" }),
+    ];
+    await approval(1, { kind: "workflow", title: "Decided", state: "approved" });
+
+    const listed = await everything<{ id: string; expiresAt: string }>("/api/approvals", 3);
+    expect(listed).toHaveLength(ids.length);
+    expect(new Set(listed.map((a) => a.id)).size).toBe(ids.length);
+    const times = listed.map((a) => a.expiresAt);
+    expect(times).toEqual([...times].sort());
+
+    const newest = await everything<{ id: string }>("/api/approvals?order=newest", 3);
+    expect(newest.map((a) => a.id)).toEqual([...ids].reverse());
+
+    const first = await api<ApprovalPage>("GET", "/api/approvals?limit=2");
+    expect(first.counts).toEqual({ tasks: 2, workflows: 4, sandboxes: 1 });
+    expect(await everything("/api/approvals?kind=tasks", 2)).toHaveLength(3);
+    expect(await everything("/api/approvals?kind=workflows", 2)).toHaveLength(4);
+    expect(await everything("/api/approvals?kind=sandboxes", 2)).toHaveLength(1);
+    expect(
+      (await everything<{ id: string }>(`/api/approvals?taskId=${taskIds[1]}`, 5)).map((a) => a.id),
+    ).toEqual([ids[2], ids[5]]);
+    const decided = await api<ApprovalPage>("GET", "/api/approvals?state=approved");
+    expect(decided.items).toHaveLength(1);
+    expect(decided.counts).toBeNull();
   });
 });

@@ -22,9 +22,11 @@ import { applyExtension, forgetExtension } from "./extensionApi.ts";
 import { liveText } from "./followUps.ts";
 import { applyMemoryEvent } from "./memory.ts";
 import { modelsKey } from "./models.ts";
+import { mapPaged, patchPaged } from "./pages.ts";
 import { applyPersonalityEvent } from "./personalities.ts";
 import { applyRuleEvent } from "./rules.ts";
 import { applySourceEvent } from "./sources.ts";
+import { tasksKey } from "./tasks.ts";
 import type { ConversationDetail, TaskDetail } from "./types.ts";
 import { qk } from "./workflowApi.ts";
 
@@ -190,9 +192,32 @@ function patchConversation(
   if (!found || recount) refreshConversations(qc);
 }
 
+let tasksTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Refetches the task lists soon, once for a burst of changes. */
+function refreshTasks(qc: QueryClient) {
+  clearTimeout(tasksTimer);
+  tasksTimer = setTimeout(() => void qc.invalidateQueries({ queryKey: tasksKey }), 400);
+}
+
+/** What moves a task between the lists' filters, or changes their counts and totals. */
+function listed(t: TaskView): string {
+  return JSON.stringify([t.state, t.actions.map((a) => a.state), t.diffStats]);
+}
+
+/**
+ * A task changed. Lists that have it patch it in place; a new task, or one
+ * whose state, steps, or diff changed, makes them refetch, since the server
+ * decides what each filter holds and counts.
+ */
 function applyTask(qc: QueryClient, task: TaskView) {
   qc.setQueryData<TaskDetail>(["task", task.id], (d) => (d ? { ...d, task } : d));
-  qc.setQueryData<TaskView[]>(["tasks"], (list) => upsertLoaded(list, task, true));
+  let moved = false;
+  const found = patchPaged<TaskView>(qc, tasksKey, task.id, (old) => {
+    moved ||= listed(old) !== listed(task);
+    return task;
+  });
+  if (!found || moved) refreshTasks(qc);
   if (task.conversationId) {
     qc.setQueryData<ConversationDetail>(["conversation", task.conversationId], (d) =>
       d ? { ...d, tasks: upsert(d.tasks, task) } : d,
@@ -287,7 +312,7 @@ function applySandbox(qc: QueryClient, sandbox: SandboxView) {
     };
   };
   qc.setQueryData<TaskDetail>(["task", taskId], (d) => (d ? { ...d, task: patch(d.task) } : d));
-  qc.setQueryData<TaskView[]>(["tasks"], (list) => list?.map(patch));
+  mapPaged<TaskView>(qc, tasksKey, patch);
   qc.setQueriesData<ConversationDetail>({ queryKey: ["conversation"] }, (d) =>
     d?.tasks.some((t) => t.id === taskId) ? { ...d, tasks: d.tasks.map(patch) } : d,
   );

@@ -35,7 +35,7 @@ import { promisify } from "node:util";
 import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import type {
   ActionView,
-  ApprovalView,
+  ApprovalPage,
   DeployTargetView,
   PermissionMode,
   RunnerView,
@@ -245,7 +245,7 @@ const target = async (name: string) => {
   return t;
 };
 const pending = async (taskId: string) =>
-  (await api<ApprovalView[]>("GET", "/api/approvals")).filter((a) => a.taskId === taskId);
+  (await api<ApprovalPage>("GET", `/api/approvals?taskId=${taskId}`)).items;
 
 async function newConversation(mode: PermissionMode, personalityId?: string) {
   const conv = await api<{ id: string }>("POST", "/api/conversations", {

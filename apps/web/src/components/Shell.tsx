@@ -1,15 +1,16 @@
-import type { ApprovalView, RunnerView, TaskView } from "@sling/core";
+import type { RunnerView } from "@sling/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { PanelLeftClose, SquarePen } from "lucide-react";
 import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api.ts";
-import { decisionCount } from "../lib/approvals.ts";
+import { decisionCount, useApprovalCounts } from "../lib/approvals.ts";
 import { useRecentConversations } from "../lib/conversations.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { NEW_CHAT_EVENT } from "../lib/newChat.ts";
 import { connectRealtime, setOpenConversation, useConnection } from "../lib/realtime.ts";
 import { useSandboxes } from "../lib/sandboxApi.ts";
+import { useRecentTasks } from "../lib/tasks.ts";
 import { useDefaultTimeZone } from "../lib/timezone.ts";
 import type { Status } from "../lib/types.ts";
 import { Logo } from "./Logo.tsx";
@@ -201,18 +202,12 @@ function SectionLabel({ children, action }: { children: ReactNode; action?: Reac
 }
 
 function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => void }) {
-  const approvals = useQuery({
-    queryKey: ["approvals"],
-    queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
-  });
+  const approvals = useApprovalCounts();
   const runners = useQuery({
     queryKey: ["runners"],
     queryFn: () => api.get<RunnerView[]>("/api/runners"),
   });
-  const tasks = useQuery({
-    queryKey: ["tasks"],
-    queryFn: () => api.get<TaskView[]>("/api/tasks"),
-  });
+  const tasks = useRecentTasks();
   const sandboxes = useSandboxes();
   const conversations = useRecentConversations();
   // An open chat is one of the Chats page's.
@@ -220,12 +215,9 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
 
   const machines = machinesOnly(runners.data ?? []);
   const online = machines.filter((m) => m.online).length;
-  const activeTasks = (tasks.data ?? []).filter(
-    (t) => t.state === "queued" || t.state === "dispatched" || t.state === "running",
-  ).length;
   const counts: Partial<Record<NavItem["to"], { n?: number; warn?: boolean }>> = {
     "/chats": { n: conversations.data?.counts?.waiting, warn: true },
-    "/tasks": { n: activeTasks },
+    "/tasks": { n: tasks.data?.counts?.active },
     "/approvals": { n: decisionCount(approvals.data), warn: true },
     "/machines": { n: online },
     "/sandboxes": { n: sandboxes.data?.usage.running },

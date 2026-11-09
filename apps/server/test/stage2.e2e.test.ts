@@ -541,10 +541,9 @@ describe("Stage 2", { timeout: 60_000 }, () => {
     expect(finished.nodeRuns.find((n) => n.nodeId === "ask")?.execPort).toBe("approved");
     expect(accepted.seen.edits.length).toBe(1);
 
-    const approvals = await api<{ id: string; state: string }[]>(
-      "GET",
-      "/api/approvals?state=approved",
-    );
+    const approvals = (
+      await api<{ items: { id: string; state: string }[] }>("GET", "/api/approvals?state=approved")
+    ).items;
     expect(approvals.some((a) => a.id === approvalId)).toBe(true);
     const audit = await server.ctx.db.query.auditEvents.findMany();
     expect(audit.some((a) => a.verb === "approval.refused" && a.subjectId === approvalId)).toBe(

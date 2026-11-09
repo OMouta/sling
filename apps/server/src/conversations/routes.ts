@@ -29,6 +29,7 @@ import { ChatSettingsPatch, mergeSettings } from "../agent/chat-settings.ts";
 import { textOf } from "../agent/history.ts";
 import { audit } from "../audit.ts";
 import type { AppContext } from "../context.ts";
+import { decodeCursor, encodeCursor } from "../http/cursor.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import {
   conversationPersonality,
@@ -403,17 +404,6 @@ const ACTIVE_TASK_STATES: TaskState[] = ["queued", "dispatched", "running"];
 /** Chats a list page holds, unless it asks for fewer. */
 const PAGE = 50;
 const MAX_PAGE = 100;
-
-/** Where a page ended: the last chat's activity time and ID, as an opaque string. */
-function encodeCursor(at: Date, id: string): string {
-  return Buffer.from(`${at.toISOString()}|${id}`).toString("base64url");
-}
-
-function decodeCursor(cursor: string): { at: string; id: string } | null {
-  const [at, id] = Buffer.from(cursor, "base64url").toString().split("|");
-  if (!at || !id || Number.isNaN(Date.parse(at))) return null;
-  return { at, id };
-}
 
 /**
  * What the status filters match, as conditions on a conversations row. A

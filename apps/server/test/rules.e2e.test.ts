@@ -524,9 +524,11 @@ describe("allow rules on a task's push and PR", () => {
   it("lets the push go without asking once Always allow made a rule, and the PR still asks", async () => {
     const first = await prTask("Fix the footer year");
     const waiting = await until("both approvals", async () => {
-      const list = await api<
-        { id: string; taskId: string; actionKind: string; ruleOffer?: AllowRuleView }[]
-      >("GET", "/api/approvals");
+      const list = (
+        await api<{
+          items: { id: string; taskId: string; actionKind: string; ruleOffer?: AllowRuleView }[];
+        }>("GET", "/api/approvals")
+      ).items;
       const mine = list.filter((a) => a.taskId === first);
       return mine.length === 2 ? mine : null;
     });
@@ -566,7 +568,9 @@ describe("allow rules on a task's push and PR", () => {
     expect(used).toHaveLength(1);
     expect(used[0]).toMatchObject({ action: "push", taskId: second });
     expect(used[0]?.actionId).toBe(t.actions.find((a) => a.kind === "push")?.id);
-    const asking = (await api<{ taskId: string; actionKind: string }[]>("GET", "/api/approvals"))
+    const asking = (
+      await api<{ items: { taskId: string; actionKind: string }[] }>("GET", "/api/approvals")
+    ).items
       .filter((a) => a.taskId === second)
       .map((a) => a.actionKind);
     expect(asking).toEqual(["open_pr"]);

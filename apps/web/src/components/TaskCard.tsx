@@ -1,6 +1,5 @@
 import {
   type ActionView,
-  type ApprovalView,
   effortLabel,
   HARNESS_LABELS,
   type PermissionMode,
@@ -34,6 +33,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { api } from "../lib/api.ts";
+import { useTaskApprovals } from "../lib/approvals.ts";
 import {
   awaitsDeployApproval,
   canDeployLater,
@@ -186,11 +186,7 @@ export function TaskCard({
   // A push or PR waiting here offers Always allow, as Approvals does.
   const asksStep = awaiting.length > 0 && !deployApproval;
   // Only a task with no machine yet can be waiting on a fallback approval.
-  const approvals = useQuery({
-    queryKey: ["approvals"],
-    queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
-    enabled: task.runnerId === null || asksStep,
-  });
+  const approvals = useTaskApprovals(task.id, task.runnerId === null || asksStep);
   const offers = asksStep
     ? (approvals.data ?? []).flatMap((a) =>
         a.taskId === task.id && a.ruleOffer ? [a.ruleOffer] : [],

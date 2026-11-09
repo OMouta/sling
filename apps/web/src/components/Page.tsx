@@ -1,4 +1,3 @@
-import type { ApprovalView } from "@sling/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
@@ -18,7 +17,7 @@ import {
 } from "lucide-react";
 import { createContext, type ReactNode, useContext, useEffect } from "react";
 import { api } from "../lib/api.ts";
-import { decisionCount } from "../lib/approvals.ts";
+import { decisionCount, useApprovalCounts } from "../lib/approvals.ts";
 import { authClient } from "../lib/auth.ts";
 import { clearDrafts } from "../lib/drafts.ts";
 import { setTheme, type ThemePref, useTheme } from "../lib/theme.ts";
@@ -226,11 +225,8 @@ function TopBar({
 }
 
 function ApprovalsBell() {
-  const approvals = useQuery({
-    queryKey: ["approvals"],
-    queryFn: () => api.get<ApprovalView[]>("/api/approvals"),
-  });
-  const n = decisionCount(approvals.data);
+  const counts = useApprovalCounts();
+  const n = decisionCount(counts.data);
   return (
     <Link
       to="/approvals"

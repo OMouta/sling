@@ -18,7 +18,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { LanguageModelV4CallOptions, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import type {
-  ApprovalView,
+  ApprovalPage,
   RoutingView,
   RunDetailView,
   RunnerView,
@@ -732,7 +732,7 @@ describe("sandboxes", () => {
         providerName: "fake-host",
       },
     });
-    const approval = (await api<ApprovalView[]>("GET", "/api/approvals")).find(
+    const approval = (await api<ApprovalPage>("GET", "/api/approvals")).items.find(
       (a) => a.id === created.approvalId,
     );
     expect(approval).toMatchObject({

@@ -1,10 +1,23 @@
-import { DELIVERY_KINDS, HARNESSES, isPermissionMode } from "@sling/core";
+import {
+  APPROVAL_KINDS,
+  APPROVAL_STATES,
+  type ApprovalListKind,
+  type ApprovalPage,
+  DELIVERY_KINDS,
+  HARNESSES,
+  isPermissionMode,
+  TASK_VIEWS,
+  type TaskListView,
+  type TaskPage,
+  type TaskState,
+} from "@sling/core";
 import { schema } from "@sling/db";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, ne, or, type SQL, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
+import { decodeCursor, encodeCursor } from "../http/cursor.ts";
 import { actorOf, requireActor } from "../http/session.ts";
 import { ENVIRONMENTS } from "../routing/router.ts";
 import { approvalViews, taskViews, toEventView } from "../views.ts";
@@ -16,24 +29,76 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
   const r = app.withTypeProvider<ZodTypeProvider>();
   r.addHook("preHandler", requireActor(ctx));
 
+  // Tasks, newest first, a page at a time. The filters apply before the
+  // limit, and the first page carries counts and totals for all that match.
   r.get(
     "/api/tasks",
-    { schema: { querystring: z.object({ conversationId: z.string().optional() }) } },
-    async (request) => {
+    {
+      schema: {
+        querystring: z.object({
+          conversationId: z.string().optional(),
+          view: z.enum(TASK_VIEWS).default("all"),
+          harness: z.enum(HARNESSES).optional(),
+          environment: z.enum(["machine", "sandbox"]).optional(),
+          cursor: z.string().max(64).optional(),
+          limit: z.coerce.number().int().min(1).max(100).default(50),
+        }),
+      },
+    },
+    async (request): Promise<TaskPage> => {
       const actor = actorOf(request);
-      const where = request.query.conversationId
-        ? and(
-            eq(schema.tasks.workspaceId, actor.workspaceId),
-            eq(schema.tasks.conversationId, request.query.conversationId),
-          )
-        : eq(schema.tasks.workspaceId, actor.workspaceId);
+      const { conversationId, view, harness, environment, cursor, limit } = request.query;
+      const t = schema.tasks;
+      const scope = and(
+        eq(t.workspaceId, actor.workspaceId),
+        conversationId ? eq(t.conversationId, conversationId) : undefined,
+        harness ? eq(t.harness, harness) : undefined,
+        environment ? eq(t.environment, environment) : undefined,
+      );
+      const views = taskViewFilters();
+      const shown = views[view];
+      // IDs start with their creation time, so they order tasks newest first
+      // exactly, where a cursor on the timestamp would round it.
       const rows = await ctx.db
         .select()
-        .from(schema.tasks)
-        .where(where)
-        .orderBy(desc(schema.tasks.createdAt))
-        .limit(100);
-      return taskViews(ctx, rows);
+        .from(t)
+        .where(and(scope, shown, cursor ? lt(t.id, cursor) : undefined))
+        .orderBy(desc(t.id))
+        .limit(limit + 1);
+      const page = rows.slice(0, limit);
+      let counts: TaskPage["counts"] = null;
+      let stats: TaskPage["stats"] = null;
+      if (!cursor) {
+        const inView = shown ?? sql`true`;
+        const [totals] = await ctx.db
+          .select({
+            active: sql<number>`(count(*) filter (where ${views.active}))::int`,
+            attention: sql<number>`(count(*) filter (where ${views.attention}))::int`,
+            total: sql<number>`(count(*) filter (where ${inView}))::int`,
+            insertions: sql<number>`coalesce(sum((${t.diffStats}->>'insertions')::bigint) filter (where ${inView}), 0)::bigint`,
+            deletions: sql<number>`coalesce(sum((${t.diffStats}->>'deletions')::bigint) filter (where ${inView}), 0)::bigint`,
+            succeeded: sql<number>`(count(*) filter (where ${inView} and ${t.state} = 'succeeded'))::int`,
+            failed: sql<number>`(count(*) filter (where ${inView} and ${t.state} = 'failed'))::int`,
+          })
+          .from(t)
+          .where(scope);
+        if (totals) {
+          counts = { active: totals.active, attention: totals.attention };
+          stats = {
+            total: totals.total,
+            insertions: Number(totals.insertions),
+            deletions: Number(totals.deletions),
+            succeeded: totals.succeeded,
+            failed: totals.failed,
+          };
+        }
+      }
+      return {
+        items: await taskViews(ctx, page),
+        nextCursor: rows.length > limit ? (page.at(-1)?.id ?? null) : null,
+        counts,
+        stats,
+      };
     },
   );
 
@@ -175,26 +240,75 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
     },
   );
 
+  // Approvals a page at a time, filtered by what they're for before the
+  // limit. Pending ones list soonest to expire first unless asked for the
+  // newest; the first page of pending ones counts every decision waiting.
   r.get(
     "/api/approvals",
-    { schema: { querystring: z.object({ state: z.string().default("pending") }) } },
-    async (request) => {
+    {
+      schema: {
+        querystring: z.object({
+          state: z.enum(APPROVAL_STATES).default("pending"),
+          kind: z.enum(APPROVAL_KINDS).default("all"),
+          taskId: z.string().max(64).optional(),
+          order: z.enum(["expiring", "newest"]).optional(),
+          cursor: z.string().max(200).optional(),
+          limit: z.coerce.number().int().min(1).max(100).default(50),
+        }),
+      },
+    },
+    async (request, reply): Promise<ApprovalPage> => {
       const actor = actorOf(request);
-      const rows = await ctx.db
-        .select({ id: schema.approvals.id })
-        .from(schema.approvals)
-        .where(
-          and(
-            eq(schema.approvals.workspaceId, actor.workspaceId),
-            eq(schema.approvals.state, request.query.state as "pending"),
-          ),
-        )
-        .orderBy(desc(schema.approvals.createdAt))
-        .limit(100);
-      return approvalViews(
-        ctx,
-        rows.map((a) => a.id),
+      const { state, kind, taskId, cursor, limit } = request.query;
+      const order = request.query.order ?? (state === "pending" ? "expiring" : "newest");
+      const a = schema.approvals;
+      const kinds = approvalKindFilters();
+      const scope = and(
+        eq(a.workspaceId, actor.workspaceId),
+        eq(a.state, state),
+        taskId ? eq(a.taskId, taskId) : undefined,
       );
+      let after: SQL | undefined;
+      if (cursor && order === "expiring") {
+        const at = decodeCursor(cursor);
+        if (!at) return reply.code(400).send({ error: "bad cursor" });
+        after = sql`(${a.expiresAt}, ${a.id}) > (${at.at}::timestamptz, ${at.id})`;
+      } else if (cursor) {
+        after = lt(a.id, cursor);
+      }
+      const rows = await ctx.db
+        .select({ id: a.id, expiresAt: a.expiresAt })
+        .from(a)
+        .where(and(scope, kinds[kind], after))
+        .orderBy(...(order === "expiring" ? [asc(a.expiresAt), asc(a.id)] : [desc(a.id)]))
+        .limit(limit + 1);
+      const page = rows.slice(0, limit);
+      const last = page.at(-1);
+      let counts: ApprovalPage["counts"] = null;
+      if (!cursor && state === "pending") {
+        const [n] = await ctx.db
+          .select({
+            tasks: sql<number>`(count(distinct ${a.taskId}) filter (where ${kinds.tasks}))::int`,
+            workflows: sql<number>`(count(*) filter (where ${kinds.workflows}))::int`,
+            sandboxes: sql<number>`(count(*) filter (where ${kinds.sandboxes}))::int`,
+          })
+          .from(a)
+          .where(scope);
+        counts = n ?? null;
+      }
+      return {
+        items: await approvalViews(
+          ctx,
+          page.map((r) => r.id),
+        ),
+        nextCursor:
+          rows.length > limit && last
+            ? order === "expiring"
+              ? encodeCursor(last.expiresAt, last.id)
+              : last.id
+            : null,
+        counts,
+      };
     },
   );
 
@@ -213,4 +327,38 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
       return { ok: true };
     },
   );
+}
+
+const ACTIVE_STATES: TaskState[] = ["queued", "dispatched", "running"];
+const PROBLEM_STATES: TaskState[] = ["failed", "rejected", "interrupted"];
+
+/** What each task view matches, as a condition on a tasks row. */
+function taskViewFilters(): Record<TaskListView, SQL | undefined> {
+  const t = schema.tasks;
+  const x = schema.actions;
+  return {
+    all: undefined,
+    active: inArray(t.state, ACTIVE_STATES),
+    attention: or(
+      inArray(t.state, PROBLEM_STATES),
+      sql`${t.id} in (select ${x.taskId} from ${x} where ${x.state} = 'awaiting_approval')`,
+    ),
+    done: eq(t.state, "succeeded"),
+  };
+}
+
+/**
+ * What each approval kind matches, the way the Approvals page groups them:
+ * sandbox fallbacks, a task's steps, and everything else, which waits in a
+ * workflow.
+ */
+function approvalKindFilters(): Record<ApprovalListKind, SQL | undefined> {
+  const a = schema.approvals;
+  const tasks = and(eq(a.kind, "task_action"), sql`${a.taskId} is not null`) as SQL;
+  return {
+    all: undefined,
+    sandboxes: eq(a.kind, "sandbox_fallback"),
+    tasks,
+    workflows: and(ne(a.kind, "sandbox_fallback"), sql`not (${tasks})`) as SQL,
+  };
 }

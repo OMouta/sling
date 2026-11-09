@@ -36,8 +36,13 @@ const sandbox = { ...base, id: "a5", kind: "sandbox_fallback", taskId: "t3" } as
 
 describe("approval decisions", () => {
   it("counts a task's push and pull request as one decision", () => {
-    expect(decisionCount([push, pr])).toBe(1);
-    expect(decisionCount([push, pr, other])).toBe(2);
+    expect(groupApprovals([push, pr]).decisions).toBe(1);
+    expect(groupApprovals([push, pr, other]).decisions).toBe(2);
+  });
+
+  it("adds up the server's counts of each kind", () => {
+    expect(decisionCount({ tasks: 2, workflows: 1, sandboxes: 1 })).toBe(4);
+    expect(decisionCount(null)).toBe(0);
   });
 
   it("counts each workflow step and sandbox request on its own", () => {
