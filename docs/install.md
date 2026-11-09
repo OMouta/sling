@@ -105,13 +105,16 @@ Migrations run on startup.
 
 ## Backups
 
-Everything lives in Postgres:
+Everything Sling stores lives in Postgres, and `deploy/.env` holds the key its
+credentials are encrypted with. Back up both:
 
 ```sh
-docker compose exec postgres pg_dump -U sling sling > sling-$(date +%F).sql
+cd deploy
+SLING_BACKUP_PASSPHRASE_FILE=/root/sling-backup.pass ./backup.sh
 ```
 
-Back up `deploy/.env` too. Without `SLING_SECRET_KEY` the stored API keys can't be decrypted.
+`./restore.sh` puts a backup back with automation paused. [backup.md](backup.md)
+covers what a backup needs, scheduling, encryption, restoring, and measured times.
 
 ## Control-plane topology and health
 

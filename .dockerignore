@@ -5,5 +5,6 @@ target
 .env
 deploy/.env
 deploy/tunnel.env
+deploy/backups/
 plan
 **/*.log

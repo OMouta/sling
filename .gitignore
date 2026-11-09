@@ -8,6 +8,7 @@ target/
 *.log
 deploy/.env
 deploy/tunnel.env
+deploy/backups/
 extensions/dist/
 apps/web/test-results/
 apps/web/playwright-report/
