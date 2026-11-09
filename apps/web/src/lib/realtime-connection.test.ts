@@ -117,6 +117,18 @@ describe("the live connection", () => {
     expect(qc.invalidateQueries).toHaveBeenCalledTimes(1);
   });
 
+  it("drops the socket when the device goes offline, and reconnects at once when it's back", () => {
+    stop = connectRealtime(qc);
+    latest().open();
+    window.dispatchEvent(new Event("offline"));
+    expect(FakeSocket.all[0]?.closed).toBe(true);
+    window.dispatchEvent(new Event("online"));
+    expect(FakeSocket.all).toHaveLength(2);
+    latest().open();
+    // Back after an outage: everything is refetched.
+    expect(qc.invalidateQueries).toHaveBeenCalledTimes(1);
+  });
+
   it("doesn't reconnect after it's stopped", () => {
     stop = connectRealtime(qc);
     latest().open();

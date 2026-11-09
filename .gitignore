@@ -9,3 +9,5 @@ target/
 deploy/.env
 deploy/tunnel.env
 extensions/dist/
+apps/web/test-results/
+apps/web/playwright-report/

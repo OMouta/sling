@@ -80,6 +80,17 @@ SLING_TEST_EXTENSION_RUNTIME=process pnpm --filter @sling/server test:e2e
 
 `apps/server/test/stage4.e2e.test.ts` always uses real processes. With `SLING_LIVE_NTFY=1` its ntfy part runs against ntfy.sh with the included package as it ships, instead of a local fake. It needs no account.
 
+A few journeys run in a real browser against a running Sling that serves the built app: signing in, sending a message whose response is lost, drafts, archiving, dialogs and tabs by keyboard, pairing, and reconnecting. They set Sling up on a fresh database, or sign in on one they set up before:
+
+```sh
+pnpm --filter @sling/web build
+# Sling with SLING_WEB_DIST=apps/web/dist on :8080, on its own database
+pnpm --filter @sling/web exec playwright install chromium
+SLING_BROWSER_URL=http://localhost:8080 pnpm --filter @sling/web test:browser
+```
+
+`PLAYWRIGHT_CHROMIUM` points the suite at a Chromium already on the machine instead.
+
 Two more Rust checks need something outside the repo:
 
 ```sh

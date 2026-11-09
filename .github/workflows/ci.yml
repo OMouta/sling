@@ -38,6 +38,62 @@ jobs:
         run: pnpm exec buf breaking --against "../../.git#ref=origin/${{ github.base_ref }},subdir=packages/runner-protocol"
       - run: pnpm --filter @sling/web build
 
+  browser:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: sling
+          POSTGRES_PASSWORD: sling
+          POSTGRES_DB: sling
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sling"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgres://sling:sling@localhost:5432/sling
+      SLING_PUBLIC_URL: http://localhost:8080
+      SLING_SECRET_KEY: ci-browser-journeys-secret-key-0123456789
+      SLING_WEB_DIST: ${{ github.workspace }}/apps/web/dist
+      SLING_BROWSER_URL: http://localhost:8080
+      PORT: "8080"
+      LOG_LEVEL: warn
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @sling/web build
+      - run: pnpm --filter @sling/web exec playwright install --with-deps chromium
+      - name: Start Sling
+        working-directory: apps/server
+        run: |
+          node src/main.ts > "$RUNNER_TEMP/sling.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/api/status > /dev/null && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/sling.log"
+          exit 1
+      - name: Browser journeys
+        run: pnpm --filter @sling/web test:browser
+      - if: failure()
+        run: cp "$RUNNER_TEMP/sling.log" apps/web/test-results/sling.log || true
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-journeys
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+
   rust:
     strategy:
       fail-fast: false

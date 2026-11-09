@@ -566,11 +566,24 @@ export function connectRealtime(qc: QueryClient): () => void {
     }
     sendPresence();
   };
+  // The device says the network went away or came back: don't wait for the
+  // stale check or the backoff.
+  const onOffline = () => ws?.close();
+  const onOnline = () => {
+    if (ws?.readyState === 1 || ws?.readyState === 0) return;
+    window.clearTimeout(timer);
+    attempt = Math.max(attempt, 1);
+    open();
+  };
   document.addEventListener("visibilitychange", onVisibility);
+  window.addEventListener("offline", onOffline);
+  window.addEventListener("online", onOnline);
   open();
   return () => {
     stopped = true;
     document.removeEventListener("visibilitychange", onVisibility);
+    window.removeEventListener("offline", onOffline);
+    window.removeEventListener("online", onOnline);
     window.clearTimeout(timer);
     window.clearInterval(ping);
     if (current === ws) current = null;
