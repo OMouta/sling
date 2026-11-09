@@ -1306,11 +1306,25 @@ export class TaskService implements GatewayHandlers {
 
   /** Runs daily: drops task events past the retention window. */
   async pruneEvents(): Promise<number> {
-    const rows = await this.#db
-      .delete(schema.taskEvents)
-      .where(lt(schema.taskEvents.at, new Date(Date.now() - EVENT_RETENTION_MS)))
-      .returning({ taskId: schema.taskEvents.taskId });
-    return rows.length;
+    const cutoff = new Date(Date.now() - EVENT_RETENTION_MS);
+    const deadline = Date.now() + 10_000;
+    let deleted = 0;
+    do {
+      const result = await this.#db.execute(sql`
+        with batch as (
+          select task_id, seq from task_events
+          where at < ${cutoff} order by at limit 1000
+          for update skip locked
+        ), removed as (
+          delete from task_events e using batch b
+          where e.task_id = b.task_id and e.seq = b.seq returning 1
+        ) select count(*)::int as count from removed
+      `);
+      const n = Number(result.rows[0]?.count ?? 0);
+      deleted += n;
+      if (n < 1000) break;
+    } while (Date.now() < deadline);
+    return deleted;
   }
 
   /**
