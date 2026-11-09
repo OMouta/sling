@@ -1,5 +1,6 @@
 import { PgBoss } from "pg-boss";
 import type { AppContext } from "./context.ts";
+import { pruneDeliveries, reconcileSettlements } from "./deliveries.ts";
 
 export const QUEUES = {
   sweep: "sweep",
@@ -30,11 +31,13 @@ export async function startJobs(
     await ctx.tasks.sweep();
     await ctx.sandboxes.sweep();
     await ctx.deploys.sweep();
+    await reconcileSettlements(ctx);
   });
   await boss.work(QUEUES.pruneEvents, async () => {
     const n = await ctx.tasks.pruneEvents();
     const payloads = await ctx.engine.prunePayloads();
     await ctx.commands.pruneOutcomes();
+    await pruneDeliveries(ctx);
     ctx.log.info(
       { deleted: n, nodeRunPayloads: payloads },
       "pruned old task events and node run payloads",
