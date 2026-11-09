@@ -63,7 +63,7 @@ fn events_survive_reopen_until_acked() {
     assert_eq!(unsent.len(), 1);
     assert_eq!(unsent[0].seq, 3);
     let e = s.append(log("c")).unwrap();
-    assert_eq!(e.seq, 4);
+    assert_eq!(e, 4);
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn a_torn_write_is_dropped() {
     drop(f);
     let mut s = TaskSpool::open(&root.path().join("tsk_2")).unwrap();
     assert_eq!(s.last_seq(), 1);
-    assert_eq!(s.append(log("next")).unwrap().seq, 2);
+    assert_eq!(s.append(log("next")).unwrap(), 2);
     drop(s);
     let s = TaskSpool::open(&root.path().join("tsk_2")).unwrap();
     assert_eq!(s.last_seq(), 2);
@@ -96,4 +96,253 @@ fn reset_sent_resends_unacked() {
     let again = s.unsent();
     assert_eq!(again.len(), 1);
     assert_eq!(again[0].seq, 2);
+}
+
+/// Tests on a simulated disk: crashes and power cuts at every step, and
+/// states that storage which loses confirmed writes can leave behind.
+mod faults {
+    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::spool::sim::{CUTS, SimDisk};
+
+    const ID: &str = "tsk_sim";
+
+    fn root() -> PathBuf {
+        PathBuf::from("/spool")
+    }
+
+    fn dir() -> PathBuf {
+        root().join(ID)
+    }
+
+    fn record(task_id: &str, seq: u64, text: &str) -> Vec<u8> {
+        TaskEvent {
+            task_id: task_id.into(),
+            seq,
+            at_ms: 0,
+            kind: Some(log(text)),
+        }
+        .encode_length_delimited_to_vec()
+    }
+
+    /// A spool directory written straight onto the disk.
+    fn spool_on(disk: &SimDisk, acked: Option<&str>, events: &[u8]) {
+        disk.put(
+            &dir().join("meta.json"),
+            &serde_json::to_vec(&meta(ID)).unwrap(),
+        );
+        if let Some(acked) = acked {
+            disk.put(&dir().join("acked"), acked.as_bytes());
+        }
+        disk.put(&dir().join(EVENTS), events);
+    }
+
+    fn open(disk: &SimDisk) -> TaskSpool {
+        TaskSpool::open_on(Arc::new(disk.clone()), &dir()).unwrap()
+    }
+
+    /// Everything the spool would send on a new connection.
+    fn replay(s: &mut TaskSpool) -> Vec<TaskEvent> {
+        s.reset_sent();
+        let mut out = Vec::new();
+        loop {
+            let batch = s.unsent();
+            if batch.is_empty() {
+                return out;
+            }
+            out.extend(batch);
+        }
+    }
+
+    fn seqs(events: &[TaskEvent]) -> Vec<u64> {
+        events.iter().map(|e| e.seq).collect()
+    }
+
+    /// What callers and the server were told before the crash.
+    #[derive(Default)]
+    struct Promised {
+        /// Records whose append returned, by seq.
+        records: BTreeMap<u64, Kind>,
+        /// The record being appended when the process died.
+        attempted: Option<(u64, Kind)>,
+        /// Highest seq the server acknowledged. It has every record up to it.
+        server: u64,
+    }
+
+    struct Run {
+        spool: TaskSpool,
+        promised: Promised,
+    }
+
+    impl Run {
+        fn append(&mut self, text: &str) -> Result<()> {
+            let seq = self.spool.last_seq() + 1;
+            self.promised.attempted = Some((seq, log(text)));
+            assert_eq!(self.spool.append(log(text))?, seq);
+            self.promised.records.insert(seq, log(text));
+            self.promised.attempted = None;
+            Ok(())
+        }
+
+        fn ack(&mut self, seq: u64) -> Result<()> {
+            self.promised.server = self.promised.server.max(seq);
+            self.spool.ack(seq)
+        }
+
+        fn finish(&mut self) -> Result<()> {
+            self.spool.set_meta(|m| m.state = SpoolState::Finished)
+        }
+    }
+
+    /// Checks a spool that restarted on `disk`: it opens; replay is in order
+    /// with no gap after what the server has; every replayed record is the
+    /// one first written with that seq; nothing the server lacks is missing;
+    /// and the next record gets a seq no earlier record had, and survives
+    /// another restart.
+    fn check(disk: &SimDisk, p: &Promised, label: &str) {
+        let mut s = TaskSpool::open_on(Arc::new(disk.clone()), &dir())
+            .unwrap_or_else(|e| panic!("{label}: open failed: {e:#}"));
+        let replayed = replay(&mut s);
+        for pair in replayed.windows(2) {
+            assert_eq!(pair[1].seq, pair[0].seq + 1, "{label}: replay skips");
+        }
+        if let Some(first) = replayed.first() {
+            assert!(
+                first.seq <= p.server + 1,
+                "{label}: gap before {}",
+                first.seq
+            );
+        }
+        for e in &replayed {
+            let expected = p.records.get(&e.seq).or(p
+                .attempted
+                .as_ref()
+                .filter(|(seq, _)| *seq == e.seq)
+                .map(|(_, kind)| kind));
+            assert_eq!(e.kind.as_ref(), expected, "{label}: seq {} changed", e.seq);
+        }
+        for seq in p.records.keys().filter(|seq| **seq > p.server) {
+            assert!(
+                replayed.iter().any(|e| e.seq == *seq),
+                "{label}: lost unacknowledged seq {seq}"
+            );
+        }
+        let highest = p.records.keys().max().copied().unwrap_or(0).max(p.server);
+        let next = s.append(log("after restart")).unwrap();
+        assert!(next > highest, "{label}: seq {next} reused");
+        drop(s);
+        let mut s = TaskSpool::open_on(Arc::new(disk.clone()), &dir()).unwrap();
+        assert_eq!(seqs(&replay(&mut s)).last(), Some(&next), "{label}");
+    }
+
+    /// Runs `steps` once for every change they make to the disk, with the
+    /// process dying at that change, and checks the spool after each kind of
+    /// power cut. The last run completes and is checked the same way.
+    fn at_every_crash(setup: impl Fn(&mut Run), steps: impl Fn(&mut Run) -> Result<()>) {
+        for at in 0.. {
+            let disk = SimDisk::new(&root());
+            let spool = TaskSpool::create_on(Arc::new(disk.clone()), &root(), meta(ID)).unwrap();
+            let mut run = Run {
+                spool,
+                promised: Promised::default(),
+            };
+            setup(&mut run);
+            disk.crash_after(at);
+            let result = steps(&mut run);
+            let crashed = disk.crashed();
+            if !crashed {
+                result.unwrap();
+            }
+            let Run { spool, promised } = run;
+            drop(spool);
+            for cut in CUTS {
+                check(
+                    &disk.power_cut(cut),
+                    &promised,
+                    &format!("crash at {at}, {cut:?}"),
+                );
+            }
+            if !crashed {
+                return;
+            }
+        }
+    }
+
+    #[test]
+    fn appends_and_acks_survive_a_crash_at_every_step() {
+        at_every_crash(
+            |run| {
+                for i in 0..3 {
+                    run.append(&format!("setup {i}")).unwrap();
+                }
+            },
+            |run| {
+                run.append("a")?;
+                run.append("b")?;
+                run.ack(4)?;
+                run.append("c")?;
+                run.ack(6)?;
+                run.finish()
+            },
+        );
+    }
+
+    #[test]
+    fn a_failed_write_does_not_hide_later_records() {
+        let disk = SimDisk::new(&root());
+        let mut s = TaskSpool::create_on(Arc::new(disk.clone()), &root(), meta(ID)).unwrap();
+        s.append(log("one")).unwrap();
+        disk.fail_after(0);
+        assert!(s.append(log("lost")).is_err());
+        assert_eq!(s.append(log("two")).unwrap(), 2);
+        drop(s);
+        let replayed = replay(&mut open(&disk));
+        assert_eq!(seqs(&replayed), [1, 2]);
+        assert_eq!(replayed[1].kind, Some(log("two")));
+    }
+
+    #[test]
+    fn acknowledgements_that_outlived_their_events_keep_the_sequence() {
+        // `acked` reached the disk but the records it covers didn't.
+        let disk = SimDisk::new(&root());
+        let events = [record(ID, 1, "a"), record(ID, 2, "b")].concat();
+        spool_on(&disk, Some("5"), &events);
+        let mut s = open(&disk);
+        assert_eq!(s.last_seq(), 5);
+        assert!(replay(&mut s).is_empty());
+        assert_eq!(s.append(log("new")).unwrap(), 6);
+        drop(s);
+        let mut s = open(&disk);
+        assert_eq!(seqs(&replay(&mut s)), [6]);
+
+        // The events file is gone entirely.
+        let disk = SimDisk::new(&root());
+        spool_on(&disk, Some("3"), &[]);
+        let mut s = open(&disk);
+        assert_eq!(s.append(log("new")).unwrap(), 4);
+        drop(s);
+        assert_eq!(seqs(&replay(&mut open(&disk))), [4]);
+    }
+
+    #[test]
+    fn recovery_stops_at_bytes_that_were_never_written_as_records() {
+        let whole = [record(ID, 1, "a"), record(ID, 2, "b"), record(ID, 3, "c")].concat();
+        let tails: [(&str, Vec<u8>); 4] = [
+            ("zeros", vec![0; 64]),
+            ("torn", record(ID, 4, "d")[..5].to_vec()),
+            ("stale", record(ID, 2, "old")),
+            ("another task", record("tsk_other", 4, "d")),
+        ];
+        for (name, tail) in tails {
+            let disk = SimDisk::new(&root());
+            spool_on(&disk, Some("1"), &[whole.clone(), tail].concat());
+            let mut s = open(&disk);
+            assert_eq!(s.last_seq(), 3, "{name}");
+            assert_eq!(seqs(&replay(&mut s)), [2, 3], "{name}");
+            assert_eq!(s.append(log("d")).unwrap(), 4, "{name}");
+            drop(s);
+            assert_eq!(seqs(&replay(&mut open(&disk))), [2, 3, 4], "{name}");
+        }
+    }
 }

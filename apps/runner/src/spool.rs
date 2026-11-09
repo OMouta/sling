@@ -46,17 +46,29 @@ pub struct TaskMeta {
     pub created_ms: i64,
 }
 
+/// The events file inside a task's spool directory.
+const EVENTS: &str = "events.bin";
+/// Records handed to the connection per call, by count and by bytes.
+const BATCH_EVENTS: usize = 128;
+const BATCH_BYTES: u64 = 512 * 1024;
+/// Largest record the spool reads. Anything claiming more is treated as torn.
+const MAX_RECORD_BYTES: usize = 4 * 1024 * 1024;
+
 pub struct TaskSpool {
     disk: Arc<dyn Disk>,
     dir: PathBuf,
     pub meta: TaskMeta,
+    /// Appends go here. Dropped after a failed write and reopened by the next
+    /// append, which first cuts off whatever the failure left behind.
+    file: Option<Box<dyn Writer>>,
+    /// Bytes of whole records in the events file.
+    len: u64,
     last_seq: u64,
     acked: u64,
     /// Next byte to scan for this connection. Unacknowledged data stays on disk.
     read_offset: u64,
     /// Highest seq handed to the current connection.
     sent: u64,
-    file: Box<dyn Writer>,
 }
 
 impl TaskSpool {
@@ -73,7 +85,7 @@ impl TaskSpool {
             &serde_json::to_vec_pretty(&meta)?,
         )?;
         write_atomic(&*disk, &dir.join("acked"), b"0")?;
-        let mut file = disk.append(&dir.join("events.bin"))?;
+        let mut file = disk.append(&dir.join(EVENTS))?;
         file.sync()?;
         disk.sync_dir(&dir)?;
         disk.sync_dir(root)?;
@@ -81,11 +93,12 @@ impl TaskSpool {
             disk,
             dir,
             meta,
+            file: Some(file),
+            len: 0,
             last_seq: 0,
             acked: 0,
             read_offset: 0,
             sent: 0,
-            file,
         })
     }
 
@@ -105,23 +118,38 @@ impl TaskSpool {
             .and_then(|b| String::from_utf8(b).ok())
             .and_then(|s| s.trim().parse().ok())
             .unwrap_or(0);
-        let path = dir.join("events.bin");
-        let (last_seq, good_len) = scan_events(&*disk, &path)?;
-        // Drop a half-written record left by a crash.
-        if disk.len(&path).is_ok_and(|len| len != good_len) {
-            disk.set_len(&path, good_len)?;
+        let path = dir.join(EVENTS);
+        let scan = scan(&*disk, &path, &meta.task_id)?;
+        let mut len = scan.len;
+        if scan.last_seq < acked {
+            // Sling acknowledged records this file no longer has, which means
+            // storage lost writes it had confirmed. The rest of the file is
+            // acknowledged too, so it goes, and the next record continues
+            // after `acked`. Reusing a lower number would make Sling ignore
+            // the new record as one it already has.
+            tracing::warn!(
+                task = meta.task_id,
+                acked,
+                last_seq = scan.last_seq,
+                "spool lost acknowledged events"
+            );
+            len = 0;
+        }
+        // Cut off a record a crash left half written.
+        if file_len(&*disk, &path)? > len {
+            disk.set_len(&path, len)?;
         }
         let file = disk.append(&path)?;
-        let acked = acked.min(last_seq);
         Ok(TaskSpool {
             disk,
             dir: dir.to_path_buf(),
             meta,
-            last_seq,
+            file: Some(file),
+            len,
+            last_seq: scan.last_seq.max(acked),
             acked,
             read_offset: 0,
             sent: acked,
-            file,
         })
     }
 
@@ -133,8 +161,8 @@ impl TaskSpool {
         self.last_seq
     }
 
-    /// Appends an event and returns it.
-    pub fn append(&mut self, kind: Kind) -> Result<TaskEvent> {
+    /// Appends an event, synced to disk, and returns its seq.
+    pub fn append(&mut self, kind: Kind) -> Result<u64> {
         let event = TaskEvent {
             task_id: self.meta.task_id.clone(),
             seq: self.last_seq + 1,
@@ -146,10 +174,31 @@ impl TaskSpool {
             bytes.len() <= MAX_RECORD_BYTES,
             "event exceeds spool record limit"
         );
-        self.file.write_bytes(&bytes)?;
-        self.file.sync()?;
+        self.write_record(&bytes)?;
         self.last_seq = event.seq;
-        Ok(event)
+        Ok(event.seq)
+    }
+
+    /// Writes and syncs one encoded record. A failed write can leave part of
+    /// the record behind. The next write cuts it off first, so it never sits
+    /// in front of later records, where recovery would stop at it.
+    fn write_record(&mut self, bytes: &[u8]) -> Result<()> {
+        let file = match &mut self.file {
+            Some(file) => file,
+            None => {
+                let path = self.dir.join(EVENTS);
+                if file_len(&*self.disk, &path)? > self.len {
+                    self.disk.set_len(&path, self.len)?;
+                }
+                self.file.insert(self.disk.append(&path)?)
+            }
+        };
+        if let Err(e) = file.write_bytes(bytes).and_then(|()| file.sync()) {
+            self.file = None;
+            return Err(e.into());
+        }
+        self.len += bytes.len() as u64;
+        Ok(())
     }
 
     pub fn ack(&mut self, seq: u64) -> Result<()> {
@@ -178,19 +227,23 @@ impl TaskSpool {
     }
 
     fn read_batch(&mut self) -> Result<Vec<TaskEvent>> {
-        let mut reader = self.disk.reader(&self.dir.join("events.bin"))?;
-        reader.seek(SeekFrom::Start(self.read_offset))?;
         let mut out = Vec::new();
+        let done = self.sent.max(self.acked);
+        if done >= self.last_seq {
+            return Ok(out);
+        }
+        let mut reader = self.disk.reader(&self.dir.join(EVENTS))?;
+        reader.seek(SeekFrom::Start(self.read_offset))?;
         let mut bytes = 0;
-        while out.len() < 128 && bytes < 512 * 1024 {
-            let Some(event) = read_record(&mut reader)? else {
+        while out.len() < BATCH_EVENTS && bytes < BATCH_BYTES && self.read_offset < self.len {
+            let Some((event, size)) = read_record(&mut reader)? else {
                 break;
             };
-            self.read_offset = reader.stream_position()?;
-            if event.seq <= self.sent {
+            self.read_offset += size;
+            if event.seq <= self.sent.max(self.acked) {
                 continue;
             }
-            bytes += event.encoded_len();
+            bytes += size;
             self.sent = event.seq;
             out.push(event);
         }
@@ -219,16 +272,16 @@ impl TaskSpool {
     }
 }
 
-const MAX_RECORD_BYTES: usize = 4 * 1024 * 1024;
-
-/// Decode one record without loading the history. An incomplete final record is ignored.
-fn read_record(reader: &mut impl Read) -> Result<Option<TaskEvent>> {
+/// Reads one record without loading the rest of the file, and returns it with
+/// its size on disk. `None` at the end, or at a record that is incomplete or
+/// doesn't decode.
+fn read_record(reader: &mut impl Read) -> Result<Option<(TaskEvent, u64)>> {
     let mut len = 0u64;
-    for shift in (0..70).step_by(7) {
+    for (i, shift) in (0..70).step_by(7).enumerate() {
         let mut byte = [0];
         match reader.read_exact(&mut byte) {
             Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
             Err(e) => return Err(e.into()),
         }
         if shift == 63 && byte[0] > 1 {
@@ -240,29 +293,60 @@ fn read_record(reader: &mut impl Read) -> Result<Option<TaskEvent>> {
                 return Ok(None);
             }
             let mut bytes = vec![0; len as usize];
-            match reader.read_exact(&mut bytes) {
-                Ok(()) => return Ok(TaskEvent::decode(bytes.as_slice()).ok()),
-                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-                Err(e) => return Err(e.into()),
-            }
+            return match reader.read_exact(&mut bytes) {
+                Ok(()) => Ok(TaskEvent::decode(bytes.as_slice())
+                    .ok()
+                    .map(|event| (event, i as u64 + 1 + len))),
+                Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => Ok(None),
+                Err(e) => Err(e.into()),
+            };
         }
     }
     Ok(None)
 }
 
-fn scan_events(disk: &dyn Disk, path: &Path) -> Result<(u64, u64)> {
+/// The whole records at the start of an events file.
+struct Scan {
+    last_seq: u64,
+    len: u64,
+}
+
+/// Reads records up to the first one that isn't whole, this task's, and next
+/// in sequence. Nothing after it was ever confirmed written: it is a torn
+/// tail, zeros where a power cut kept a file's new length but not its data,
+/// or stale bytes. Zeros and stale bytes can still decode, so the task ID and
+/// sequence checks are what catch them.
+fn scan(disk: &dyn Disk, path: &Path, task_id: &str) -> Result<Scan> {
+    let mut scan = Scan {
+        last_seq: 0,
+        len: 0,
+    };
     let mut reader = match disk.reader(path) {
         Ok(reader) => reader,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((0, 0)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(scan),
         Err(e) => return Err(e.into()),
     };
-    let mut last_seq = 0;
-    let mut good = 0;
-    while let Some(event) = read_record(&mut reader)? {
-        last_seq = event.seq;
-        good = reader.stream_position()?;
+    while let Some((event, size)) = read_record(&mut reader)? {
+        let in_sequence = if scan.len == 0 {
+            event.seq > 0
+        } else {
+            event.seq == scan.last_seq + 1
+        };
+        if event.task_id != task_id || !in_sequence {
+            break;
+        }
+        scan.last_seq = event.seq;
+        scan.len += size;
     }
-    Ok((last_seq, good))
+    Ok(scan)
+}
+
+/// A missing file counts as empty.
+fn file_len(disk: &dyn Disk, path: &Path) -> io::Result<u64> {
+    match disk.len(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(0),
+        other => other,
+    }
 }
 
 fn write_atomic(disk: &dyn Disk, path: &Path, bytes: &[u8]) -> Result<()> {
@@ -399,3 +483,7 @@ pub fn open_all(root: &Path) -> Vec<TaskSpool> {
 #[cfg(test)]
 #[path = "spool_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "spool_sim.rs"]
+mod sim;
