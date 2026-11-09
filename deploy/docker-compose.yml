@@ -14,6 +14,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     image: sling:local
+    stop_grace_period: 75s
     env_file: .env
     environment:
       DATABASE_URL: postgres://sling:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/sling

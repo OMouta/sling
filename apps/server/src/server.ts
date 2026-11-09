@@ -21,6 +21,7 @@ import { ExtensionService } from "./extensions/service.ts";
 import { Files } from "./files/service.ts";
 import { createServer, registerRoutes } from "./http/app.ts";
 import { startJobs } from "./jobs.ts";
+import { onceAsync, within } from "./lifecycle.ts";
 import { Memories } from "./memory/service.ts";
 import { OAuth } from "./oauth/service.ts";
 import { ensurePersonalities } from "./personalities/service.ts";
@@ -73,7 +74,44 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
   // The pool has already dropped that connection, and the next query opens a new one.
   database.pool.on("error", (err) => app.log.warn({ err }, "database connection dropped"));
 
-  await runMigrations(database.db);
+  let releaseOwner: (() => void) | undefined;
+  let stopServer: (() => Promise<void>) | undefined;
+  let draining = false;
+  let ready = false;
+  app.addHook("onRequest", async (request, reply) => {
+    if (draining && request.url !== "/healthz")
+      return reply.code(503).send({ error: "Server is shutting down" });
+  });
+  app.get("/readyz", { logLevel: "silent" }, async (_request, reply) => {
+    if (!ready || draining) return reply.code(503).send({ ok: false });
+    try {
+      await within(database.pool.query("select 1"), 1500);
+      return { ok: true };
+    } catch {
+      return reply.code(503).send({ ok: false });
+    }
+  });
+  try {
+    const owner = await database.pool.connect();
+    releaseOwner = () => owner.release(true);
+    const lock = await owner.query("select pg_try_advisory_lock(1936484718, 1) as acquired");
+    if (!lock.rows[0]?.acquired)
+      throw new Error("Another Sling control plane is already using this database");
+    owner.on("error", (err) => {
+      draining = true;
+      ready = false;
+      app.log.fatal({ err }, "control-plane ownership lost");
+      void stopServer?.().catch((error) =>
+        app.log.error({ err: error }, "ownership shutdown failed"),
+      );
+    });
+    await runMigrations(database.db);
+  } catch (err) {
+    releaseOwner?.();
+    await database.close();
+    await app.close();
+    throw err;
+  }
   app.log.info("database migrated");
 
   const registry = new NodeRegistry();
@@ -97,7 +135,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     }),
     log: app.log,
     secretsKey: deriveKey(config.secretKey, "credentials-v1"),
-    hub: new Hub(),
+    hub: new Hub((err) => app.log.warn({ err }, "realtime listener failed")),
     registry,
     boss: null,
     modelOverride: opts.model,
@@ -177,33 +215,54 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     await registerRoutes(app, ctx);
     await app.listen({ host: config.host, port: config.port });
     await ctx.connectors.reconcile();
+    ready = true;
   } catch (err) {
     await ctx.extensions.stop();
     ctx.runners.stop();
     await boss?.stop({ graceful: false });
     await app.close();
+    releaseOwner?.();
     await database.close();
     throw err;
   }
   const address = app.server.address();
   const port = typeof address === "object" && address ? address.port : config.port;
 
-  return {
-    app,
-    ctx,
-    url: `http://127.0.0.1:${port}`,
-    async close() {
-      await ctx.connectors.stopAll();
-      await ctx.engine.stop();
-      await ctx.extensions.stop();
-      await Promise.race([ctx.sandboxes.idle(), new Promise((ok) => setTimeout(ok, 10_000))]);
-      await Promise.race([ctx.push.idle(), new Promise((ok) => setTimeout(ok, 2_000))]);
-      await Promise.race([ctx.deploys.idle(), new Promise((ok) => setTimeout(ok, 35_000))]);
-      await Promise.race([ctx.checks.idle(), new Promise((ok) => setTimeout(ok, 35_000))]);
-      ctx.runners.stop();
-      await boss?.stop({ graceful: true, timeout: 10_000 });
-      await app.close();
-      await database.close();
-    },
-  };
+  const close = onceAsync(async () => {
+    draining = true;
+    ready = false;
+    const errors: unknown[] = [];
+    const attempt = async (work: () => Promise<unknown>) => {
+      try {
+        await work();
+      } catch (err) {
+        errors.push(err);
+        app.log.error({ err }, "shutdown step failed");
+      }
+    };
+    // Stop new connector events and engine claims before waiting on jobs.
+    await attempt(() => within(Promise.all([ctx.connectors.stopAll(), ctx.engine.stop()]), 10_000));
+    await attempt(() => boss?.stop({ graceful: true, timeout: 10_000 }) ?? Promise.resolve());
+    await attempt(() =>
+      within(
+        Promise.all([
+          ctx.sandboxes.idle(),
+          ctx.push.idle(),
+          ctx.deploys.idle(),
+          ctx.checks.idle(),
+          ctx.sources.idle?.(),
+        ]),
+        35_000,
+      ),
+    );
+    await attempt(() => ctx.extensions.stop());
+    ctx.runners.stop();
+    await attempt(() => app.close());
+    await attempt(() => ctx.runners.idle());
+    releaseOwner?.();
+    await attempt(() => database.close());
+    if (errors.length) throw new AggregateError(errors, "Server shutdown failed");
+  });
+  stopServer = close;
+  return { app, ctx, url: `http://127.0.0.1:${port}`, close };
 }

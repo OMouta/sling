@@ -1667,6 +1667,8 @@ describe("restarts", () => {
     expect(wait?.durationMs ?? 0).toBeGreaterThanOrEqual(1900);
     expect(new Date(r.run.finishedAt ?? 0).getTime()).toBeGreaterThanOrEqual(restartedAt);
     expect(callsFor(run.id, "after-timer")).toHaveLength(1);
+    await expect(boot(url)).rejects.toThrow("Another Sling control plane");
+    await b.close();
     // Without the Discord connector, its template isn't offered.
     const plain = await boot(url, { connectors: [] });
     extra.push(plain);

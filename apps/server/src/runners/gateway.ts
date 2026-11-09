@@ -158,6 +158,11 @@ export class RunnerGateway {
     this.#sweeper.unref();
   }
 
+  readonly closing = new Set<Promise<void>>();
+  async idle() {
+    await Promise.all(this.closing);
+  }
+
   stop() {
     if (this.#sweeper) clearInterval(this.#sweeper);
     for (const session of this.#sessions.values()) session.close(1001, "server shutting down");
@@ -217,21 +222,25 @@ export class RunnerGateway {
       const s = session;
       if (!s || this.#sessions.get(s.runnerId) !== s) return;
       this.#sessions.delete(s.runnerId);
-      queue = queue.then(async () => {
-        // The Runner may have reconnected while this connection's last frames
-        // were handled. The new connection owns its state then, as when it
-        // replaces a live one, and marking it offline here would undo that.
-        if (this.#sessions.has(s.runnerId)) return;
-        await this.#ctx.db
-          .update(schema.runners)
-          .set({ online: false, lastSeenAt: new Date() })
-          .where(eq(schema.runners.id, s.runnerId));
-        this.#ctx.cliChat?.runnerDisconnected(s.runnerId);
-        this.#ctx.commands?.runnerDisconnected(s.runnerId);
-        await this.handlers?.disconnected(s);
-        await this.#publishRunner(s);
-        log.info({ runnerId: s.runnerId }, "runner disconnected");
-      });
+      queue = queue
+        .then(async () => {
+          // The Runner may have reconnected while this connection's last frames
+          // were handled. The new connection owns its state then, as when it
+          // replaces a live one, and marking it offline here would undo that.
+          if (this.#sessions.has(s.runnerId)) return;
+          await this.#ctx.db
+            .update(schema.runners)
+            .set({ online: false, lastSeenAt: new Date() })
+            .where(eq(schema.runners.id, s.runnerId));
+          this.#ctx.cliChat?.runnerDisconnected(s.runnerId);
+          this.#ctx.commands?.runnerDisconnected(s.runnerId);
+          await this.handlers?.disconnected(s);
+          await this.#publishRunner(s);
+          log.info({ runnerId: s.runnerId }, "runner disconnected");
+        })
+        .catch((err) => log.error({ err }, "runner disconnect failed"));
+      const closing = queue.finally(() => this.closing.delete(closing));
+      this.closing.add(closing);
     });
   }
 

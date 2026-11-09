@@ -75,6 +75,7 @@ export class SourceInputError extends Error {
  */
 export interface SourceService {
   start(boss: PgBoss): Promise<void>;
+  idle?(): Promise<void>;
   addFile(actor: SourceActor, target: SourceTarget, file: NewFile): Promise<SourceRow>;
   addLink(
     actor: SourceActor,
