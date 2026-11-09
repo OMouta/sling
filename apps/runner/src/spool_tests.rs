@@ -62,8 +62,7 @@ fn events_survive_reopen_until_acked() {
     let unsent = s.unsent();
     assert_eq!(unsent.len(), 1);
     assert_eq!(unsent[0].seq, 3);
-    let e = s.append(log("c")).unwrap();
-    assert_eq!(e, 4);
+    assert_eq!(s.append(log("c")).unwrap(), Some(4));
 }
 
 #[test]
@@ -78,7 +77,7 @@ fn a_torn_write_is_dropped() {
     drop(f);
     let mut s = TaskSpool::open(&root.path().join("tsk_2")).unwrap();
     assert_eq!(s.last_seq(), 1);
-    assert_eq!(s.append(log("next")).unwrap(), 2);
+    assert_eq!(s.append(log("next")).unwrap(), Some(2));
     drop(s);
     let s = TaskSpool::open(&root.path().join("tsk_2")).unwrap();
     assert_eq!(s.last_seq(), 2);
@@ -125,7 +124,7 @@ fn a_running_task_compacts_what_the_server_acknowledged() {
     let mut s = TaskSpool::open(&root.path().join("run")).unwrap();
     assert_eq!(s.last_seq(), 600);
     assert!(s.unsent().is_empty());
-    assert_eq!(s.append(log("next")).unwrap(), 601);
+    assert_eq!(s.append(log("next")).unwrap(), Some(601));
 }
 
 #[test]
@@ -161,7 +160,7 @@ fn spools_written_before_compaction_are_compacted_on_open() {
     assert!(events_len(root.path(), "old") < before / 10);
     let replayed: Vec<u64> = s.unsent().iter().map(|e| e.seq).collect();
     assert_eq!(replayed, (191..=200).collect::<Vec<_>>());
-    assert_eq!(s.append(log("next")).unwrap(), 201);
+    assert_eq!(s.append(log("next")).unwrap(), Some(201));
 }
 
 /// Tests on a simulated disk: crashes and power cuts at every step, and
@@ -245,7 +244,7 @@ mod faults {
         fn append(&mut self, text: &str) -> Result<()> {
             let seq = self.spool.last_seq() + 1;
             self.promised.attempted = Some((seq, log(text)));
-            assert_eq!(self.spool.append(log(text))?, seq);
+            assert_eq!(self.spool.append(log(text))?, Some(seq));
             self.promised.records.insert(seq, log(text));
             self.promised.attempted = None;
             Ok(())
@@ -295,7 +294,7 @@ mod faults {
             );
         }
         let highest = p.records.keys().max().copied().unwrap_or(0).max(p.server);
-        let next = s.append(log("after restart")).unwrap();
+        let next = s.append(log("after restart")).unwrap().unwrap();
         assert!(next > highest, "{label}: seq {next} reused");
         drop(s);
         let mut s = TaskSpool::open_on(Arc::new(disk.clone()), &dir()).unwrap();
@@ -361,7 +360,7 @@ mod faults {
         s.append(log("one")).unwrap();
         disk.fail_after(0);
         assert!(s.append(log("lost")).is_err());
-        assert_eq!(s.append(log("two")).unwrap(), 2);
+        assert_eq!(s.append(log("two")).unwrap(), Some(2));
         drop(s);
         let replayed = replay(&mut open(&disk));
         assert_eq!(seqs(&replayed), [1, 2]);
@@ -377,7 +376,7 @@ mod faults {
         let mut s = open(&disk);
         assert_eq!(s.last_seq(), 5);
         assert!(replay(&mut s).is_empty());
-        assert_eq!(s.append(log("new")).unwrap(), 6);
+        assert_eq!(s.append(log("new")).unwrap(), Some(6));
         drop(s);
         let mut s = open(&disk);
         assert_eq!(seqs(&replay(&mut s)), [6]);
@@ -386,7 +385,7 @@ mod faults {
         let disk = SimDisk::new(&root());
         spool_on(&disk, Some("3"), &[]);
         let mut s = open(&disk);
-        assert_eq!(s.append(log("new")).unwrap(), 4);
+        assert_eq!(s.append(log("new")).unwrap(), Some(4));
         drop(s);
         assert_eq!(seqs(&replay(&mut open(&disk))), [4]);
     }
@@ -406,7 +405,7 @@ mod faults {
             let mut s = open(&disk);
             assert_eq!(s.last_seq(), 3, "{name}");
             assert_eq!(seqs(&replay(&mut s)), [2, 3], "{name}");
-            assert_eq!(s.append(log("d")).unwrap(), 4, "{name}");
+            assert_eq!(s.append(log("d")).unwrap(), Some(4), "{name}");
             drop(s);
             assert_eq!(seqs(&replay(&mut open(&disk))), [2, 3, 4], "{name}");
         }
@@ -460,14 +459,14 @@ mod faults {
             // 5 was acknowledged, but sending it again is harmless: Sling
             // ignores a seq it has.
             assert_eq!(seqs(&replay(&mut s)), [5, 6, 7], "{acked:?}");
-            assert_eq!(s.append(log("h")).unwrap(), 8, "{acked:?}");
+            assert_eq!(s.append(log("h")).unwrap(), Some(8), "{acked:?}");
 
             // A finished task compacted down to its last record.
             let disk = SimDisk::new(&root());
             spool_on(&disk, acked, &record(ID, 9, "done"));
             let mut s = open(&disk);
             assert_eq!(seqs(&replay(&mut s)), [9], "{acked:?}");
-            assert_eq!(s.append(log("late")).unwrap(), 10, "{acked:?}");
+            assert_eq!(s.append(log("late")).unwrap(), Some(10), "{acked:?}");
         }
     }
 
@@ -483,5 +482,124 @@ mod faults {
         let mut s = open(&disk);
         assert_eq!(seqs(&replay(&mut s)), [2]);
         assert!(disk.read(&dir().join(COMPACTING)).is_err());
+    }
+    fn text(e: &TaskEvent) -> &str {
+        match &e.kind {
+            Some(Kind::Log(l)) => &l.text,
+            _ => "",
+        }
+    }
+
+    /// Appends 256 KiB log lines until the spool starts skipping them.
+    fn fill(s: &mut TaskSpool) -> u64 {
+        let chunk = "x".repeat(256 * 1024);
+        for _ in 0..1000 {
+            if s.append(log(&chunk)).unwrap().is_none() {
+                return s.last_seq();
+            }
+        }
+        panic!("the spool never skipped anything");
+    }
+
+    #[test]
+    fn output_past_the_budget_is_skipped_and_the_task_state_is_kept() {
+        let disk = SimDisk::new(&root());
+        let mut s = TaskSpool::create_on(Arc::new(disk.clone()), &root(), meta(ID)).unwrap();
+        fill(&mut s);
+        let chunk = "x".repeat(256 * 1024);
+        for _ in 0..20 {
+            assert_eq!(s.append(log(&chunk)).unwrap(), None);
+        }
+        assert!(s.unacked_bytes() <= BUDGET + 64 * 1024);
+        assert!(s.append(Kind::Usage(Default::default())).unwrap().is_some());
+        let finished = s
+            .append(Kind::Finished(Default::default()))
+            .unwrap()
+            .unwrap();
+
+        let events = replay(&mut s);
+        assert_eq!(seqs(&events), (1..=finished).collect::<Vec<_>>());
+        let notes: Vec<&str> = events
+            .iter()
+            .map(text)
+            .filter(|t| !t.starts_with('x') && !t.is_empty())
+            .collect();
+        assert_eq!(notes.len(), 2, "{notes:?}");
+        assert!(notes[0].starts_with("Sling hasn't acknowledged the last 32.0 MiB"));
+        assert_eq!(
+            notes[1],
+            "Skipped 21 events (5.3 MiB) of this task's output."
+        );
+        assert!(matches!(
+            events[events.len() - 2].kind,
+            Some(Kind::Usage(_))
+        ));
+        assert!(matches!(
+            events.last().unwrap().kind,
+            Some(Kind::Finished(_))
+        ));
+    }
+
+    #[test]
+    fn skipping_stops_once_less_than_half_the_budget_is_waiting() {
+        let disk = SimDisk::new(&root());
+        let mut s = TaskSpool::create_on(Arc::new(disk.clone()), &root(), meta(ID)).unwrap();
+        let last = fill(&mut s);
+        let chunk = "x".repeat(256 * 1024);
+        s.ack(20).unwrap();
+        assert_eq!(s.append(log(&chunk)).unwrap(), None);
+        s.ack(last - 20).unwrap();
+        let resumed = s.append(log("back")).unwrap().unwrap();
+        let events = replay(&mut s);
+        assert_eq!(
+            text(&events[events.len() - 2]),
+            "Skipped 2 events (0.5 MiB) of this task's output."
+        );
+        assert_eq!(events.last().unwrap().seq, resumed);
+        assert_eq!(text(events.last().unwrap()), "back");
+    }
+
+    #[test]
+    fn events_too_big_to_send_are_cut_or_skipped() {
+        use sling_runner_protocol::{AgentMessage, PlanUpdate, TaskFinished, plan_update};
+
+        let disk = SimDisk::new(&root());
+        let mut s = TaskSpool::create_on(Arc::new(disk.clone()), &root(), meta(ID)).unwrap();
+        let huge = "y".repeat(3 * 1024 * 1024);
+        s.append(Kind::AgentMessage(AgentMessage {
+            item_id: "m".into(),
+            text: huge.clone(),
+        }))
+        .unwrap()
+        .unwrap();
+        s.append(Kind::Finished(TaskFinished {
+            summary: huge.clone(),
+            error: huge.clone(),
+            ..Default::default()
+        }))
+        .unwrap()
+        .unwrap();
+        let steps = (0..100_000)
+            .map(|i| plan_update::Step {
+                text: format!("step {i:>20}"),
+                done: false,
+            })
+            .collect();
+        assert_eq!(s.append(Kind::Plan(PlanUpdate { steps })).unwrap(), None);
+        s.append(log("after")).unwrap().unwrap();
+
+        let events = replay(&mut s);
+        assert!(events.iter().all(|e| record_len(e) <= RECORD_LIMIT));
+        let Some(Kind::AgentMessage(m)) = &events[0].kind else {
+            panic!("{:?}", events[0]);
+        };
+        assert!(m.text.starts_with("yyy"));
+        assert!(m.text.ends_with("[cut by the Runner: too long to send]"));
+        let Some(Kind::Finished(f)) = &events[1].kind else {
+            panic!("{:?}", events[1]);
+        };
+        assert!(f.summary.len() < TEXT_LIMIT + 100 && f.error.len() < TEXT_LIMIT + 100);
+        assert!(text(&events[2]).starts_with("Skipped 1 event ("));
+        assert_eq!(text(&events[3]), "after");
     }
 }

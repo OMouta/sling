@@ -10,6 +10,13 @@
 //! acknowledged, the spool rewrites it to start at the last acknowledged
 //! record, so it doesn't grow for as long as the task runs. Every record
 //! before the first one in the file is acknowledged.
+//!
+//! While Sling isn't acknowledging, a spool holds at most `BUDGET` bytes of
+//! output. Past that it skips the kinds of events Sling itself drops once a
+//! task's stored events pass its cap: log lines, commands, agent messages,
+//! file changes, and plan updates. It never skips the task's acceptance,
+//! rejection, start, finish, token usage, or push and PR results. A note in
+//! the task's log says when skipping starts and how much was skipped.
 
 use std::collections::VecDeque;
 use std::fs::{File, OpenOptions};
@@ -20,7 +27,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use prost::Message;
 use serde::{Deserialize, Serialize};
-use sling_runner_protocol::{TaskEvent, task_event::Kind};
+use sling_runner_protocol::{LogLine, TaskEvent, log_line, task_event::Kind};
 
 use crate::config::Mode;
 use crate::sys::now_ms;
@@ -67,6 +74,17 @@ const BATCH_EVENTS: usize = 128;
 const BATCH_BYTES: u64 = 512 * 1024;
 /// Largest record the spool reads. Anything claiming more is treated as torn.
 const MAX_RECORD_BYTES: usize = 4 * 1024 * 1024;
+/// Largest record the spool writes. Sling closes a connection that sends a
+/// message over 4 MiB, so a bigger record could never be delivered and would
+/// hold up every record after it.
+const RECORD_LIMIT: u64 = 1024 * 1024;
+/// Free text longer than this is cut from an event that is over
+/// `RECORD_LIMIT`.
+const TEXT_LIMIT: usize = 256 * 1024;
+/// Unacknowledged bytes a spool holds before it skips output. Sling stores at
+/// most 20 MiB of a task's events before dropping the same kinds, so this
+/// rarely costs anything Sling would have kept.
+const BUDGET: u64 = 32 * 1024 * 1024;
 
 pub struct TaskSpool {
     disk: Arc<dyn Disk>,
@@ -89,6 +107,11 @@ pub struct TaskSpool {
     read_offset: u64,
     /// Highest seq handed to the current connection.
     sent: u64,
+    /// Skipping output to stay within `BUDGET`. It resumes once
+    /// acknowledgements bring the backlog under half the budget.
+    skipping: bool,
+    /// Events skipped, and their bytes, since the last note about it.
+    skipped: (u64, u64),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -127,6 +150,8 @@ impl TaskSpool {
             acked: 0,
             read_offset: 0,
             sent: 0,
+            skipping: false,
+            skipped: (0, 0),
         })
     }
 
@@ -193,6 +218,8 @@ impl TaskSpool {
             acked,
             read_offset: 0,
             sent: acked,
+            skipping: false,
+            skipped: (0, 0),
         };
         spool.drop_old_marks();
         // Spools from before compaction existed, or left by a crash, get
@@ -210,17 +237,94 @@ impl TaskSpool {
         self.last_seq
     }
 
-    /// Appends an event, synced to disk, and returns its seq.
-    pub fn append(&mut self, kind: Kind) -> Result<u64> {
-        let event = TaskEvent {
+    /// Appends an event, synced to disk, and returns its seq, or `None` if
+    /// it was skipped to stay within the budget.
+    pub fn append(&mut self, kind: Kind) -> Result<Option<u64>> {
+        let mut event = self.next_event(kind);
+        if record_len(&event) > RECORD_LIMIT
+            && let Some(kind) = &mut event.kind
+        {
+            shorten(kind);
+        }
+        let size = record_len(&event);
+        if event.kind.as_ref().is_some_and(droppable) {
+            if size > RECORD_LIMIT {
+                tracing::warn!(
+                    task = self.task_id(),
+                    size,
+                    "skipping an event too big to send"
+                );
+                self.skipped.0 += 1;
+                self.skipped.1 += size;
+                return Ok(None);
+            }
+            let limit = if self.skipping { BUDGET / 2 } else { BUDGET };
+            if self.unacked_bytes() + size > limit {
+                self.skip(size)?;
+                return Ok(None);
+            }
+            self.skipping = false;
+        }
+        if self.skipped.0 > 0 {
+            let (count, bytes) = self.skipped;
+            let events = if count == 1 { "event" } else { "events" };
+            self.write_event(&self.note(format!(
+                "Skipped {count} {events} ({}) of this task's output.",
+                size_text(bytes)
+            )))?;
+            self.skipped = (0, 0);
+            event.seq = self.last_seq + 1;
+        }
+        self.write_event(&event)?;
+        Ok(Some(event.seq))
+    }
+
+    fn next_event(&self, kind: Kind) -> TaskEvent {
+        TaskEvent {
             task_id: self.meta.task_id.clone(),
             seq: self.last_seq + 1,
             at_ms: now_ms(),
             kind: Some(kind),
-        };
+        }
+    }
+
+    fn note(&self, text: String) -> TaskEvent {
+        self.next_event(Kind::Log(LogLine {
+            stream: log_line::Stream::Runner as i32,
+            text,
+        }))
+    }
+
+    fn skip(&mut self, size: u64) -> Result<()> {
+        if !self.skipping {
+            tracing::warn!(task = self.task_id(), "spool is full, skipping output");
+            self.write_event(&self.note(format!(
+                "Sling hasn't acknowledged the last {} of this task's output, so the Runner is \
+                 skipping log lines, commands, agent messages, file changes, and plan updates \
+                 until it catches up. The task's start, finish, token usage, and push and PR \
+                 results are always kept.",
+                size_text(BUDGET)
+            )))?;
+            self.skipping = true;
+        }
+        self.skipped.0 += 1;
+        self.skipped.1 += size;
+        Ok(())
+    }
+
+    /// Bytes from the first unacknowledged record to the end of the file, or a
+    /// little more, as marks are sparse.
+    fn unacked_bytes(&self) -> u64 {
+        if self.acked >= self.last_seq {
+            return 0;
+        }
+        self.len - self.mark_before(self.acked + 1).offset
+    }
+
+    fn write_event(&mut self, event: &TaskEvent) -> Result<()> {
         let bytes = event.encode_length_delimited_to_vec();
         anyhow::ensure!(
-            bytes.len() <= MAX_RECORD_BYTES,
+            bytes.len() as u64 <= RECORD_LIMIT,
             "event exceeds spool record limit"
         );
         let start = self.write_record(&bytes)?;
@@ -235,7 +339,7 @@ impl TaskSpool {
                 offset: start,
             });
         }
-        Ok(event.seq)
+        Ok(())
     }
 
     /// Writes and syncs one encoded record, and returns where it starts. A
@@ -513,6 +617,64 @@ fn scan(disk: &dyn Disk, path: &Path, task_id: &str) -> Result<Scan> {
         scan.len += size;
     }
     Ok(scan)
+}
+
+/// The kinds Sling drops once a task's stored events pass its cap. Every other
+/// kind changes the task's state, so it is always kept.
+fn droppable(kind: &Kind) -> bool {
+    match kind {
+        Kind::Log(_)
+        | Kind::Command(_)
+        | Kind::AgentMessage(_)
+        | Kind::FileChange(_)
+        | Kind::Plan(_) => true,
+        Kind::Accepted(_)
+        | Kind::Rejected(_)
+        | Kind::Started(_)
+        | Kind::Usage(_)
+        | Kind::Finished(_)
+        | Kind::ActionResult(_) => false,
+    }
+}
+
+/// Cuts the free text of an event too big to send. A task's start and finish
+/// are small otherwise, so this always makes them fit. A plan or file change
+/// can still be too big, and is skipped.
+fn shorten(kind: &mut Kind) {
+    fn cut(text: &mut String) {
+        if text.len() > TEXT_LIMIT {
+            let mut end = TEXT_LIMIT;
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            text.truncate(end);
+            text.push_str("\n[cut by the Runner: too long to send]");
+        }
+    }
+    match kind {
+        Kind::AgentMessage(m) => cut(&mut m.text),
+        Kind::Command(c) => {
+            cut(&mut c.command);
+            cut(&mut c.output);
+        }
+        Kind::Log(l) => cut(&mut l.text),
+        Kind::Rejected(r) => cut(&mut r.message),
+        Kind::Finished(f) => {
+            cut(&mut f.summary);
+            cut(&mut f.error);
+        }
+        Kind::ActionResult(a) => cut(&mut a.message),
+        _ => {}
+    }
+}
+
+fn record_len(event: &TaskEvent) -> u64 {
+    let len = event.encoded_len();
+    (prost::length_delimiter_len(len) + len) as u64
+}
+
+fn size_text(bytes: u64) -> String {
+    format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0))
 }
 
 /// A missing file counts as empty.

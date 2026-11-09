@@ -45,11 +45,23 @@ pub const CUTS: [Cut; 6] = [
 struct Inode {
     data: Vec<u8>,
     synced: Vec<u8>,
+    /// Bytes before this offset haven't changed since the last sync.
+    clean: usize,
 }
 
 impl Inode {
+    fn changed_from(&mut self, offset: usize) {
+        self.clean = self.clean.min(offset);
+    }
+
+    fn sync(&mut self) {
+        self.synced.truncate(self.clean);
+        self.synced.extend_from_slice(&self.data[self.clean..]);
+        self.clean = self.data.len();
+    }
+
     fn after(&self, cut: Cut) -> Vec<u8> {
-        let appended = self.data.len() > self.synced.len() && self.data.starts_with(&self.synced);
+        let appended = self.clean >= self.synced.len() && self.data.len() > self.synced.len();
         let extra = self.data.len().saturating_sub(self.synced.len());
         match cut {
             Cut::Everything | Cut::DataWithoutNames => self.data.clone(),
@@ -200,8 +212,9 @@ impl SimDisk {
                 Entry::File(i) => {
                     let data = s.inodes[*i].after(cut);
                     next.inodes.push(Inode {
-                        data: data.clone(),
-                        synced: data,
+                        clean: data.len(),
+                        synced: data.clone(),
+                        data,
                     });
                     Entry::File(next.inodes.len() - 1)
                 }
@@ -223,6 +236,7 @@ impl SimDisk {
         s.inodes[i] = Inode {
             data: data.to_vec(),
             synced: data.to_vec(),
+            clean: data.len(),
         };
         s.synced_names = s.names.clone();
     }
@@ -243,8 +257,9 @@ impl Writer for SimWriter {
             } else {
                 bytes
             };
-            let inode = self.inode;
-            s.inodes[inode].data.extend_from_slice(kept);
+            let inode = &mut s.inodes[self.inode];
+            inode.changed_from(inode.data.len());
+            inode.data.extend_from_slice(kept);
         }
         s.op()
     }
@@ -252,8 +267,7 @@ impl Writer for SimWriter {
     fn sync(&mut self) -> io::Result<()> {
         let mut s = self.disk.0.lock().unwrap();
         s.op()?;
-        let inode = &mut s.inodes[self.inode];
-        inode.synced = inode.data.clone();
+        s.inodes[self.inode].sync();
         Ok(())
     }
 }
@@ -294,6 +308,7 @@ impl Disk for SimDisk {
         s.op()?;
         let inode = match s.file(path) {
             Ok(i) => {
+                s.inodes[i].changed_from(0);
                 s.inodes[i].data.clear();
                 i
             }
@@ -316,7 +331,9 @@ impl Disk for SimDisk {
         let mut s = self.0.lock().unwrap();
         s.op()?;
         let i = s.file(path)?;
-        s.inodes[i].data.resize(len as usize, 0);
+        let inode = &mut s.inodes[i];
+        inode.changed_from(inode.data.len().min(len as usize));
+        inode.data.resize(len as usize, 0);
         Ok(())
     }
 
