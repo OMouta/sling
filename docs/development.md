@@ -122,7 +122,8 @@ Measured on 2026-11-09, before route pages were loaded on demand (`4a2de99`) and
 |---|---:|---:|---:|
 | Before (entry script 778.5 KiB raw) | 1045.3 KiB | 307.6 KiB (315,012 B) | 259.7 KiB (265,914 B) |
 | After (entry script 508.9 KiB raw) | 913.9 KiB | 276.7 KiB (283,358 B) | 239.5 KiB (245,251 B) |
-| Budget | | 292,000 B | 253,000 B |
+| With paged lists, archive, drafts, and keyboard dialogs | 931.3 KiB | 285.3 KiB (292,138 B) | 248.8 KiB (254,756 B) |
+| Budget | | 301,000 B | 263,000 B |
 
 The first load is 12 files after the change: the entry script, 10 preloaded chunks, and
 the stylesheet (82.7 KiB raw, 15.7 KiB gzip). Two of the preloaded chunks are shared
