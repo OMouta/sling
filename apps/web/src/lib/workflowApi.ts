@@ -6,6 +6,7 @@ import type {
   WorkflowSummaryView,
 } from "@sling/core";
 import type {
+  DraftConflictView,
   NodeCatalog,
   PublishResult,
   TemplateView,
@@ -166,22 +167,55 @@ export function issuesOf(
   return res?.issues ?? [];
 }
 
+export type DraftConflict = DraftConflictView["conflict"];
+
+/** A save or publish the server refused because the draft changed somewhere else. */
+export class DraftConflictError extends Error {
+  readonly conflict: DraftConflict;
+  constructor(conflict: DraftConflict, message = "The draft was changed somewhere else.") {
+    super(message);
+    this.conflict = conflict;
+  }
+}
+
+/** A 409 that carries the draft as it's saved now becomes a DraftConflictError. */
+function conflictOr(err: unknown): unknown {
+  if (!(err instanceof ApiError) || err.status !== 409) return err;
+  const body = err.body as Partial<DraftConflictView> | null;
+  const c = body?.conflict;
+  if (!c || typeof c.revision !== "number" || !c.draft) return err;
+  return new DraftConflictError(c, err.message);
+}
+
 export const workflowApi = {
-  saveDraft: (id: string, def: WorkflowDefinition) =>
-    api.put<unknown>(`/api/workflows/${id}/draft`, def),
+  /** Saves over draft `revision` only. Throws DraftConflictError when it has moved on. */
+  saveDraft: async (id: string, def: WorkflowDefinition, revision: number) => {
+    try {
+      return await api.put<WorkflowDetailView>(`/api/workflows/${id}/draft`, {
+        definition: def,
+        revision,
+      });
+    } catch (err) {
+      throw conflictOr(err);
+    }
+  },
   validate: (id: string) =>
     api
       .post<ValidationIssue[] | { issues?: ValidationIssue[] }>(`/api/workflows/${id}/validate`)
       .then(issuesOf),
-  /** A draft that fails validation comes back as 422 with the issues in the body. */
-  publish: async (id: string, note: string): Promise<PublishResult> => {
+  /**
+   * Publishes draft `revision`, the one the user reviewed. A draft that fails
+   * validation comes back as 422 with the issues in the body, and one that
+   * has moved on throws DraftConflictError.
+   */
+  publish: async (id: string, note: string, revision: number): Promise<PublishResult> => {
     try {
-      return await api.post<PublishResult>(`/api/workflows/${id}/publish`, { note });
+      return await api.post<PublishResult>(`/api/workflows/${id}/publish`, { note, revision });
     } catch (err) {
       if (err instanceof ApiError && err.status === 422 && isPublishResult(err.body)) {
         return err.body;
       }
-      throw err;
+      throw conflictOr(err);
     }
   },
   run: (id: string, input: unknown) =>

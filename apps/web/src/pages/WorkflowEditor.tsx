@@ -5,12 +5,13 @@ import type {
   WorkflowDetailView,
 } from "@sling/workflow";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import {
   Cable,
   CircleCheck,
   CircleHelp,
+  Download,
   Play,
   Plus,
   SlidersHorizontal,
@@ -18,7 +19,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { type ReactNode, useCallback, useState } from "react";
+import { type ReactNode, useCallback, useRef, useState } from "react";
 import { CopyButton } from "../components/JsonView.tsx";
 import { Page, useFocusMode } from "../components/Page.tsx";
 import { JsonInput } from "../components/SchemaForm.tsx";
@@ -40,7 +41,8 @@ import { GraphCanvas } from "../components/workflow/Canvas.tsx";
 import { Inspector } from "../components/workflow/Inspector.tsx";
 import { RunsTab } from "../components/workflow/RunsTab.tsx";
 import { VersionsTab } from "../components/workflow/VersionsTab.tsx";
-import { api } from "../lib/api.ts";
+import { ApiError, api } from "../lib/api.ts";
+import { ago, plural } from "../lib/format.ts";
 import { useIsPhone } from "../lib/useMedia.ts";
 import type { CatalogIndex } from "../lib/workflow/catalog.ts";
 import { useCatalogIndex } from "../lib/workflow/catalogIndex.ts";
@@ -52,8 +54,21 @@ import {
   useGraph,
   useGraphStore,
 } from "../lib/workflow/store.ts";
-import { type Autosave, type SaveStatus, useAutosave } from "../lib/workflow/useAutosave.ts";
-import { qk, useWorkflow, workflowApi } from "../lib/workflowApi.ts";
+import {
+  type Autosave,
+  type SaveStatus,
+  unsavedDraft,
+  useAutosave,
+} from "../lib/workflow/useAutosave.ts";
+import {
+  type DraftConflict,
+  DraftConflictError,
+  downloadJson,
+  exportFileName,
+  qk,
+  useWorkflow,
+  workflowApi,
+} from "../lib/workflowApi.ts";
 import { type EditorTab, workflowRoute } from "../router.tsx";
 
 export function WorkflowEditorPage() {
@@ -102,6 +117,7 @@ const SAVE_LABEL: Record<SaveStatus, string> = {
   dirty: "Unsaved changes",
   saving: "Saving…",
   error: "Couldn't save",
+  conflict: "Not saved",
 };
 
 function EditorSession({
@@ -119,16 +135,62 @@ function EditorSession({
   const tab: EditorTab = search.tab ?? "canvas";
   const id = detail.id;
   // The editor owns the draft from here on; later fetches of the detail don't replace it.
-  const [store] = useState(() => new GraphStore(catalog, g.fromDefinition(detail.draft, catalog)));
-  const autosave = useAutosave(store, id);
+  // Changes a closed editor couldn't save come back, and are saved again.
+  const [start] = useState(() => {
+    const unsaved = unsavedDraft(id);
+    return unsaved
+      ? { definition: unsaved.definition, revision: unsaved.revision, unsaved: true }
+      : { definition: detail.draft, revision: detail.draftRevision, unsaved: false };
+  });
+  const [store] = useState(
+    () => new GraphStore(catalog, g.fromDefinition(start.definition, catalog)),
+  );
+  const autosave = useAutosave(store, id, start);
   // Summary fields stay live through the query cache.
   const live = useWorkflow(id).data ?? detail;
   const [issuesOpen, setIssuesOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [running, setRunning] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // A conflict the user closed without deciding. It opens again from the save status.
+  const [setAside, setSetAside] = useState<DraftConflict | null>(null);
   // The canvas needs the room, so the app's sidebar steps aside.
   useFocusMode();
+
+  // Leaving the editor waits for the last save. One that fails or conflicts
+  // holds the navigation until the user retries or lets the changes go.
+  const latest = useRef(autosave);
+  latest.current = autosave;
+  const shouldBlockFn = useCallback(
+    async ({ next }: { next: { routeId: string; params: unknown } }) => {
+      if (next.routeId === workflowRoute.id && (next.params as { id?: string }).id === id) {
+        return false;
+      }
+      if (!latest.current.pending()) return false;
+      try {
+        await latest.current.flush();
+        return false;
+      } catch {
+        return true;
+      }
+    },
+    [id],
+  );
+  const leaving = useBlocker({ shouldBlockFn, enableBeforeUnload: false, withResolver: true });
+
+  const onConflict = (conflict: DraftConflict) => {
+    autosave.conflicted(conflict);
+    setSetAside(null);
+  };
+
+  const loadTheirs = (conflict: DraftConflict) => {
+    autosave.discard();
+    qc.setQueryData<WorkflowDetailView>(qk.workflow(id), (d) =>
+      d ? { ...d, draft: conflict.draft, draftRevision: conflict.revision } : d,
+    );
+    void qc.invalidateQueries({ queryKey: qk.workflow(id) });
+    onRestart();
+  };
 
   const setTab = (next: EditorTab) =>
     void navigate({
@@ -154,6 +216,9 @@ function EditorSession({
       showIssues(issues);
       setNotice(issues.length === 0 ? "No problems found." : null);
     },
+    onError: (err) => {
+      if (err instanceof DraftConflictError) onConflict(err.conflict);
+    },
   });
 
   const patch = useMutation({
@@ -166,11 +231,16 @@ function EditorSession({
   });
 
   const restore = async (def: WorkflowDefinition) => {
-    autosave.discard();
-    await workflowApi.saveDraft(id, def);
-    qc.setQueryData<WorkflowDetailView>(qk.workflow(id), (d) =>
-      d ? { ...d, draft: def, hasUnpublishedChanges: true } : d,
-    );
+    try {
+      await autosave.replace(def);
+    } catch (err) {
+      // The conflict dialog takes over from the restore dialog.
+      if (err instanceof DraftConflictError) {
+        onConflict(err.conflict);
+        return;
+      }
+      throw err;
+    }
     await navigate({ to: "/workflows/$id", params: { id }, search: {} });
     onRestart();
   };
@@ -181,15 +251,7 @@ function EditorSession({
     <GraphStoreContext.Provider value={store}>
       <Page
         crumb={{ label: "Workflows", to: "/workflows" }}
-        title={
-          <NameField
-            value={live.name}
-            onSave={(name) => {
-              store.update((s) => g.setMeta(s, { name }));
-              patch.mutate({ name });
-            }}
-          />
-        }
+        title={<NameField />}
         badge={
           <span className="flex items-center gap-1.5 max-md:hidden">
             {live.activeVersion !== null ? (
@@ -219,9 +281,14 @@ function EditorSession({
                 {notice}
               </p>
             )}
-            <ErrorText error={patch.error ?? validate.error} />
+            <ErrorText
+              error={
+                patch.error ??
+                (validate.error instanceof DraftConflictError ? null : validate.error)
+              }
+            />
             <div className="ml-auto flex flex-wrap items-center gap-2 py-2.5">
-              <SaveIndicator autosave={autosave} />
+              <SaveIndicator autosave={autosave} onResolve={() => setSetAside(null)} />
               <span className="flex items-center gap-2 pr-1 text-xs text-muted">
                 <Switch
                   size="sm"
@@ -270,7 +337,7 @@ function EditorSession({
             detail={live}
             issuesOpen={issuesOpen}
             onCloseIssues={() => setIssuesOpen(false)}
-            onPatch={(body) => patch.mutate(body)}
+            onDeleted={() => autosave.discard()}
           />
         )}
         {tab === "runs" && <RunsTab workflowId={id} catalog={catalog} />}
@@ -298,6 +365,7 @@ function EditorSession({
           workflowId={id}
           autosave={autosave}
           onClose={() => setPublishing(false)}
+          onConflict={onConflict}
           onIssues={(issues) => {
             showIssues(issues);
             if (tab !== "canvas") setTab("canvas");
@@ -318,16 +386,33 @@ function EditorSession({
           onClose={() => setRunning(false)}
         />
       )}
+      {leaving.status === "blocked" ? (
+        <LeaveDialog autosave={autosave} onStay={leaving.reset} onLeave={leaving.proceed} />
+      ) : (
+        autosave.conflict &&
+        autosave.conflict !== setAside && (
+          <ConflictDialog
+            conflict={autosave.conflict}
+            name={live.name}
+            onClose={() => setSetAside(autosave.conflict)}
+            onLoadTheirs={loadTheirs}
+            onOverwrite={() => autosave.overwrite()}
+          />
+        )
+      )}
     </GraphStoreContext.Provider>
   );
 }
 
-function NameField({ value, onSave }: { value: string; onSave: (name: string) => void }) {
+/** The workflow's name, saved with the rest of the draft. */
+function NameField() {
+  const store = useGraphStore();
+  const value = useGraph((s) => s.graph.name);
   const [draft, setDraft] = useState<string | null>(null);
   const commit = () => {
     const name = draft?.trim();
     setDraft(null);
-    if (name && name !== value) onSave(name);
+    if (name && name !== value) store.update((s) => g.setMeta(s, { name }));
   };
   return (
     <input
@@ -346,30 +431,153 @@ function NameField({ value, onSave }: { value: string; onSave: (name: string) =>
   );
 }
 
-function SaveIndicator({ autosave }: { autosave: Autosave }) {
+function SaveIndicator({ autosave, onResolve }: { autosave: Autosave; onResolve: () => void }) {
   const { status } = autosave;
+  const failed = status === "error" || status === "conflict";
   return (
     <span
       role="status"
       aria-live="polite"
-      className={cx(
-        "flex items-center gap-1.5 text-xs",
-        status === "error" ? "text-danger" : "text-muted",
-      )}
-      title={status === "error" ? String((autosave.error as Error)?.message ?? "") : undefined}
+      className={cx("flex items-center gap-1.5 text-xs", failed ? "text-danger" : "text-muted")}
+      title={status === "error" ? saveErrorText(autosave.error) : undefined}
     >
       {status === "saving" && <Spinner className="size-3" />}
       {SAVE_LABEL[status]}
-      {status === "error" && (
+      {failed && (
         <button
           type="button"
           className="cursor-pointer underline underline-offset-2"
-          onClick={() => void autosave.flush().catch(() => {})}
+          onClick={() =>
+            status === "conflict" ? onResolve() : void autosave.flush().catch(() => {})
+          }
         >
-          Retry
+          {status === "conflict" ? "Resolve" : "Retry"}
         </button>
       )}
     </span>
+  );
+}
+
+/** Why a save failed. A request that never got an answer is the network, not the server. */
+function saveErrorText(err: unknown): string {
+  if (err instanceof ApiError) return err.message;
+  return "Couldn't reach the server.";
+}
+
+/**
+ * The draft changed somewhere else, in another tab or from a chat, after
+ * this editor last saved. Saving waits here until the user picks a side.
+ */
+function ConflictDialog({
+  conflict,
+  name,
+  onClose,
+  onLoadTheirs,
+  onOverwrite,
+}: {
+  conflict: DraftConflict;
+  name: string;
+  onClose: () => void;
+  onLoadTheirs: (conflict: DraftConflict) => void;
+  onOverwrite: () => Promise<void>;
+}) {
+  const store = useGraphStore();
+  const mine = useGraph((s) => s.graph.nodes.length);
+  const overwrite = useMutation({
+    mutationFn: onOverwrite,
+    onError: (err) => {
+      // A newer conflict replaces this dialog's; anything else stays here.
+      if (err instanceof DraftConflictError) overwrite.reset();
+    },
+  });
+  return (
+    <Dialog
+      title="The draft changed somewhere else"
+      onClose={onClose}
+      footer={
+        <>
+          <Button
+            variant="ghost"
+            icon={Download}
+            className="mr-auto"
+            onClick={() =>
+              downloadJson(exportFileName(`${name} unsaved`), g.toDefinition(store.get().graph))
+            }
+          >
+            Download mine
+          </Button>
+          <ErrorText error={overwrite.error} />
+          <Button busy={overwrite.isPending} onClick={() => overwrite.mutate()}>
+            Overwrite theirs
+          </Button>
+          <Button variant="primary" data-autofocus onClick={() => onLoadTheirs(conflict)}>
+            Load theirs
+          </Button>
+        </>
+      }
+    >
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+        <dt className="text-muted">Theirs</dt>
+        <dd className="text-soft">
+          {plural(conflict.draft.nodes.length, "step")}, saved {ago(conflict.updatedAt)}
+        </dd>
+        <dt className="text-muted">Yours</dt>
+        <dd className="text-soft">{plural(mine, "step")}, not saved</dd>
+      </dl>
+    </Dialog>
+  );
+}
+
+/** Leaving the editor with changes that didn't save. */
+function LeaveDialog({
+  autosave,
+  onStay,
+  onLeave,
+}: {
+  autosave: Autosave;
+  onStay: () => void;
+  onLeave: () => void;
+}) {
+  const retry = useMutation({ mutationFn: () => autosave.flush(), onSuccess: onLeave });
+  const conflict = autosave.status === "conflict";
+  return (
+    <Dialog
+      title="Your changes aren't saved"
+      onClose={onStay}
+      footer={
+        <>
+          <Button
+            variant="ghost-danger"
+            className="mr-auto"
+            onClick={() => {
+              autosave.discard();
+              onLeave();
+            }}
+          >
+            Discard changes
+          </Button>
+          <Button onClick={onStay}>Stay</Button>
+          {!conflict && (
+            <Button
+              variant="primary"
+              data-autofocus
+              busy={retry.isPending}
+              onClick={() => retry.mutate()}
+            >
+              Retry
+            </Button>
+          )}
+        </>
+      }
+    >
+      <ErrorText
+        error={
+          conflict
+            ? "The draft was changed somewhere else."
+            : saveErrorText(retry.error ?? autosave.error)
+        }
+      />
+    </Dialog>
   );
 }
 
@@ -377,7 +585,8 @@ interface CanvasProps {
   detail: WorkflowDetailView;
   issuesOpen: boolean;
   onCloseIssues: () => void;
-  onPatch: (body: { description?: string }) => void;
+  /** The workflow is gone, so its unsaved changes have nowhere to go. */
+  onDeleted: () => void;
 }
 
 function CanvasTab(props: CanvasProps) {
@@ -393,7 +602,7 @@ function CanvasTab(props: CanvasProps) {
  * details float over it, and a step's settings open beside it only while
  * it's selected.
  */
-function CanvasView({ detail, issuesOpen, onCloseIssues, onPatch }: CanvasProps) {
+function CanvasView({ detail, issuesOpen, onCloseIssues, onDeleted }: CanvasProps) {
   const store = useGraphStore();
   const phone = useIsPhone();
   const hasSelection = useGraph(
@@ -565,7 +774,7 @@ function CanvasView({ detail, issuesOpen, onCloseIssues, onPatch }: CanvasProps)
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             <Inspector
-              empty={<WorkflowPanel detail={detail} onPatch={onPatch} />}
+              empty={<WorkflowPanel detail={detail} onDeleted={onDeleted} />}
               nodeExtra={nodeExtra}
             />
           </div>
@@ -668,10 +877,10 @@ function HowItWorks({ onClose }: { onClose: () => void }) {
 
 function WorkflowPanel({
   detail,
-  onPatch,
+  onDeleted,
 }: {
   detail: WorkflowDetailView;
-  onPatch: (body: { description?: string }) => void;
+  onDeleted: () => void;
 }) {
   const store = useGraphStore();
   const description = useGraph((s) => s.graph.description);
@@ -688,9 +897,6 @@ function WorkflowPanel({
           value={description}
           maxLength={2000}
           onChange={(e) => store.update((s) => g.setMeta(s, { description: e.target.value }))}
-          onBlur={(e) => {
-            if (e.target.value !== detail.description) onPatch({ description: e.target.value });
-          }}
         />
       </div>
       <section className="space-y-2">
@@ -731,18 +937,27 @@ function WorkflowPanel({
           </ul>
         </section>
       )}
-      <DeleteWorkflow workflowId={detail.id} name={detail.name} />
+      <DeleteWorkflow workflowId={detail.id} name={detail.name} onDeleted={onDeleted} />
     </div>
   );
 }
 
-function DeleteWorkflow({ workflowId, name }: { workflowId: string; name: string }) {
+function DeleteWorkflow({
+  workflowId,
+  name,
+  onDeleted,
+}: {
+  workflowId: string;
+  name: string;
+  onDeleted: () => void;
+}) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const del = useMutation({
     mutationFn: () => api.del(`/api/workflows/${workflowId}`),
     onSuccess: () => {
+      onDeleted();
       qc.removeQueries({ queryKey: qk.workflow(workflowId) });
       void qc.invalidateQueries({ queryKey: qk.workflows() });
       void navigate({ to: "/workflows" });
@@ -841,21 +1056,29 @@ function PublishDialog({
   workflowId,
   autosave,
   onClose,
+  onConflict,
   onIssues,
   onPublished,
 }: {
   workflowId: string;
   autosave: Autosave;
   onClose: () => void;
+  onConflict: (conflict: DraftConflict) => void;
   onIssues: (issues: ValidationIssue[]) => void;
   onPublished: (version: number | null) => void;
 }) {
   const qc = useQueryClient();
   const [note, setNote] = useState("");
   const publish = useMutation({
+    // What's published is the revision on the canvas; a newer one elsewhere is a conflict.
     mutationFn: async () => {
       await autosave.flush();
-      return workflowApi.publish(workflowId, note.trim());
+      return workflowApi.publish(workflowId, note.trim(), autosave.revision());
+    },
+    onError: (err) => {
+      if (!(err instanceof DraftConflictError)) return;
+      onClose();
+      onConflict(err.conflict);
     },
     onSuccess: (res) => {
       onClose();

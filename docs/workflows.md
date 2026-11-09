@@ -32,6 +32,8 @@ Each evaluation stops after 1 second, a recursion depth of 300, or a million ite
 
 The editor saves your draft as you go. **Publish** validates it and makes it the next version. Enabled workflows react to their triggers using the newest published version, and every run records the version it ran, so older runs stay inspectable after you change things.
 
+Every save of the draft moves its revision on, whether it comes from the editor, another tab, the API, or a change you approve in a chat. A save names the revision it started from, so the editor never overwrites a change it hasn't loaded. When the draft has changed somewhere else, the editor stops saving and asks: load the other draft, download yours as a file you can import, or overwrite the other one. **Publish** publishes the revision on your canvas, and refuses if the draft has moved on since. Leaving the editor waits for the last save, and if it fails you can retry or discard your changes. `PUT /api/workflows/:id/draft` takes `{ "definition": …, "revision": n }` for a save over revision `n` only, which answers 409 with the current draft when it has moved on. A bare definition still saves over whatever is there.
+
 Open a run to see the graph colored by what happened, then click a node for its inputs, outputs, error, attempts, and timing. Stored inputs and outputs are cut at 64 KB each and kept for 30 days.
 
 Runs survive restarts. Each node's result is saved before the next node starts, so a run picks up where it left off. **Wait**, **Approval**, and **Delegate coding task** can park a run for hours. A parked run holds no resources and wakes when its timer fires, the approval is decided, or the task settles.

@@ -31,6 +31,29 @@ let publishResult: PublishResult = { ok: true, version: 2, issues: [] };
 let approvals: ApprovalView[] = [];
 /** The connection check's error when adding an installation with `check: true`. */
 let installFails: string | null = null;
+/** Answers a request in place of `route`, for failures and conflicts. Null passes it on. */
+let respond: ((method: string, path: string, body: unknown) => Response | null) | null = null;
+
+function json(status: number, data: unknown) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/** The draft as another tab saved it: the fixture without its last step. */
+const theirs = {
+  ...workflowDetail.draft,
+  nodes: workflowDetail.draft.nodes.filter((n) => n.id !== "n_send"),
+  edges: workflowDetail.draft.edges.filter(
+    (e) => e.from.node !== "n_send" && e.to.node !== "n_send",
+  ),
+};
+const conflict409 = () =>
+  json(409, {
+    error: "The draft was changed somewhere else.",
+    conflict: { revision: 7, draft: theirs, updatedAt: "2026-11-05T10:30:00.000Z" },
+  });
 
 function route(method: string, path: string, body: unknown): unknown {
   const key = `${method} ${path}`;
@@ -63,8 +86,10 @@ function route(method: string, path: string, body: unknown): unknown {
       return runDetail;
     case "PATCH /api/workflows/wf_1":
       return { ...workflowSummary, ...(body as object) };
-    case "PUT /api/workflows/wf_1/draft":
-      return { ...workflowDetail, draft: body };
+    case "PUT /api/workflows/wf_1/draft": {
+      const b = body as { definition: unknown; revision: number };
+      return { ...workflowDetail, draft: b.definition, draftRevision: b.revision + 1 };
+    }
     case "POST /api/workflows/wf_1/validate":
       return { issues: [] };
     case "POST /api/workflows/wf_1/publish":
@@ -123,6 +148,7 @@ class FakeDOMMatrixReadOnly {
 beforeEach(() => {
   calls = [];
   approvals = [];
+  respond = null;
   publishResult = { ok: true, version: 2, issues: [] };
   vi.stubGlobal("WebSocket", FakeSocket);
   // React Flow measures nodes and reads the viewport transform with these.
@@ -136,6 +162,8 @@ beforeEach(() => {
       const method = init?.method ?? "GET";
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       calls.push({ method, path: url.pathname, body });
+      const answered = respond?.(method, url.pathname, body);
+      if (answered) return answered;
       if (
         installFails &&
         method === "POST" &&
@@ -186,6 +214,21 @@ function renderAt(path: string) {
 
 function callsTo(method: string, path: string) {
   return calls.filter((c) => c.method === method && c.path === path);
+}
+
+interface DraftSave {
+  revision: number;
+  definition: {
+    nodes: { id: string; type: string; label?: string; config: Record<string, unknown> }[];
+    edges: { from: { node: string; port: string }; to: { node: string } }[];
+  };
+}
+
+/** The `n`th draft save the editor sent. */
+function draftSave(n: number): DraftSave {
+  const call = callsTo("PUT", "/api/workflows/wf_1/draft")[n];
+  if (!call) throw new Error(`no draft save ${n}`);
+  return call.body as DraftSave;
 }
 
 async function findNode(id: string) {
@@ -343,10 +386,7 @@ describe("workflow editor", () => {
     await waitFor(() => expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(1), {
       timeout: 3000,
     });
-    const saved = callsTo("PUT", "/api/workflows/wf_1/draft")[0]?.body as {
-      nodes: { id: string; type: string }[];
-      edges: { from: { node: string; port: string }; to: { node: string } }[];
-    };
+    const saved = draftSave(0).definition;
     const added = saved.nodes.find((n) => n.type === "http.request");
     expect(saved.edges).toContainEqual(
       expect.objectContaining({
@@ -374,9 +414,7 @@ describe("workflow editor", () => {
     await waitFor(() => expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(1), {
       timeout: 3000,
     });
-    const saved = callsTo("PUT", "/api/workflows/wf_1/draft")[0]?.body as {
-      nodes: { id: string; config: Record<string, unknown> }[];
-    };
+    const saved = draftSave(0).definition;
     expect(saved.nodes.find((n) => n.id === "n_if")?.config.condition).toBe(
       "={{ inputs.value.subject = 'Hi' }}",
     );
@@ -390,10 +428,143 @@ describe("workflow editor", () => {
     expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(0);
     cleanup();
     await waitFor(() => expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(1));
-    const saved = callsTo("PUT", "/api/workflows/wf_1/draft")[0]?.body as {
-      nodes: { id: string; label?: string }[];
-    };
+    const saved = draftSave(0).definition;
     expect(saved.nodes.find((n) => n.id === "n_if")?.label).toBe("VIP?");
+  });
+
+  it("stops saving on a conflict, and loads theirs or saves over it", async () => {
+    let refuse = true;
+    respond = (method, path) =>
+      method === "PUT" && path === "/api/workflows/wf_1/draft" && refuse ? conflict409() : null;
+    const { queryClient } = renderAt("/workflows/wf_1");
+    fireEvent.click(await findNode("n_if"));
+    fireEvent.change(await screen.findByLabelText("Label"), { target: { value: "VIP?" } });
+    const dialog = await screen.findByRole("dialog", { name: "The draft changed somewhere else" });
+    expect(draftSave(0).revision).toBe(3);
+    expect(within(dialog).getByText(/^3 steps, saved/)).toBeTruthy();
+    expect(within(dialog).getByText("4 steps, not saved")).toBeTruthy();
+    expect(screen.getByText("Not saved")).toBeTruthy();
+
+    // Closed, it waits in the save status, and nothing more is sent.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close dialog" }));
+    fireEvent.change(screen.getByLabelText("Label"), { target: { value: "VIP!" } });
+    await new Promise((r) => setTimeout(r, 900));
+    expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Resolve" }));
+
+    // Overwriting saves the canvas over the revision the conflict reported.
+    refuse = false;
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Overwrite theirs" }),
+    );
+    await waitFor(() => expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(2));
+    const over = draftSave(1);
+    expect(over.revision).toBe(7);
+    expect(over.definition.nodes.find((n) => n.id === "n_if")?.label).toBe("VIP!");
+    expect(await screen.findByText("Saved")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      (queryClient.getQueryData(["workflow", "wf_1"]) as { draftRevision: number }).draftRevision,
+    ).toBe(8);
+  });
+
+  it("loads the other draft in place of the canvas", async () => {
+    respond = (method, path) =>
+      method === "PUT" && path === "/api/workflows/wf_1/draft" ? conflict409() : null;
+    renderAt("/workflows/wf_1");
+    fireEvent.click(await findNode("n_if"));
+    fireEvent.change(await screen.findByLabelText("Label"), { target: { value: "VIP?" } });
+    const dialog = await screen.findByRole("dialog", { name: "The draft changed somewhere else" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Load theirs" }));
+    await waitFor(() => expect(screen.queryByTestId("node-n_send")).toBeNull());
+    expect(await findNode("n_ai")).toBeTruthy();
+    expect(screen.getByText("Saved")).toBeTruthy();
+    // The next edit builds on their revision.
+    respond = null;
+    fireEvent.click(await findNode("n_ai"));
+    fireEvent.change(await screen.findByLabelText("Label"), { target: { value: "Sum" } });
+    await waitFor(() => expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(2), {
+      timeout: 3000,
+    });
+    expect(draftSave(1).revision).toBe(7);
+  });
+
+  it("holds navigation while a save fails, with retry or discard", async () => {
+    let failing = true;
+    respond = (method, path) =>
+      method === "PUT" && path === "/api/workflows/wf_1/draft" && failing
+        ? json(500, { error: "Database is down" })
+        : null;
+    const { router } = renderAt("/workflows/wf_1");
+    fireEvent.click(await findNode("n_if"));
+    fireEvent.change(await screen.findByLabelText("Label"), { target: { value: "VIP?" } });
+    void router.navigate({ to: "/workflows" });
+    const dialog = await screen.findByRole("dialog", { name: "Your changes aren't saved" });
+    expect(within(dialog).getByText("Database is down")).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/workflows/wf_1");
+
+    // Staying keeps the editor, still unsaved.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Stay" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.getByText("Couldn't save")).toBeTruthy();
+
+    // A retry that saves lets the navigation go on.
+    void router.navigate({ to: "/workflows" });
+    const again = await screen.findByRole("dialog", { name: "Your changes aren't saved" });
+    failing = false;
+    fireEvent.click(within(again).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/workflows"));
+    const last = draftSave(callsTo("PUT", "/api/workflows/wf_1/draft").length - 1);
+    expect(last.definition.nodes.find((n) => n.id === "n_if")?.label).toBe("VIP?");
+  });
+
+  it("discards unsaved changes when leaving on purpose", async () => {
+    respond = (method, path) =>
+      method === "PUT" && path === "/api/workflows/wf_1/draft"
+        ? json(500, { error: "Database is down" })
+        : null;
+    const { router } = renderAt("/workflows/wf_1");
+    fireEvent.click(await findNode("n_if"));
+    fireEvent.change(await screen.findByLabelText("Label"), { target: { value: "VIP?" } });
+    void router.navigate({ to: "/workflows" });
+    const dialog = await screen.findByRole("dialog", { name: "Your changes aren't saved" });
+    const tries = callsTo("PUT", "/api/workflows/wf_1/draft").length;
+    fireEvent.click(within(dialog).getByRole("button", { name: "Discard changes" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/workflows"));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(tries);
+  });
+
+  it("switches tabs without waiting on a save", async () => {
+    const { router } = renderAt("/workflows/wf_1");
+    fireEvent.click(await findNode("n_if"));
+    fireEvent.change(await screen.findByLabelText("Label"), { target: { value: "VIP?" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Runs" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ tab: "runs" }));
+    expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(0);
+  });
+
+  it("keeps changes whose last save failed, and saves them when the editor opens again", async () => {
+    respond = (method, path) =>
+      method === "PUT" && path === "/api/workflows/wf_1/draft"
+        ? json(503, { error: "Offline" })
+        : null;
+    renderAt("/workflows/wf_1");
+    fireEvent.click(await findNode("n_if"));
+    fireEvent.change(await screen.findByLabelText("Label"), { target: { value: "Kept" } });
+    // The editor goes away without a navigation, as when the session ends.
+    cleanup();
+    await waitFor(() => expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 0));
+
+    respond = null;
+    renderAt("/workflows/wf_1");
+    await findNode("n_if");
+    await waitFor(() => expect(callsTo("PUT", "/api/workflows/wf_1/draft")).toHaveLength(2));
+    const saved = draftSave(1);
+    expect(saved.revision).toBe(3);
+    expect(saved.definition.nodes.find((n) => n.id === "n_if")?.label).toBe("Kept");
+    expect(await screen.findByText("Saved")).toBeTruthy();
   });
 
   it("switches a field between a fixed value and an expression", async () => {
@@ -439,7 +610,10 @@ describe("workflow editor", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Publish" }));
     expect(await screen.findByText("Prompt needs a context input")).toBeTruthy();
     expect(screen.getByText("2 problems")).toBeTruthy();
-    expect(callsTo("POST", "/api/workflows/wf_1/publish")[0]?.body).toEqual({ note: "v2" });
+    expect(callsTo("POST", "/api/workflows/wf_1/publish")[0]?.body).toEqual({
+      note: "v2",
+      revision: 3,
+    });
     const node = await findNode("n_ai");
     // React Flow hides nodes until it has measured them, which happy-dom never does,
     // so role queries can't see inside nodes.
@@ -449,6 +623,24 @@ describe("workflow editor", () => {
     fireEvent.click(screen.getByText("Prompt needs a context input"));
     const settings = await screen.findByRole("complementary", { name: "Step settings" });
     expect(within(settings).getByText("Asks the model and returns its text.")).toBeTruthy();
+  });
+
+  it("shows the conflict when the reviewed revision is no longer the draft", async () => {
+    respond = (method, path) =>
+      method === "POST" && path === "/api/workflows/wf_1/publish" ? conflict409() : null;
+    renderAt("/workflows/wf_1");
+    await findNode("n_ai");
+    fireEvent.click(screen.getByText("Publish"));
+    const publish = await screen.findByRole("dialog", { name: "Publish" });
+    fireEvent.click(within(publish).getByRole("button", { name: "Publish" }));
+    expect(
+      await screen.findByRole("dialog", { name: "The draft changed somewhere else" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Publish" })).toBeNull();
+    expect(callsTo("POST", "/api/workflows/wf_1/publish")[0]?.body).toEqual({
+      note: "",
+      revision: 3,
+    });
   });
 
   it("reports a clean validation", async () => {
