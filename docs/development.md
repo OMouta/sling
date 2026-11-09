@@ -148,6 +148,30 @@ Routes loaded on demand:
 The workflow node catalog (372.2 KiB raw, 115.0 KiB gzip) also loads on demand, with
 the workflow pages.
 
+## Retention pruning
+
+A daily job (03:17) deletes task events older than 30 days in batches of 1,000, each
+committed on its own, and stops after 10 seconds; the next run continues.
+`apps/server/test/prune.e2e.test.ts` loads a backlog of expired events into a disposable
+Postgres, cuts a prune off mid-batch by killing its database connection, and checks that
+only whole batches were deleted, that later runs delete the rest, and that events inside
+the window stay. `SLING_PRUNE_EVENTS` sets the backlog size (default 300,000, about 10
+seconds in all).
+
+Measured on 2026-11-09 on an Apple-silicon laptop with Postgres 18 under OrbStack: 1,000
+tasks, 200-byte event payloads, 20,000 events inside the window. Latency is a task
+detail request, which reads the table being pruned, sampled back to back.
+
+| Expired events | Prune time | Runs | Task detail idle, p50 / p95 / max | While pruning |
+|---|---|---|---|---|
+| 300,000 | 1.0 s, about 250,000 events/s | 1 | 3.4 / 5.1 / 8.2 ms | 3.0 / 5.8 / 14.9 ms |
+| 3,000,000 | 30.2 s, about 98,000 events/s | 4; the first three stopped at 10 s | 10.6 / 16.5 / 60.7 ms | 7.6 / 24.4 / 121.7 ms |
+
+In both runs the interrupted batch rolled back, the deletions before it stayed, and the
+next runs finished cleanly. Because the job runs once a day, a backlog of more than
+about a million events takes several days to clear at this rate. Node-run payloads are
+still cleared in one statement.
+
 ## Changing things
 
 - **Database:** edit `packages/db/src/schema/*.ts`, then `pnpm --filter @sling/db generate`. Migrations apply on server start.
