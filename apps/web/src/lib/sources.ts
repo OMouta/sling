@@ -46,6 +46,8 @@ export function applySourceEvent(
   qc: QueryClient,
   ev: Extract<ServerEvent, { type: "source.updated" | "source.removed" }>,
 ) {
+  // What files take up changes with them; Settings shows it when open.
+  void qc.invalidateQueries({ queryKey: ["storage"] });
   if (ev.type === "source.updated") {
     const s = ev.source;
     if (s.personalityId) {

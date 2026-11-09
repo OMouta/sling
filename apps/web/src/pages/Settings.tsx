@@ -1,5 +1,6 @@
 import {
   type AssistantChoice,
+  formatBytes,
   HARNESS_LABELS,
   HARNESSES,
   type Harness,
@@ -8,6 +9,7 @@ import {
   type PermissionMode,
   type ProviderModelsView,
   type SandboxSettingsView,
+  type StorageUsageView,
 } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -16,6 +18,7 @@ import {
   Box,
   Cpu,
   Fingerprint,
+  HardDrive,
   KeyRound,
   type LucideIcon,
   Plus,
@@ -73,6 +76,7 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: "mode", label: "Permission mode", icon: ShieldCheck },
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "sandboxes", label: "Sandboxes", icon: Box },
+  { id: "storage", label: "Storage", icon: HardDrive },
   { id: "security", label: "Sign-in security", icon: KeyRound },
 ];
 
@@ -178,10 +182,68 @@ export function SettingsPage() {
             </>
           )}
           <SandboxSection />
+          <StorageSection />
           <SecuritySection />
         </div>
       </div>
     </Page>
+  );
+}
+
+/** What uploaded files take up, against the server's limit, and where they live. */
+function StorageSection() {
+  const usage = useQuery({
+    queryKey: ["storage"],
+    queryFn: ({ signal }) => api.get<StorageUsageView>("/api/storage", { signal }),
+  });
+  const u = usage.data;
+  const filled = u && u.limit > 0 ? Math.min(20, Math.round((u.used / u.limit) * 20)) : 0;
+  // Uploads that no message or personality has yet, such as a file left in the composer.
+  const unsent = u ? Math.max(0, u.used - u.chats - u.personalities) : 0;
+  return (
+    <SettingsSection id="storage" title="Storage">
+      {usage.isPending ? (
+        <Skeleton className="h-12 w-full" />
+      ) : !u ? (
+        <ErrorText error={usage.error} />
+      ) : (
+        <div className="space-y-2.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[13px] font-medium">Files</span>
+            <span className="tabular text-xs text-muted">
+              {u.limit > 0
+                ? `${formatBytes(u.used)} of ${formatBytes(u.limit)}`
+                : `${formatBytes(u.used)}, no limit`}
+            </span>
+          </div>
+          {u.limit > 0 && (
+            <div className="flex gap-[3px]" aria-hidden="true">
+              {Array.from({ length: 20 }, (_, i) => (
+                <span
+                  // biome-ignore lint/suspicious/noArrayIndexKey: fixed segments of a meter.
+                  key={i}
+                  className={cx(
+                    "h-2.5 flex-1 rounded-[2px]",
+                    i < filled ? (filled >= 18 ? "bg-warn" : "bg-accent-text") : "bg-surface-3",
+                  )}
+                />
+              ))}
+            </div>
+          )}
+          {u.used > 0 && (
+            <p className="tabular flex flex-wrap gap-x-3 text-xs text-subtle">
+              {u.chats > 0 && <span>In chats {formatBytes(u.chats)}</span>}
+              {u.personalities > 0 && (
+                <Link to="/personalities" className="hover:text-text">
+                  Personality sources {formatBytes(u.personalities)}
+                </Link>
+              )}
+              {unsent > 0 && <span>Not sent yet {formatBytes(unsent)}</span>}
+            </p>
+          )}
+        </div>
+      )}
+    </SettingsSection>
   );
 }
 

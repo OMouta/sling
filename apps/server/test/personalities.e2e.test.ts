@@ -485,6 +485,7 @@ class StandInSources implements SourceService {
 
   start = (boss: Parameters<SourceService["start"]>[0]) => this.#base.start(boss);
   remove = (ws: string, id: string) => this.#base.remove(ws, id);
+  usage = (ws: string) => this.#base.usage(ws);
   forPersonality = (ws: string, id: string) => this.#base.forPersonality(ws, id);
   forMessages = (ws: string, ids: readonly string[]) => this.#base.forMessages(ws, ids);
   attach: SourceService["attach"] = (...args) => this.#base.attach(...args);

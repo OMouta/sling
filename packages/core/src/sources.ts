@@ -137,3 +137,28 @@ export interface PersonalityImportView {
   /** Sources in the file that couldn't be added. */
   sourcesFailed: number;
 }
+
+/** A size for people: "512 KB", "1.2 MB", "3 GB". Under 10 of a unit keeps one decimal. */
+export function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let n = Math.max(0, bytes);
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  const shown = i === 0 || n >= 10 ? Math.round(n).toString() : n.toFixed(1).replace(/\.0$/, "");
+  return `${shown} ${units[i]}`;
+}
+
+/** What uploaded files take up in a workspace, and the most they may. */
+export interface StorageUsageView {
+  /** Bytes stored, in all. */
+  used: number;
+  /** The most files may take, in bytes. Zero means no limit. */
+  limit: number;
+  /** Files sent in chats, which stay with their messages. */
+  chats: number;
+  /** Personalities' sources, which can be removed from each personality. */
+  personalities: number;
+}

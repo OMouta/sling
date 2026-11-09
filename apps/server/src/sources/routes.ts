@@ -158,6 +158,9 @@ export async function sourceRoutes(app: FastifyInstance, ctx: AppContext) {
     },
   );
 
+  // What uploaded files take up, for Settings.
+  r.get("/api/storage", async (request) => ctx.sources.usage(actorOf(request).workspaceId));
+
   r.delete("/api/sources/:id", { schema: { params: Id } }, async (request, reply) => {
     const actor = actorOf(request);
     const row = await source(actor, request.params.id);

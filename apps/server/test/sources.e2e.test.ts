@@ -28,6 +28,7 @@ import {
   type PersonalityView,
   type RunnerView,
   type SourceView,
+  type StorageUsageView,
   type ToolStep,
 } from "@sling/core";
 import { schema } from "@sling/db";
@@ -664,5 +665,39 @@ describe("a turn on Claude Code", () => {
     expect(seen.text).toContain('"type":"image"');
     expect(seen.text).toContain('"media_type":"image/png"');
     expect(seen.text).toContain("[image: dish.png]");
+  });
+});
+
+describe("storage", () => {
+  it("lets uploads at once fill the space but never pass it, and frees space when a file goes", async () => {
+    const usage = async () =>
+      (await (await call("GET", "/api/storage")).json()) as StorageUsageView;
+    const before = await usage();
+    const file = new Uint8Array(2048);
+    file.set(PNG_PIXEL);
+    const limit = server.ctx.config.sourceStorageBytes;
+    server.ctx.config.sourceStorageBytes = before.used + 3 * file.byteLength;
+    try {
+      const results = await Promise.all(
+        Array.from({ length: 8 }, (_, i) => upload("/api/attachments", `c${i}.png`, file)),
+      );
+      const stored = results.filter((r) => r.status === 200);
+      const refused = results.filter((r) => r.status === 413);
+      expect(stored).toHaveLength(3);
+      expect(refused).toHaveLength(5);
+      expect(refused[0]?.body.error).toMatch(
+        /^Storage is full: files use .+ of .+\. Remove sources from a personality to make room\.$/,
+      );
+      const full = await usage();
+      expect(full.used).toBe(before.used + 3 * file.byteLength);
+      expect(full.limit).toBe(full.used);
+
+      // Removing a file frees its space for the next one.
+      expect((await call("DELETE", `/api/sources/${stored[0]?.body.id}`)).status).toBe(204);
+      expect((await usage()).used).toBe(before.used + 2 * file.byteLength);
+      expect((await upload("/api/attachments", "again.png", file)).status).toBe(200);
+    } finally {
+      server.ctx.config.sourceStorageBytes = limit;
+    }
   });
 });

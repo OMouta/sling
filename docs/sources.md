@@ -52,4 +52,6 @@ The sent message shows its files above the bubble: thumbnails that open full siz
 
 Uploaded files and the text read from them live in Sling's Postgres, with the rest of the workspace, and go into your backups with it. Search is Postgres full-text search, with no embeddings and no other service. Files you attach and never send are cleared out once they're a day old.
 
+All uploaded files together may take up to 1 GB, or what `SLING_SOURCE_STORAGE_BYTES` says (`0` for no limit). Settings → Storage shows how much is used, split into files sent in chats, personalities' sources, and files not sent yet. When it's full, an upload is refused until you remove sources from a personality or raise the limit.
+
 Folders you share from a machine are different: their files stay on the machine, and Sling reads them there. See [memory.md](memory.md).

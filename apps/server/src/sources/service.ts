@@ -1,10 +1,12 @@
 import {
+  formatBytes,
   MESSAGE_MAX_FILES,
   MESSAGE_MAX_IMAGE_BYTES,
   MESSAGE_MAX_IMAGES,
   newId,
   PERSONALITY_MAX_SOURCES,
   SOURCE_MAX_BYTES,
+  type StorageUsageView,
 } from "@sling/core";
 import { type Db, schema } from "@sling/db";
 import { and, asc, count, eq, inArray, isNull, lt, or, type SQL, sql } from "drizzle-orm";
@@ -85,6 +87,8 @@ export interface SourceService {
   ): Promise<SourceRow>;
   /** Deletes it with its file and text. `actorId` is who asked, for the audit log. */
   remove(workspaceId: string, id: string, actorId?: string): Promise<SourceRow | null>;
+  /** What files take up in a workspace, split by where they live, and the limit. */
+  usage(workspaceId: string): Promise<StorageUsageView>;
   /** A personality's sources, oldest first. */
   forPersonality(workspaceId: string, personalityId: string): Promise<SourceRow[]>;
   /** The files sent with these messages. */
@@ -124,6 +128,9 @@ export interface SourceService {
 }
 
 export const SOURCE_QUEUE = "source-process";
+
+/** The most uploaded files may take in a workspace unless the server is told otherwise: 1 GB. */
+const DEFAULT_STORAGE_BYTES = 1024 * 1024 * 1024;
 /** Most search hits a call returns. */
 export const SEARCH_MAX = 8;
 /** Most text one read returns. */
@@ -412,15 +419,16 @@ export class Sources implements SourceService {
         .from(schema.workspaces)
         .where(eq(schema.workspaces.id, actor.workspaceId))
         .for("update");
-      const quota = this.#ctx.config.sourceStorageBytes ?? 1024 * 1024 * 1024;
+      const quota = this.#ctx.config.sourceStorageBytes ?? DEFAULT_STORAGE_BYTES;
       if (quota > 0) {
         const [usage] = await tx
           .select({ bytes: sql<string>`coalesce(sum(${s.size}), 0)` })
           .from(s)
           .where(eq(s.workspaceId, actor.workspaceId));
-        if (Number(usage?.bytes ?? 0) + file.data.byteLength > quota) {
+        const used = Number(usage?.bytes ?? 0);
+        if (used + file.data.byteLength > quota) {
           throw new SourceInputError(
-            "Workspace storage limit reached. Remove unused sources before uploading more files.",
+            `Storage is full: files use ${formatBytes(used)} of ${formatBytes(quota)}. Remove sources from a personality to make room.`,
             413,
           );
         }
@@ -524,6 +532,24 @@ export class Sources implements SourceService {
       .from(s)
       .where(and(eq(s.workspaceId, workspaceId), inArray(s.messageId, [...messageIds])))
       .orderBy(s.createdAt);
+  }
+
+  /** What files take up in a workspace, split by where they live, and the limit. */
+  async usage(workspaceId: string): Promise<StorageUsageView> {
+    const [row] = await this.#db
+      .select({
+        used: sql<string>`coalesce(sum(${s.size}), 0)`,
+        chats: sql<string>`coalesce(sum(${s.size}) filter (where ${s.conversationId} is not null), 0)`,
+        personalities: sql<string>`coalesce(sum(${s.size}) filter (where ${s.personalityId} is not null), 0)`,
+      })
+      .from(s)
+      .where(eq(s.workspaceId, workspaceId));
+    return {
+      used: Number(row?.used ?? 0),
+      limit: this.#ctx.config.sourceStorageBytes ?? DEFAULT_STORAGE_BYTES,
+      chats: Number(row?.chats ?? 0),
+      personalities: Number(row?.personalities ?? 0),
+    };
   }
 
   async checkAttachments(actor: SourceActor, ids: readonly string[]): Promise<string | null> {
