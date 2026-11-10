@@ -109,7 +109,8 @@ export function speak(id: string, markdown: string) {
     return;
   }
   set(id);
-  const lang = document.documentElement.lang || undefined;
+  // The language the user speaks, as dictation uses; the page's own is always English.
+  const lang = navigator.language || undefined;
   for (const [i, piece] of pieces.entries()) {
     const u = new SpeechSynthesisUtterance(piece);
     if (lang) u.lang = lang;

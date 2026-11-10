@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { liveText } from "./followUps.ts";
-import { speakableText, speechPieces } from "./speech.ts";
+import { speak, speakableText, speechPieces, stopSpeaking } from "./speech.ts";
 
 describe("reading a reply aloud", () => {
   it("leaves out code blocks, link addresses, and citation numbers", () => {
@@ -35,6 +35,36 @@ describe("reading a reply aloud", () => {
     expect(pieces.length).toBeGreaterThan(1);
     for (const p of pieces) expect(p.length).toBeLessThanOrEqual(220);
     expect(pieces.join(" ")).toBe(text.trim());
+  });
+});
+
+describe("the voice a reply is read in", () => {
+  afterEach(() => {
+    stopSpeaking();
+    vi.unstubAllGlobals();
+  });
+
+  it("speaks the user's language, not the page's", () => {
+    const spoken: { text: string; lang: string }[] = [];
+    vi.stubGlobal("navigator", { language: "pt-PT" });
+    vi.stubGlobal("window", {
+      speechSynthesis: {
+        cancel() {},
+        speak: (u: { text: string; lang: string }) => spoken.push(u),
+      },
+    });
+    vi.stubGlobal(
+      "SpeechSynthesisUtterance",
+      class {
+        lang = "";
+        text: string;
+        constructor(text: string) {
+          this.text = text;
+        }
+      },
+    );
+    speak("msg_1", "Olá. Está tudo pronto.");
+    expect(spoken.map((u) => u.lang)).toEqual(["pt-PT"]);
   });
 });
 
