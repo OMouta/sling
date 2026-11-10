@@ -1118,7 +1118,7 @@ function PublishDialog({
           placeholder="What changed"
           onChange={(e) => setNote(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") publish.mutate();
+            if (e.key === "Enter" && !e.repeat && !publish.isPending) publish.mutate();
           }}
         />
       </div>

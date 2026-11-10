@@ -344,14 +344,21 @@ describe("follow-ups", () => {
         .map((b) => b.textContent),
     ).toEqual(["Make it vegan", "What goes on the side?"]);
     expect(screen.queryByText("Older follow-up")).toBeNull();
-    fireEvent.click(within(list).getByRole("button", { name: "Make it vegan" }));
+    const vegan = within(list).getByRole("button", { name: "Make it vegan" });
+    fireEvent.click(vegan);
+    // A double tap: the buttons are off once one went out.
+    fireEvent.click(vegan);
+    fireEvent.click(within(list).getByRole("button", { name: "What goes on the side?" }));
     await waitFor(() =>
       expect(calls).toContainEqual({
         method: "POST",
         path: "/api/conversations/cnv_1/messages",
-        body: { text: "Make it vegan" },
+        body: { text: "Make it vegan", clientId: expect.any(String) },
       }),
     );
+    await waitFor(() => expect((vegan as HTMLButtonElement).disabled).toBe(true));
+    fireEvent.click(vegan);
+    expect(calls.filter((c) => c.path === "/api/conversations/cnv_1/messages")).toHaveLength(1);
   });
 
   it("never show the block while a reply streams", async () => {

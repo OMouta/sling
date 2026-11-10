@@ -9,6 +9,7 @@ import {
   dropListedConversation,
   patchListedConversation,
 } from "../lib/conversations.ts";
+import { useSendId } from "../lib/drafts.ts";
 import { usePersonalities } from "../lib/personalities.ts";
 import type { ConversationDetail } from "../lib/types.ts";
 import { Button, cx, Dialog, ErrorText, Input, Menu, MenuItem, useConfirm } from "./ui.tsx";
@@ -48,10 +49,16 @@ export function useConversationMenu() {
     if (again) retry();
   };
 
+  // Trying again keeps the message's ID, so the server saves it once.
+  const sendId = useSendId();
   const makeWorkflow = useMutation({
     mutationFn: (c: ConversationSummaryView) =>
-      api.post(`/api/conversations/${c.id}/messages`, { text: MAKE_WORKFLOW }),
+      api.post(`/api/conversations/${c.id}/messages`, {
+        text: MAKE_WORKFLOW,
+        clientId: sendId.take(c.id),
+      }),
     onSuccess: (_, c) => {
+      sendId.done();
       if (pathname !== `/c/${c.id}`) void navigate({ to: "/c/$id", params: { id: c.id } });
     },
     onError: (error, c) =>

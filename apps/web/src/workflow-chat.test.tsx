@@ -313,7 +313,10 @@ describe("Make this a workflow", () => {
     await waitFor(() =>
       expect(posts).toContainEqual({
         path: "/api/conversations/cnv_1/messages",
-        body: { text: "Turn what we did in this chat into a workflow" },
+        body: {
+          text: "Turn what we did in this chat into a workflow",
+          clientId: expect.any(String),
+        },
       }),
     );
   });

@@ -129,10 +129,20 @@ export function ChatPage() {
     },
   });
   // A follow-up goes out on its own, leaving a draft and its files in the composer.
+  // A second tap sends the same ID, so the server saves it once.
+  const followUpId = useSendId();
   const followUp = useMutation({
     mutationFn: (message: string) =>
-      api.post(`/api/conversations/${id}/messages`, { text: message }),
+      api.post(`/api/conversations/${id}/messages`, {
+        text: message,
+        clientId: followUpId.take(JSON.stringify([id, message])),
+      }),
+    onSuccess: () => followUpId.done(),
   });
+  // The reply whose follow-up went out: its others are off until the message
+  // shows, or the send fails.
+  const [followedUp, setFollowedUp] = useState<string | null>(null);
+  const followedUpRef = useRef<string | null>(null);
   const setMode = useMutation({
     mutationFn: (mode: PermissionMode) => api.patch(`/api/conversations/${id}`, { mode }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["conversation", id] }),
@@ -233,9 +243,17 @@ export function ChatPage() {
     [id, conversationMode, tasks],
   );
   const sendFollowUp = useCallback(
-    (t: string) => {
+    (text: string, after: string) => {
+      if (followedUpRef.current === after) return;
+      followedUpRef.current = after;
+      setFollowedUp(after);
       following.current = true;
-      followUp.mutate(t);
+      followUp.mutate(text, {
+        onError: () => {
+          followedUpRef.current = null;
+          setFollowedUp(null);
+        },
+      });
     },
     [followUp.mutate],
   );
@@ -423,6 +441,7 @@ export function ChatPage() {
                   personalities={personalities.data}
                   latest={!thinking && item.message.id === lastReplyId}
                   onSend={sendFollowUp}
+                  sent={item.message.id === followedUp}
                 />
               ),
             )}
@@ -619,6 +638,7 @@ const Message = memo(function Message({
   personalities,
   latest,
   onSend,
+  sent,
 }: {
   message: MessageView;
   activity: ActivityContext;
@@ -627,7 +647,9 @@ const Message = memo(function Message({
   personalities: PersonalityView[] | undefined;
   /** The chat's last reply, with nothing being written after it. */
   latest: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, after: string) => void;
+  /** One of its follow-ups went out. */
+  sent: boolean;
 }) {
   if (message.role === "system") return <SystemNote message={message} tasks={tasks} />;
   if (message.role === "user") {
@@ -655,7 +677,9 @@ const Message = memo(function Message({
       </div>
       <ReplySources message={message} />
       <ReplyActions message={message} latest={latest} />
-      {latest && <FollowUps message={message} onSend={onSend} />}
+      {latest && (
+        <FollowUps message={message} disabled={sent} onSend={(t) => onSend(t, message.id)} />
+      )}
     </AssistantRow>
   );
 });

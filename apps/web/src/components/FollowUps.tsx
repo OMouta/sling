@@ -4,9 +4,12 @@ import { CornerDownRight } from "lucide-react";
 /** Messages the user might send next, under the latest reply. A tap sends one. */
 export function FollowUps({
   message,
+  disabled = false,
   onSend,
 }: {
   message: MessageView;
+  /** One already went out. */
+  disabled?: boolean;
   onSend: (text: string) => void;
 }) {
   const followUps = message.trace?.followUps ?? [];
@@ -17,8 +20,9 @@ export function FollowUps({
         <li key={text} className="max-w-full">
           <button
             type="button"
+            disabled={disabled}
             onClick={() => onSend(text)}
-            className="pressable flex max-w-full cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] leading-5 text-soft hover:bg-surface-3 hover:text-text"
+            className="pressable flex max-w-full cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] leading-5 text-soft enabled:hover:bg-surface-3 enabled:hover:text-text disabled:cursor-default disabled:opacity-60"
           >
             <CornerDownRight
               aria-hidden="true"
