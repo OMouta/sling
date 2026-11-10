@@ -1,4 +1,5 @@
 import type { CheckView } from "@sling/core";
+import addressparser from "nodemailer/lib/addressparser/index.js";
 import { describe, expect, it } from "vitest";
 import type { CheckChange } from "../checks/service.ts";
 import {
@@ -37,6 +38,54 @@ describe("pinned values", () => {
     expect(valueMatches("*@acme.com", "eve@evil.io,x@acme.com")).toBe(false);
     expect(valueMatches("jo@silva.pt, *@acme.com", "jo@silva.pt, ana@acme.com")).toBe(true);
     expect(valueMatches("jo@silva.pt, *@acme.com", ["ana@acme.com", "jo@silva.pt"])).toBe(true);
+  });
+
+  it("split recipients on semicolons too", () => {
+    expect(valueMatches("*@acme.com", "eve@evil.io; boss@acme.com")).toBe(false);
+    expect(valueMatches("*@acme.com", "ana@acme.com; bo@acme.com")).toBe(true);
+  });
+
+  it("match nothing a mail sender could read as another address", () => {
+    expect(valueMatches("boss@acme.com", "<eve@evil.io> <boss@acme.com>")).toBe(false);
+    expect(valueMatches("*@acme.com", "eve@evil.io <boss@acme.com>")).toBe(false);
+    expect(valueMatches("*@acme.com", "boss@acme.com (eve@evil.io)")).toBe(false);
+    expect(valueMatches("*@acme.com", '"eve@evil.io" boss@acme.com')).toBe(false);
+    expect(valueMatches("*@acme.com", "eve@evil.io boss@acme.com")).toBe(false);
+    expect(valueMatches("*@acme.com", "g: eve@evil.io, boss@acme.com")).toBe(false);
+    expect(valueMatches("*@acme.com", "eve@evil.io@acme.com")).toBe(false);
+    expect(valueMatches("*@acme.com", "<boss@acme.com")).toBe(false);
+  });
+
+  it("only accept recipients that nodemailer reads the same way", () => {
+    const tries = [
+      "eve@evil.io; boss@acme.com",
+      "<eve@evil.io> <boss@acme.com>",
+      "eve@evil.io <boss@acme.com>",
+      "boss@acme.com <eve@evil.io>",
+      "boss@acme.com (eve@evil.io)",
+      "(eve@evil.io) boss@acme.com",
+      "eve@evil.io boss@acme.com",
+      "g: eve@evil.io, boss@acme.com;",
+      "g:eve@evil.io,boss@acme.com",
+      '"eve@evil.io, x" <boss@acme.com>',
+      '"Boss, Big" <boss@acme.com>',
+      "Boss <boss@acme.com>",
+      "x <boss@acme.com> y",
+      "boss@acme.com, ana@acme.com",
+      "boss@acme.com\neve@evil.io",
+      "boss@acme.com\n<eve@evil.io>",
+      "eve@evil.io\\,boss@acme.com",
+      "<@evil.io:boss@acme.com>",
+      "boss@[1.2.3.4]",
+    ];
+    for (const pattern of ["*@acme.com", "boss@acme.com"]) {
+      for (const to of tries) {
+        if (!valueMatches(pattern, to)) continue;
+        const sent = addressparser(to, { flatten: true }).map((a) => a.address.toLowerCase());
+        expect(sent.length, to).toBeGreaterThan(0);
+        for (const a of sent) expect(valueMatches(pattern, a), `${to} sends to ${a}`).toBe(true);
+      }
+    }
   });
 
   it("pin an argument to being left out with an empty value", () => {

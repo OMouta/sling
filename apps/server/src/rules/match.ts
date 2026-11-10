@@ -5,10 +5,15 @@
  *
  * A pinned value is a comma-separated list of alternatives. Each one matches
  * exactly, or as a suffix when it starts with one `*`, such as `*@acme.com`.
- * A call's value matches when every comma-separated part of it matches one
- * alternative, so an email to two people goes through only when both are
- * covered. An empty pinned value matches only an empty or missing argument.
- * Case doesn't matter, and `Name <a@b.c>` counts as `a@b.c`.
+ * A call's value matches when every part of it matches one alternative, so an
+ * email to two people goes through only when both are covered. Parts are
+ * split on commas and semicolons, as mail senders split recipients. An empty
+ * pinned value matches only an empty or missing argument. Case doesn't
+ * matter, and `Name <a@b.c>` counts as `a@b.c`.
+ *
+ * A call's part that a mail sender could read as a different address, such
+ * as two `<...>` groups, a quoted or commented address, or text after the
+ * address, matches nothing, so the call asks instead.
  */
 
 /** Mail providers where `*@domain` would cover strangers, so a rule pins the address instead. */
@@ -47,6 +52,9 @@ const PUBLIC_MAIL = new Set([
 /** Providers with a domain per country, such as yahoo.co.uk. */
 const PUBLIC_MAIL_PREFIXES = ["yahoo.", "hotmail.", "outlook.", "live.", "gmx."];
 
+/** How a value splits into parts. */
+const SEPARATORS = /[,;]/;
+
 /** Most alternatives one pinned value may list. */
 const MAX_ALTERNATIVES = 50;
 
@@ -69,7 +77,7 @@ function clean(part: string): string {
 /** The parts as written, each once, whatever their case. */
 function cleanParts(text: string): string[] {
   const seen = new Map<string, string>();
-  for (const p of text.split(",").map(clean)) {
+  for (const p of text.split(SEPARATORS).map(clean)) {
     if (p && !seen.has(p.toLowerCase())) seen.set(p.toLowerCase(), p);
   }
   return [...seen.values()];
@@ -78,6 +86,33 @@ function cleanParts(text: string): string[] {
 /** The parts as they're compared: in lower case. */
 function parts(text: string): string[] {
   return cleanParts(text).map((p) => p.toLowerCase());
+}
+
+/** A bare address with nothing a mail parser could read another way. */
+const PLAIN_ADDRESS = /^[^\s@<>()[\]",;:\\]+@[^\s@<>()[\]",;:\\]+$/;
+/** What may stand before `<address>`: a display name with no address syntax in it. */
+const PLAIN_NAME = /^[^@<>()[\]",;:\\]*$/;
+
+/**
+ * A call's parts as they're compared, or null when one could reach a
+ * different address than the matcher would see.
+ */
+function callParts(text: string): string[] | null {
+  const out = new Set<string>();
+  for (const raw of text.split(SEPARATORS)) {
+    const t = raw.trim();
+    if (!t) continue;
+    let value = t;
+    if (/[<>]/.test(t)) {
+      const m = /^([^<>]*)<([^<>]*)>$/.exec(t);
+      if (!m || !PLAIN_NAME.test(m[1] ?? "")) return null;
+      value = (m[2] ?? "").trim();
+      if (!value) return null;
+    }
+    if (value.includes("@") && !PLAIN_ADDRESS.test(value)) return null;
+    out.add(value.toLowerCase());
+  }
+  return [...out];
 }
 
 function alternativeMatches(alt: string, part: string): boolean {
@@ -91,7 +126,8 @@ function alternativeMatches(alt: string, part: string): boolean {
 /** Whether a call's argument matches one pinned value. */
 export function valueMatches(pattern: string, value: unknown): boolean {
   const alternatives = parts(pattern);
-  const got = parts(argText(value));
+  const got = callParts(argText(value));
+  if (got === null) return false;
   if (alternatives.length === 0) return got.length === 0;
   if (got.length === 0) return false;
   return got.every((p) => alternatives.some((a) => alternativeMatches(a, p)));
