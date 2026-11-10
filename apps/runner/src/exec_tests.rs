@@ -183,3 +183,57 @@ async fn the_sandbox_reads_but_never_writes() {
     assert!(!dir.path().join("made.txt").exists());
     assert!(res.sandboxed);
 }
+
+/// A Unix socket outside /tmp and /run, where an SSH control socket or
+/// Docker's would be, stays out of reach.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[tokio::test]
+async fn the_sandbox_reaches_no_unix_sockets() {
+    let sandbox = detect_sandbox().await;
+    if !sandbox.available() {
+        eprintln!("skipped: no command sandbox here");
+        return;
+    }
+    let dir = tempfile::Builder::new()
+        .prefix(".s")
+        .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+        .unwrap();
+    let path = dir.path().join("s");
+    let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let r = request(
+        &format!("echo hi | nc -U -w 1 {}; echo nc=$?", path.display()),
+        true,
+        PermissionMode::ReadOnly,
+    );
+    let res = run_here(&r, dir.path(), &sandbox).await;
+    assert!(res.output.contains("nc="), "{}", res.output);
+    assert!(!res.output.contains("not found"), "{}", res.output);
+    assert!(!res.output.contains("nc=0"), "{}", res.output);
+    assert!(listener.accept().is_err(), "the command connected");
+}
+
+#[cfg(target_os = "macos")]
+#[tokio::test]
+async fn the_sandbox_starts_no_launchd_jobs() {
+    let sandbox = detect_sandbox().await;
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("escaped");
+    let label = format!("dev.sling.test.{}", std::process::id());
+    let r = request(
+        &format!(
+            "launchctl submit -l {label} -- /bin/sh -c 'touch {}; exec sleep 600'; echo submitted=$?",
+            marker.display()
+        ),
+        true,
+        PermissionMode::ReadOnly,
+    );
+    let res = run_here(&r, dir.path(), &sandbox).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _ = std::process::Command::new("launchctl")
+        .args(["remove", &label])
+        .output();
+    assert!(res.output.contains("submitted="), "{}", res.output);
+    assert!(!res.output.contains("submitted=0"), "{}", res.output);
+    assert!(!marker.exists());
+}

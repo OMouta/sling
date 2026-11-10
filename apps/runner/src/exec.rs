@@ -46,7 +46,8 @@ const DRAIN: Duration = Duration::from_millis(500);
 /// macOS: everything a process can normally do, minus writing files, the
 /// network, and the services that would let it change things through
 /// another process (preferences, the pasteboard, Launch Services, Apple
-/// Events, the keychain). Writes to /dev/null and terminals still work.
+/// Events, the keychain, launchd jobs). Writes to /dev/null and terminals
+/// still work.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const SEATBELT_PROFILE: &str = r#"(version 1)
 (allow default)
@@ -59,6 +60,7 @@ pub const SEATBELT_PROFILE: &str = r#"(version 1)
   (regex #"^/dev/tty")
   (regex #"^/dev/fd/"))
 (deny appleevent-send)
+(deny job-creation)
 (deny signal (target others))
 (deny mach-lookup
   (global-name "com.apple.cfprefsd.daemon")
@@ -77,6 +79,7 @@ const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Sandbox {
     Seatbelt,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Bubblewrap(PathBuf),
     /// None here, and why.
     Missing(String),
@@ -94,44 +97,64 @@ pub async fn detect_sandbox() -> Sandbox {
         if !Path::new(SANDBOX_EXEC).exists() {
             return Sandbox::Missing(format!("{SANDBOX_EXEC} is missing."));
         }
-        return match probe(SANDBOX_EXEC, &["-p", SEATBELT_PROFILE, "/usr/bin/true"]).await {
+        return match probe(
+            SANDBOX_EXEC,
+            &["-p", SEATBELT_PROFILE, "/usr/bin/true"],
+            None,
+        )
+        .await
+        {
             Ok(()) => Sandbox::Seatbelt,
             Err(e) => Sandbox::Missing(format!("sandbox-exec doesn't start: {e}")),
         };
     }
-    if cfg!(target_os = "linux") {
-        let Some(bwrap) = which("bwrap") else {
-            return Sandbox::Missing(
-                "Install bubblewrap (bwrap) to run commands in a read-only sandbox.".into(),
-            );
-        };
-        let mut args: Vec<String> = bwrap_args();
-        args.push("/bin/true".into());
-        let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        return match probe(&bwrap.to_string_lossy(), &args).await {
-            Ok(()) => Sandbox::Bubblewrap(bwrap),
-            Err(e) => Sandbox::Missing(format!(
-                "bubblewrap doesn't start here ({e}). It needs unprivileged user namespaces."
-            )),
-        };
-    }
-    Sandbox::Missing("No command sandbox on this OS.".into())
+    #[cfg(target_os = "linux")]
+    return detect_bwrap().await;
+    #[cfg(not(target_os = "linux"))]
+    return Sandbox::Missing("No command sandbox on this OS.".into());
 }
 
-async fn probe(program: &str, args: &[&str]) -> Result<(), String> {
-    let out = tokio::time::timeout(
-        Duration::from_secs(5),
-        Command::new(program)
-            .args(args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .output(),
-    )
-    .await
-    .map_err(|_| "timed out".to_string())?
-    .map_err(|e| e.to_string())?;
+#[cfg(target_os = "linux")]
+async fn detect_bwrap() -> Sandbox {
+    let Some(bwrap) = which("bwrap") else {
+        return Sandbox::Missing(
+            "Install bubblewrap (bwrap) to run commands in a read-only sandbox.".into(),
+        );
+    };
+    let filter = match filter_fd() {
+        Ok(fd) => fd,
+        Err(e) => return Sandbox::Missing(format!("Can't set up the sandbox filter: {e}")),
+    };
+    let fd = std::os::fd::AsRawFd::as_raw_fd(&filter);
+    let mut args: Vec<String> = bwrap_args(Some(fd));
+    args.push("/bin/true".into());
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    match probe(&bwrap.to_string_lossy(), &args, Some(fd)).await {
+        Ok(()) => Sandbox::Bubblewrap(bwrap),
+        Err(e) => Sandbox::Missing(format!(
+            "bubblewrap doesn't start here ({e}). It needs unprivileged user namespaces."
+        )),
+    }
+}
+
+/// Runs `program` once. `pass` is a descriptor the child inherits.
+async fn probe(program: &str, args: &[&str], pass: Option<i32>) -> Result<(), String> {
+    let mut cmd = Command::new(program);
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(target_os = "linux")]
+    if let Some(fd) = pass {
+        pass_fd(&mut cmd, fd);
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = pass;
+    let out = tokio::time::timeout(Duration::from_secs(5), cmd.output())
+        .await
+        .map_err(|_| "timed out".to_string())?
+        .map_err(|e| e.to_string())?;
     if out.status.success() {
         Ok(())
     } else {
@@ -140,6 +163,7 @@ async fn probe(program: &str, args: &[&str]) -> Result<(), String> {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn which(name: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|path| {
         std::env::split_paths(&path)
@@ -150,9 +174,11 @@ fn which(name: &str) -> Option<PathBuf> {
 
 /// bubblewrap: the whole filesystem read-only, fresh /tmp and /run (which
 /// hides sockets to other services), and no network, IPC, or other
-/// processes.
-fn bwrap_args() -> Vec<String> {
-    [
+/// processes. `seccomp` is a descriptor holding `unix_socket_filter`, which
+/// refuses the sockets a read-only mount and a new network namespace leave
+/// reachable, such as an SSH control socket or Docker's under home.
+fn bwrap_args(seccomp: Option<i32>) -> Vec<String> {
+    let mut args: Vec<String> = [
         "--ro-bind",
         "/",
         "/",
@@ -169,10 +195,100 @@ fn bwrap_args() -> Vec<String> {
         "--unshare-pid",
         "--die-with-parent",
         "--new-session",
-        "--",
     ]
     .map(String::from)
-    .to_vec()
+    .to_vec();
+    if let Some(fd) = seccomp {
+        args.extend(["--seccomp".into(), fd.to_string()]);
+    }
+    args.push("--".into());
+    args
+}
+
+/// A seccomp filter for the sandbox: no Unix sockets (`socketpair` still
+/// works), no io_uring, which could open them without a syscall, and no
+/// syscalls from another ABI. Everything else is allowed.
+#[cfg(target_os = "linux")]
+pub(crate) fn unix_socket_filter() -> Option<Vec<u8>> {
+    const LD_ABS: u16 = 0x20;
+    const JEQ: u16 = 0x15;
+    const JGE: u16 = 0x35;
+    const RET: u16 = 0x06;
+    const ALLOW: u32 = 0x7fff_0000;
+    const DENY: u32 = 0x0005_0000 | libc::EPERM as u32;
+    // x32 syscalls on x86_64 set this bit in the number.
+    const X32_BIT: u32 = 0x4000_0000;
+    const IO_URING_SETUP: u32 = 425;
+    let arch: u32 = if cfg!(target_arch = "x86_64") {
+        0xc000_003e
+    } else if cfg!(target_arch = "aarch64") {
+        0xc000_00b7
+    } else {
+        return None;
+    };
+    // (code, jump if true, jump if false, k); jumps skip that many
+    // instructions. Offsets 0, 4 and 16 of seccomp_data are the arch, the
+    // syscall number, and the low half of the first argument.
+    let program: [(u16, u8, u8, u32); 11] = [
+        (LD_ABS, 0, 0, 4),
+        (JEQ, 1, 0, arch),
+        (RET, 0, 0, DENY),
+        (LD_ABS, 0, 0, 0),
+        (JGE, 5, 0, X32_BIT),
+        (JEQ, 4, 0, IO_URING_SETUP),
+        (JEQ, 0, 2, libc::SYS_socket as u32),
+        (LD_ABS, 0, 0, 16),
+        (JEQ, 1, 0, libc::AF_UNIX as u32),
+        (RET, 0, 0, ALLOW),
+        (RET, 0, 0, DENY),
+    ];
+    let mut out = Vec::with_capacity(program.len() * 8);
+    for (code, jt, jf, k) in program {
+        out.extend(code.to_ne_bytes());
+        out.extend([jt, jf]);
+        out.extend(k.to_ne_bytes());
+    }
+    Some(out)
+}
+
+/// The read end of a pipe that holds `unix_socket_filter`, for bubblewrap's
+/// `--seccomp`. It's close-on-exec until `pass_fd` hands it to one child.
+#[cfg(target_os = "linux")]
+fn filter_fd() -> std::io::Result<std::os::fd::OwnedFd> {
+    use std::io::Write;
+    use std::os::fd::FromRawFd;
+    let filter = unix_socket_filter()
+        .ok_or_else(|| std::io::Error::other("no command sandbox filter for this CPU"))?;
+    let mut fds = [0; 2];
+    // SAFETY: pipe2 fills `fds` with two new descriptors that we then own.
+    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: both descriptors were just created and nothing else owns them.
+    let (read, write) = unsafe {
+        (
+            std::os::fd::OwnedFd::from_raw_fd(fds[0]),
+            std::fs::File::from_raw_fd(fds[1]),
+        )
+    };
+    // The filter is far smaller than a pipe's buffer, so this can't block.
+    (&write).write_all(&filter)?;
+    drop(write);
+    Ok(read)
+}
+
+#[cfg(target_os = "linux")]
+fn pass_fd(cmd: &mut Command, fd: i32) {
+    // SAFETY: fcntl is async-signal-safe, and only clears close-on-exec on a
+    // descriptor this process owns until the child execs.
+    unsafe {
+        cmd.pre_exec(move || {
+            if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
 }
 
 /// The `shell` and `shell.sandbox` capabilities.
@@ -351,7 +467,13 @@ fn kill_group(pid: Option<u32>) {
 fn kill_group(_pid: Option<u32>) {}
 
 /// The program and arguments that run `command`, sandboxed or not.
-fn argv(command: &str, sandboxed: bool, sandbox: &Sandbox) -> (String, Vec<String>) {
+/// `seccomp` is the descriptor bubblewrap reads its filter from.
+fn argv(
+    command: &str,
+    sandboxed: bool,
+    sandbox: &Sandbox,
+    seccomp: Option<i32>,
+) -> (String, Vec<String>) {
     if cfg!(windows) {
         return ("cmd".into(), vec!["/C".into(), command.into()]);
     }
@@ -378,7 +500,7 @@ fn argv(command: &str, sandboxed: bool, sandbox: &Sandbox) -> (String, Vec<Strin
             (SANDBOX_EXEC.into(), args)
         }
         Sandbox::Bubblewrap(bwrap) => {
-            let mut args = bwrap_args();
+            let mut args = bwrap_args(seccomp);
             args.extend(inner);
             (bwrap.to_string_lossy().into_owned(), args)
         }
@@ -403,7 +525,28 @@ pub async fn run(
         }
         .into(),
     );
-    let (program, args) = argv(&r.command, r.sandboxed, sandbox);
+    let mut result = ExecResult {
+        request_id: r.request_id.clone(),
+        sandboxed: r.sandboxed,
+        cwd: cwd.display().to_string(),
+        ..Default::default()
+    };
+    #[cfg(target_os = "linux")]
+    let filter = match (r.sandboxed, sandbox) {
+        (true, Sandbox::Bubblewrap(_)) => match filter_fd() {
+            Ok(fd) => Some(fd),
+            Err(e) => {
+                result.error = format!("Couldn't set up the sandbox filter: {e}");
+                return result;
+            }
+        },
+        _ => None,
+    };
+    #[cfg(target_os = "linux")]
+    let seccomp = filter.as_ref().map(std::os::fd::AsRawFd::as_raw_fd);
+    #[cfg(not(target_os = "linux"))]
+    let seccomp = None;
+    let (program, args) = argv(&r.command, r.sandboxed, sandbox, seccomp);
     let mut cmd = Command::new(&program);
     cmd.args(&args)
         .current_dir(cwd)
@@ -423,13 +566,14 @@ pub async fn run(
         .kill_on_drop(true);
     #[cfg(unix)]
     cmd.process_group(0);
-    let mut result = ExecResult {
-        request_id: r.request_id.clone(),
-        sandboxed: r.sandboxed,
-        cwd: cwd.display().to_string(),
-        ..Default::default()
-    };
-    let mut child = match cmd.spawn() {
+    #[cfg(target_os = "linux")]
+    if let Some(fd) = seccomp {
+        pass_fd(&mut cmd, fd);
+    }
+    let spawned = cmd.spawn();
+    #[cfg(target_os = "linux")]
+    drop(filter);
+    let mut child = match spawned {
         Ok(c) => c,
         Err(e) => {
             result.error = format!("Couldn't start {program}: {e}");
