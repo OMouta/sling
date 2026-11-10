@@ -1,4 +1,5 @@
 import { SLING_EVENTS } from "@sling/workflow";
+import { CronExpressionParser } from "cron-parser";
 import { z } from "zod";
 import { isTimeZone } from "../../timezone.ts";
 import { oneTimeAt, parseLocal } from "../one-time.ts";
@@ -30,8 +31,19 @@ const conversationOutputs = [
   },
 ];
 
-/** Five or six space-separated cron fields. pg-boss checks the rest when it schedules. */
+/** Five or six space-separated cron fields. */
 const CRON = /^(\S+\s+){4,5}\S+$/;
+
+/** Why pg-boss would refuse a cron expression, read the way it reads them. Null when it's fine. */
+function cronProblem(cron: string): string | null {
+  try {
+    CronExpressionParser.parse(cron, { tz: "UTC", strict: false });
+    return null;
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err);
+    return why.replace(/^Constraint error, /, "");
+  }
+}
 
 export const manualTrigger = defineNode({
   type: "core.manual",
@@ -73,6 +85,11 @@ function checkSchedule(config: Record<string, unknown>) {
     });
   else if (!at && !CRON.test(cron))
     issues.push({ field: "cron", message: "Use five cron fields, for example */5 * * * *" });
+  else if (!at) {
+    const problem = cronProblem(cron);
+    if (problem)
+      issues.push({ field: "cron", message: `This cron expression can't run: ${problem}` });
+  }
   if (tz && !isTimeZone(tz))
     issues.push({ field: "timezone", message: `${tz} isn't a time zone, such as Europe/Lisbon` });
   return issues;

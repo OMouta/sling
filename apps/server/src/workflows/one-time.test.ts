@@ -61,6 +61,13 @@ describe("a one-time schedule", () => {
     expect(check({})).toEqual([
       { field: "cron", message: "Use five cron fields, for example */5 * * * *" },
     ]);
+    expect(check({ cron: "0 25 * * *" })).toEqual([
+      {
+        field: "cron",
+        message: "This cron expression can't run: got value 25 expected range 0-23",
+      },
+    ]);
+    expect(check({ cron: "0 9 * * MON-FRI" })).toEqual([]);
     expect(check({ cron: "0 9 * * 1", at: "2026-11-09T17:00" })).toEqual([
       { field: "at", message: "Set a cron expression or a time, not both" },
     ]);
