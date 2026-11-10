@@ -125,12 +125,19 @@ export function TasksPage() {
             <tr>
               <Th>Task</Th>
               <Th>Status</Th>
-              <Th>Agent</Th>
-              <Th>Runs on</Th>
-              <Th>Mode</Th>
-              <Th align="right">Changes</Th>
-              <Th align="right">Duration</Th>
-              <Th align="right">Started</Th>
+              {/* A phone keeps the task and its status. */}
+              <Th className="max-sm:hidden">Agent</Th>
+              <Th className="max-sm:hidden">Runs on</Th>
+              <Th className="max-sm:hidden">Mode</Th>
+              <Th align="right" className="max-sm:hidden">
+                Changes
+              </Th>
+              <Th align="right" className="max-sm:hidden">
+                Duration
+              </Th>
+              <Th align="right" className="max-sm:hidden">
+                Started
+              </Th>
             </tr>
           </thead>
           <tbody>
@@ -165,7 +172,7 @@ function TaskRow({ task: t, now, onOpen }: { task: TaskView; now: number; onOpen
   const awaiting = t.actions.some((a) => a.state === "awaiting_approval");
   return (
     <Tr onClick={onOpen}>
-      <Td className="max-w-[380px]">
+      <Td className="max-w-[380px] max-sm:w-full max-sm:max-w-0">
         <div className="flex min-w-0 items-center gap-2.5">
           {awaiting && (
             <CircleDot aria-label="Waiting for approval" size={12} className="shrink-0 text-warn" />
@@ -178,14 +185,16 @@ function TaskRow({ task: t, now, onOpen }: { task: TaskView; now: number; onOpen
           >
             {t.title}
           </Link>
-          <span className="shrink-0 text-xs text-subtle">{t.repoName}</span>
+          <span className="shrink-0 text-xs text-subtle max-sm:hidden">{t.repoName}</span>
         </div>
       </Td>
       <Td>
         <TaskStateBadge task={t} />
       </Td>
-      <Td className="text-[13px] text-soft">{HARNESS_LABELS[t.harness] ?? t.harness}</Td>
-      <Td>
+      <Td className="text-[13px] text-soft max-sm:hidden">
+        {HARNESS_LABELS[t.harness] ?? t.harness}
+      </Td>
+      <Td className="max-sm:hidden">
         <span className="flex items-center gap-2 text-[13px] text-soft">
           {env.kind === "machine" && t.runnerName ? (
             <>
@@ -197,10 +206,10 @@ function TaskRow({ task: t, now, onOpen }: { task: TaskView; now: number; onOpen
           )}
         </span>
       </Td>
-      <Td>
+      <Td className="max-sm:hidden">
         <ModeBadge mode={t.mode} />
       </Td>
-      <Td align="right" className="text-[13px]">
+      <Td align="right" className="text-[13px] max-sm:hidden">
         {t.diffStats ? (
           <>
             <span className="text-ok">+{t.diffStats.insertions}</span>{" "}
@@ -210,10 +219,10 @@ function TaskRow({ task: t, now, onOpen }: { task: TaskView; now: number; onOpen
           <span className="text-faint">–</span>
         )}
       </Td>
-      <Td align="right" className="text-[13px] text-soft">
+      <Td align="right" className="text-[13px] text-soft max-sm:hidden">
         {ran !== null ? duration(ran) : <span className="text-faint">–</span>}
       </Td>
-      <Td align="right" className="text-[13px] text-muted">
+      <Td align="right" className="text-[13px] text-muted max-sm:hidden">
         {ago(t.createdAt, now)}
       </Td>
     </Tr>

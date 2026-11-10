@@ -231,10 +231,18 @@ export function HomePage() {
                   <h2 className="text-2xl font-medium tracking-tight text-balance">
                     {picked.name}
                   </h2>
-                  {/* Two lines kept, so switching never moves the glyph. */}
-                  <p className="mt-1.5 line-clamp-2 min-h-10 max-w-md text-[13px] leading-5 text-pretty text-muted">
-                    {picked.description}
-                  </p>
+                  {/* Every description in one cell, the others hidden, so switching never moves the glyph. */}
+                  <div className="mt-1.5 grid min-h-10 max-w-md text-[13px] leading-5 text-pretty text-muted">
+                    {list.map((p) => (
+                      <p
+                        key={p.id}
+                        aria-hidden={p.id === picked.id ? undefined : true}
+                        className={cx("[grid-area:1/1]", p.id !== picked.id && "invisible")}
+                      >
+                        {p.description}
+                      </p>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <div aria-hidden="true" className="flex flex-col items-center">

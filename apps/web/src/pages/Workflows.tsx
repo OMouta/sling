@@ -140,8 +140,9 @@ export function WorkflowsPage() {
           <thead>
             <tr>
               <Th>Workflow</Th>
-              <Th>Trigger</Th>
-              <Th>Version</Th>
+              {/* A phone keeps the name, the last run and the switch. */}
+              <Th className="max-sm:hidden">Trigger</Th>
+              <Th className="max-sm:hidden">Version</Th>
               <Th>Last run</Th>
               <Th align="right">On</Th>
             </tr>
@@ -177,7 +178,7 @@ function WorkflowRow({ workflow: w }: { workflow: WorkflowSummaryView }) {
 
   return (
     <Tr onClick={() => void navigate({ to: "/workflows/$id", params: { id: w.id } })}>
-      <Td className="max-w-[360px]">
+      <Td className="max-w-[360px] max-sm:w-full max-sm:max-w-0">
         <div className="flex min-w-0 items-center gap-2.5">
           <span className="grid size-6 shrink-0 place-items-center rounded-md bg-surface-2 text-icon shadow-raised">
             <Workflow aria-hidden="true" size={12} />
@@ -196,13 +197,13 @@ function WorkflowRow({ workflow: w }: { workflow: WorkflowSummaryView }) {
           </div>
         </div>
       </Td>
-      <Td className="max-w-[240px]">
+      <Td className="max-w-[240px] max-sm:hidden">
         <span className="flex min-w-0 items-center gap-1.5 text-[13px] text-soft">
           <Zap aria-hidden="true" size={12} className="shrink-0 text-subtle" />
           <span className="truncate">{triggers ? `On ${triggers}` : "No trigger"}</span>
         </span>
       </Td>
-      <Td>
+      <Td className="max-sm:hidden">
         <span className="flex items-center gap-1.5">
           {w.activeVersion === null ? (
             <Badge>Not published</Badge>
@@ -222,10 +223,10 @@ function WorkflowRow({ workflow: w }: { workflow: WorkflowSummaryView }) {
             title="Last run"
           >
             <RunStatusBadge status={w.lastRun.status} />
-            <span className="text-xs text-subtle group-hover/run:text-soft">
+            <span className="text-xs text-subtle group-hover/run:text-soft max-sm:hidden">
               {ago(w.lastRun.createdAt)}
             </span>
-            <ChevronRight aria-hidden="true" size={12} className="text-faint" />
+            <ChevronRight aria-hidden="true" size={12} className="text-faint max-sm:hidden" />
           </Link>
         ) : (
           <span className="text-xs text-subtle">Never run</span>

@@ -359,7 +359,8 @@ function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: Provi
       </span>
       <div className="min-w-0 flex-1 space-y-2">
         <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
-          <div className="min-w-0 flex-1">
+          {/* Wide enough to read; on a phone the actions wrap under it. */}
+          <div className="min-w-0 flex-1 basis-60">
             <p className="flex items-center gap-2 text-[13px] font-medium">
               {title}
               {viaCli ? (
