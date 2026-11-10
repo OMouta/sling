@@ -40,6 +40,7 @@ import {
 import { taskViews, toConversationView } from "../views.ts";
 import { messageViews } from "./messages.ts";
 import { messagePage } from "./pages.ts";
+import { chatTitle } from "./title.ts";
 
 const Id = z.object({ id: z.string() });
 
@@ -409,9 +410,7 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         conv = { ...conv, archivedAt: null };
       }
       if (conv.title === "New conversation") {
-        const title = (request.body.text || (await firstFileName(attachmentIds)))
-          .replace(/\s+/g, " ")
-          .slice(0, 60);
+        const title = chatTitle(request.body.text || (await firstFileName(attachmentIds)));
         const [u] = await ctx.db
           .update(schema.conversations)
           .set({ title })
