@@ -92,9 +92,11 @@ export function ApprovalsPage() {
           ]}
         />
       }
+      // Shown while loading and for a single approval too, so the cards don't move
+      // when the list arrives or grows.
       toolbar={
         tab !== "rules" &&
-        items.length > 1 && (
+        (approvals.isPending || items.length > 0) && (
           <Toolbar>
             <FilterSelect
               label="Order"

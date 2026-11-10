@@ -377,6 +377,16 @@ describe("web app", () => {
     ]);
   });
 
+  it("keeps the Approvals order control in place for a single approval", async () => {
+    approvals = [{ id: "apv_1", taskId: "tsk_1" }];
+    renderAt("/approvals");
+    expect(await screen.findByRole("combobox", { name: "Order" })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("Nothing waiting")).toBeNull());
+    await waitFor(() => expect(posts.some((p) => p.path === "/api/approvals")).toBe(true));
+    await act(async () => {});
+    expect(screen.getByRole("combobox", { name: "Order" })).toBeTruthy();
+  });
+
   it("lists machines with their repos", async () => {
     renderAt("/machines");
     expect(await screen.findByText("devbox")).toBeTruthy();

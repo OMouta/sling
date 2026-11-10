@@ -26,10 +26,8 @@ export function MessageFiles({ files }: { files: SourceView[] }) {
                 src={fileUrl(f)}
                 alt={f.name}
                 loading="lazy"
-                className={cx(
-                  "block object-cover",
-                  images.length === 1 ? "max-h-56 max-w-64" : "size-28",
-                )}
+                // A fixed box, so the chat doesn't move when the image arrives.
+                className={cx("block object-cover", images.length === 1 ? "h-56 w-64" : "size-28")}
               />
             </button>
           ))}

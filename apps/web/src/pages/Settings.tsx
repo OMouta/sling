@@ -182,9 +182,12 @@ export function SettingsPage() {
               <NotificationsSection settings={settings.data} />
             </>
           )}
-          <SandboxSection />
-          <StorageSection />
-          <SecuritySection />
+          {/* Loaded alongside, and shown once the sections above them are in place. */}
+          <div hidden={settings.isPending} className="space-y-10">
+            <SandboxSection />
+            <StorageSection />
+            <SecuritySection />
+          </div>
         </div>
       </div>
     </Page>
