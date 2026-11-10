@@ -2,6 +2,20 @@ import { ImapFlow, type ImapFlowOptions } from "imapflow";
 import nodemailer from "nodemailer";
 import type { EmailCredentials } from "./schemas.ts";
 
+/** Hosts on this machine, where a cleartext login never crosses a network. */
+export function isLoopback(host: string): boolean {
+  const h = host
+    .trim()
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  return h === "localhost" || h.endsWith(".localhost") || h === "::1" || /^127\./.test(h);
+}
+
+/** Without direct TLS, the login must wait for STARTTLS unless the server is on this machine. */
+function mustUpgrade(secure: boolean, host: string): boolean {
+  return !secure && !isLoopback(host);
+}
+
 export function imapClient(
   credentials: EmailCredentials,
   extra: Partial<ImapFlowOptions> = {},
@@ -10,6 +24,7 @@ export function imapClient(
     host: credentials.imapHost,
     port: credentials.imapPort,
     secure: credentials.imapSecure,
+    ...(mustUpgrade(credentials.imapSecure, credentials.imapHost) ? { doSTARTTLS: true } : {}),
     auth: { user: credentials.username, pass: credentials.password },
     logger: false,
     connectionTimeout: 30_000,
@@ -23,6 +38,7 @@ export function smtpTransport(credentials: EmailCredentials) {
     host: credentials.smtpHost,
     port: credentials.smtpPort,
     secure: credentials.smtpSecure,
+    requireTLS: mustUpgrade(credentials.smtpSecure, credentials.smtpHost),
     auth: { user: credentials.username, pass: credentials.password },
     connectionTimeout: 30_000,
     greetingTimeout: 15_000,
