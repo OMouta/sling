@@ -20,6 +20,13 @@ export interface RunOutcome {
   detail: CheckResultDetail;
 }
 
+/**
+ * How long a reply check keeps trying past its deadline when the mailbox
+ * couldn't be searched, and how often it tries meanwhile.
+ */
+export const REPLY_GRACE_MS = 30 * 60_000;
+const REPLY_RETRY_MS = 60_000;
+
 export interface Prior {
   state: CheckState;
   failures: number;
@@ -38,7 +45,8 @@ export interface Next {
  * Where a run leaves a check. A site or command check goes down after two
  * failures in a row and up after one pass, and stays as it was when it
  * couldn't run. A reply check waits until a reply arrives or its deadline
- * passes, then stops.
+ * passes, then stops. A search that failed at the deadline doesn't count as
+ * no reply: it keeps trying for a while before it gives up.
  */
 export function nextState(
   kind: CheckKind,
@@ -56,7 +64,10 @@ export function nextState(
   if (kind === "reply") {
     if (prior.state === "met" || prior.state === "missed") return moved(prior.state, 0, true);
     if (run.passed) return moved("met", 0, true);
-    if (deadline && now.getTime() >= deadline.getTime()) return moved("missed", 0, true);
+    if (deadline && now.getTime() >= deadline.getTime()) {
+      const givenUp = now.getTime() >= deadline.getTime() + REPLY_GRACE_MS;
+      if (run.counted || givenUp) return moved("missed", 0, true);
+    }
     return moved("waiting", 0);
   }
   if (!run.counted) return moved(prior.state, prior.failures);
@@ -87,7 +98,12 @@ export function nextRunAt(
 ): Date | null {
   if (next.done) return null;
   const at = now.getTime() + intervalSeconds * 1000;
-  if (kind === "reply" && deadline) return new Date(Math.min(at, deadline.getTime()));
+  if (kind === "reply" && deadline) {
+    if (now.getTime() < deadline.getTime()) return new Date(Math.min(at, deadline.getTime()));
+    // Past the deadline only after a failed search: try again soon.
+    const retry = now.getTime() + REPLY_RETRY_MS;
+    return new Date(Math.min(at, retry, deadline.getTime() + REPLY_GRACE_MS));
+  }
   return new Date(at);
 }
 

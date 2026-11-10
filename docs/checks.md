@@ -26,7 +26,7 @@ A site or command check is **Down** after two failures in a row, and **Up** agai
 
 A command check runs in the machine's read-only sandbox, so it can read files but can't change them or use the network, such as `test -n "$(find ~/Backups -mtime -1)"` to see that last night's backup is there. A machine with commands off, or one that can't sandbox them, can't take one. When the machine is offline, the run says so and doesn't count as a failure.
 
-A reply check looks in one of your email accounts under **Connectors**.
+A reply check looks in one of your email accounts under **Connectors**. When the mailbox can't be searched at the deadline, it keeps trying every minute for up to 30 minutes before it says **No reply**.
 
 ## When a check changes
 

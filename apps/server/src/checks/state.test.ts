@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 import { alertFor } from "./alerts.ts";
 import { bucketOf, summarizeCi } from "./ci.ts";
 import { answers } from "./kinds.ts";
-import { isNotable, nextRunAt, nextState, type Prior, siteMessage } from "./state.ts";
+import {
+  isNotable,
+  nextRunAt,
+  nextState,
+  type Prior,
+  REPLY_GRACE_MS,
+  siteMessage,
+} from "./state.ts";
 
 const now = new Date("2026-11-07T15:00:00Z");
 const fresh: Prior = { state: "unknown", failures: 0, stateSince: null };
@@ -63,6 +70,25 @@ describe("a reply check's state", () => {
       state: "missed",
       done: true,
     });
+  });
+
+  it("keeps trying for a while when the mailbox couldn't be searched at the deadline", () => {
+    const waiting: Prior = { state: "waiting", failures: 0, stateSince: now };
+    const retry = nextState("reply", waiting, skipped, deadline, deadline);
+    expect(retry).toEqual({ state: "waiting", failures: 0, stateSince: now, done: false });
+    expect(nextRunAt("reply", retry, deadline, 300, deadline)).toEqual(
+      new Date(deadline.getTime() + 60_000),
+    );
+    const late = new Date(deadline.getTime() + 5 * 60_000);
+    expect(nextState("reply", waiting, pass, late, deadline)).toMatchObject({ state: "met" });
+    expect(nextState("reply", waiting, fail, late, deadline)).toMatchObject({ state: "missed" });
+    const end = new Date(deadline.getTime() + REPLY_GRACE_MS);
+    expect(nextState("reply", waiting, skipped, end, deadline)).toMatchObject({
+      state: "missed",
+      done: true,
+    });
+    const nearEnd = new Date(end.getTime() - 10_000);
+    expect(nextRunAt("reply", retry, nearEnd, 300, deadline)).toEqual(end);
   });
 
   it("stays met or missed once it is", () => {
