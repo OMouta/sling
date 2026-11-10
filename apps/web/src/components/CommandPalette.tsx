@@ -12,12 +12,13 @@ import {
   Workflow,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "../lib/api.ts";
 import { useRecentConversations } from "../lib/conversations.ts";
-import { setTheme, useTheme } from "../lib/theme.ts";
+import { resolvedTheme, setTheme, useTheme } from "../lib/theme.ts";
 import { qk } from "../lib/workflowApi.ts";
 import { NAV } from "./nav.ts";
-import { cx, Kbd } from "./ui.tsx";
+import { cx, Kbd, useModal } from "./ui.tsx";
 
 interface Item {
   id: string;
@@ -31,10 +32,13 @@ interface Item {
 /** Jump to a page, a conversation, or a workflow. Opens with ⌘K or the header's search button. */
 export function CommandPalette({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
-  const theme = useTheme();
+  const theme = resolvedTheme(useTheme());
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const list = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  useModal(root, panel, onClose);
   const conversations = useRecentConversations();
   const workflows = useQuery({
     queryKey: qk.workflows(),
@@ -42,10 +46,25 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   });
 
   const items = useMemo<Item[]>(() => {
-    const go = (to: string, params?: Record<string, string>) => () => {
-      void navigate({ to, params } as never);
-      onClose();
-    };
+    const go =
+      (to: string, params?: Record<string, string>, search?: Record<string, string>) => () => {
+        void navigate({ to, params, search } as never);
+        onClose();
+      };
+    const q = query.trim();
+    const match = (i: Item) => i.label.toLowerCase().includes(q.toLowerCase());
+    // Only recent chats are listed; this looks through all of them.
+    const searchChats: Item[] = q
+      ? [
+          {
+            id: "search-chats",
+            group: "Conversations",
+            label: `Search chats for “${q}”`,
+            icon: Search,
+            run: go("/chats", undefined, { q }),
+          },
+        ]
+      : [];
     const all: Item[] = [
       { id: "new", group: "Actions", label: "New chat", icon: SquarePen, run: go("/") },
       {
@@ -72,17 +91,18 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         icon: MessageSquare,
         run: go("/c/$id", { id: c.id }),
       })),
-      ...(workflows.data ?? []).map((w) => ({
+    ].filter(match);
+    const flows: Item[] = (workflows.data ?? [])
+      .map((w) => ({
         id: `w:${w.id}`,
         group: "Workflows",
         label: w.name,
         hint: w.enabled ? undefined : "Off",
         icon: Workflow,
         run: go("/workflows/$id", { id: w.id }),
-      })),
-    ];
-    const q = query.trim().toLowerCase();
-    return q ? all.filter((i) => i.label.toLowerCase().includes(q)) : all;
+      }))
+      .filter(match);
+    return [...all, ...searchChats, ...flows];
   }, [query, conversations.data, workflows.data, navigate, onClose, theme]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset the cursor when the query changes.
@@ -90,17 +110,12 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     list.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
   }, [active]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   let lastGroup = "";
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overscroll-contain px-4 pt-[12vh]">
+  return createPortal(
+    <div
+      ref={root}
+      className="fixed inset-0 z-50 flex items-start justify-center overscroll-contain px-4 pt-[12vh]"
+    >
       <button
         type="button"
         aria-label="Close search"
@@ -109,16 +124,16 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         onClick={onClose}
       />
       <div
+        ref={panel}
         role="dialog"
         aria-modal="true"
         aria-label="Search"
-        className="anim-pop relative w-full max-w-xl overflow-hidden rounded-2xl bg-surface shadow-popover"
+        tabIndex={-1}
+        className="anim-pop relative w-full max-w-xl overflow-hidden rounded-2xl bg-surface shadow-popover outline-none"
       >
         <div className="flex items-center gap-2.5 border-b border-border px-4">
           <Search aria-hidden="true" size={16} className="text-subtle" />
           <input
-            // biome-ignore lint/a11y/noAutofocus: the palette exists to be typed into.
-            autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -138,7 +153,9 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
             aria-controls="palette-results"
             className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-subtle focus-visible:outline-none"
           />
-          <Kbd>esc</Kbd>
+          <span className="pointer-coarse:hidden">
+            <Kbd>esc</Kbd>
+          </span>
         </div>
         <div
           ref={list}
@@ -182,6 +199,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
           })}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

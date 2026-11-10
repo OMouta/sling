@@ -202,6 +202,31 @@ describe("chats", () => {
     expect((back.getByLabelText("Search chats") as HTMLInputElement).value).toBe("footer");
   });
 
+  it("finds any chat from the search palette, which holds focus until it closes", async () => {
+    const router = open("/chats");
+    const main = within(await screen.findByRole("main"));
+    await main.findByText("Desktop items");
+    const button = screen.getAllByRole("button", { name: "Search" })[0] as HTMLElement;
+    button.focus();
+    fireEvent.click(button);
+    const palette = within(await screen.findByRole("dialog", { name: "Search" }));
+    const input = palette.getByRole("textbox", { name: "Search" });
+    await waitFor(() => expect(document.activeElement).toBe(input));
+    // The page behind can't be reached.
+    expect(main.getByRole("tab", { name: "All chats" }).closest("[inert]")).not.toBeNull();
+    fireEvent.keyDown(window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(document.activeElement).toBe(button);
+
+    fireEvent.click(button);
+    const again = within(await screen.findByRole("dialog", { name: "Search" }));
+    fireEvent.change(again.getByRole("textbox", { name: "Search" }), {
+      target: { value: "an old chat" },
+    });
+    fireEvent.click(again.getByRole("option", { name: "Search chats for “an old chat”" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ q: "an old chat" }));
+  });
+
   it("archives a chat into the Archived tab, and restores it from there", async () => {
     open("/chats");
     const main = within(await screen.findByRole("main"));

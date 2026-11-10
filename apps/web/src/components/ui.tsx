@@ -4,6 +4,7 @@ import {
   type ComponentProps,
   createContext,
   type ReactNode,
+  type RefObject,
   type SelectHTMLAttributes,
   useContext,
   useEffect,
@@ -405,32 +406,18 @@ const FOCUSABLE =
   'a[href], button:not(:disabled), input:not(:disabled):not([type=hidden]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])';
 
 /**
- * A modal panel. Escape and the backdrop close it. On phones it sits at the
- * bottom of the screen like a sheet. While it's open, Tab stays inside it,
- * the page behind can't be reached or scrolled, and closing it puts focus
- * back where it was. A dialog opened from another takes over until it
- * closes.
+ * Makes `root` a modal layer: Tab stays inside `panel`, the rest of the page
+ * can't be reached or scrolled, Escape calls `onClose`, and closing puts focus
+ * back where it was. `root` must be a direct child of `document.body`.
  */
-export function Dialog({
-  title,
-  description,
-  onClose,
-  children,
-  footer,
-  wide,
-}: {
-  title: string;
-  description?: ReactNode;
-  onClose: () => void;
-  children: ReactNode;
-  footer?: ReactNode;
-  wide?: boolean;
-}) {
-  const id = useId();
-  const root = useRef<HTMLDivElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
+export function useModal(
+  root: RefObject<HTMLElement | null>,
+  panel: RefObject<HTMLElement | null>,
+  onClose: () => void,
+) {
   const close = useRef(onClose);
   close.current = onClose;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: set up once, while the layer is open.
   useEffect(() => {
     const el = root.current;
     const box = panel.current;
@@ -504,6 +491,34 @@ export function Dialog({
       }
     };
   }, []);
+}
+
+/**
+ * A modal panel. Escape and the backdrop close it. On phones it sits at the
+ * bottom of the screen like a sheet. While it's open, Tab stays inside it,
+ * the page behind can't be reached or scrolled, and closing it puts focus
+ * back where it was. A dialog opened from another takes over until it
+ * closes.
+ */
+export function Dialog({
+  title,
+  description,
+  onClose,
+  children,
+  footer,
+  wide,
+}: {
+  title: string;
+  description?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+  wide?: boolean;
+}) {
+  const id = useId();
+  const root = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  useModal(root, panel, onClose);
   return createPortal(
     <div
       ref={root}

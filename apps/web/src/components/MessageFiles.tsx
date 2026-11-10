@@ -1,9 +1,9 @@
 import type { SourceView } from "@sling/core";
 import { X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { fileUrl, kindIcon, sourceDetail } from "../lib/sources.ts";
-import { cx, Spinner } from "./ui.tsx";
+import { cx, Spinner, useModal } from "./ui.tsx";
 
 /** The files a message was sent with, above its bubble. */
 export function MessageFiles({ files }: { files: SourceView[] }) {
@@ -86,19 +86,16 @@ function DocumentChip({ file }: { file: SourceView }) {
 
 /** An image at full size, over the page. Escape, a click, or × closes it. */
 function Lightbox({ file, onClose }: { file: SourceView; onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const root = useRef<HTMLDivElement>(null);
+  useModal(root, root, onClose);
   return createPortal(
     <div
+      ref={root}
       role="dialog"
       aria-modal="true"
       aria-label={file.name}
-      className="anim-fade fixed inset-0 z-50 grid place-items-center bg-black/80 p-4 sm:p-10"
+      tabIndex={-1}
+      className="anim-fade fixed inset-0 z-50 grid place-items-center bg-black/80 p-4 outline-none sm:p-10"
     >
       <button
         type="button"

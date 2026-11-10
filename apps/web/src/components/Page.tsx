@@ -239,7 +239,6 @@ function TopBar({
           aria-label="Search"
           title="Search (⌘K)"
           onClick={shell.openSearch}
-          className="max-sm:hidden"
         />
         <ApprovalsBell />
         <AccountMenu />
