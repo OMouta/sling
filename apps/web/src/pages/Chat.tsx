@@ -299,6 +299,7 @@ export function ChatPage() {
   const hasTools = (personality?.tools.length ?? 1) > 0;
   const thinking = agentStatus === "thinking";
   const tokens = usage.inputTokens + usage.outputTokens;
+  const lastTurn = usage.lastTurn;
 
   const assistant: AssistantChoice | null =
     conversation.settings?.assistant ??
@@ -357,11 +358,15 @@ export function ChatPage() {
         </span>
       }
       controls={
-        (conversation.archived || tokens > 0) && (
+        (conversation.archived || lastTurn) && (
           <span className="flex items-center gap-3">
-            {tokens > 0 && (
-              <span className="tabular text-xs text-subtle max-lg:hidden">
-                {tokens.toLocaleString()} tokens
+            {lastTurn && (
+              <span
+                className="tabular text-xs text-subtle max-lg:hidden"
+                title={`The last reply read ${lastTurn.inputTokens.toLocaleString()} tokens, cached ones included, and wrote ${lastTurn.outputTokens.toLocaleString()}. ${tokens.toLocaleString()} across the chat.`}
+              >
+                Last reply {compactNumber.format(lastTurn.inputTokens + lastTurn.outputTokens)}{" "}
+                tokens
               </span>
             )}
             {conversation.archived && (
@@ -541,6 +546,11 @@ function AssistantRow({
     </div>
   );
 }
+
+const compactNumber = new Intl.NumberFormat(undefined, {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 
 const NOTE: Record<string, { text: string; tone: Tone }> = {
   succeeded: { text: "finished", tone: "ok" },

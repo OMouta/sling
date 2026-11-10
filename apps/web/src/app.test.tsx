@@ -208,7 +208,11 @@ function routes(path: string): unknown {
       ],
       tasks: [task],
       agentStatus: "idle",
-      usage: { inputTokens: 100, outputTokens: 20 },
+      usage: {
+        inputTokens: 104_000,
+        outputTokens: 570,
+        lastTurn: { inputTokens: 38_100, outputTokens: 175 },
+      },
     };
   }
   throw new Error(`unmocked ${path}`);
@@ -301,6 +305,8 @@ describe("web app", () => {
     expect(screen.getByText("Approve")).toBeTruthy();
     expect(screen.getByText(/Approve push branch and open pull request/)).toBeTruthy();
     await waitFor(() => expect(screen.getByText("devbox")).toBeTruthy());
+    // The header counts the last reply, not every turn's reread of the chat.
+    expect(screen.getByText("Last reply 38.3K tokens").title).toContain("104,570 across the chat");
   });
 
   it("offers Always allow on a task card's push and pull request, as Approvals does", async () => {

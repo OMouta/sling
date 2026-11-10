@@ -194,6 +194,13 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         })
         .from(schema.messages)
         .where(eq(schema.messages.conversationId, conv.id));
+      // The latest reply on its own: each turn reads the chat again, so the sum counts it once per turn.
+      const [latest] = await ctx.db
+        .select({ usage: schema.messages.usage })
+        .from(schema.messages)
+        .where(and(eq(schema.messages.conversationId, conv.id), isNotNull(schema.messages.usage)))
+        .orderBy(desc(schema.messages.id))
+        .limit(1);
       // Even when archived: the chat keeps the personality it started with.
       const personality = await conversationPersonality(ctx.db, conv);
       return {
@@ -207,6 +214,12 @@ export async function conversationRoutes(app: FastifyInstance, ctx: AppContext) 
         usage: {
           inputTokens: Number(usage?.input ?? 0),
           outputTokens: Number(usage?.output ?? 0),
+          lastTurn: latest?.usage
+            ? {
+                inputTokens: latest.usage.inputTokens,
+                outputTokens: latest.usage.outputTokens,
+              }
+            : null,
         },
       };
     },

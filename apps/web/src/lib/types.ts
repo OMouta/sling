@@ -30,7 +30,16 @@ export interface ConversationDetail {
   agentStatus: AgentStatus;
   /** The reply being written, when the page opens mid-turn. */
   live?: LiveReplyView | null;
-  usage: { inputTokens: number; outputTokens: number };
+  /**
+   * Tokens across every turn, cached input included. Each turn reads the
+   * chat again, so this counts the chat once per turn. `lastTurn` is the
+   * latest reply's alone.
+   */
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    lastTurn?: { inputTokens: number; outputTokens: number } | null;
+  };
   /** The oldest loaded message's ID when there are older ones to load. */
   olderCursor?: string | null;
 }

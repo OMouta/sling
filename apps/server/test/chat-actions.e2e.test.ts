@@ -157,6 +157,11 @@ async function until<T>(label: string, fn: () => Promise<T | null | undefined | 
 type Detail = {
   messages: MessageView[];
   agentStatus: string;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    lastTurn: { inputTokens: number; outputTokens: number } | null;
+  };
   personality: { id: string; revision: number };
 };
 const detail = (id: string) => api<Detail>("GET", `/api/conversations/${id}`);
@@ -282,7 +287,13 @@ describe("a message sent while a reply is being written", () => {
     ]);
     await new Promise((r) => setTimeout(r, 1500));
     expect(asked.length - before).toBe(1);
-    expect((await detail(conv.id)).messages).toHaveLength(4);
+    const after = await detail(conv.id);
+    expect(after.messages).toHaveLength(4);
+    expect(after.usage).toEqual({
+      inputTokens: 2,
+      outputTokens: 2,
+      lastTurn: { inputTokens: 1, outputTokens: 1 },
+    });
   }, 30_000);
 });
 
