@@ -9,12 +9,13 @@ import {
   type LiveReplyView,
   newId,
   type PersonalityTool,
+  type ReplyPersonality,
   type ReplyTrace,
 } from "@sling/core";
 import { type MessageMeta, schema, type TokenUsage } from "@sling/db";
 import { SLING_EVENTS } from "@sling/workflow";
 import { isStepCount, type LanguageModel, type ModelMessage, streamText } from "ai";
-import { and, asc, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, gt, isNull, sql } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import { personalityTemplate } from "../personalities/templates.ts";
 import { workspaceSettings } from "../sandboxes/settings.ts";
@@ -31,6 +32,7 @@ import { deployOutcome, stepLine } from "./deploy-update.ts";
 import { withoutFollowUps } from "./follow-ups.ts";
 import {
   awaitsReply,
+  HISTORY_LIMIT,
   inTurnOrder,
   textOf,
   toMessageView,
@@ -342,11 +344,7 @@ export class Agent {
       .from(schema.conversations)
       .where(eq(schema.conversations.id, conversationId));
     if (!conv) return { reply: "" };
-    const saved = await ctx.db
-      .select()
-      .from(schema.messages)
-      .where(eq(schema.messages.conversationId, conversationId))
-      .orderBy(asc(schema.messages.id));
+    const saved = await turnRows(ctx, conversationId);
     const rows = inTurnOrder(saved);
     const last = rows.at(-1);
     if (!last) return { reply: "" };
@@ -706,6 +704,33 @@ async function codingAgentsNote(ctx: AppContext, workspaceId: string): Promise<s
   }
   if (lines.length === 0) return "No coding agent is ready on the user's machines right now.";
   return `Coding agents you can delegate to. Pick the agent, model, and effort for each task with delegate_coding_task's harness, model, and effort. Match the model to the job: a strong model at higher effort for hard or wide changes, a fast one at lower effort for small edits. Use what the user asks for when they name one.\n${lines.join("\n")}`;
+}
+
+/** How many of a chat's latest messages a turn reads: more than go back to a model. */
+const TURN_ROWS = 2 * HISTORY_LIMIT;
+
+/**
+ * A chat's latest messages, oldest first. Of a reply's trace, a turn reads
+ * only who wrote it: the rest never goes to a model.
+ */
+async function turnRows(
+  ctx: AppContext,
+  conversationId: string,
+): Promise<(typeof schema.messages.$inferSelect)[]> {
+  const { trace, ...columns } = getTableColumns(schema.messages);
+  const rows = await ctx.db
+    .select({
+      ...columns,
+      personality: sql<ReplyPersonality | null>`${trace}->'personality'`,
+    })
+    .from(schema.messages)
+    .where(eq(schema.messages.conversationId, conversationId))
+    .orderBy(desc(schema.messages.id))
+    .limit(TURN_ROWS);
+  return rows.reverse().map(({ personality, ...r }) => ({
+    ...r,
+    trace: personality ? { steps: [], ms: 0, personality } : null,
+  }));
 }
 
 function lastReply(rows: (typeof schema.messages.$inferSelect)[]): string {

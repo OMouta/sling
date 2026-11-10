@@ -2,7 +2,7 @@ import { newId } from "@sling/core";
 import { schema } from "@sling/db";
 import { SLING_EVENTS } from "@sling/workflow";
 import type { ModelMessage } from "ai";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
@@ -49,11 +49,21 @@ export async function replaceRoutes(app: FastifyInstance, ctx: AppContext) {
         and(eq(schema.conversations.id, id), eq(schema.conversations.workspaceId, workspaceId)),
       );
     if (!conv) return null;
+    // Only the latest exchange can be replaced: the latest user message and what follows it.
+    const m = schema.messages;
     const rows = await ctx.db
       .select()
-      .from(schema.messages)
-      .where(eq(schema.messages.conversationId, conv.id))
-      .orderBy(asc(schema.messages.id));
+      .from(m)
+      .where(
+        and(
+          eq(m.conversationId, conv.id),
+          gte(
+            m.id,
+            sql`(select max(${m.id}) from ${m} where ${m.conversationId} = ${conv.id} and ${m.role} = 'user')`,
+          ),
+        ),
+      )
+      .orderBy(asc(m.id));
     return { conv, rows };
   }
 
