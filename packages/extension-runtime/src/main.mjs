@@ -11,6 +11,8 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Console } from "node:console";
+import { syncBuiltinESMExports } from "node:module";
+import os from "node:os";
 import { Writable } from "node:stream";
 import { pathToFileURL } from "node:url";
 import { format, inspect } from "node:util";
@@ -180,6 +182,29 @@ process.on("uncaughtExceptionMonitor", (err) => {
   const refusal = describeRefusal(err);
   if (refusal) process.stderr.write(`${refusal}\n`);
 });
+
+/**
+ * The permission model doesn't cover signals or process priorities, so these
+ * would reach the server and anything else running as the same user.
+ * @param {string} name
+ */
+function refused(name) {
+  return () => {
+    const err = new Error(`${name} isn't available to extensions`);
+    /** @type {any} */ (err).code = "ERR_ACCESS_DENIED";
+    throw err;
+  };
+}
+for (const name of ["kill", "_kill", "_debugProcess", "_debugEnd"]) {
+  Object.defineProperty(process, name, { value: refused(`process.${name}`) });
+}
+const report = Object.freeze({
+  getReport: refused("process.report"),
+  writeReport: refused("process.report"),
+});
+Object.defineProperty(process, "report", { get: () => report });
+Object.defineProperty(os, "setPriority", { value: refused("os.setPriority") });
+syncBuiltinESMExports();
 
 const nativeFetch = globalThis.fetch;
 globalThis.fetch = makeFetch(peer, nativeFetch);

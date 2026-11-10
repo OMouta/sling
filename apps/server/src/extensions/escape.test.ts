@@ -28,6 +28,7 @@ import net from "node:net";
 import dgram from "node:dgram";
 import dns from "node:dns/promises";
 import http from "node:http";
+import os, { setPriority } from "node:os";
 
 const attempts = {
   readHosts: () => fs.readFileSync("/etc/hosts", "utf8"),
@@ -62,6 +63,14 @@ const attempts = {
       req.on("error", reject);
     }),
   binding: () => process.binding("fs"),
+  // Signal 0 only checks that the server is there, so a miss sends nothing.
+  kill: () => process.kill(process.ppid, 0),
+  rawKill: () => process._kill(process.ppid, 0),
+  // Past any real pid, so a miss doesn't turn on a debugger anywhere.
+  debugProcess: () => process._debugProcess(99999999),
+  report: () => process.report.getReport(),
+  priority: () => os.setPriority(process.ppid, os.getPriority(process.ppid)),
+  namedPriority: () => setPriority(process.ppid, os.getPriority(process.ppid)),
   eval: () => eval("1 + 1"),
   newFunction: () => new Function("return 1")(),
 };
@@ -134,6 +143,12 @@ describe("an extension trying to get out of its process", () => {
     ["dns", "", /Sling refused Net access to example\.com/],
     ["http", "", /Sling refused Net access/],
     ["binding", "", /Sling refused access: process\.binding/],
+    ["kill", "", /Sling refused access: process\.kill/],
+    ["rawKill", "", /Sling refused access: process\._kill/],
+    ["debugProcess", "", /Sling refused access: process\._debugProcess/],
+    ["report", "", /Sling refused access: process\.report/],
+    ["priority", "", /Sling refused access: os\.setPriority/],
+    ["namedPriority", "", /Sling refused access: os\.setPriority/],
     ["eval", "", /Sling refused code generation from strings/],
     ["newFunction", "", /Sling refused code generation from strings/],
   ])("refuses %s and logs it", async (name, path, logged) => {
