@@ -9,7 +9,6 @@ import {
   Badge,
   Button,
   Card,
-  Dot,
   Empty,
   ErrorText,
   Skeleton,
@@ -185,7 +184,7 @@ function ChatRow({ c, menu }: { c: ConversationSummaryView; menu: React.ReactNod
             {c.taskCount > 0 && (
               <Badge tone={c.activeTasks > 0 ? "accent" : "neutral"}>
                 {c.activeTasks > 0
-                  ? `${c.activeTasks} of ${c.taskCount} tasks running`
+                  ? `${c.activeTasks} of ${plural(c.taskCount, "task")} running`
                   : plural(c.taskCount, "task")}
               </Badge>
             )}
@@ -202,27 +201,15 @@ function ChatRow({ c, menu }: { c: ConversationSummaryView; menu: React.ReactNod
   );
 }
 
-/** What a chat is doing, as a small mark at the end of its row. */
+/**
+ * A spinner at the end of a row while Sling replies. Waiting and running
+ * tasks have their own badges under the title.
+ */
 function ChatStatusMark({ c }: { c: ConversationSummaryView }) {
-  const status = conversationStatus(c);
-  // A waiting chat says so in its "Waiting for you" badge.
-  if (status === "waiting") return null;
-  if (status === "thinking") {
-    return (
-      <span title="Thinking" className="grid size-4 place-items-center">
-        <Spinner className="size-3" />
-      </span>
-    );
-  }
-  if (status === "tasks") {
-    return (
-      <span
-        title={`${plural(c.activeTasks, "task")} running`}
-        className="grid size-4 place-items-center"
-      >
-        <Dot tone="accent" pulse />
-      </span>
-    );
-  }
-  return null;
+  if (conversationStatus(c) !== "thinking") return null;
+  return (
+    <span title="Thinking" className="grid size-4 place-items-center">
+      <Spinner className="size-3" />
+    </span>
+  );
 }
