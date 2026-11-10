@@ -714,4 +714,30 @@ describe("chat replies", () => {
     const note = (await screen.findByText("finished")).parentElement as HTMLElement;
     expect(note.textContent).toBe("List Desktop itemsfinished");
   });
+
+  it("says when a finished task's push failed", async () => {
+    tasks = [{ ...machineTask, conversationId: "cnv_1", title: "Fix the footer" }];
+    messages = [
+      {
+        id: "msg_9",
+        conversationId: "cnv_1",
+        role: "system",
+        text: [
+          `Task "Fix the footer" (${machineTask.id}) on devbox, repo site: succeeded.`,
+          "Delivery step push: failed (no remote)",
+          "Delivery step open_pr: skipped",
+        ].join("\n"),
+        taskIds: [machineTask.id],
+        attachments: [],
+        personalityId: null,
+        research: false,
+        feedback: null,
+        replaceable: false,
+        createdAt: "2026-11-05T10:05:00.000Z",
+        trace: null,
+      },
+    ];
+    open();
+    expect(await screen.findByText("finished, but its push failed")).toBeTruthy();
+  });
 });

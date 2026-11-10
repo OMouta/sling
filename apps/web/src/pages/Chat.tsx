@@ -550,6 +550,14 @@ const NOTE: Record<string, { text: string; tone: Tone }> = {
   interrupted: { text: "was interrupted", tone: "warn" },
 };
 
+const STEP_NAME: Record<string, string> = {
+  push: "push",
+  open_pr: "pull request",
+  merge: "merge",
+  deploy: "deploy",
+  verify: "check",
+};
+
 /**
  * A note in the history from Sling, such as a task finishing. It says what
  * happened at the time, so a later state of the task doesn't change it.
@@ -559,9 +567,12 @@ function SystemNote({ message, tasks }: { message: MessageView; tasks: Map<strin
   const task = message.taskIds[0] ? tasks.get(message.taskIds[0]) : undefined;
   const waiting = /Waiting for the user to approve/.test(message.text);
   const state = first.match(/: (\w+)\.$/)?.[1] ?? "";
+  const failed = message.text.match(/^Delivery step (\w+): failed/m)?.[1];
   const note = waiting
     ? { text: "is waiting for your approval", tone: "warn" as Tone }
-    : NOTE[state];
+    : state === "succeeded" && failed
+      ? { text: `finished, but its ${STEP_NAME[failed] ?? failed} failed`, tone: "danger" as Tone }
+      : NOTE[state];
   return (
     <div className="flex items-center gap-3 text-xs text-subtle" title={message.text}>
       <span className="h-px flex-1 bg-border" />
