@@ -56,6 +56,25 @@ const model = new MockLanguageModelV4({
       options.prompt.filter((m) => m.role !== "system").map((m) => `${m.role}: ${textOf(m)}`),
     );
     if (user.includes("slow")) await gate;
+    // Looks around for as long as it may call tools.
+    if (user.includes("busy") && options.toolChoice?.type !== "none") {
+      return {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start" as const, warnings: [] },
+          {
+            type: "tool-call" as const,
+            toolCallId: `call_${newId("c")}`,
+            toolName: "list_machines",
+            input: "{}",
+          },
+          {
+            type: "finish" as const,
+            finishReason: { unified: "tool-calls" as const, raw: undefined },
+            usage,
+          },
+        ]),
+      };
+    }
     const answer = user.includes("recipe")
       ? "Pasta with tomatoes.\n\n<follow-ups>\nMake it vegan\nHow long does it keep?\n</follow-ups>"
       : `Reply ${asked.length} to: ${user}`;
@@ -265,6 +284,16 @@ describe("a message sent while a reply is being written", () => {
     expect(asked.length - before).toBe(1);
     expect((await detail(conv.id)).messages).toHaveLength(4);
   }, 30_000);
+});
+
+describe("a turn that runs out of steps", () => {
+  it("answers on its last step instead of calling another tool", async () => {
+    const { messages } = await chat("Stay busy looking around");
+    const reply = messages[1];
+    expect(reply?.text).toMatch(/to: Stay busy looking around$/);
+    const tools = reply?.trace?.steps.filter((s) => s.kind === "tool") ?? [];
+    expect(tools).toHaveLength(7);
+  });
 });
 
 describe("edit", () => {

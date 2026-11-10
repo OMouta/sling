@@ -444,6 +444,7 @@ export class Agent {
       const { model, providerOptions } = this.#model
         ? { model: this.#model, providerOptions: {} }
         : await resolveAssistant(ctx, conv.workspaceId, chat.assistant);
+      const maxSteps = research ? RESEARCH_MAX_STEPS : MAX_STEPS;
       const result = streamText({
         model,
         providerOptions,
@@ -463,7 +464,10 @@ export class Agent {
           ...apps,
           ...(web ? webTools(chat.assistant?.provider) : {}),
         },
-        stopWhen: isStepCount(research ? RESEARCH_MAX_STEPS : MAX_STEPS),
+        stopWhen: isStepCount(maxSteps),
+        // The last step can't call a tool, so a turn that runs out of steps still answers.
+        prepareStep: ({ stepNumber }) =>
+          stepNumber === maxSteps - 1 ? { toolChoice: "none" as const } : {},
         maxRetries: 2,
         ...(opts.signal ? { abortSignal: opts.signal } : {}),
       });
