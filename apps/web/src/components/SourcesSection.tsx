@@ -15,7 +15,7 @@ import {
   useSources,
   viewUrl,
 } from "../lib/sources.ts";
-import { Button, Card, cx, ErrorText, Input, Skeleton, Spinner } from "./ui.tsx";
+import { Button, Card, cx, ErrorText, Input, Skeleton, Spinner, useConfirm } from "./ui.tsx";
 
 /**
  * The files and links a personality answers from. Each one is added at
@@ -59,6 +59,7 @@ export function SourcesSection({ personality }: { personality: PersonalityView }
       setLinking(false);
     },
   });
+  const { confirm, dialog } = useConfirm();
   const remove = useMutation({
     mutationFn: (s: SourceView) => api.del(`/api/sources/${s.id}`),
     onMutate: (s) =>
@@ -179,10 +180,21 @@ export function SourcesSection({ personality }: { personality: PersonalityView }
       ) : list.length > 0 ? (
         <Card className="divide-y divide-border">
           {list.map((s) => (
-            <SourceRow key={s.id} source={s} onRemove={() => remove.mutate(s)} />
+            <SourceRow
+              key={s.id}
+              source={s}
+              onRemove={async () => {
+                // One that failed to read holds nothing worth asking about.
+                const ok =
+                  s.state === "failed" ||
+                  (await confirm({ title: `Remove ${s.name}?`, action: "Remove", danger: true }));
+                if (ok) remove.mutate(s);
+              }}
+            />
           ))}
         </Card>
       ) : null}
+      {dialog}
     </section>
   );
 }

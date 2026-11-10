@@ -544,9 +544,11 @@ export function Dialog({
             className="-mt-0.5 -mr-1.5"
           />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5">
-          {children}
-        </div>
+        {children ? (
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5">
+            {children}
+          </div>
+        ) : null}
         {footer && (
           <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border px-5 py-3">
             {footer}
@@ -980,6 +982,8 @@ interface ConfirmOptions {
   body?: ReactNode;
   action: string;
   danger?: boolean;
+  /** The button that backs out, when "Cancel" would read as the action. */
+  dismiss?: string;
 }
 
 /** A confirm step in a dialog, in place of the browser's own. */
@@ -999,7 +1003,7 @@ export function useConfirm() {
       onClose={() => close(false)}
       footer={
         <>
-          <Button onClick={() => close(false)}>Cancel</Button>
+          <Button onClick={() => close(false)}>{state.dismiss ?? "Cancel"}</Button>
           <Button
             variant={state.danger ? "danger" : "primary"}
             data-autofocus

@@ -249,6 +249,21 @@ describe("a personality's Sources section", () => {
     await waitFor(() => expect(screen.queryByText("lease.pdf")).toBeNull());
   });
 
+  it("asks before removing a source it has read", async () => {
+    sources = [source({ id: "src_lease", name: "lease.pdf" })];
+    renderAt("/personalities/prs_tutor");
+    fireEvent.click(await screen.findByRole("button", { name: "Remove lease.pdf" }));
+    const ask = within(await screen.findByRole("dialog", { name: "Remove lease.pdf?" }));
+    fireEvent.click(ask.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("lease.pdf")).toBeTruthy();
+    expect(callsTo("DELETE", "/api/sources/src_lease")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Remove lease.pdf" }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Remove" }),
+    );
+    await waitFor(() => expect(callsTo("DELETE", "/api/sources/src_lease")).toHaveLength(1));
+  });
+
   it("adds a link from a small field, and Enter there never saves the personality", async () => {
     renderAt("/personalities/prs_tutor");
     fireEvent.click(await screen.findByRole("button", { name: "Add link" }));

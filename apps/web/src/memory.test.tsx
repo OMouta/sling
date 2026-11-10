@@ -329,6 +329,9 @@ describe("the Memory page", () => {
     await waitFor(() => expect(screen.queryByText("Only Planner")).toBeNull());
 
     await menu("Vegetarian", "Delete");
+    const ask = within(await screen.findByRole("dialog", { name: "Delete this memory?" }));
+    expect(callsTo("DELETE", "/api/memories/mem_veg")).toHaveLength(0);
+    fireEvent.click(ask.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(screen.queryByText("Vegetarian")).toBeNull());
     expect(callsTo("DELETE", "/api/memories/mem_veg")).toHaveLength(1);
   });

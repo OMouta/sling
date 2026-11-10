@@ -17,6 +17,7 @@ import {
   MenuLabel,
   MenuSeparator,
   Skeleton,
+  useConfirm,
 } from "../components/ui.tsx";
 import { ago } from "../lib/format.ts";
 import { sendsOnEnter } from "../lib/keys.ts";
@@ -279,6 +280,7 @@ function MemoryRow({
 }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
+  const { confirm, dialog } = useConfirm();
   const save = useMutation({
     mutationFn: (patch: { text?: string; personalityId?: string | null }) =>
       memoryApi.update(m.id, patch),
@@ -382,10 +384,22 @@ function MemoryRow({
           </MenuItem>
         ))}
         <MenuSeparator />
-        <MenuItem icon={Trash2} danger onSelect={() => remove.mutate()}>
+        <MenuItem
+          icon={Trash2}
+          danger
+          onSelect={async () => {
+            const ok = await confirm({
+              title: "Delete this memory?",
+              action: "Delete",
+              danger: true,
+            });
+            if (ok) remove.mutate();
+          }}
+        >
           Delete
         </MenuItem>
       </Menu>
+      {dialog}
     </li>
   );
 }

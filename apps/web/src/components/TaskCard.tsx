@@ -72,6 +72,7 @@ import {
   Mono,
   Skeleton,
   Spinner,
+  useConfirm,
 } from "./ui.tsx";
 
 const ACTION_LABEL: Record<string, string> = {
@@ -135,6 +136,7 @@ export function TaskCard({
       api.post(`/api/tasks/${task.id}/approval`, { decision }),
   });
   const cancel = useMutation({ mutationFn: () => api.post(`/api/tasks/${task.id}/cancel`) });
+  const { confirm, dialog } = useConfirm();
   const deploy = useMutation({
     mutationFn: () => deployApi.deployTask(task.id),
     onSuccess: (next) => {
@@ -382,7 +384,15 @@ export function TaskCard({
               className="ml-auto"
               busy={cancel.isPending}
               disabled={task.cancelRequested}
-              onClick={() => cancel.mutate()}
+              onClick={async () => {
+                const ok = await confirm({
+                  title: "Cancel this task?",
+                  action: "Cancel task",
+                  dismiss: "Keep it running",
+                  danger: true,
+                });
+                if (ok) cancel.mutate();
+              }}
             >
               Cancel task
             </Button>
@@ -390,6 +400,7 @@ export function TaskCard({
           <ErrorText
             error={(deployApproval ? null : decide.error) ?? cancel.error ?? deploy.error}
           />
+          {dialog}
         </CardFooter>
       )}
     </Card>

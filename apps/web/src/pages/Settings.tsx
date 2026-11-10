@@ -36,6 +36,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useModeChange } from "../components/ConfirmFullAccess.tsx";
 import { ChatControls } from "../components/ModelPicker.tsx";
 import { Page } from "../components/Page.tsx";
 import { ProviderIcon } from "../components/ProviderIcon.tsx";
@@ -300,6 +301,7 @@ function ModelSection({ settings }: { settings: Settings }) {
 function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: ProviderModelsView }) {
   const qc = useQueryClient();
   const saveKey = useSaveProviderKey();
+  const { confirm, dialog } = useConfirm();
   const [editing, setEditing] = useState(false);
   // Without a key yet, setting one up is a few steps in a dialog.
   const [setup, setSetup] = useState(false);
@@ -458,7 +460,14 @@ function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: Provi
                   size="sm"
                   variant="ghost-danger"
                   busy={remove.isPending}
-                  onClick={() => remove.mutate()}
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: `Remove the ${p.label} API key?`,
+                      action: "Remove",
+                      danger: true,
+                    });
+                    if (ok) remove.mutate();
+                  }}
                 >
                   Remove
                 </Button>
@@ -475,6 +484,7 @@ function ProviderRow({ provider: p, cli }: { provider: ProviderInfo; cli?: Provi
             <ErrorText error={save.error ?? remove.error ?? test.error} />
           </form>
         )}
+        {dialog}
       </div>
     </li>
   );
@@ -518,6 +528,7 @@ function ModeSection({ settings }: { settings: Settings }) {
     mutationFn: (defaultMode: PermissionMode) => api.put("/api/settings/mode", { defaultMode }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["settings"] }),
   });
+  const modeChange = useModeChange((m) => save.mutate(m));
   return (
     <SettingsSection id="mode" title="Default permission mode">
       <div className="space-y-2">
@@ -531,7 +542,7 @@ function ModeSection({ settings }: { settings: Settings }) {
               name="mode"
               className="mt-0.5 size-3.5 accent-[var(--accent)]"
               checked={settings.defaultMode === m}
-              onChange={() => save.mutate(m)}
+              onChange={() => modeChange.change(m)}
             />
             <span>
               <span className="text-[13px] font-medium">{MODE_POLICY[m].label}</span>
@@ -543,6 +554,7 @@ function ModeSection({ settings }: { settings: Settings }) {
         ))}
       </div>
       <ErrorText error={save.error} />
+      {modeChange.dialog}
     </SettingsSection>
   );
 }
@@ -914,7 +926,7 @@ function Passkeys() {
   const list = authClient.useListPasskeys();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => setError(null), []);
+  const { confirm, dialog } = useConfirm();
 
   async function add() {
     setBusy(true);
@@ -925,10 +937,13 @@ function Passkeys() {
     list.refetch();
   }
 
-  async function remove(id: string) {
-    await authClient.passkey.deletePasskey({ id });
-    list.refetch();
-  }
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await authClient.passkey.deletePasskey({ id });
+      if (res?.error) throw new Error(res.error.message ?? "Couldn't remove the passkey.");
+    },
+    onSettled: () => list.refetch(),
+  });
 
   const passkeys = list.data ?? [];
   return (
@@ -959,7 +974,15 @@ function Passkeys() {
                 size="sm"
                 variant="ghost-danger"
                 aria-label={`Remove ${p.name ?? "passkey"}`}
-                onClick={() => remove(p.id)}
+                busy={remove.isPending && remove.variables === p.id}
+                onClick={async () => {
+                  const ok = await confirm({
+                    title: `Remove ${p.name ?? "this passkey"}?`,
+                    action: "Remove",
+                    danger: true,
+                  });
+                  if (ok) remove.mutate(p.id);
+                }}
               >
                 Remove
               </Button>
@@ -968,8 +991,9 @@ function Passkeys() {
         </ul>
       )}
       <div className="mt-2 ml-12">
-        <ErrorText error={error} />
+        <ErrorText error={error ?? remove.error} />
       </div>
+      {dialog}
     </div>
   );
 }

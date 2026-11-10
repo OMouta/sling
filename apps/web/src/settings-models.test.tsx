@@ -175,6 +175,21 @@ async function providers() {
   return within(await screen.findByRole("list", { name: "Model providers" }));
 }
 
+describe("the default permission mode in Settings", () => {
+  it("asks before making Full access the default", async () => {
+    await providers();
+    fireEvent.click(screen.getByRole("radio", { name: /Full access/ }));
+    const ask = within(await screen.findByRole("dialog", { name: "Switch to Full access?" }));
+    expect(calls.some((c) => c.path === "/api/settings/mode")).toBe(false);
+    fireEvent.click(ask.getByRole("button", { name: "Switch to Full access" }));
+    await waitFor(() =>
+      expect(calls.find((c) => c.path === "/api/settings/mode")?.body).toEqual({
+        defaultMode: "full-access",
+      }),
+    );
+  });
+});
+
 describe("model providers in Settings", () => {
   it("shows one row per provider, the subscription and the API key together", async () => {
     const list = await providers();
