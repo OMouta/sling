@@ -126,7 +126,9 @@ pub struct CommitResult {
 
 /// Commits the task's changes. Stages every change to tracked files, plus new
 /// files the harness reported creating. Other untracked files, such as build
-/// output from running tests, stay out of the commit.
+/// output from running tests, stay out of the commit. Commits the agent made
+/// itself count too: the result is the branch's tip whenever it moved from
+/// `base_sha`.
 pub async fn commit_changes(
     worktree: &Path,
     message: &str,
@@ -165,12 +167,31 @@ pub async fn commit_changes(
         .collect();
 
     let staged = git(worktree, &["diff", "--cached", "--quiet"]).await?;
-    if staged.ok() {
+    if !staged.ok() {
+        commit(worktree, message).await?;
+    }
+    // The agent may have committed some or all of its work itself.
+    let sha = git_ok(worktree, &["rev-parse", "HEAD"]).await?;
+    if sha == base_sha {
         return Ok(CommitResult {
             committed: None,
             left_out,
         });
     }
+    let stat = git_ok(worktree, &["diff", "--shortstat", base_sha, &sha]).await?;
+    let (files_changed, insertions, deletions) = parse_shortstat(&stat);
+    Ok(CommitResult {
+        committed: Some(Committed {
+            sha,
+            files_changed,
+            insertions,
+            deletions,
+        }),
+        left_out,
+    })
+}
+
+async fn commit(worktree: &Path, message: &str) -> Result<()> {
     let mut out = git(
         worktree,
         &["commit", "--quiet", "--no-verify", "-m", message],
@@ -197,18 +218,7 @@ pub async fn commit_changes(
     if !out.ok() {
         bail!("git commit failed: {}", out.stderr.trim());
     }
-    let sha = git_ok(worktree, &["rev-parse", "HEAD"]).await?;
-    let stat = git_ok(worktree, &["diff", "--shortstat", base_sha, &sha]).await?;
-    let (files_changed, insertions, deletions) = parse_shortstat(&stat);
-    Ok(CommitResult {
-        committed: Some(Committed {
-            sha,
-            files_changed,
-            insertions,
-            deletions,
-        }),
-        left_out,
-    })
+    Ok(())
 }
 
 /// Parses `3 files changed, 10 insertions(+), 2 deletions(-)`.
@@ -401,6 +411,59 @@ mod tests {
         assert!(!valid_task_branch("feature/x", "main"));
         assert!(!valid_task_branch("sling/x y", "main"));
         assert!(!valid_task_branch("sling/x.lock", "main"));
+    }
+
+    fn sh(dir: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .args(["-c", "user.email=t@t", "-c", "user.name=t"])
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    fn repo_with_commit() -> (tempfile::TempDir, PathBuf, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = std::fs::canonicalize(dir.path()).unwrap();
+        sh(&repo, &["init", "-q", "-b", "main"]);
+        sh(&repo, &["config", "user.email", "t@t"]);
+        sh(&repo, &["config", "user.name", "t"]);
+        std::fs::write(repo.join("README.md"), "# site\n").unwrap();
+        sh(&repo, &["add", "."]);
+        sh(&repo, &["commit", "-qm", "init"]);
+        let base = sh(&repo, &["rev-parse", "HEAD"]);
+        (dir, repo, base)
+    }
+
+    #[tokio::test]
+    async fn work_the_agent_committed_itself_is_reported() {
+        let (_dir, repo, base) = repo_with_commit();
+        std::fs::write(repo.join("a.txt"), "one\n").unwrap();
+        sh(&repo, &["add", "a.txt"]);
+        sh(&repo, &["commit", "-qm", "by the agent"]);
+        let agent_sha = sh(&repo, &["rev-parse", "HEAD"]);
+
+        let result = commit_changes(&repo, "task", &base, &[]).await.unwrap();
+        let c = result.committed.expect("the agent's commit counts");
+        assert_eq!(c.sha, agent_sha);
+        assert_eq!((c.files_changed, c.insertions), (1, 1));
+
+        // Changes left after the agent's own commit go on top of it.
+        std::fs::write(repo.join("README.md"), "# site\nmore\n").unwrap();
+        let result = commit_changes(&repo, "task", &base, &[]).await.unwrap();
+        let c = result.committed.unwrap();
+        assert_ne!(c.sha, agent_sha);
+        assert_eq!(c.files_changed, 2);
+        assert_eq!(sh(&repo, &["log", "-1", "--format=%s"]), "task");
+    }
+
+    #[tokio::test]
+    async fn nothing_to_commit_when_the_branch_did_not_move() {
+        let (_dir, repo, base) = repo_with_commit();
+        let result = commit_changes(&repo, "task", &base, &[]).await.unwrap();
+        assert!(result.committed.is_none());
     }
 
     #[test]
