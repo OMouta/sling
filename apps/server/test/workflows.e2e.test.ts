@@ -1504,6 +1504,14 @@ describe("connectors", () => {
     await src.emit({ type: "fake.event", payload: { topic: "mail", n: 2 }, dedupeKey: "mail-3" });
     // Sources can't pose as other triggers.
     await src.emit({ type: "app.chat_message", payload: {} });
+    // A run that fails to start throws, so the source tries the event again.
+    const startRun = vi
+      .spyOn(server.ctx.engine, "startRun")
+      .mockRejectedValueOnce(new Error("database went away"));
+    await expect(
+      src.emit({ type: "fake.event", payload: { topic: "mail", n: 4 }, dedupeKey: "mail-4" }),
+    ).rejects.toThrow("database went away");
+    startRun.mockRestore();
     const runs = await until("two runs", async () => {
       const list = await c.call<RunView[]>("GET", `/api/workflows/${wf.id}/runs`);
       return list.length >= 2 && list.every((r) => r.status === "succeeded") ? list : null;
@@ -1519,6 +1527,12 @@ describe("connectors", () => {
     // Disabling the only workflow that uses it stops the source.
     await c.call("PATCH", `/api/workflows/${wf.id}`, { enabled: false });
     expect(fakeSource.ctx).toBeNull();
+    // What a stopped source still tries to hand on or record is refused, not dropped.
+    await expect(src.emit({ type: "fake.event", payload: { topic: "mail" } })).rejects.toThrow(
+      /stopped/,
+    );
+    await expect(src.state.set("uid", "42")).rejects.toThrow(/stopped/);
+    expect(await src.state.get("uid")).toBe("41");
     const idle = (await c.call<{ id: string; status: string }[]>("GET", "/api/installations")).find(
       (i) => i.id === inst.id,
     );

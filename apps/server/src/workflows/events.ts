@@ -1,6 +1,7 @@
 import { schema } from "@sling/db";
 import { and, eq, type SQL } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
+import { RunBudgetError } from "./engine.ts";
 import type { RunRow } from "./views.ts";
 
 /** Something that happened, offered to every subscribed trigger. */
@@ -30,10 +31,14 @@ export class EventBus {
     this.#ctx = ctx;
   }
 
-  /** Returns the runs the event started. */
+  /**
+   * Returns the runs the event started. `strict` throws on any trigger that
+   * can't take it. `retryable` throws only when trying the event again could
+   * start the run, so a trigger that can't run or is at its run limit is skipped.
+   */
   async emit(
     event: BusEvent,
-    opts: { strict?: boolean; onMatch?: () => void } = {},
+    opts: { strict?: boolean; retryable?: boolean; onMatch?: () => void } = {},
   ): Promise<RunRow[]> {
     const ctx = this.#ctx;
     if (event.waitKey) await ctx.engine.onEvent(event.type, event.waitKey, event.payload);
@@ -96,7 +101,7 @@ export class EventBus {
         });
         if (run) runs.push(run);
       } catch (err) {
-        if (opts.strict) throw err;
+        if (opts.strict || (opts.retryable && !(err instanceof RunBudgetError))) throw err;
         ctx.log.error(
           { err, triggerId: trigger.id, event: event.type },
           "trigger failed to start a run",

@@ -263,21 +263,25 @@ export class ConnectorRuntime {
       config,
       log,
       signal: abort.signal,
+      // After a stop these throw, so a source mid-batch doesn't move its cursor past the rest.
       emit: async (event) => {
-        if (!live()) return;
+        if (!live()) throw new Error("The source stopped");
         if (!allowed.has(event.type)) {
           log.warn("dropped an event no trigger of this connector listens for", {
             type: event.type,
           });
           return;
         }
-        await ctx.events.emit({
-          type: event.type,
-          workspaceId: r.workspaceId,
-          installationId: r.installationId,
-          payload: event.payload,
-          ...(event.dedupeKey ? { dedupeKey: event.dedupeKey } : {}),
-        });
+        await ctx.events.emit(
+          {
+            type: event.type,
+            workspaceId: r.workspaceId,
+            installationId: r.installationId,
+            payload: event.payload,
+            ...(event.dedupeKey ? { dedupeKey: event.dedupeKey } : {}),
+          },
+          { retryable: true },
+        );
       },
       state: {
         get: async (key) => {
@@ -293,6 +297,7 @@ export class ConnectorRuntime {
           return row?.value ?? null;
         },
         set: async (key, value) => {
+          if (!live()) throw new Error("The source stopped");
           await db
             .insert(schema.connectorState)
             .values({ installationId: r.installationId, key, value })
