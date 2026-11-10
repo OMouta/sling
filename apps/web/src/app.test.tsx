@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { returnPath } from "./lib/returnTo.ts";
 import { createAppRouter } from "./router.tsx";
 import { approvalPage } from "./test/fixtures.ts";
 
@@ -273,6 +274,7 @@ function renderAt(path: string) {
       <RouterProvider router={router} context={{ queryClient }} />
     </QueryClientProvider>,
   );
+  return router;
 }
 
 describe("web app", () => {
@@ -280,6 +282,27 @@ describe("web app", () => {
     signedIn = false;
     renderAt("/");
     expect(await screen.findByText("Sign in to Sling")).toBeTruthy();
+  });
+
+  it("remembers the page a signed-out visitor was sent to, and opens it after sign-in", async () => {
+    signedIn = false;
+    hasModel = true;
+    const router = renderAt("/c/cnv_1?x=1");
+    await screen.findByText("Sign in to Sling");
+    expect(router.state.location.search).toEqual({ next: "/c/cnv_1?x=1" });
+    cleanup();
+    signedIn = true;
+    renderAt(`/login?next=${encodeURIComponent("/c/cnv_1")}`);
+    expect(await screen.findByText("The footer year is wrong.")).toBeTruthy();
+  });
+
+  it("only returns to a page on this site after signing in", () => {
+    expect(returnPath("/tasks/tsk_1?x=1#a")).toBe("/tasks/tsk_1?x=1#a");
+    expect(returnPath("//evil.example/a")).toBeUndefined();
+    expect(returnPath("/\\evil.example/a")).toBeUndefined();
+    expect(returnPath("/\t/evil.example/a")).toBeUndefined();
+    expect(returnPath("https://evil.example/a")).toBeUndefined();
+    expect(returnPath("/login")).toBeUndefined();
   });
 
   it("sends a visitor at another address to the one Sling is set up for", async () => {

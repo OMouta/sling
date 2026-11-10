@@ -10,6 +10,7 @@ import { plural } from "../lib/format.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { NEW_CHAT_EVENT } from "../lib/newChat.ts";
 import { connectRealtime, setOpenConversation, useConnection } from "../lib/realtime.ts";
+import { returnPath } from "../lib/returnTo.ts";
 import { providerInstallations } from "../lib/sandbox.ts";
 import { useSandboxes } from "../lib/sandboxApi.ts";
 import { useRecentTasks } from "../lib/tasks.ts";
@@ -35,6 +36,8 @@ export function useStatus() {
 /** Gate for the signed-in app: setup, then login, then the shell. */
 export function AppLayout() {
   const status = useStatus();
+  // The page in view, not one being opened, which may be the login page itself.
+  const href = useRouterState({ select: (s) => (s.resolvedLocation ?? s.location).href });
   if (status.isPending) {
     return (
       <div className="grid h-full place-items-center">
@@ -43,7 +46,10 @@ export function AppLayout() {
     );
   }
   if (status.data?.needsSetup) return <Navigate to="/setup" />;
-  if (!status.data?.signedIn) return <Navigate to="/login" />;
+  if (!status.data?.signedIn) {
+    const next = returnPath(href);
+    return <Navigate to="/login" search={next ? { next } : {}} replace />;
+  }
   return <Shell />;
 }
 

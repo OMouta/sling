@@ -1,32 +1,37 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Navigate, useNavigate } from "@tanstack/react-router";
 import { KeyRound } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useStatus } from "../components/Shell.tsx";
 import { Button, ErrorText, Field, Input } from "../components/ui.tsx";
 import { authClient } from "../lib/auth.ts";
+import { loginRoute } from "../router.tsx";
 import { AuthFrame } from "./Setup.tsx";
 
 export function LoginPage() {
   const status = useStatus();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const search = loginRoute.useSearch();
+  const next = search.next ?? "/";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [backup, setBackup] = useState(false);
-  const [step, setStep] = useState<"password" | "2fa">(
-    new URLSearchParams(location.search).get("step") === "2fa" ? "2fa" : "password",
-  );
+  const [step, setStep] = useState<"password" | "2fa">(search.step ?? "password");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const signedIn = status.data?.signedIn;
+  useEffect(() => {
+    if (signedIn) void navigate({ href: next, replace: true });
+  }, [signedIn, next, navigate]);
+
   if (status.data?.needsSetup) return <Navigate to="/setup" />;
-  if (status.data?.signedIn) return <Navigate to="/" />;
+  if (signedIn) return null;
 
   async function done() {
     await qc.invalidateQueries({ queryKey: ["status"] });
-    void navigate({ to: "/" });
   }
 
   async function signIn(e: FormEvent) {

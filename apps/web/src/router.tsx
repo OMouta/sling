@@ -9,6 +9,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { AppLayout } from "./components/Shell.tsx";
+import { returnPath } from "./lib/returnTo.ts";
 import { ApprovalsPage } from "./pages/Approvals.tsx";
 import { ChatPage } from "./pages/Chat.tsx";
 import { ChatsPage } from "./pages/Chats.tsx";
@@ -28,9 +29,14 @@ const setupRoute = createRoute({
   path: "/setup",
   component: SetupPage,
 });
-const loginRoute = createRoute({
+export const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
+  // `next` is the page to open after signing in; `step` resumes at the second factor.
+  validateSearch: (search: Record<string, unknown>): { next?: string; step?: "2fa" } => {
+    const next = returnPath(search.next);
+    return { ...(next ? { next } : {}), ...(search.step === "2fa" ? { step: "2fa" } : {}) };
+  },
   component: LoginPage,
 });
 

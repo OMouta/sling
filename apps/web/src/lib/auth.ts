@@ -8,7 +8,10 @@ export const authClient = createAuthClient({
     passkeyClient(),
     twoFactorClient({
       onTwoFactorRedirect() {
-        window.location.assign("/login?step=2fa");
+        // Keep the page to open after signing in.
+        const next = new URLSearchParams(window.location.search).get("next");
+        const search = new URLSearchParams(next ? { step: "2fa", next } : { step: "2fa" });
+        window.location.assign(`/login?${search}`);
       },
     }),
   ],
