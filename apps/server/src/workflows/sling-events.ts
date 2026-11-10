@@ -2,6 +2,7 @@ import {
   type ApprovalView,
   isTerminalAction,
   isTerminalTask,
+  newId,
   type SandboxFallbackPayload,
   type TaskView,
 } from "@sling/core";
@@ -21,6 +22,39 @@ export function conversationObject(c: ConversationRow) {
 /** The key that addresses a conversation: its external key, or its ID for web chats. */
 export function conversationKey(c: ConversationRow): string {
   return c.externalKey ?? c.id;
+}
+
+/**
+ * The delivery row that starts a chat message's turn. The delivery loop sends
+ * it to the workflows that answer chat messages until one takes it, so it
+ * goes in the same transaction as the message it answers.
+ */
+export function chatDelivery(
+  conv: ConversationRow,
+  messageId: string,
+  message: unknown,
+  id: string = messageId,
+): typeof schema.deliveries.$inferInsert {
+  return {
+    id,
+    kind: "chat",
+    payload: {
+      conversationId: conv.id,
+      messageId,
+      fallbackId: newId("msg"),
+      event: {
+        type: SLING_EVENTS.chatMessage,
+        workspaceId: conv.workspaceId,
+        payload: {
+          conversation: conversationObject(conv),
+          key: conversationKey(conv),
+          message,
+          messageId,
+        },
+        dedupeKey: id,
+      },
+    },
+  };
 }
 
 /** The `task` port type. */

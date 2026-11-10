@@ -12,13 +12,10 @@ import {
   type StartRuleEvent,
 } from "@sling/core";
 import { type Db, schema } from "@sling/db";
-import { SLING_EVENTS } from "@sling/workflow";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { CheckChange } from "../checks/service.ts";
 import type { AppContext } from "../context.ts";
-import { NO_CHAT_WORKFLOW } from "../conversations/routes.ts";
 import { defaultPersonality, usablePersonality } from "../personalities/service.ts";
-import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
 import type { RuleCall } from "./service.ts";
 import { STARTED_TITLE } from "./summary.ts";
 
@@ -199,7 +196,7 @@ export async function startChats(
         content: checkNote(change, on),
       });
       const text = startMessage(rule.message ?? defaultStartMessage(on), change);
-      const row = await ctx.agent.addUserMessage(conv, text);
+      const row = await ctx.agent.addUserMessage(conv, text, { dispatch: true });
       if (!row) continue;
       await used(
         {
@@ -229,23 +226,6 @@ export async function startChats(
           conversationId: conv.id,
         },
       );
-      const runs = await ctx.events.emit({
-        type: SLING_EVENTS.chatMessage,
-        workspaceId: change.workspaceId,
-        payload: {
-          conversation: conversationObject(conv),
-          key: conversationKey(conv),
-          message: text,
-          messageId: row.id,
-        },
-        dedupeKey: row.id,
-      });
-      if (runs.length === 0) {
-        await ctx.agent.addMessage(conv, "assistant", {
-          role: "assistant",
-          content: NO_CHAT_WORKFLOW,
-        });
-      }
     } catch (err) {
       ctx.log.error({ err, ruleId: rule.id, checkId: change.check.id }, "start rule failed");
     }

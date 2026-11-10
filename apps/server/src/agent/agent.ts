@@ -25,7 +25,7 @@ import { toSourceView } from "../sources/views.ts";
 import { currentSteps, type SettleReason } from "../tasks/service.ts";
 import { workspaceTimeZone } from "../timezone.ts";
 import { taskView, taskWhere, toConversationView } from "../views.ts";
-import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
+import { chatDelivery, conversationKey, conversationObject } from "../workflows/sling-events.ts";
 import { appTools } from "./app-tools.ts";
 import { NoChatMachine } from "./cli-chat.ts";
 import { deployOutcome, stepLine } from "./deploy-update.ts";
@@ -245,26 +245,7 @@ export class Agent {
         .where(eq(schema.conversations.id, conv.id))
         .returning();
       if (extra.dispatch) {
-        await tx.insert(schema.deliveries).values({
-          id: row.id,
-          kind: "chat",
-          payload: {
-            conversationId: conv.id,
-            messageId: row.id,
-            fallbackId: newId("msg"),
-            event: {
-              type: SLING_EVENTS.chatMessage,
-              workspaceId: conv.workspaceId,
-              payload: {
-                conversation: conversationObject(conv),
-                key: conversationKey(conv),
-                message: content.content,
-                messageId: row.id,
-              },
-              dedupeKey: row.id,
-            },
-          },
-        });
+        await tx.insert(schema.deliveries).values(chatDelivery(conv, row.id, content.content));
       }
       return { row, attached, updated };
     });

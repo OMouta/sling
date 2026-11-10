@@ -1,6 +1,5 @@
 import { newId } from "@sling/core";
 import { schema } from "@sling/db";
-import { SLING_EVENTS } from "@sling/workflow";
 import type { ModelMessage } from "ai";
 import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -9,10 +8,9 @@ import { z } from "zod";
 import { textOf } from "../agent/history.ts";
 import type { AppContext } from "../context.ts";
 import { actorOf, requireActor } from "../http/session.ts";
-import { conversationKey, conversationObject } from "../workflows/sling-events.ts";
+import { chatDelivery } from "../workflows/sling-events.ts";
 import { lastMessageAt, messageViews } from "./messages.ts";
 import { latestExchange, replaceable } from "./replace.ts";
-import { NO_CHAT_WORKFLOW } from "./routes.ts";
 
 type Conversation = typeof schema.conversations.$inferSelect;
 type MessageRow = typeof schema.messages.$inferSelect;
@@ -79,30 +77,14 @@ export async function replaceRoutes(app: FastifyInstance, ctx: AppContext) {
         .update(schema.conversations)
         .set({ agentSession: null, lastMessageAt: lastMessageAt(conv.id) })
         .where(eq(schema.conversations.id, conv.id));
+      // The message's own ID already started a run once.
+      await tx.insert(schema.deliveries).values(chatDelivery(conv, user.id, text, newId("rpl")));
     });
     if (ids.length) {
       ctx.hub.publish(conv.workspaceId, {
         type: "message.removed",
         conversationId: conv.id,
         messageIds: ids,
-      });
-    }
-    const runs = await ctx.events.emit({
-      type: SLING_EVENTS.chatMessage,
-      workspaceId: conv.workspaceId,
-      payload: {
-        conversation: conversationObject(conv),
-        key: conversationKey(conv),
-        message: text,
-        messageId: user.id,
-      },
-      // The message's own ID already started a run once.
-      dedupeKey: newId("rpl"),
-    });
-    if (runs.length === 0) {
-      await ctx.agent.addMessage(conv, "assistant", {
-        role: "assistant",
-        content: NO_CHAT_WORKFLOW,
       });
     }
   }
