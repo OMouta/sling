@@ -1,3 +1,11 @@
+import {
+  CONVERSATION_FILTERS,
+  type ConversationFilter,
+  HARNESSES,
+  type Harness,
+  TASK_VIEWS,
+  type TaskListView,
+} from "@sling/core";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   createRootRouteWithContext,
@@ -8,6 +16,7 @@ import {
   type RouterHistory,
   redirect,
 } from "@tanstack/react-router";
+import { PAGE_SCROLLER } from "./components/Page.tsx";
 import { AppLayout } from "./components/Shell.tsx";
 import { returnPath } from "./lib/returnTo.ts";
 import { ApprovalsPage } from "./pages/Approvals.tsx";
@@ -19,6 +28,16 @@ import { SetupPage } from "./pages/Setup.tsx";
 import { TaskPage } from "./pages/Task.tsx";
 import { TasksPage } from "./pages/Tasks.tsx";
 import { WorkflowsPage } from "./pages/Workflows.tsx";
+
+/** A search value from a fixed list, other than the one the page shows by default. */
+function oneOf<T extends string>(values: readonly T[], value: unknown, fallback?: T): value is T {
+  return typeof value === "string" && value !== fallback && values.includes(value as T);
+}
+
+export interface ChatsSearch {
+  q?: string;
+  filter?: ConversationFilter;
+}
 
 const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   component: Outlet,
@@ -51,9 +70,11 @@ export const chatRoute = createRoute({
 export const chatsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/chats",
-  // `q` searches names and messages.
-  validateSearch: (search: Record<string, unknown>): { q?: string } =>
-    typeof search.q === "string" && search.q.trim() ? { q: search.q } : {},
+  // `q` searches names and messages; `filter` is the tab.
+  validateSearch: (search: Record<string, unknown>): ChatsSearch => ({
+    ...(typeof search.q === "string" && search.q.trim() ? { q: search.q } : {}),
+    ...(oneOf(CONVERSATION_FILTERS, search.filter, "all") ? { filter: search.filter } : {}),
+  }),
   component: ChatsPage,
 });
 export const machinesRoute = createRoute({
@@ -100,9 +121,19 @@ const settingsRoute = createRoute({
   path: "/settings",
   component: lazyRouteComponent(() => import("./pages/Settings.tsx"), "SettingsPage"),
 });
-const tasksRoute = createRoute({
+export interface TasksSearch {
+  view?: TaskListView;
+  agent?: Harness;
+  where?: "machine" | "sandbox";
+}
+export const tasksRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/tasks",
+  validateSearch: (search: Record<string, unknown>): TasksSearch => ({
+    ...(oneOf(TASK_VIEWS, search.view, "all") ? { view: search.view } : {}),
+    ...(oneOf(HARNESSES, search.agent) ? { agent: search.agent } : {}),
+    ...(oneOf(["machine", "sandbox"] as const, search.where) ? { where: search.where } : {}),
+  }),
   component: TasksPage,
 });
 export const taskRoute = createRoute({
@@ -111,9 +142,11 @@ export const taskRoute = createRoute({
   component: TaskPage,
 });
 
-const workflowsRoute = createRoute({
+export const workflowsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/workflows",
+  validateSearch: (search: Record<string, unknown>): { tab?: "on" | "off" } =>
+    oneOf(["on", "off"] as const, search.tab) ? { tab: search.tab } : {},
   component: WorkflowsPage,
 });
 
@@ -204,6 +237,9 @@ export function createAppRouter(history?: RouterHistory) {
     routeTree,
     context: { queryClient: undefined as unknown as QueryClient },
     defaultPreload: "intent",
+    // Back returns a page to where it was scrolled. A chat keeps its own place.
+    scrollRestoration: ({ location }) => !location.pathname.startsWith("/c/"),
+    scrollToTopSelectors: [`[data-scroll-restoration-id="${PAGE_SCROLLER}"]`],
     ...(history ? { history } : {}),
   });
 }

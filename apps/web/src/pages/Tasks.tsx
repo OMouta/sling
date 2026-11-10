@@ -7,7 +7,7 @@ import {
 } from "@sling/core";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Bot, Box, CircleDot, ListChecks } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
 import { TaskStateBadge } from "../components/TaskCard.tsx";
@@ -29,12 +29,32 @@ import { useLoadMore, useStickyCounts } from "../lib/pages.ts";
 import { environmentSummary } from "../lib/taskEnvironment.ts";
 import { useTaskList } from "../lib/tasks.ts";
 import { useNow } from "../lib/useNow.ts";
+import { tasksRoute } from "../router.tsx";
+
+type Where = "any" | "machine" | "sandbox";
 
 export function TasksPage() {
   const navigate = useNavigate();
-  const [view, setView] = useState<TaskListView>("all");
-  const [agent, setAgent] = useState<Harness | "any">("any");
-  const [where, setWhere] = useState<"any" | "machine" | "sandbox">("any");
+  // In the URL, so Back from a task returns to the same list.
+  const search = tasksRoute.useSearch();
+  const view: TaskListView = search.view ?? "all";
+  const agent: Harness | "any" = search.agent ?? "any";
+  const where: Where = search.where ?? "any";
+  const set = (patch: { view?: TaskListView; agent?: Harness | "any"; where?: Where }) => {
+    const next = { view, agent, where, ...patch };
+    void navigate({
+      to: "/tasks",
+      search: {
+        ...(next.view !== "all" ? { view: next.view } : {}),
+        ...(next.agent !== "any" ? { agent: next.agent } : {}),
+        ...(next.where !== "any" ? { where: next.where } : {}),
+      },
+      replace: true,
+    });
+  };
+  const setView = (v: TaskListView) => set({ view: v });
+  const setAgent = (v: Harness | "any") => set({ agent: v });
+  const setWhere = (v: Where) => set({ where: v });
   const tasks = useTaskList({ view, harness: agent, environment: where });
   const pages = tasks.data?.pages;
   const rows = useMemo(() => pages?.flatMap((p) => p.items) ?? [], [pages]);

@@ -55,6 +55,9 @@ export const ShellContext = createContext<{
   setFocus: () => {},
 });
 
+/** Marks each page's scrolling body, so Back returns to where it was. */
+export const PAGE_SCROLLER = "page";
+
 /** Hides the sidebar while the calling page is open. */
 export function useFocusMode(on = true) {
   const { setFocus } = useContext(ShellContext);
@@ -105,6 +108,7 @@ export function Page({
       {toolbar}
       <div
         className={cx("min-h-0 flex-1 overflow-y-auto", bodyClassName)}
+        data-scroll-restoration-id={PAGE_SCROLLER}
         {...(tabs ? { role: "tabpanel", id: panel, "aria-labelledby": `${panel}-tab` } : {})}
       >
         {children}

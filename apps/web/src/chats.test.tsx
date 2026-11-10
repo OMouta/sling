@@ -183,6 +183,25 @@ describe("chats", () => {
     expect(requests.some((r) => r.search === "?filter=all&q=two+files")).toBe(true);
   });
 
+  it("keeps the Chats tab and search in the URL, so Back returns to them", async () => {
+    const router = open("/chats");
+    const main = within(await screen.findByRole("main"));
+    fireEvent.click(await main.findByRole("tab", { name: /Waiting for you/ }));
+    fireEvent.change(main.getByLabelText("Search chats"), { target: { value: "footer" } });
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ filter: "waiting", q: "footer" }),
+    );
+    await router.navigate({ to: "/c/$id", params: { id: "cnv_2" } });
+    router.history.back();
+    const back = within(await screen.findByRole("main"));
+    await waitFor(() =>
+      expect(back.getByRole("tab", { name: /Waiting for you/ }).getAttribute("aria-selected")).toBe(
+        "true",
+      ),
+    );
+    expect((back.getByLabelText("Search chats") as HTMLInputElement).value).toBe("footer");
+  });
+
   it("archives a chat into the Archived tab, and restores it from there", async () => {
     open("/chats");
     const main = within(await screen.findByRole("main"));

@@ -39,7 +39,14 @@ export function ChatsPage() {
   const search = chatsRoute.useSearch();
   const [text, setText] = useState(search.q ?? "");
   const [q, setQ] = useState(search.q ?? "");
-  const [filter, setFilter] = useState<ConversationFilter>("all");
+  // In the URL, so Back from a chat returns to the same tab.
+  const filter: ConversationFilter = search.filter ?? "all";
+  const setFilter = (f: ConversationFilter) =>
+    void navigate({
+      to: "/chats",
+      search: (prev) => ({ q: prev.q, ...(f === "all" ? {} : { filter: f }) }),
+      replace: true,
+    });
   const { menu, dialog } = useConversationMenu();
 
   // Search once typing pauses, and keep it in the URL.
@@ -48,7 +55,7 @@ export function ChatsPage() {
       setQ(text.trim());
       void navigate({
         to: "/chats",
-        search: text.trim() ? { q: text.trim() } : {},
+        search: (prev) => ({ filter: prev.filter, ...(text.trim() ? { q: text.trim() } : {}) }),
         replace: true,
       });
     }, 250);

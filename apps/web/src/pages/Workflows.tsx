@@ -23,6 +23,7 @@ import { NewWorkflowDialog } from "../components/workflow/NewWorkflowDialog.tsx"
 import { api } from "../lib/api.ts";
 import { ago } from "../lib/format.ts";
 import { qk, useCatalog, useWorkflows, workflowApi, workflowIdOf } from "../lib/workflowApi.ts";
+import { workflowsRoute } from "../router.tsx";
 
 type Created = WorkflowDetailView | WorkflowSummaryView | { workflow: { id: string } };
 
@@ -49,7 +50,10 @@ export function WorkflowsPage() {
     },
   });
 
-  const [tab, setTab] = useState<"all" | "on" | "off">("all");
+  // In the URL, so Back from a workflow returns to the same tab.
+  const tab = workflowsRoute.useSearch().tab ?? "all";
+  const setTab = (t: "all" | "on" | "off") =>
+    void navigate({ to: "/workflows", search: t === "all" ? {} : { tab: t }, replace: true });
   const all = [...(workflows.data ?? [])].sort((a, b) => a.name.localeCompare(b.name));
   const enabled = all.filter((w) => w.enabled).length;
   const sorted = all.filter((w) => tab === "all" || (tab === "on") === w.enabled);
