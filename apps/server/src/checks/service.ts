@@ -247,6 +247,8 @@ export class Checks implements CheckService {
   readonly #ctx: AppContext;
   readonly #slots = new Slots(MAX_RUNNING);
   readonly #inflight = new Set<Promise<unknown>>();
+  /** Checks a tick is running now, so a later tick leaves them be. */
+  readonly #running = new Set<string>();
   readonly actions: ActionChecks;
   /** How a reply check searches a mailbox. Tests replace it. */
   mailSearch: MailSearch;
@@ -290,7 +292,8 @@ export class Checks implements CheckService {
     await boss.schedule(DUE_QUEUE, "* * * * *", { half: false });
     await boss.work<{ half?: boolean }>(DUE_QUEUE, { pollingIntervalSeconds: 2 }, async (jobs) => {
       for (const job of jobs) {
-        await this.tick();
+        // A slow check mustn't hold up the next tick and every check due in it.
+        this.#background("check tick", () => this.tick());
         if (!job.data?.half) {
           await boss.send(DUE_QUEUE, { half: true }, { startAfter: 30 });
         }
@@ -822,15 +825,23 @@ export class Checks implements CheckService {
   }
 
   /**
-   * Runs the checks that are due, at most eight at once, and resolves when
-   * they've finished. Each is claimed first, by moving its next run on, so
-   * two ticks never run the same check.
+   * Runs the checks that are due, at most eight at once across ticks, and
+   * resolves when they've finished. Each is claimed first, by moving its next
+   * run on, and one still running from an earlier tick is left out, so two
+   * ticks never run the same check.
    */
   async tick(): Promise<number> {
+    const running = [...this.#running];
     const due = this.#db
       .select({ id: schema.checks.id })
       .from(schema.checks)
-      .where(and(eq(schema.checks.enabled, true), lte(schema.checks.nextRunAt, new Date())))
+      .where(
+        and(
+          eq(schema.checks.enabled, true),
+          lte(schema.checks.nextRunAt, new Date()),
+          running.length ? notInArray(schema.checks.id, running) : undefined,
+        ),
+      )
       .orderBy(schema.checks.nextRunAt)
       .limit(TICK_BATCH)
       .for("update", { skipLocked: true });
@@ -842,13 +853,13 @@ export class Checks implements CheckService {
       })
       .where(inArray(schema.checks.id, due))
       .returning();
+    for (const row of claimed) this.#running.add(row.id);
     await Promise.all(
       claimed.map((row) =>
-        this.#slots.run(() =>
-          this.execute(row).catch((err) =>
-            this.#ctx.log.error({ err, checkId: row.id }, "check failed to run"),
-          ),
-        ),
+        this.#slots
+          .run(() => this.execute(row))
+          .catch((err) => this.#ctx.log.error({ err, checkId: row.id }, "check failed to run"))
+          .finally(() => this.#running.delete(row.id)),
       ),
     );
     return claimed.length;

@@ -660,6 +660,52 @@ describe("the scheduler", () => {
       for (const id of ids) await api("DELETE", `/api/checks/${id}`);
     }
   });
+  it("doesn't let a slow check hold up the next tick", async () => {
+    const site = svc().kinds.site;
+    const instant: RunOutcome = {
+      passed: true,
+      counted: true,
+      message: "Answered 200 in 1 ms",
+      ms: 1,
+      detail: { kind: "site", checks: [], versionSeen: null },
+    };
+    const make = (name: string) =>
+      api<CheckView>("POST", "/api/checks", {
+        name,
+        config: { kind: "site", checks: [{ url: `${siteUrl}/ok` }], versionUrl: null },
+        notify: false,
+      });
+    const slow = await make("Slow");
+    const quick = await make("Quick");
+    let release = () => {};
+    const gate = new Promise<void>((ok) => {
+      release = ok;
+    });
+    const runs: string[] = [];
+    try {
+      svc().kinds.site = async (row) => {
+        runs.push(row.id);
+        if (row.id === slow.id) await gate;
+        return instant;
+      };
+      const first = server.ctx.checks.tick();
+      await until("the quick check's first run", async () =>
+        (await check(quick.id))?.lastResult ? true : null,
+      );
+      await due(slow.id);
+      await due(quick.id);
+      await server.ctx.checks.tick();
+      expect(runs.filter((id) => id === quick.id)).toHaveLength(2);
+      expect(runs.filter((id) => id === slow.id)).toHaveLength(1);
+      release();
+      await first;
+    } finally {
+      release();
+      svc().kinds.site = site;
+      await api("DELETE", `/api/checks/${slow.id}`);
+      await api("DELETE", `/api/checks/${quick.id}`);
+    }
+  });
 });
 
 // ---------------------------------------------------------------- actions from chat
