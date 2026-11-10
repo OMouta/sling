@@ -151,7 +151,9 @@ export class RunnerBuilds {
     }
     if (res.status === 404) {
       throw new BuildError(
-        `https://github.com/${this.#repo}/releases/tag/${tag} has no sling-runner build for ${target}. It may not be published yet.`,
+        `https://github.com/${this.#repo}/releases/tag/${tag} has no sling-runner build for ${target}. It may not be published yet. ` +
+          `To build it from source, install Rust and run: cargo install --locked --git https://github.com/${this.#repo} sling-runner. ` +
+          "Then run `sling-runner pair <Sling's URL> <code>` and `sling-runner service install`.",
         404,
       );
     }

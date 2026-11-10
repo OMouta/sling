@@ -70,6 +70,11 @@ describe("sling-runner builds", () => {
         "https://github.com/acme/sling/releases/tag/v0.1.0 has no sling-runner build for x86_64-pc-windows-msvc",
       ),
     });
+    await expect(b.get("sling-runner-x86_64-pc-windows-msvc.zip")).rejects.toMatchObject({
+      message: expect.stringContaining(
+        "cargo install --locked --git https://github.com/acme/sling sling-runner",
+      ),
+    });
   });
 
   it("says when GitHub can't be reached", async () => {

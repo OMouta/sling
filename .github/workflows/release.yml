@@ -9,7 +9,21 @@ permissions:
   packages: write
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Tag matches the Cargo version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "sling-runner") | .version')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag is $GITHUB_REF_NAME, but Cargo.toml says $version. Servers hand out the build named after Cargo.toml's version, so bump it and tag v$version." >&2
+            exit 1
+          fi
+
   runner:
+    needs: version
     strategy:
       fail-fast: false
       matrix:
@@ -69,6 +83,7 @@ jobs:
             scripts/install.ps1
 
   image:
+    needs: publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -90,6 +105,7 @@ jobs:
             ghcr.io/${{ github.repository }}:latest
 
   sandbox-image:
+    needs: publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
