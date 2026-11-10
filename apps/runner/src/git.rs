@@ -47,6 +47,9 @@ pub async fn remote_url(repo: &Path) -> Option<String> {
     git_ok(repo, &["remote", "get-url", "origin"]).await.ok()
 }
 
+/// The branch Sling merges into and branches from. Never just the branch
+/// that happens to be checked out: when nothing names the default, it's
+/// `main`, so a merge refuses rather than landing on a feature branch.
 pub async fn default_branch(repo: &Path) -> String {
     if let Ok(r) = git_ok(
         repo,
@@ -57,18 +60,44 @@ pub async fn default_branch(repo: &Path) -> String {
     {
         return b.to_string();
     }
-    for candidate in ["main", "master"] {
-        if git(repo, &["rev-parse", "--verify", "--quiet", candidate])
-            .await
-            .map(|o| o.ok())
-            .unwrap_or(false)
-        {
-            return candidate.to_string();
+    for prefix in ["refs/remotes/origin/", "refs/heads/"] {
+        for candidate in ["main", "master"] {
+            if ref_exists(repo, &format!("{prefix}{candidate}")).await {
+                return candidate.to_string();
+            }
         }
     }
-    git_ok(repo, &["rev-parse", "--abbrev-ref", "HEAD"])
+    if let Ok(b) = git_ok(repo, &["config", "--get", "init.defaultBranch"]).await
+        && !b.is_empty()
+        && ref_exists(repo, &format!("refs/heads/{b}")).await
+    {
+        return b;
+    }
+    for (pattern, prefix) in [("refs/remotes/origin/", "origin/"), ("refs/heads/", "")] {
+        let Ok(list) = git_ok(
+            repo,
+            &["for-each-ref", "--format=%(refname:short)", pattern],
+        )
         .await
-        .unwrap_or_else(|_| "main".into())
+        else {
+            continue;
+        };
+        let names: Vec<&str> = list
+            .lines()
+            .filter_map(|l| l.strip_prefix(prefix))
+            .filter(|l| !l.is_empty() && *l != "HEAD")
+            .collect();
+        if let [only] = names[..] {
+            return only.to_string();
+        }
+    }
+    "main".into()
+}
+
+async fn ref_exists(repo: &Path, name: &str) -> bool {
+    git(repo, &["rev-parse", "--verify", "--quiet", name])
+        .await
+        .is_ok_and(|o| o.ok())
 }
 
 pub async fn fetch(repo: &Path) -> Result<()> {
@@ -135,17 +164,7 @@ pub async fn worktree_add(repo: &Path, path: &Path, branch: &str, base: &str) ->
 }
 
 async fn branch_exists(repo: &Path, branch: &str) -> bool {
-    git(
-        repo,
-        &[
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            &format!("refs/heads/{branch}"),
-        ],
-    )
-    .await
-    .is_ok_and(|o| o.ok())
+    ref_exists(repo, &format!("refs/heads/{branch}")).await
 }
 
 pub async fn worktree_remove(repo: &Path, path: &Path) -> Result<()> {
@@ -552,6 +571,36 @@ mod tests {
         sh(&repo, &["branch", "sling/t2", &base]);
         push(&repo, "sling/t2").await.unwrap();
         assert_eq!(sh(&remote, &["rev-parse", "refs/heads/sling/t2"]), base);
+    }
+
+    #[tokio::test]
+    async fn the_default_branch_is_never_just_the_checked_out_one() {
+        let (dir, repo, _) = repo_with_commit();
+        sh(&repo, &["branch", "-m", "trunk"]);
+        sh(&repo, &["config", "init.defaultBranch", "nope"]);
+        assert_eq!(default_branch(&repo).await, "trunk", "the only branch");
+
+        sh(&repo, &["checkout", "-qb", "feature"]);
+        assert_eq!(default_branch(&repo).await, "main", "no way to tell");
+        sh(&repo, &["config", "init.defaultBranch", "trunk"]);
+        assert_eq!(default_branch(&repo).await, "trunk");
+        sh(&repo, &["config", "--unset", "init.defaultBranch"]);
+
+        // The remote's only branch, when origin/HEAD isn't set.
+        let remote = dir.path().join("remote.git");
+        sh(&repo, &["init", "-q", "--bare", remote.to_str().unwrap()]);
+        sh(
+            &repo,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        );
+        sh(&repo, &["push", "-q", "origin", "trunk"]);
+        sh(&repo, &["fetch", "-q", "origin"]);
+        assert_eq!(default_branch(&repo).await, "trunk");
+
+        sh(&repo, &["branch", "master"]);
+        assert_eq!(default_branch(&repo).await, "master");
+        sh(&repo, &["remote", "set-head", "origin", "trunk"]);
+        assert_eq!(default_branch(&repo).await, "trunk");
     }
 
     #[tokio::test]
