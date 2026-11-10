@@ -194,3 +194,48 @@ it("moves a step whose approval was decided without it, and decides a step with 
   expect(await stateOf(waiting.actionId)).toBe("ready");
   expect(await server.ctx.tasks.decide(workspaceId, waiting.approvalId, userId, true)).toBe(false);
 });
+
+it("stops a task the machine still runs after it ended here", async () => {
+  const fake = await addRunner("laptop");
+  const ended = await addTask({
+    state: "interrupted",
+    runnerId: fake.runnerId,
+    finishedAt: new Date(),
+    error: "The machine stayed offline for more than 30 minutes.",
+  });
+  const running = await addTask({ state: "running", runnerId: fake.runnerId });
+  const sends = recordSends();
+  try {
+    await server.ctx.tasks.ready(sessionOf(fake.runnerId), {
+      heldTasks: [
+        { taskId: ended, running: true },
+        { taskId: running, running: true },
+      ],
+    });
+  } finally {
+    sends.restore();
+  }
+  const cancels = sends.sent.flatMap((s) =>
+    s.envelope.body.case === "taskCancel" ? [s.envelope.body.value.taskId] : [],
+  );
+  expect(cancels).toEqual([ended]);
+  expect((await taskRow(running))?.state).toBe("running");
+});
+
+it("keeps a cancel made while the machine was away and never got the task", async () => {
+  const fake = await addRunner("desktop");
+  const id = await addTask({
+    state: "dispatched",
+    runnerId: fake.runnerId,
+    cancelRequestedAt: new Date(),
+    runnerOfflineSince: new Date(),
+  });
+  await fake.connect();
+  const row = await until("the task to be cancelled", async () => {
+    const t = await taskRow(id);
+    return t?.state === "cancelled" && t;
+  });
+  expect(row.runnerOfflineSince).toBeNull();
+  expect(fake.assigned.map((a) => a.taskId)).not.toContain(id);
+  fake.close();
+});

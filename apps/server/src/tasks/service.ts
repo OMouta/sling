@@ -459,30 +459,22 @@ export class TaskService implements GatewayHandlers {
       .from(schema.tasks)
       .where(and(eq(schema.tasks.runnerId, session.runnerId), inArray(schema.tasks.state, ACTIVE)));
     for (const t of active) {
-      const h = held.get(t.id);
-      if (!h) {
-        if (t.state === "dispatched") {
-          // It never reached the Runner. Send it again.
-          this.#send(session.runnerId, this.#assignEnvelope(t));
-        } else {
-          await this.#setState(t.id, t.state, "interrupted", {
-            error: "The machine came back without this task. It was probably lost in a crash.",
-          });
-          await this.settle(t.id, "finished");
-        }
-        continue;
+      try {
+        await this.#resume(session, t, held.get(t.id));
+      } catch (err) {
+        this.#ctx.log.error({ err, taskId: t.id }, "resuming a task after reconnect failed");
       }
-      await this.#db
-        .update(schema.tasks)
-        .set({ runnerOfflineSince: null })
-        .where(eq(schema.tasks.id, t.id));
-      if (t.cancelRequestedAt && h.running) {
+    }
+    // The machine still runs tasks that ended here, as when one was marked
+    // interrupted while it was away. Their results can't be taken any more.
+    const activeIds = new Set(active.map((t) => t.id));
+    for (const h of held.values()) {
+      if (h.running && !activeIds.has(h.taskId)) {
         this.#send(
           session.runnerId,
-          create(EnvelopeSchema, { body: { case: "taskCancel", value: { taskId: t.id } } }),
+          create(EnvelopeSchema, { body: { case: "taskCancel", value: { taskId: h.taskId } } }),
         );
       }
-      await this.publish(t.id);
     }
 
     // Actions that were in flight when the connection dropped get sent again.
@@ -510,6 +502,53 @@ export class TaskService implements GatewayHandlers {
     }
     await this.dispatchQueued(session.runnerId);
     await this.#ctx.deploys.machineConnected(session.runnerId);
+  }
+
+  /** Picks up an active task of a machine that just connected. */
+  async #resume(
+    session: RunnerSession,
+    t: TaskRow,
+    h: { taskId: string; running: boolean } | undefined,
+  ): Promise<void> {
+    if (!h) {
+      if (t.state === "dispatched" && t.cancelRequestedAt) {
+        // Cancelled while the machine was away, and it never got the task.
+        if (
+          !(await this.#setState(t.id, "dispatched", "cancelled", {
+            error: "Cancelled before it started.",
+          }))
+        ) {
+          return;
+        }
+        await this.#expireTaskApprovals(t.id);
+        await this.settle(t.id, "finished");
+      } else if (t.state === "dispatched") {
+        // It never reached the Runner. Send it again.
+        this.#send(session.runnerId, this.#assignEnvelope(t));
+        await this.#db
+          .update(schema.tasks)
+          .set({ runnerOfflineSince: null })
+          .where(eq(schema.tasks.id, t.id));
+        await this.publish(t.id);
+      } else {
+        await this.#setState(t.id, t.state, "interrupted", {
+          error: "The machine came back without this task. It was probably lost in a crash.",
+        });
+        await this.settle(t.id, "finished");
+      }
+      return;
+    }
+    await this.#db
+      .update(schema.tasks)
+      .set({ runnerOfflineSince: null })
+      .where(eq(schema.tasks.id, t.id));
+    if (t.cancelRequestedAt && h.running) {
+      this.#send(
+        session.runnerId,
+        create(EnvelopeSchema, { body: { case: "taskCancel", value: { taskId: t.id } } }),
+      );
+    }
+    await this.publish(t.id);
   }
 
   async inventoryUpdated(session: RunnerSession): Promise<void> {
