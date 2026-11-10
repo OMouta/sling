@@ -375,11 +375,13 @@ describe("the approval list", () => {
       });
     }
     const base = Date.now() + 3_600_000;
+    // IDs order by the millisecond they were made in, so each gets its own.
+    let made = Date.now();
     const approval = async (
       minutes: number,
       over: Partial<typeof schema.approvals.$inferInsert>,
     ) => {
-      const id = newId("apr");
+      const id = newId("apr", made++);
       await server.ctx.db.insert(schema.approvals).values({
         id,
         ...owner,
