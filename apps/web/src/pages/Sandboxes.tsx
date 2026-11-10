@@ -1,6 +1,6 @@
 import type { SandboxListView, SandboxView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Box, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Page, StatsBar } from "../components/Page.tsx";
@@ -21,14 +21,24 @@ import {
   Tr,
 } from "../components/ui.tsx";
 import { ago, duration } from "../lib/format.ts";
-import { isLiveSandbox, minutes, money, sandboxRunMs } from "../lib/sandbox.ts";
+import {
+  isLiveSandbox,
+  minutes,
+  money,
+  providerInstallations,
+  sandboxRunMs,
+} from "../lib/sandbox.ts";
 import { isSandboxView, sandboxApi, useSandboxes } from "../lib/sandboxApi.ts";
 import { useNow } from "../lib/useNow.ts";
-import { qk, useConnectors } from "../lib/workflowApi.ts";
+import { qk, useConnectors, useInstallations } from "../lib/workflowApi.ts";
 
 export function SandboxesPage() {
   const list = useSandboxes();
   const connectors = useConnectors();
+  const installations = useInstallations();
+  const hasProvider =
+    providerInstallations(installations.data ?? [], connectors.data ?? []).length > 0;
+  const navigate = useNavigate();
   const sandboxes = list.data?.sandboxes ?? [];
   const now = useNow(
     1000,
@@ -66,59 +76,61 @@ export function SandboxesPage() {
         )
       }
     >
-      {/* A column, so an empty list can center itself under the usage. */}
-      <div className="flex min-h-full flex-col">
-        <div className="px-5 pt-5 pb-5">
-          {list.isPending && <Skeleton className="h-24 w-full rounded-xl" />}
-          <ErrorText error={list.error} />
-          {list.data && <Usage usage={list.data.usage} />}
+      {list.data && sandboxes.length === 0 ? (
+        <Empty
+          fill
+          icon={Box}
+          title="No sandboxes yet"
+          action={
+            !hasProvider &&
+            installations.data && (
+              <Button variant="primary" onClick={() => void navigate({ to: "/connectors" })}>
+                Add a provider
+              </Button>
+            )
+          }
+        />
+      ) : (
+        // A column, so an empty tab can center itself under the usage.
+        <div className="flex min-h-full flex-col">
+          <div className="px-5 pt-5 pb-5">
+            {list.isPending && <Skeleton className="h-24 w-full rounded-xl" />}
+            <ErrorText error={list.error} />
+            {list.data && <Usage usage={list.data.usage} />}
+          </div>
+          {list.data && rows.length === 0 && (
+            <Empty icon={Box} title="Nothing live" className="flex-1 justify-center pb-[12vh]" />
+          )}
+          {rows.length > 0 && (
+            <Table className="border-t border-border">
+              <thead>
+                <tr>
+                  <Th>Task</Th>
+                  <Th>State</Th>
+                  <Th>Provider</Th>
+                  <Th>Image</Th>
+                  <Th align="right">Used</Th>
+                  <Th align="right">Time</Th>
+                  <Th align="right">Requested</Th>
+                  <Th>
+                    <span className="sr-only">Actions</span>
+                  </Th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((x) => (
+                  <SandboxRow
+                    key={x.id}
+                    sandbox={x}
+                    connectorName={connectorName.get(x.connectorId) ?? x.connectorId}
+                    now={now}
+                  />
+                ))}
+              </tbody>
+            </Table>
+          )}
         </div>
-        {list.data && rows.length === 0 && (
-          <Empty
-            icon={Box}
-            title={sandboxes.length === 0 ? "No sandboxes yet" : "Nothing live"}
-            className="flex-1 justify-center pb-[12vh]"
-          >
-            {sandboxes.length === 0 && (
-              <>
-                Add a provider under{" "}
-                <Link to="/connectors" className="text-accent-text hover:underline">
-                  Connectors
-                </Link>
-                .
-              </>
-            )}
-          </Empty>
-        )}
-        {rows.length > 0 && (
-          <Table className="border-t border-border">
-            <thead>
-              <tr>
-                <Th>Task</Th>
-                <Th>State</Th>
-                <Th>Provider</Th>
-                <Th>Image</Th>
-                <Th align="right">Used</Th>
-                <Th align="right">Time</Th>
-                <Th align="right">Requested</Th>
-                <Th>
-                  <span className="sr-only">Actions</span>
-                </Th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((x) => (
-                <SandboxRow
-                  key={x.id}
-                  sandbox={x}
-                  connectorName={connectorName.get(x.connectorId) ?? x.connectorId}
-                  now={now}
-                />
-              ))}
-            </tbody>
-          </Table>
-        )}
-      </div>
+      )}
     </Page>
   );
 }

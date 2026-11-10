@@ -57,32 +57,34 @@ export function MemoryPage() {
         ) : undefined
       }
       toolbar={
-        <Toolbar
-          actions={
-            <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
-              Add
-            </Button>
-          }
-        >
-          {all.length > 0 && (
-            <span className="relative block w-64 max-sm:w-full max-sm:flex-1">
-              <Search
-                aria-hidden="true"
-                size={14}
-                className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-subtle"
-              />
-              <Input
-                type="search"
-                aria-label="Search memories"
-                placeholder="Search"
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => e.key === "Escape" && setQ("")}
-                className="pl-8"
-              />
-            </span>
-          )}
-        </Toolbar>
+        list.data && all.length === 0 ? undefined : (
+          <Toolbar
+            actions={
+              <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
+                Add
+              </Button>
+            }
+          >
+            {all.length > 0 && (
+              <span className="relative block w-64 max-sm:w-full max-sm:flex-1">
+                <Search
+                  aria-hidden="true"
+                  size={14}
+                  className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-subtle"
+                />
+                <Input
+                  type="search"
+                  aria-label="Search memories"
+                  placeholder="Search"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  onKeyDown={(e) => e.key === "Escape" && setQ("")}
+                  className="pl-8"
+                />
+              </span>
+            )}
+          </Toolbar>
+        )
       }
     >
       <ErrorText error={list.error} />
@@ -93,7 +95,16 @@ export function MemoryPage() {
           ))}
         </div>
       ) : all.length === 0 && !adding ? (
-        <Empty fill icon={Brain} title="Nothing remembered yet" />
+        <Empty
+          fill
+          icon={Brain}
+          title="Nothing remembered yet"
+          action={
+            <Button variant="primary" icon={Plus} onClick={() => setAdding(true)}>
+              Add
+            </Button>
+          }
+        />
       ) : (
         <div className="px-5 pt-1 pb-6">
           <Card>

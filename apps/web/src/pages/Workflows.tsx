@@ -92,9 +92,11 @@ export function WorkflowsPage() {
               >
                 Import
               </Button>
-              <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
-                New workflow
-              </Button>
+              {workflows.data?.length !== 0 && (
+                <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+                  New workflow
+                </Button>
+              )}
             </>
           }
         >
@@ -121,7 +123,18 @@ export function WorkflowsPage() {
         </div>
       )}
       <ErrorText error={workflows.error} />
-      {workflows.data?.length === 0 && <Empty fill icon={Workflow} title="No workflows yet" />}
+      {workflows.data?.length === 0 && (
+        <Empty
+          fill
+          icon={Workflow}
+          title="No workflows yet"
+          action={
+            <Button variant="primary" icon={Plus} onClick={() => setCreating(true)}>
+              New workflow
+            </Button>
+          }
+        />
+      )}
       {sorted.length > 0 && (
         <Table className="border-t border-border">
           <thead>
