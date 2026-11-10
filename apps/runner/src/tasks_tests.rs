@@ -752,11 +752,23 @@ async fn a_restart_stops_an_agent_left_running() {
         std::fs::copy("/bin/sleep", &bin).unwrap();
         let mut child = {
             use std::os::unix::process::CommandExt;
-            std::process::Command::new(&bin)
-                .arg("30")
-                .process_group(0)
-                .spawn()
-                .unwrap()
+            let mut tries = 0;
+            loop {
+                match std::process::Command::new(&bin)
+                    .arg("30")
+                    .process_group(0)
+                    .spawn()
+                {
+                    Ok(child) => break child,
+                    // Another test's child can still hold the fresh copy open for
+                    // writing for a moment, and Linux refuses to run it until it lets go.
+                    Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 50 => {
+                        tries += 1;
+                        std::thread::sleep(Duration::from_millis(20));
+                    }
+                    Err(e) => panic!("couldn't start the stand-in agent: {e}"),
+                }
+            }
         };
         let paths = Paths {
             config_dir: dir.path().join("home"),
