@@ -30,7 +30,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { api } from "../lib/api.ts";
 import { useTaskApprovals } from "../lib/approvals.ts";
 import {
@@ -102,7 +102,8 @@ export function TaskStateBadge({ task }: { task: TaskView }) {
   );
 }
 
-export function TaskCard({
+/** A task in a chat, on the Task page, and on Approvals. */
+export const TaskCard = memo(function TaskCard({
   task,
   compact,
   stateInHeader,
@@ -405,7 +406,7 @@ export function TaskCard({
       )}
     </Card>
   );
-}
+});
 
 type P = Record<string, unknown>;
 const str = (v: unknown) => (typeof v === "string" ? v : "");

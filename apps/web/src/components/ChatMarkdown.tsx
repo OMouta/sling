@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { siteName } from "../lib/research.ts";
@@ -39,10 +39,18 @@ const components: Components = {
  * and autolinks. Raw HTML is never rendered: it shows as text, or with
  * `skipHtml` (for documents like READMEs) it's left out.
  */
-export function ChatMarkdown({ children, skipHtml }: { children: string; skipHtml?: boolean }) {
+export const ChatMarkdown = memo(function ChatMarkdown({
+  children,
+  skipHtml,
+}: {
+  children: string;
+  skipHtml?: boolean;
+}) {
   return (
-    <Markdown remarkPlugins={[remarkGfm]} components={components} skipHtml={skipHtml}>
+    <Markdown remarkPlugins={PLUGINS} components={components} skipHtml={skipHtml}>
       {children}
     </Markdown>
   );
-}
+});
+
+const PLUGINS = [remarkGfm];

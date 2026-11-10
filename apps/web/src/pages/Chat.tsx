@@ -8,7 +8,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArchiveRestore } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AttachmentChips } from "../components/AttachmentChips.tsx";
 import {
   type ActivityContext,
@@ -226,6 +226,19 @@ export function ChatPage() {
     () => new Map<string, TaskView>((detail.data?.tasks ?? []).map((t) => [t.id, t])),
     [detail.data?.tasks],
   );
+  // Stable, so loaded messages don't render again as you type or a reply streams in.
+  const conversationMode = detail.data?.conversation.mode;
+  const activity = useMemo<ActivityContext>(
+    () => ({ conversationId: id, conversationMode: conversationMode ?? "auto", tasks }),
+    [id, conversationMode, tasks],
+  );
+  const sendFollowUp = useCallback(
+    (t: string) => {
+      following.current = true;
+      followUp.mutate(t);
+    },
+    [followUp.mutate],
+  );
 
   // Tasks the assistant started show inside its reply, where it started them.
   // The rest, such as tasks a workflow started, show by when they began.
@@ -312,11 +325,6 @@ export function ChatPage() {
     : canResearch(personality, assistant);
   const researching =
     thinking && detail.data.messages.findLast((m) => m.role === "user")?.research === true;
-  const activity: ActivityContext = {
-    conversationId: conversation.id,
-    conversationMode: conversation.mode,
-    tasks,
-  };
   const lastReplyId = detail.data.messages.findLast((m) => m.role !== "system")?.id;
   // A turn answering an @mention is that personality's.
   const mentioned = detail.data.messages.findLast((m) => m.role === "user")?.personalityId;
@@ -414,10 +422,7 @@ export function ChatPage() {
                   personality={personality}
                   personalities={personalities.data}
                   latest={!thinking && item.message.id === lastReplyId}
-                  onSend={(t) => {
-                    following.current = true;
-                    followUp.mutate(t);
-                  }}
+                  onSend={sendFollowUp}
                 />
               ),
             )}
@@ -606,7 +611,7 @@ function SystemNote({ message, tasks }: { message: MessageView; tasks: Map<strin
   );
 }
 
-function Message({
+const Message = memo(function Message({
   message,
   activity,
   tasks,
@@ -653,4 +658,4 @@ function Message({
       {latest && <FollowUps message={message} onSend={onSend} />}
     </AssistantRow>
   );
-}
+});
