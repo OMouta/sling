@@ -221,6 +221,8 @@ export class ExtensionService {
   /** Connector ID to the extension that registered it. */
   readonly #owners = new Map<string, string>();
   readonly #configHosts = new Map<string, ReadonlySet<string>>();
+  /** Hosts from configs whose connection test is running, by extension. */
+  readonly #testingHosts = new Map<string, Set<ReadonlySet<string>>>();
   readonly #staged = new Map<string, Staged>();
   #templates: Template[] = [];
   #lock: Promise<unknown> = Promise.resolve();
@@ -514,7 +516,7 @@ export class ExtensionService {
           manifest: p.manifest,
           description: p.description,
           granted: p.row.granted as ExtensionPermissions,
-          configHosts: () => this.#configHosts.get(id) ?? EMPTY_HOSTS,
+          configHosts: () => this.configHosts(id),
         });
         active = true;
       } catch (err) {
@@ -727,7 +729,37 @@ export class ExtensionService {
 
   /** The hosts from installation config an extension may reach. */
   configHosts(id: string): ReadonlySet<string> {
-    return this.#configHosts.get(id) ?? EMPTY_HOSTS;
+    const saved = this.#configHosts.get(id) ?? EMPTY_HOSTS;
+    const testing = this.#testingHosts.get(id);
+    if (!testing?.size) return saved;
+    return new Set([...saved, ...[...testing].flatMap((hosts) => [...hosts])]);
+  }
+
+  /**
+   * Lets a connector's extension reach the hosts a config names while that
+   * config's connection test runs, before it's saved. Returns the release.
+   */
+  allowTestHosts(connectorId: string, config: unknown): () => void {
+    const id = this.#owners.get(connectorId);
+    const x = id ? this.#installed.get(id) : undefined;
+    if (!id || !x || typeof config !== "object" || config === null) return () => {};
+    const hosts = new Set<string>();
+    for (const field of x.row.granted.network.configHosts) {
+      const host = hostOf((config as Record<string, unknown>)[field]);
+      if (host) hosts.add(host);
+    }
+    if (hosts.size === 0) return () => {};
+    let testing = this.#testingHosts.get(id);
+    if (!testing) {
+      testing = new Set();
+      this.#testingHosts.set(id, testing);
+    }
+    const all = testing;
+    all.add(hosts);
+    return () => {
+      all.delete(hosts);
+      if (all.size === 0 && this.#testingHosts.get(id) === all) this.#testingHosts.delete(id);
+    };
   }
 
   // ------------------------------------------------------------- views

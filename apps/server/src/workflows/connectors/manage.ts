@@ -76,6 +76,8 @@ export async function testConnection(
   config: unknown,
   where: { workspaceId: string; installationId?: string },
 ): Promise<TestResult> {
+  // An extension may reach the hosts its config names, including one not saved yet.
+  const release = ctx.extensions.allowTestHosts(connector.id, config);
   try {
     const test = {
       credentials,
@@ -87,6 +89,8 @@ export async function testConnection(
     return await connector.test(test);
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    release();
   }
 }
 

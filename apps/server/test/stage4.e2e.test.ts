@@ -585,11 +585,13 @@ describe("the examples that ship with Sling", () => {
     );
     expect(linked.notes?.[0]?.link?.url).toBe(`${ntfyServer.replace(/\/+$/, "")}/${topicOut}`);
 
+    // Add tests the connection first, before any installation names this server.
     const inst = await api<InstallationView>("POST", "/api/installations", {
       connectorId: "ntfy",
       name: "ntfy",
       credentials: {},
       config: { server: ntfyServer, topics: [topicIn], defaultTopic: topicOut },
+      check: true,
     });
     expect((await api<{ ok: boolean }>("POST", `/api/installations/${inst.id}/test`)).ok).toBe(
       true,
