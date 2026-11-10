@@ -183,7 +183,10 @@ pub async fn scan(cfg: &Config, paths: &Paths) -> Vec<Found> {
         .map(|path| async move {
             Found {
                 default_branch: git::default_branch(&path).await,
-                remote_url: git::remote_url(&path).await.unwrap_or_default(),
+                remote_url: git::remote_url(&path)
+                    .await
+                    .map(|u| crate::redact::remote_without_credentials(&u))
+                    .unwrap_or_default(),
                 path,
             }
         })

@@ -101,6 +101,26 @@ fn mask_token_shapes(text: &str) -> String {
     out
 }
 
+/// A git remote without credentials, for sending to the control plane.
+/// HTTP remotes lose their whole user part, since a token can sit in the
+/// user name. Other URL remotes keep the user name and lose the password.
+/// `git@host:path` and local paths carry none and are kept.
+pub fn remote_without_credentials(remote: &str) -> String {
+    let Some((scheme, rest)) = remote.split_once("://") else {
+        return remote.to_string();
+    };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, path) = rest.split_at(end);
+    let Some((user, host)) = authority.rsplit_once('@') else {
+        return remote.to_string();
+    };
+    if scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https") {
+        return format!("{scheme}://{host}{path}");
+    }
+    let user = user.split(':').next().unwrap_or_default();
+    format!("{scheme}://{user}@{host}{path}")
+}
+
 /// Scrubs the free-text fields of a task event.
 pub fn redact_kind(
     kind: sling_runner_protocol::task_event::Kind,
@@ -153,6 +173,34 @@ mod tests {
         assert!(!r.contains("ghp_abcdef"));
         assert!(r.contains("[redacted]"));
         assert!(r.contains("sk-short"), "short words are left alone: {r}");
+    }
+
+    #[test]
+    fn remotes_lose_their_credentials() {
+        for (remote, want) in [
+            (
+                "https://x-access-token:ghp_abc@github.com/acme/site.git",
+                "https://github.com/acme/site.git",
+            ),
+            (
+                "https://ghp_abc@github.com/acme/site.git",
+                "https://github.com/acme/site.git",
+            ),
+            (
+                "ssh://git:secret@host:2222/acme/site.git",
+                "ssh://git@host:2222/acme/site.git",
+            ),
+            ("ssh://git@host/acme/site", "ssh://git@host/acme/site"),
+            (
+                "git@github.com:acme/site.git",
+                "git@github.com:acme/site.git",
+            ),
+            ("https://github.com/a@b/c", "https://github.com/a@b/c"),
+            ("/srv/git/site.git", "/srv/git/site.git"),
+            ("", ""),
+        ] {
+            assert_eq!(remote_without_credentials(remote), want, "{remote}");
+        }
     }
 
     #[test]

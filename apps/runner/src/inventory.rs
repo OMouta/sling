@@ -93,7 +93,10 @@ pub async fn build(cfg: &Config, found: &[Found], sandbox: &Sandbox) -> Inventor
         repos.push(Repo {
             name: r.name.clone(),
             default_branch: git::default_branch(&r.path).await,
-            remote_url: git::remote_url(&r.path).await.unwrap_or_default(),
+            remote_url: git::remote_url(&r.path)
+                .await
+                .map(|u| crate::redact::remote_without_credentials(&u))
+                .unwrap_or_default(),
             network: r.network,
             // Redacted, in case the command carries a token inline.
             deploy_command: r
