@@ -157,6 +157,8 @@ pub fn kill_orphan_group(pid: u32, expected: &str) {
             libc::kill(-(pid as i32), libc::SIGKILL);
         }
     }
+    // On Windows the Runner holds each agent in a job object that closes
+    // when the Runner exits, which kills what was left.
     #[cfg(not(unix))]
     {
         let _ = (pid, expected);

@@ -433,6 +433,8 @@ impl Run {
     /// if it hasn't exited after `grace`. Claude Code exits 0 after a SIGINT,
     /// so the caller has to remember that it cancelled.
     pub async fn cancel(&mut self, grace: Duration) {
+        // Windows has no interrupt to send, so there is nothing to wait for.
+        let grace = if cfg!(unix) { grace } else { Duration::ZERO };
         #[cfg(unix)]
         if let Some(pid) = self.pid {
             // SAFETY: plain syscall; a negative pid targets the process group we created.

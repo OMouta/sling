@@ -399,6 +399,8 @@ impl Run {
     /// Asks Codex to stop (SIGINT to its process group), then kills it if it
     /// hasn't exited after `grace`.
     pub async fn cancel(&mut self, grace: Duration) {
+        // Windows has no interrupt to send, so there is nothing to wait for.
+        let grace = if cfg!(unix) { grace } else { Duration::ZERO };
         #[cfg(unix)]
         if let Some(pid) = self.pid {
             // SAFETY: plain syscall; a negative pid targets the process group we created.

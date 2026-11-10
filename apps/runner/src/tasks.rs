@@ -32,6 +32,9 @@ use crate::sys::now_ms;
 mod tests;
 
 const CANCEL_GRACE: Duration = Duration::from_secs(10);
+/// After a cancel, how long to keep reading output. A process the agent
+/// started can hold its output open after the agent is gone.
+const OUTPUT_AFTER_CANCEL: Duration = Duration::from_secs(5);
 
 type SharedSpool = Arc<Mutex<TaskSpool>>;
 
@@ -635,11 +638,13 @@ impl Manager {
         let mut reported: Vec<PathBuf> = Vec::new();
         let (tx, mut rx) = mpsc::channel(256);
         let mut run = agent.start(&spec, tx).await?;
+        let job = crate::job::Job::adopt(run.pid());
         spool
             .lock()
             .unwrap()
             .set_meta(|m| m.harness_pid = run.pid())?;
         let mut cancelled = false;
+        let mut output_until = None;
         loop {
             tokio::select! {
                 ev = rx.recv() => match ev {
@@ -657,11 +662,27 @@ impl Manager {
                         cancelled = true;
                         self.log(spool, format!("Cancelling {}", agent.label()));
                         run.cancel(CANCEL_GRACE).await;
+                        job.kill();
+                        output_until = Some(tokio::time::Instant::now() + OUTPUT_AFTER_CANCEL);
                     }
                 }
+                _ = tokio::time::sleep_until(output_until.unwrap_or_else(tokio::time::Instant::now)),
+                    if output_until.is_some() => break,
             }
         }
-        let outcome = run.finish().await?;
+        let outcome = if cancelled {
+            tokio::time::timeout(OUTPUT_AFTER_CANCEL, run.finish())
+                .await
+                .unwrap_or_else(|_| {
+                    Ok(harness::Outcome {
+                        exit_code: None,
+                        summary: String::new(),
+                        failure: None,
+                    })
+                })?
+        } else {
+            run.finish().await?
+        };
         let exit = outcome.exit_code;
 
         let base = TaskFinished {

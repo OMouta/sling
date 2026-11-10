@@ -581,6 +581,7 @@ pub async fn run(
         }
     };
     let pid = child.id();
+    let job = crate::job::Job::adopt(pid);
     let capture = Arc::new(Mutex::new(Capture::default()));
     let readers = [
         child
@@ -622,6 +623,7 @@ pub async fn run(
     )
     .await;
     kill_group(pid);
+    job.kill();
     let _ = child.kill().await;
 
     let capture = capture.lock().await;

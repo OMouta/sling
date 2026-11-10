@@ -1333,6 +1333,7 @@ pub async fn run_deploy(
         }
     };
     let pid = child.id();
+    let job = crate::job::Job::adopt(pid);
 
     let (tx, mut rx) = mpsc::channel::<Vec<u8>>(64);
     let mut readers: Vec<_> = [
@@ -1386,6 +1387,7 @@ pub async fn run_deploy(
                 Ok(s) => s,
                 Err(_) => {
                     stop_group(pid, true);
+                    job.kill();
                     // Where there's no process group, at least the command.
                     let _ = child.start_kill();
                     child.wait().await
@@ -1401,6 +1403,7 @@ pub async fn run_deploy(
     if ran.timed_out {
         // Nothing it started may outlive the limit.
         stop_group(pid, true);
+        job.kill();
     }
     // Processes it left running may hold the pipes open. Stop reading after
     // a moment rather than waiting on them.

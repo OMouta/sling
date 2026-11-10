@@ -13,6 +13,7 @@ mod git;
 mod harness;
 mod identity;
 mod inventory;
+mod job;
 mod mcp;
 mod pair;
 mod redact;
