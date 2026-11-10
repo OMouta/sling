@@ -79,7 +79,14 @@ test("keeps an unsent draft per chat through switching and reloading", async ({ 
 
 test("archives a chat and restores it from the Archived tab", async ({ page }) => {
   const title = `Archive me ${Date.now()}`;
-  await chatWith(page, title);
+  const id = await chatWith(page, title);
+  // The reply lands first: a turn that starts on an archived chat restores it.
+  await expect
+    .poll(async () => {
+      const chat = await (await page.request.get(`/api/conversations/${id}`)).json();
+      return (chat as { messages: unknown[] }).messages.length;
+    })
+    .toBeGreaterThan(1);
   await page.goto("/chats");
   const row = page.getByRole("link", { name: title });
   await expect(row).toBeVisible();
