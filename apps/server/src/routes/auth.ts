@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { CLIENT_IP_HEADER } from "../auth/auth.ts";
 import type { AppContext } from "../context.ts";
 
 /** Hands /api/auth/* to Better Auth with the raw body. */
@@ -16,6 +17,9 @@ export async function authRoutes(app: FastifyInstance, ctx: AppContext) {
         if (value === undefined) continue;
         headers.set(key, Array.isArray(value) ? value.join(", ") : String(value));
       }
+      // Replaces whatever the client sent: Fastify resolves the address through
+      // the trusted proxies only.
+      headers.set(CLIENT_IP_HEADER, request.ip);
       const body =
         request.method === "GET" || request.body == null ? undefined : String(request.body);
       const response = await ctx.auth.handler(

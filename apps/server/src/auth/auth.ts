@@ -15,6 +15,9 @@ export interface AuthHooks {
   onWorkspaceCreated?(workspaceId: string): Promise<void>;
 }
 
+/** Carries the client's address to Better Auth, for rate limits and sessions. */
+export const CLIENT_IP_HEADER = "x-sling-client-ip";
+
 export function createAuth(db: Db, config: Config, hooks: AuthHooks = {}) {
   const origin = config.publicUrl.origin;
   return betterAuth({
@@ -23,6 +26,7 @@ export function createAuth(db: Db, config: Config, hooks: AuthHooks = {}) {
     basePath: "/api/auth",
     secret: deriveKey(config.secretKey, "better-auth").toString("base64"),
     trustedOrigins: [origin],
+    advanced: { ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] } },
     database: drizzleAdapter(db, { provider: "pg", schema, usePlural: true }),
     emailAndPassword: {
       enabled: true,
