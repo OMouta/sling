@@ -107,6 +107,8 @@ interface Outcome {
   opened: boolean;
   /** Why it closed, or null for a clean close or a stop. */
   error: string | null;
+  /** Whether it closed because a message couldn't be handed to workflows. */
+  undelivered?: boolean;
 }
 
 /**
@@ -141,7 +143,7 @@ async function watch(ctx: Ctx, topics: string[], options: NtfySourceOptions, sig
       });
       if (!outcome.opened) ctx.setStatus("error", outcome.error);
     }
-    failures = outcome.opened ? 1 : failures + 1;
+    failures = outcome.opened && !outcome.undelivered ? 1 : failures + 1;
     await sleep(backoffDelay(failures, backoff), signal);
   }
 }
@@ -164,6 +166,9 @@ function subscribe(
     let settled = false;
     // Messages are handed on one at a time, so they reach workflows in order.
     let queue: Promise<void> = Promise.resolve();
+    // Once one can't be handed on, the rest wait for the next connection,
+    // which asks again from the last message that was.
+    let undelivered = false;
     let silence: ReturnType<typeof setTimeout> | undefined;
 
     const finish = (error: string | null) => {
@@ -171,7 +176,7 @@ function subscribe(
       settled = true;
       clearTimeout(silence);
       signal.removeEventListener("abort", onAbort);
-      void queue.then(() => resolve({ opened, error }));
+      void queue.then(() => resolve({ opened, error, undelivered }));
     };
     const watchdog = () => {
       clearTimeout(silence);
@@ -201,14 +206,20 @@ function subscribe(
       }
       if (!isWireMessage(parsed)) return; // open, keepalive, poll_request
       const wire = parsed;
-      queue = queue
-        .then(() => handOn(ctx, wire))
-        .catch((error: unknown) => {
+      queue = queue.then(async () => {
+        if (undelivered) return;
+        try {
+          await handOn(ctx, wire);
+        } catch (error) {
+          undelivered = true;
           ctx.log.error("Couldn't hand an ntfy message to workflows", {
             id: wire.id,
             error: error instanceof Error ? error.message : String(error),
           });
-        });
+          finish(`Couldn't hand a message from ${where} to workflows`);
+          socket.close(4001, "undelivered");
+        }
+      });
     });
     socket.addEventListener("error", (event) => {
       failure = event.message || failure;

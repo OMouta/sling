@@ -76,6 +76,8 @@ function harness(config: Partial<NtfyConfig> = {}, credentials: NtfyCredentials 
   const statuses: [SourceStatus, string | undefined][] = [];
   const warnings: { message: string; data?: Record<string, unknown> }[] = [];
   const state = new Map<string, string>();
+  /** Message IDs whose runs can't start right now. */
+  const refused = new Set<string>();
   const controller = new AbortController();
   const ctx: SourceContext<NtfyCredentials, NtfyConfig> = {
     installationId: "ins_1",
@@ -85,6 +87,7 @@ function harness(config: Partial<NtfyConfig> = {}, credentials: NtfyCredentials 
     log: { info() {}, warn: (message, data) => warnings.push({ message, data }), error() {} },
     signal: controller.signal,
     emit: async (e) => {
+      if (e.dedupeKey && refused.has(e.dedupeKey)) throw new Error("The database is away");
       emitted.push(e as (typeof emitted)[number]);
     },
     state: {
@@ -116,6 +119,7 @@ function harness(config: Partial<NtfyConfig> = {}, credentials: NtfyCredentials 
     statuses,
     warnings,
     state,
+    refused,
     async start() {
       const running = await source.start(ctx);
       stops.push(() => running.stop());
@@ -194,6 +198,30 @@ describe("ntfy source", () => {
     expect(second.url).toContain(`auth=${authParam("tk_1")}`);
     second.open();
     expect(h.statuses.at(-1)?.[0]).toBe("connected");
+  });
+
+  it("stops at a message it couldn't hand on, and asks for it again", async () => {
+    const h = harness();
+    await h.start();
+    const first = h.sockets[0] as FakeSocket;
+    first.open();
+    h.refused.add("m2");
+    first.send(wire("m1", 1_700_000_000));
+    first.send(wire("m2", 1_700_000_010));
+    first.send(wire("m3", 1_700_000_020));
+    await until(() => h.sockets.length === 2);
+    expect(first.closed).toEqual({ code: 4001, reason: "undelivered" });
+    // The later message waits too, so the mark never passes the one that failed.
+    expect(h.emitted.map((e) => e.dedupeKey)).toEqual(["m1"]);
+    expect(h.state.get(SINCE_KEY)).toBe("1700000000");
+    const second = h.sockets[1] as FakeSocket;
+    expect(second.url).toContain("since=1700000000");
+    h.refused.clear();
+    second.open();
+    second.send(wire("m2", 1_700_000_010));
+    second.send(wire("m3", 1_700_000_020));
+    await until(() => h.emitted.length === 3);
+    expect(h.state.get(SINCE_KEY)).toBe("1700000020");
   });
 
   it("reports a subscription that never opens, without the token", async () => {
