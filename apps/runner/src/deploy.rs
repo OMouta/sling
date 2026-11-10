@@ -27,6 +27,7 @@ use tokio::sync::mpsc;
 use crate::config::{Config, Paths, RepoEntry};
 use crate::git;
 use crate::redact::redact;
+use crate::spool::valid_task_id;
 use crate::sys::{Output, run, run_timeout};
 use crate::tasks::Manager;
 
@@ -347,15 +348,6 @@ impl Method {
             Method::Rebase => "--rebase",
         }
     }
-}
-
-/// Task IDs go into a commit trailer, so they must be one plain word.
-fn valid_task_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 100
-        && id
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
 }
 
 fn valid_sha(sha: &str) -> bool {
@@ -1480,6 +1472,8 @@ mod unit {
         assert!(valid_task_id("tsk_01jcabcdefk3v9qa"));
         assert!(!valid_task_id(""));
         assert!(!valid_task_id("tsk_1\nSling-Task: other"));
+        assert!(!valid_task_id("../../Documents"));
+        assert!(!valid_task_id("/etc"));
         assert!(valid_sha("abc1234"));
         assert!(valid_sha(&"a".repeat(40)));
         assert!(!valid_sha("abc123"));

@@ -46,6 +46,20 @@ fn replay_is_batched_and_acknowledged_history_is_not_retained() {
 }
 
 #[test]
+fn task_ids_that_are_not_one_plain_word_make_no_files() {
+    let root = tempfile::tempdir().unwrap();
+    let base = root.path().join("spool");
+    std::fs::create_dir(&base).unwrap();
+    let abs = root.path().join("abs");
+    for id in ["../outside", abs.to_str().unwrap(), "a/b", "", "."] {
+        assert!(TaskSpool::create(&base, meta(id)).is_err(), "{id:?}");
+    }
+    assert!(!root.path().join("outside").exists());
+    assert!(!abs.exists());
+    assert_eq!(std::fs::read_dir(&base).unwrap().count(), 0);
+}
+
+#[test]
 fn events_survive_reopen_until_acked() {
     let root = tempfile::tempdir().unwrap();
     let mut s = TaskSpool::create(root.path(), meta("tsk_1")).unwrap();

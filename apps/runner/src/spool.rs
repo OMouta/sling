@@ -114,6 +114,16 @@ pub struct TaskSpool {
     skipped: (u64, u64),
 }
 
+/// Task IDs name spool and worktree directories and go into commit
+/// trailers, so they must be one plain word.
+pub fn valid_task_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 100
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+}
+
 #[derive(Clone, Copy, Debug)]
 struct Mark {
     seq: u64,
@@ -126,6 +136,11 @@ impl TaskSpool {
     }
 
     pub(crate) fn create_on(disk: Arc<dyn Disk>, root: &Path, meta: TaskMeta) -> Result<TaskSpool> {
+        anyhow::ensure!(
+            valid_task_id(&meta.task_id),
+            "refusing task ID {:?}",
+            meta.task_id
+        );
         let dir = root.join(&meta.task_id);
         disk.create_dir_all(&dir)?;
         replace_file(

@@ -137,7 +137,12 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
         other => bail!("expected welcome, got {other:?}"),
     };
     tracing::info!("connected as {runner_id}");
-    mgr.forget(&welcome.forget_task_ids);
+    let forget: Vec<String> = welcome
+        .forget_task_ids
+        .into_iter()
+        .filter(|id| known_task_id(id))
+        .collect();
+    mgr.forget(&forget);
     mgr.reset_sent();
 
     let hb_secs = welcome.heartbeat_interval_seconds.clamp(5, 60) as u64;
@@ -166,6 +171,11 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
                 match msg? {
                     Message::Binary(bytes) => {
                         let env = Envelope::decode(bytes.as_ref()).context("bad frame from server")?;
+                        if let Some(id) = env.body.as_ref().and_then(task_id_of)
+                            && !known_task_id(id)
+                        {
+                            continue;
+                        }
                         match env.body {
                             Some(Body::HeartbeatAck(_)) => last_ack = Instant::now(),
                             Some(Body::TaskAssign(a)) => {
@@ -238,6 +248,26 @@ async fn connect_once(mgr: &Arc<Manager>, identity: &Identity, cfg: &Config) -> 
             }
         }
     }
+}
+
+/// The task ID a server message carries, if any. These IDs name directories
+/// on this machine.
+fn task_id_of(body: &Body) -> Option<&str> {
+    match body {
+        Body::TaskAssign(a) => Some(&a.task_id),
+        Body::TaskCancel(c) => Some(&c.task_id),
+        Body::EventAck(a) => Some(&a.task_id),
+        Body::ActionRequest(r) => Some(&r.task_id),
+        _ => None,
+    }
+}
+
+fn known_task_id(id: &str) -> bool {
+    let ok = crate::spool::valid_task_id(id);
+    if !ok {
+        tracing::warn!("ignoring a server message with task ID {id:?}");
+    }
+    ok
 }
 
 fn reload_config(mgr: &Manager) {
