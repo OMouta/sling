@@ -275,7 +275,7 @@ function AccountMenu() {
     queryFn: ({ signal }) => api.get<Status>("/api/status", { signal }),
   });
   const email = status.data?.email ?? "";
-  const name = email.split("@")[0] || "Account";
+  const name = status.data?.name || email.split("@")[0] || "Account";
   return (
     <Menu
       label="Account"
@@ -288,7 +288,7 @@ function AccountMenu() {
           onClick={toggle}
           className="pressable flex h-[30px] cursor-pointer items-center gap-1.5 rounded-full bg-surface-2 py-[5px] pr-[9px] pl-[5px] text-xs font-medium shadow-raised hover:shadow-raised-hover"
         >
-          <Avatar name={email || "?"} />
+          <Avatar name={status.data?.name || email || "?"} />
           <span className="max-w-32 truncate max-sm:hidden">{name}</span>
           <ChevronDown aria-hidden="true" size={12} className="text-subtle" />
         </button>

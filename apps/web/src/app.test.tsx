@@ -145,7 +145,14 @@ let approvals: unknown[] = [];
 
 function routes(path: string): unknown {
   if (path === "/api/status")
-    return { needsSetup: false, signedIn, email: "a@b.c", version: "0.1.0", publicUrl };
+    return {
+      needsSetup: false,
+      signedIn,
+      email: "ana.silva@b.c",
+      name: "Ana",
+      version: "0.1.0",
+      publicUrl,
+    };
   if (path === "/api/conversations") return { items: [], nextCursor: null, counts: null };
   if (path === "/api/approvals") return approvalPage(approvals as ApprovalView[]);
   if (path === "/api/rules") return [];
@@ -326,6 +333,15 @@ describe("web app", () => {
     expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Go home" }));
     expect(await screen.findByText("Log in to a coding agent")).toBeTruthy();
+  });
+
+  it("names the owner on the account menu as they gave it at setup", async () => {
+    renderAt("/tasks");
+    const chip = await screen.findByRole("button", { name: "Account menu" });
+    expect(chip.textContent).toContain("Ana");
+    expect(chip.textContent).not.toContain("ana.silva");
+    fireEvent.click(chip);
+    expect(screen.getByText("ana.silva@b.c")).toBeTruthy();
   });
 
   it("asks for a logged-in coding agent before the first conversation", async () => {

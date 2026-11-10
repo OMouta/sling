@@ -16,6 +16,8 @@ export interface Status {
   needsSetup: boolean;
   signedIn: boolean;
   email: string | null;
+  /** The name given at setup. */
+  name?: string | null;
   version: string;
   /** Where Sling is set up to be opened. Sign-in only works there. */
   publicUrl: string;
