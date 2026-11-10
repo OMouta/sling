@@ -2,7 +2,7 @@
 
 Review date: 2026-11-09. Source revision: `e2f75f8`.
 
-The original review was read-only. A first implementation pass made the changes that needed no UI work, without changing layout, controls, or copy. A second pass took on the rest, UI included, after the user decided four questions: Delete becomes Archive with Restore; an approval cut off by a restart expires with a visible reason rather than resuming; unsent drafts live in the tab's session storage; and the decision-point explanations in S04 aren't added. Each item's status line says what's done and what wasn't verified. The review covered the web app, API, database access, workflow execution, realtime delivery, runner event storage, and selected operating documentation. It used repeated passes through the source to check initial findings against the implementation.
+The original review was read-only. A first implementation pass made the changes that needed no UI work, without changing layout, controls, or copy. A second pass took on the rest, UI included, after the user decided four questions: Delete becomes Archive with Restore; an approval cut off by a restart expires with a visible reason rather than resuming; unsent drafts live in the tab's session storage; and the decision-point explanations in S04 aren't added. Each item's status line says what's done and what wasn't verified. A third pass on 2026-11-10 looked at the running app and is recorded at the end. The review covered the web app, API, database access, workflow execution, realtime delivery, runner event storage, and selected operating documentation. It used repeated passes through the source to check initial findings against the implementation.
 
 This is a broad engineering review, not a claim that every execution path has been audited. No live service, customer data, external integration, or browser session was exercised. Performance effects below are hypotheses unless they follow directly from an unbounded operation or repeated query. There are no measured production latency or bundle-size results.
 
@@ -553,3 +553,43 @@ This implementation pass is not complete for every non-UI proposal. In particula
 - Every UI change was checked in Chromium in light and dark, and at phone width where layout differs. Nothing was checked on a real phone or with a screen reader.
 
 Measured during this pass: the P04 query numbers on 20,000 chats and 1M messages, the P05 prune timings, the P08 bundle sizes, and the O05 restore drill, each in its item above. Not run: a real power cut, cross-platform runner timings, a two-process deployment, or a live Prometheus scrape.
+
+## Third pass, 2026-11-10
+
+Source revision before the pass: `3d37a68`. This pass started from the running app, which the first review never opened. Every page was walked in Chromium in dark and light at 1440px and at 390px, on an empty workspace and on one with a paired machine, and real chats and one coding task ran through Claude Code. Four code reviews ran alongside, one each for the server's chat and task paths, automation, the web app, and the runner and install path, with the items above as the list of things not to repeat. The findings were then fixed in 90 commits.
+
+The user decided four questions first. A newly paired machine's cap is Auto, and machines paired before keep theirs. A Full access deploy waits for the PR's CI before it merges. In a Telegram group, Sling answers only people whose own ID is allowed. On touch screens Enter adds a line and the button sends.
+
+What changed:
+
+- Chat turns. A message sent while a reply is being written gets its own reply. A turn that runs out of steps answers on its last one. A turn loads the latest 80 messages without their traces. Retry, Edit and start-rule turns are queued with the message change. The note the assistant gets when a task settles says Sling committed the work, and a repo with no remote gets no push or PR step.
+- Tasks, approvals and machines. An approval and its step move in one transaction. Machines are marked offline at startup. A cancel made while a machine was away holds when it returns, and a task the server already ended is stopped on the machine. Sign-in rate limiting uses the address the server resolves.
+- Security. The runner checks every task ID the server sends. An email allow rule matches only recipients the mail sender reads the same way. A bad extension package no longer hangs the reader. Extension code can't signal other processes. Sandboxed commands can't reach Unix sockets on Linux. Repo remotes are sent without embedded credentials, and command output is masked like task output. Mail logins require STARTTLS when TLS isn't direct.
+- Automation. A paused copy leaves sandboxes, merges and deploys alone. A minute sweep picks up stuck workflow runs. Reply checks, slow checks, cron validation, recurring calendar events with a zone name, and the email catch-up window were each fixed. Connector and ntfy cursors stay on a message until its run starts.
+- Runner. Work an agent committed itself is delivered. Git steps get five minutes and task pushes skip pre-push hooks. SIGTERM interrupts running tasks and reports them. Read-only tasks make no branch, and cleanup deletes task branches with nothing left to deliver. A sandbox's runner stays up while its commit waits for approval.
+- Install and release. The release fails when its tag differs from the Cargo version, images wait for the release, and CI builds every release target. Re-running the installer on a paired machine restarts the runner on the new binary. No release has been cut, so the README's install command still needs a first tag.
+- Web. Chat, task and run pages start fresh when their ID changes. Typing and streaming no longer re-parse every loaded message. A new build loads on the next navigation after a deploy. Failed loads, unknown URLs and route errors show inside the app. Sign-in returns to the page it was sent from, and Back keeps list tabs, filters and scroll. Each count and control shows once per page, empty states share one layout, states and times read the same everywhere, and Settings, Tasks and Workflows fit a phone.
+
+Still open, each a decision or a larger change:
+
+- Previewing an extension package from a key that isn't trusted yet still runs its `describe` code, because the Permissions section is built from what it returns.
+- A Read-only Codex task in a sandbox runs with Codex's own sandbox off. The threat model now says so. Refusing those tasks would be a product change.
+- The macOS command sandbox profile allows by default with a deny list.
+- A Full access deploy waits for every check on the PR, not only required ones, and a repo with no CI merges after the CI check's three-minute "none started" window instead of at once.
+- The workflow run cursor is rewritten in full twice per node. A 1,000-item loop with 2 KB items took 100 seconds. The fix stores loop items outside the cursor and needs a migration.
+- The chat lists messages in saved order, so a message sent mid-turn shows above the reply to the one before it.
+- A reply that lands after its chat was archived restores the chat.
+- A result that arrives after its task was marked interrupted is dropped.
+
+Checks on the merged result:
+
+- Lint, every package's type check, `cargo fmt --check` and clippy with warnings denied pass.
+- Runner: 194 unit tests (one ignored) and 6 sandbox integration tests pass on macOS. The Linux command sandbox test ran in a container. The Windows code type-checks for `x86_64-pc-windows-msvc` and has not run on Windows.
+- Server: 87 test files. Run together, 16 end-to-end files failed on timing budgets and timeouts with the load average above 40. Each of the 16 passes when run alone. One older test expected a turn to be cut off silently at its step limit and was rewritten for the new behavior.
+- The Docker sandbox test passes against a `sling-sandbox:dev` image rebuilt from this revision: 2.7 seconds from request to a connected runner, and 0.3 seconds from delivery to a destroyed container.
+- Web: 44 files, 454 tests. The other packages' suites pass.
+- Browser journeys: 7 of 7 against the production build on a fresh database. The archive journey now waits for the reply before archiving.
+- First load is 294,671 bytes gzip (257,215 brotli), under the budget of 301,000 / 263,000.
+- In Chromium against the merged build with a paired runner: a message sent mid-turn was answered, a task on a repo with no remote asked for no approval and was reported as committed on its branch, the composer no longer carries state between chats, Escape and the mode menu close the model picker, unknown URLs show inside the app, and no page scrolls sideways at 390px apart from the Chats tab strip and the Machines footer bar. This used five short assistant turns and one coding task on Claude Haiku at low effort.
+
+Not run: anything on Windows or a real phone, systemd on a Linux desktop, an install behind a real proxy or a private CA, the GitHub workflows on Actions, a real protected GitHub repo, real mail servers with STARTTLS stripped, and a restore drill with the paused sweep.
