@@ -94,9 +94,13 @@ jobs:
     if: ${{ !cancelled() && (needs.publish.result == 'success' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     steps:
+      # The Dockerfile comes from the ref the workflow runs on, so a build fix
+      # on main reaches a tag that's already released. The source is the tag's.
+      - uses: actions/checkout@v5
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.tag || github.ref }}
+          path: src
       # A registry path must be lowercase, and the repository's owner may not be.
       - name: Image name
         id: image
@@ -114,7 +118,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
-          context: .
+          context: src
           file: deploy/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true

@@ -26,7 +26,14 @@ COPY extensions/ntfy/package.json extensions/ntfy/
 COPY extensions/fly-machines/package.json extensions/fly-machines/
 COPY extensions/task-alerts/package.json extensions/task-alerts/
 
-FROM base AS web
+# The web app and the extension packages come out the same on every platform,
+# so they build on the machine doing the build, not under emulation.
+FROM --platform=$BUILDPLATFORM node:26-slim AS builder
+RUN npm install -g pnpm@12.5.1 && npm cache clean --force
+WORKDIR /app
+COPY --from=base /app /app
+
+FROM builder AS web
 RUN pnpm install --frozen-lockfile --filter "@sling/web..."
 COPY assets assets
 COPY tsconfig.base.json ./
@@ -37,7 +44,7 @@ RUN pnpm --filter @sling/web build
 
 # The catalog that ships with Sling: the example extensions, bundled and
 # packed. The build only needs the CLI; it bundles the SDK and zod from there.
-FROM base AS extensions
+FROM builder AS extensions
 RUN pnpm install --frozen-lockfile --filter "@sling/extension-cli..."
 COPY tsconfig.base.json ./
 COPY packages/connector-sdk packages/connector-sdk
