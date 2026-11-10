@@ -437,6 +437,30 @@ async fn commits_and_pushes_the_task_branch() {
 }
 
 #[tokio::test]
+async fn a_commit_waiting_for_its_push_keeps_the_runner_busy() {
+    let env = setup(Mode::FullAccess);
+    let id = "codex-t12";
+    env.mgr
+        .assign(
+            assign("codex", id, PermissionMode::Supervised, "sling/t12", "site"),
+            &all_ready(),
+        )
+        .await;
+    let events = wait_for(&env.mgr, id, |k| matches!(k, Kind::Finished(_))).await;
+    assert!(!finished(&events).commit_sha.is_empty());
+    for _ in 0..100 {
+        if env.mgr.running_count() == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_eq!(env.mgr.running_count(), 0);
+    assert!(env.mgr.busy(), "an approval may still ask for the push");
+    env.mgr.forget(&[id.to_string()]);
+    assert!(!env.mgr.busy());
+}
+
+#[tokio::test]
 async fn read_only_tasks_change_nothing_and_cannot_push() {
     let env = setup(Mode::FullAccess);
     for agent in AGENTS {

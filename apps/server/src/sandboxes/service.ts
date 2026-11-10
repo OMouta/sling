@@ -41,7 +41,11 @@ type SandboxDecision = Extract<RouteDecision, { kind: "sandbox" }>;
 export const BOOT_TIMEOUT_MS = 10 * 60 * 1000;
 /** How long a sandbox's one-time pairing code lasts. */
 export const SANDBOX_CODE_TTL_MS = 15 * 60 * 1000;
-/** Safety net inside the sandbox: its Runner exits after this long without a task. */
+/**
+ * Safety net inside the sandbox: its Runner exits after this long with no
+ * task running and no commit left to push or open a PR for. A push waiting
+ * for approval keeps it up until teardown or the lifetime.
+ */
 export const IDLE_EXIT_SECONDS = 900;
 export const DEFAULT_SANDBOX_IMAGE = "sling-sandbox:latest";
 const CREATE_TIMEOUT_MS = 5 * 60 * 1000;

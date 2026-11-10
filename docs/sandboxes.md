@@ -108,7 +108,7 @@ A custom image can carry its own logins instead. Sling passes only the secrets y
 
 Minutes count from the moment a sandbox's Runner connects until it's destroyed. In Supervised mode, a sandbox stays up while a push or pull request waits for your approval, so approve or reject promptly.
 
-Two more safety nets: a sandbox whose Runner hasn't connected within 10 minutes is destroyed and its task failed, and the Runner inside exits on its own after 15 minutes without a task.
+Two more safety nets: a sandbox whose Runner hasn't connected within 10 minutes is destroyed and its task failed, and the Runner inside exits on its own after 15 minutes without a task, unless a push or pull request is still waiting.
 
 ## The Sandboxes page
 

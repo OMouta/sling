@@ -49,6 +49,9 @@ pub struct Manager {
     actions_in_flight: AtomicUsize,
     /// The Runner is shutting down, so tasks it stops finish as interrupted.
     stopping: AtomicBool,
+    /// Finished tasks with a commit Sling may still ask to push or open a PR
+    /// for, until Sling forgets them.
+    awaiting_delivery: Mutex<HashSet<String>>,
     /// Repos the latest scan found, and when it ran. Only these can be
     /// added from Sling.
     found: Mutex<(Vec<Found>, Option<Instant>)>,
@@ -107,6 +110,7 @@ impl Manager {
             agent_env_removed: Mutex::new(HashMap::new()),
             actions_in_flight: AtomicUsize::new(0),
             stopping: AtomicBool::new(false),
+            awaiting_delivery: Mutex::new(HashSet::new()),
             found: Mutex::new((Vec::new(), None)),
             repo_lock: tokio::sync::Mutex::new(()),
             inventory_turn: tokio::sync::Mutex::new(()),
@@ -274,9 +278,12 @@ impl Manager {
         )
     }
 
-    /// A task, an action, a merge or deploy, or a chat turn is running.
+    /// A task, an action, a merge or deploy, or a chat turn is running, or a
+    /// finished task's commit may still need a push or PR, for example after
+    /// an approval.
     pub fn busy(&self) -> bool {
         self.running_count() > 0
+            || !self.awaiting_delivery.lock().unwrap().is_empty()
             || self.actions_in_flight.load(Ordering::SeqCst) > 0
             || self.repo_actions.running_count() > 0
             || self.chats.running_count() > 0
@@ -356,10 +363,12 @@ impl Manager {
     pub fn forget(&self, ids: &[String]) {
         let running = self.running.lock().unwrap();
         let mut spools = self.spools.lock().unwrap();
+        let mut awaiting = self.awaiting_delivery.lock().unwrap();
         for id in ids {
             if running.contains_key(id) {
                 continue;
             }
+            awaiting.remove(id);
             if let Some(s) = spools.remove(id)
                 && let Ok(s) = Arc::try_unwrap(s)
                 && let Err(e) = s.into_inner().unwrap().remove()
@@ -536,6 +545,9 @@ impl Manager {
                     ..Default::default()
                 },
             };
+            if !finished.commit_sha.is_empty() {
+                me.awaiting_delivery.lock().unwrap().insert(task_id.clone());
+            }
             me.emit(&spool, Kind::Finished(finished));
             let _ = spool
                 .lock()
