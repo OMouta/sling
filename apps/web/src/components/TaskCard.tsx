@@ -6,7 +6,6 @@ import {
   type RoutingView,
   type RunnerView,
   type TaskEventView,
-  type TaskState,
   type TaskView,
   type VerifyDetail,
 } from "@sling/core";
@@ -61,7 +60,7 @@ import { CheckList, DeployPlanText } from "./DeployBits.tsx";
 import { ModeBadge } from "./ModeBadge.tsx";
 import { RuleQuestion } from "./RuleQuestion.tsx";
 import { SandboxFallbackCard } from "./SandboxFallbackCard.tsx";
-import { SandboxStateBadge } from "./StatusBadge.tsx";
+import { ACTION_STATE, SandboxStateBadge, TASK_STATE } from "./StatusBadge.tsx";
 import {
   Badge,
   Button,
@@ -73,19 +72,7 @@ import {
   Mono,
   Skeleton,
   Spinner,
-  type Tone,
 } from "./ui.tsx";
-
-const STATE: Record<TaskState, { label: string; tone: Tone }> = {
-  queued: { label: "Queued", tone: "neutral" },
-  dispatched: { label: "Starting", tone: "accent" },
-  running: { label: "Running", tone: "accent" },
-  succeeded: { label: "Done", tone: "ok" },
-  failed: { label: "Failed", tone: "danger" },
-  cancelled: { label: "Cancelled", tone: "neutral" },
-  rejected: { label: "Refused by machine", tone: "danger" },
-  interrupted: { label: "Interrupted", tone: "warn" },
-};
 
 const ACTION_LABEL: Record<string, string> = {
   push: "Push branch",
@@ -103,21 +90,8 @@ const ACTION_ICON = {
   verify: Activity,
 } as Record<string, typeof Upload>;
 
-const ACTION_STATE: Record<ActionView["state"], string> = {
-  queued: "Not started",
-  awaiting_approval: "Waiting for approval",
-  ready: "Ready",
-  sent: "In progress",
-  succeeded: "Done",
-  failed: "Failed",
-  refused: "Refused by machine",
-  rejected: "Rejected",
-  expired: "Approval expired",
-  skipped: "Skipped",
-};
-
 export function TaskStateBadge({ task }: { task: TaskView }) {
-  const s = STATE[task.state];
+  const s = TASK_STATE[task.state];
   const busy = task.state === "running" || task.state === "dispatched";
   return (
     <Badge tone={s.tone} dot={!busy}>

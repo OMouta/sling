@@ -5,12 +5,12 @@ import { RotateCcw, Square, Zap } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { JsonView } from "../components/JsonView.tsx";
 import { Page, useFocusMode } from "../components/Page.tsx";
-import { RUN_TONE, RunStatusBadge } from "../components/StatusBadge.tsx";
+import { RUN_STATE, RUN_TONE, RunStatusBadge } from "../components/StatusBadge.tsx";
 import { Badge, Button, cx, Dot, ErrorText, Skeleton, Spinner } from "../components/ui.tsx";
 import { ReadOnlyCanvas, useReadOnlyStore } from "../components/workflow/ReadOnlyCanvas.tsx";
 import { runDuration, triggerTitle } from "../components/workflow/RunsTab.tsx";
 import { api } from "../lib/api.ts";
-import { ago, duration } from "../lib/format.ts";
+import { ago, dateTime, duration } from "../lib/format.ts";
 import type { CatalogIndex } from "../lib/workflow/catalog.ts";
 import { useCatalogIndex } from "../lib/workflow/catalogIndex.ts";
 import * as g from "../lib/workflow/graph.ts";
@@ -280,26 +280,16 @@ function NodeRunItem({
         <span className="min-w-0 flex-1 truncate text-[13px]">{label}</span>
         {nr.iteration > 0 && <Badge>#{nr.iteration}</Badge>}
         {nr.attempt > 1 && <Badge tone="warn">try {nr.attempt}</Badge>}
-        <span className="text-xs text-muted">{nr.status}</span>
+        <span className="text-xs text-muted">{RUN_STATE[nr.status]?.label ?? nr.status}</span>
         <span className="w-16 text-right text-xs text-muted">{duration(ms)}</span>
       </button>
       {open && (
         <div className="space-y-3 px-2 pb-3">
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-            <dt className="text-muted">Node</dt>
-            <dd className="font-mono text-soft">
-              {nr.nodeId} · {nr.nodeType}
-            </dd>
-            <dt className="text-muted">Exec port</dt>
-            <dd className="font-mono">{nr.execPort ?? "none"}</dd>
-            <dt className="text-muted">Attempt</dt>
-            <dd>{nr.attempt}</dd>
-            <dt className="text-muted">Iteration</dt>
-            <dd>{nr.iteration}</dd>
             <dt className="text-muted">Started</dt>
-            <dd>{new Date(nr.startedAt).toLocaleString()}</dd>
+            <dd>{dateTime(nr.startedAt)}</dd>
             <dt className="text-muted">Duration</dt>
-            <dd>{duration(ms) || "running"}</dd>
+            <dd>{duration(ms) || "Running"}</dd>
           </dl>
           {nr.error && <JsonView title="Error" value={nr.error} />}
           <JsonView title="Inputs" value={nr.inputs} />

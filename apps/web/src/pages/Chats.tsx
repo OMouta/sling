@@ -209,7 +209,7 @@ function ChatStatusMark({ c }: { c: ConversationSummaryView }) {
   }
   if (status === "thinking") {
     return (
-      <span title="Replying" className="grid size-4 place-items-center">
+      <span title="Thinking" className="grid size-4 place-items-center">
         <Spinner className="size-3" />
       </span>
     );

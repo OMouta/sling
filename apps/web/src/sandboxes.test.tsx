@@ -244,7 +244,7 @@ describe("sandboxes page", () => {
     };
     renderAt("/sandboxes");
     const busy = await sandboxCard("Fix the signup form");
-    expect(busy.getByText("busy")).toBeTruthy();
+    expect(busy.getByText("In use")).toBeTruthy();
     expect(busy.getByText("Docker host")).toBeTruthy();
     await waitFor(() => expect(busy.getByText("Docker")).toBeTruthy());
     expect(busy.getByText("ghcr.io/sling/sling-sandbox:latest")).toBeTruthy();
@@ -254,13 +254,13 @@ describe("sandboxes page", () => {
     expect(busy.getByText("Fix the signup form").getAttribute("href")).toBe("/tasks/tsk_sbx");
 
     const failed = await sandboxCard("Bump the linter");
-    expect(failed.getByText("failed")).toBeTruthy();
+    expect(failed.getByText("Failed")).toBeTruthy();
     expect(failed.getByText("The Runner didn't connect within 10 minutes.")).toBeTruthy();
     expect(failed.getByText("Ran 10m 00s")).toBeTruthy();
     expect(failed.getByRole("button", { name: /Destroy/ })).toBeTruthy();
 
     const destroyed = await sandboxCard("Add a changelog");
-    expect(destroyed.getByText("destroyed")).toBeTruthy();
+    expect(destroyed.getByText("Removed")).toBeTruthy();
     expect(destroyed.getByText("Ran 12m 10s")).toBeTruthy();
     expect(destroyed.queryByRole("button", { name: /Destroy/ })).toBeNull();
   });
@@ -300,7 +300,7 @@ describe("sandboxes page", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Destroy" }));
     await waitFor(() => expect(callsTo("POST", "/api/sandboxes/sbx_1/destroy")).toHaveLength(1));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(await busy.findByText("releasing")).toBeTruthy();
+    expect(await busy.findByText("Stopping")).toBeTruthy();
   });
 
   it("cancelling the confirm destroys nothing", async () => {
@@ -315,14 +315,14 @@ describe("sandboxes page", () => {
   it("updates live from sandbox events", async () => {
     renderAt("/sandboxes");
     const busy = await sandboxCard("Fix the signup form");
-    expect(busy.getByText("busy")).toBeTruthy();
+    expect(busy.getByText("In use")).toBeTruthy();
     const released = { ...busySandbox, state: "releasing" as const, minutes: 5 };
     sandboxes = {
       sandboxes: [released, ...sandboxList.sandboxes.slice(1)],
       usage: { ...sandboxList.usage, monthMinutes: 151, running: 0 },
     };
     emit({ type: "sandbox.updated", sandbox: released });
-    expect(await busy.findByText("releasing")).toBeTruthy();
+    expect(await busy.findByText("Stopping")).toBeTruthy();
     expect(busy.getByText("5 min")).toBeTruthy();
     // Usage isn't in the event, so a change of state refetches it.
     expect(await screen.findByText("0 of 2")).toBeTruthy();
@@ -557,7 +557,7 @@ describe("task card", () => {
     expect(await screen.findByText("Claude Code task")).toBeTruthy();
     const badge = screen.getByText("in a sandbox on Docker host");
     expect(badge.closest("a")?.getAttribute("href")).toBe("/sandboxes");
-    expect(within(badge.closest("a") as HTMLElement).getByText("busy")).toBeTruthy();
+    expect(within(badge.closest("a") as HTMLElement).getByText("In use")).toBeTruthy();
     expect(screen.getByText(/^running \d/)).toBeTruthy();
     expect(screen.getByText("What Claude Code was asked")).toBeTruthy();
     expect(screen.queryByText("picked")).toBeNull();
@@ -574,9 +574,9 @@ describe("task card", () => {
   it("follows the sandbox's state live", async () => {
     tasks = [sandboxTask];
     renderAt("/tasks/tsk_sbx");
-    expect(await screen.findByText("busy")).toBeTruthy();
+    expect(await screen.findByText("In use")).toBeTruthy();
     emit({ type: "sandbox.updated", sandbox: { ...busySandbox, state: "releasing" } });
-    expect(await screen.findByText("releasing")).toBeTruthy();
+    expect(await screen.findByText("Stopping")).toBeTruthy();
   });
 
   it("says what a task with no machine yet is waiting for", async () => {

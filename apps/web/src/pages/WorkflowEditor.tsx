@@ -298,7 +298,7 @@ function EditorSession({
                   disabled={patch.isPending}
                   onChange={(enabled) => patch.mutate({ enabled })}
                 />
-                {live.enabled ? "Enabled" : "Disabled"}
+                {live.enabled ? "On" : "Off"}
               </span>
               <Button
                 size="sm"

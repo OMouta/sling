@@ -279,7 +279,7 @@ describe("workflows list", () => {
     if (!row) throw new Error("no row");
     const r = within(row);
     expect(r.getByText("On New email")).toBeTruthy();
-    expect(r.getByText("failed")).toBeTruthy();
+    expect(r.getByText("Failed")).toBeTruthy();
     expect(r.getByText("Unpublished changes")).toBeTruthy();
     expect(r.getByText("v1")).toBeTruthy();
     const assistant = screen.getByText("Sling Assistant").closest("tr");

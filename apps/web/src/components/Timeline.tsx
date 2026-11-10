@@ -1,7 +1,15 @@
-import { HARNESS_LABELS, type Harness, isHarness, type TaskEventView } from "@sling/core";
+import {
+  type ActionView,
+  HARNESS_LABELS,
+  type Harness,
+  isHarness,
+  type TaskEventView,
+  type TaskState,
+} from "@sling/core";
 import { Check, ChevronRight, LoaderCircle, Square, SquareCheck, X } from "lucide-react";
 import { useState } from "react";
 import { clockTime, TWELVE_HOUR } from "../lib/format.ts";
+import { ACTION_STATE, TASK_STATE } from "./StatusBadge.tsx";
 import { cx, Mono } from "./ui.tsx";
 
 type P = Record<string, unknown>;
@@ -156,14 +164,15 @@ function EventRow({ event, harness }: { event: TaskEventView; harness: Harness }
     case "finished":
       return (
         <Row time={event.at} className="font-medium">
-          Finished: {s(p.outcome)}
+          Finished: {TASK_STATE[s(p.outcome) as TaskState]?.label ?? s(p.outcome)}
           {s(p.error) && <span className="font-normal text-danger"> ({s(p.error)})</span>}
         </Row>
       );
     case "action_result":
       return (
         <Row time={event.at}>
-          {p.kind === "open_pr" ? "Pull request" : "Push"}: {s(p.outcome)}. {s(p.message)}{" "}
+          {p.kind === "open_pr" ? "Pull request" : "Push"}:{" "}
+          {ACTION_STATE[s(p.outcome) as ActionView["state"]] ?? s(p.outcome)}. {s(p.message)}{" "}
           {s(p.url) && (
             <a
               href={s(p.url)}
