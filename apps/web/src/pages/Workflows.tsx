@@ -58,13 +58,6 @@ export function WorkflowsPage() {
   return (
     <Page
       title="Workflows"
-      badge={
-        all.length > 0 ? (
-          <Badge tone={enabled > 0 ? "ok" : "neutral"} dot>
-            {enabled} on
-          </Badge>
-        ) : undefined
-      }
       tabs={
         <Tabs
           value={tab}
@@ -109,20 +102,12 @@ export function WorkflowsPage() {
         </Toolbar>
       }
       footer={
-        all.length > 0 && (
+        failing > 0 && (
           <StatsBar
             items={[
               <>
-                <span className="text-text">{sorted.length}</span> workflows in view
+                <span className="text-danger">{failing}</span> failed last run
               </>,
-              <>
-                <span className="text-text">{enabled}</span> on
-              </>,
-              failing > 0 && (
-                <>
-                  <span className="text-danger">{failing}</span> failed last run
-                </>
-              ),
             ]}
           />
         )

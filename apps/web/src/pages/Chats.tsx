@@ -23,7 +23,7 @@ import {
   groupByDate,
   useConversationList,
 } from "../lib/conversations.ts";
-import { ago } from "../lib/format.ts";
+import { ago, plural } from "../lib/format.ts";
 import { useLoadMore, useStickyCounts } from "../lib/pages.ts";
 import { chatsRoute } from "../router.tsx";
 
@@ -181,7 +181,7 @@ function ChatRow({ c, menu }: { c: ConversationSummaryView; menu: React.ReactNod
               <Badge tone={c.activeTasks > 0 ? "accent" : "neutral"}>
                 {c.activeTasks > 0
                   ? `${c.activeTasks} of ${c.taskCount} tasks running`
-                  : `${c.taskCount} task${c.taskCount === 1 ? "" : "s"}`}
+                  : plural(c.taskCount, "task")}
               </Badge>
             )}
             {c.source !== "app" && <Badge>{SOURCE_LABEL[c.source] ?? c.source}</Badge>}
@@ -217,7 +217,7 @@ function ChatStatusMark({ c }: { c: ConversationSummaryView }) {
   if (status === "tasks") {
     return (
       <span
-        title={`${c.activeTasks} task${c.activeTasks === 1 ? "" : "s"} running`}
+        title={`${plural(c.activeTasks, "task")} running`}
         className="grid size-4 place-items-center"
       >
         <Dot tone="accent" pulse />

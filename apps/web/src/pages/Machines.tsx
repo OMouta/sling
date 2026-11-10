@@ -38,7 +38,7 @@ import {
 import { Wizard, type WizardStep } from "../components/Wizard.tsx";
 import { CheckCards, CopyLine, StepNote } from "../components/WizardBits.tsx";
 import { api } from "../lib/api.ts";
-import { ago, plural } from "../lib/format.ts";
+import { ago, noun, plural } from "../lib/format.ts";
 import {
   type AgentStatus,
   codingAgents,
@@ -161,13 +161,6 @@ export function MachinesPage() {
   return (
     <Page
       title="Machines"
-      badge={
-        machines && machines.length > 0 ? (
-          <Badge tone={online > 0 ? "ok" : "neutral"} dot>
-            {online} online
-          </Badge>
-        ) : undefined
-      }
       toolbar={
         <Toolbar
           actions={
@@ -183,13 +176,14 @@ export function MachinesPage() {
           <StatsBar
             items={[
               <>
-                <span className="text-text">{machines.length}</span> machines
+                <span className="text-text">{machines.length}</span>{" "}
+                {noun(machines.length, "machine")}
               </>,
               <>
                 <span className="text-text">{online}</span> online
               </>,
               <>
-                <span className="text-text">{repos}</span> repos
+                <span className="text-text">{repos}</span> {noun(repos, "repo")}
               </>,
               <>
                 <span className="text-text">{allowed}</span> allowed in sandboxes

@@ -44,11 +44,6 @@ export function SandboxesPage() {
   return (
     <Page
       title="Sandboxes"
-      badge={
-        list.data && list.data.usage.running > 0 ? (
-          <span className="tabular text-xs text-subtle">{list.data.usage.running} running</span>
-        ) : undefined
-      }
       tabs={
         <Tabs
           value={tab}
@@ -63,9 +58,6 @@ export function SandboxesPage() {
         rows.length > 0 && (
           <StatsBar
             items={[
-              <>
-                <span className="text-text">{rows.length}</span> sandboxes in view
-              </>,
               <>
                 <span className="text-text">{minutes(used)}</span> used
               </>,

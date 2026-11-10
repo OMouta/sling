@@ -1,6 +1,7 @@
 import type { NodeSpecView, PortSpec, ValidationIssue } from "@sling/workflow";
 import { Handle, type NodeProps, Position } from "@xyflow/react";
 import { type CSSProperties, memo, useMemo } from "react";
+import { plural } from "../../lib/format.ts";
 import {
   categoryColor,
   ERROR_OUTPUT,
@@ -233,7 +234,7 @@ export const NodeView = memo(function NodeView({ id, data, selected }: NodeProps
             className="sling-node-badge is-issue"
             title={issues.map((i) => i.message).join("\n")}
             role="img"
-            aria-label={`${issues.length} problem${issues.length === 1 ? "" : "s"}`}
+            aria-label={plural(issues.length, "problem")}
           >
             {issues.length}
           </span>

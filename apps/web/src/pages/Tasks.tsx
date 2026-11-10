@@ -43,7 +43,9 @@ export function TasksPage() {
   // Totals over every task the filters match, not only the pages loaded.
   const stats = pages?.[0]?.stats;
   const finished = (stats?.succeeded ?? 0) + (stats?.failed ?? 0);
-  const successRate = stats && finished > 0 ? Math.round((stats.succeeded / finished) * 100) : null;
+  // A rate over a handful of tasks says little.
+  const successRate =
+    stats && finished >= 5 ? Math.round((stats.succeeded / finished) * 100) : null;
   const filtered = view !== "all" || agent !== "any" || where !== "any";
   const end = useLoadMore(tasks);
   // A running task's duration counts up, and "Started" moves on by itself.
@@ -53,11 +55,6 @@ export function TasksPage() {
   return (
     <Page
       title="Tasks"
-      badge={
-        counts && counts.active > 0 ? (
-          <span className="tabular text-xs text-subtle">{counts.active} running</span>
-        ) : undefined
-      }
       tabs={
         <Tabs
           value={view}
@@ -106,9 +103,6 @@ export function TasksPage() {
         stats.total > 0 && (
           <StatsBar
             items={[
-              <>
-                <span className="text-text">{stats.total.toLocaleString()}</span> tasks in view
-              </>,
               <>
                 <span className="text-ok">+{stats.insertions.toLocaleString()}</span>
                 <span className="text-danger">-{stats.deletions.toLocaleString()}</span> lines

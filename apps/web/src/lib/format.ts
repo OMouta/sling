@@ -48,8 +48,14 @@ export function shortSha(sha: string | null | undefined): string {
   return sha ? sha.slice(0, 8) : "";
 }
 
-export function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
+/** "1 task", "3 tasks", or with its own plural, "2 replies". */
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n.toLocaleString()} ${noun(n, one, many)}`;
+}
+
+/** The word alone, for a count set in its own style: "task" or "tasks". */
+export function noun(n: number, one: string, many = `${one}s`): string {
+  return n === 1 ? one : many;
 }
 
 /** "850 ms", "3.2 s", "45 s", "4m 05s", "1h 02m". */

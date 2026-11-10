@@ -20,7 +20,6 @@ import { RuleQuestion } from "../components/RuleQuestion.tsx";
 import { RulesList } from "../components/RulesList.tsx";
 import { SandboxFallbackCard } from "../components/SandboxFallbackCard.tsx";
 import {
-  Badge,
   Button,
   Card,
   CardFooter,
@@ -80,13 +79,6 @@ export function ApprovalsPage() {
   return (
     <Page
       title="Approvals"
-      badge={
-        total > 0 ? (
-          <Badge tone="warn" dot>
-            {total} waiting
-          </Badge>
-        ) : undefined
-      }
       tabs={
         <Tabs
           value={tab}

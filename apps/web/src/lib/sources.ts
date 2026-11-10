@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { api } from "./api.ts";
+import { plural } from "./format.ts";
 import type { ConversationDetail } from "./types.ts";
 
 export const sourcesKey = (personalityId: string) => ["sources", personalityId] as const;
@@ -120,7 +121,7 @@ export function fileSize(bytes: number): string {
 
 /** The short line under a source's name: its pages, or its size. */
 export function sourceDetail(s: SourceView): string {
-  if (s.pages) return `${s.pages} page${s.pages === 1 ? "" : "s"}`;
+  if (s.pages) return plural(s.pages, "page");
   if (s.kind === "link" && s.url) {
     try {
       return new URL(s.url).host;

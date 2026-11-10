@@ -2,6 +2,7 @@ import type { InstallationView } from "@sling/core";
 import { expressionSource, isExpression, type NodeSpecView, toExpression } from "@sling/workflow";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useMemo, useRef } from "react";
+import { plural } from "../../lib/format.ts";
 import { type FormField, formFields } from "../../lib/schemaForm.ts";
 import { CATEGORY_LABEL, portsOf } from "../../lib/workflow/catalog.ts";
 import {
@@ -68,7 +69,7 @@ export function Inspector({
     const what =
       nodeIds.length > 0
         ? `${nodeIds.length} nodes${edgeIds.length ? ` and ${edgeIds.length} connections` : ""}`
-        : `${edgeIds.length} connection${edgeIds.length === 1 ? "" : "s"}`;
+        : plural(edgeIds.length, "connection");
     return (
       <div className="space-y-3 p-4">
         <p className="text-[13px] text-soft">{what} selected.</p>

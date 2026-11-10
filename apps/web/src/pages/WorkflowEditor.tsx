@@ -1024,9 +1024,7 @@ function IssuesPanel({ onClose }: { onClose: () => void }) {
     >
       <div className="flex items-center justify-between border-b border-border py-2 pr-2 pl-3">
         <h2 className="text-[13px] font-medium">
-          {issues.length === 0
-            ? "No problems"
-            : `${issues.length} problem${issues.length === 1 ? "" : "s"}`}
+          {issues.length === 0 ? "No problems" : plural(issues.length, "problem")}
         </h2>
         <Button size="sm" variant="ghost" onClick={onClose}>
           Close
