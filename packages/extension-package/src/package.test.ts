@@ -15,7 +15,7 @@ import {
   verifySignature,
   writePackage,
 } from "./index.ts";
-import { writeTar } from "./tar.ts";
+import { readTar, writeTar } from "./tar.ts";
 
 const enc = new TextEncoder();
 
@@ -143,6 +143,51 @@ describe("refusals", () => {
     for (const b of h) sum += b;
     h.set(enc.encode(`${sum.toString(8).padStart(6, "0")}\0 `), 148);
     expect(() => readPackage(gz(tar))).toThrow(/link or special file/);
+  });
+
+  it("refuses a pax size that isn't a byte count, without spinning", () => {
+    const entry = (type: string, name: string, data: Uint8Array) => {
+      const h = new Uint8Array(512);
+      h.set(enc.encode(name), 0);
+      h.set(enc.encode(`${data.length.toString(8).padStart(11, "0")}\0`), 124);
+      h.fill(0x20, 148, 156);
+      h[156] = type.charCodeAt(0);
+      h.set(enc.encode("ustar\0"), 257);
+      let sum = 0;
+      for (const b of h) sum += b;
+      h.set(enc.encode(`${sum.toString(8).padStart(6, "0")}\0 `), 148);
+      const padded = new Uint8Array(Math.ceil(data.length / 512) * 512);
+      padded.set(data);
+      return [h, padded];
+    };
+    const pax = (record: string) => {
+      // The length counts its own digits.
+      let n = record.length + 2;
+      while (`${n}`.length + record.length + 2 !== n) n = `${n}`.length + record.length + 2;
+      return enc.encode(`${n} ${record}\n`);
+    };
+    const tar = (...parts: Uint8Array[][]) => {
+      const all = [...parts.flat(), new Uint8Array(1024)];
+      const out = new Uint8Array(all.reduce((n, p) => n + p.length, 0));
+      let at = 0;
+      for (const p of all) {
+        out.set(p, at);
+        at += p.length;
+      }
+      return out;
+    };
+    const limits = { maxFiles: 10, maxBytes: 1e6, maxPathLength: 200 };
+    for (const size of ["-512", "1e3", "0x10", "99999999999999999999"]) {
+      const bad = tar(entry("x", "h", pax(`size=${size}`)), entry("x", "h", pax("path=a")));
+      expect(() => readTar(bad, limits), size).toThrow(/broken extended header/);
+    }
+    // A pax size describes the file after the headers, not a header in between.
+    const ok = tar(
+      entry("x", "h", pax("size=3")),
+      entry("g", "g", pax("comment=hi")),
+      entry("0", "a.txt", enc.encode("abc")),
+    );
+    expect(new TextDecoder().decode(readTar(ok, limits).get("a.txt"))).toBe("abc");
   });
 
   it("refuses packages over the limits", () => {

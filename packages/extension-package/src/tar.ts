@@ -168,7 +168,9 @@ export function readTar(bytes: Uint8Array, limits: TarLimits): Map<string, Uint8
       throw new PackageError("bad_archive", "the package isn't a valid tar (bad checksum)");
     }
     const type = String.fromCharCode(header[156] as number);
-    const size = nextSize ?? readOctal(header, 124, 12);
+    const meta = type === "x" || type === "g" || type === "L";
+    // A pax size describes the entry after the extended headers, never another header.
+    const size = (meta ? null : nextSize) ?? readOctal(header, 124, 12);
     const dataStart = at + BLOCK;
     const dataEnd = dataStart + size;
     if (dataEnd > bytes.length) throw new PackageError("bad_archive", "the package is truncated");
@@ -178,7 +180,13 @@ export function readTar(bytes: Uint8Array, limits: TarLimits): Map<string, Uint8
     if (type === "x") {
       const pax = parsePax(data);
       if (pax.path !== undefined) nextPath = pax.path;
-      if (pax.size !== undefined) nextSize = Number.parseInt(pax.size, 10);
+      if (pax.size !== undefined) {
+        const n = /^\d+$/.test(pax.size) ? Number(pax.size) : Number.NaN;
+        if (!Number.isSafeInteger(n)) {
+          throw new PackageError("bad_archive", "the package has a broken extended header");
+        }
+        nextSize = n;
+      }
       continue;
     }
     if (type === "g") continue;
