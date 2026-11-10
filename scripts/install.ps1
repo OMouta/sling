@@ -9,7 +9,9 @@
 #                       from there, the version that Sling runs, and pairs with it.
 #   $env:SLING_CODE     Pairing code from Machines > Add machine. With SLING_URL,
 #                       the script runs `sling-runner pair` and
-#                       `sling-runner service install`.
+#                       `sling-runner service install`. Without it, a machine
+#                       that's already paired gets its Runner restarted on the
+#                       new version.
 #   $env:SLING_REPO     GitHub repo to download from instead, as owner/name.
 #   $env:SLING_VERSION  Release tag to download from SLING_REPO. Defaults to the latest.
 #   $env:SLING_BIN_DIR  Install directory. Defaults to $env:LOCALAPPDATA\Sling\bin.
