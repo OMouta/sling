@@ -96,7 +96,9 @@ Asking twice never merges twice. A merged PR, or a commit Sling already merged (
 
 ## The PR's CI
 
-Once a task's pull request is open on GitHub, Sling waits up to 30 minutes for its CI and shows the result on the PR's step and on "Approve deployment?", such as "CI passed: 4 checks" or "CI failed: lint (1 of 4)". The machine that has the repo reads it with `gh pr checks`, which needs `gh` logged in there. A sandbox's PR, or one no machine can read, is read through GitHub's API with the token under **Settings → Sandboxes**. When CI fails, the chat hears about it, the assistant tells you, and a push goes out. CI doesn't block the deploy: you decide.
+Once a task's pull request is open on GitHub, Sling waits up to 30 minutes for its CI and shows the result on the PR's step and on "Approve deployment?", such as "CI passed: 4 checks" or "CI failed: lint (1 of 4)". The machine that has the repo reads it with `gh pr checks`, which needs `gh` logged in there. A sandbox's PR, or one no machine can read, is read through GitHub's API with the token under **Settings → Sandboxes**. When CI fails, the chat hears about it, the assistant tells you, and a push goes out.
+
+In Supervised and Auto, CI doesn't block the deploy: you decide. In Full access nobody approves the merge, so it waits for CI instead. It merges once CI passes, and failed CI stops the deploy. So does CI still running after 30 minutes. A PR with no CI merges once no check has started for 3 minutes.
 
 ## Checking the site after a deploy
 

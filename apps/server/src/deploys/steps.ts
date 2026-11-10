@@ -18,6 +18,7 @@ import type { DeployService, TargetRow } from "./service.ts";
 
 type TaskRow = typeof schema.tasks.$inferSelect;
 type ActionRow = typeof schema.actions.$inferSelect;
+type CheckRow = typeof schema.actionChecks.$inferSelect;
 
 /** How long a merge on a machine may take before Sling stops waiting for its answer. */
 export const MERGE_TIMEOUT_MS = 10 * 60_000;
@@ -231,6 +232,54 @@ export async function callHook(
         `Couldn't reach the deploy hook: ${cause ?? (err instanceof Error ? err.message : String(err))}`,
       ),
     };
+  }
+}
+
+const LAST_LOOK_GRACE_MS = 2 * 60_000;
+
+/** Whether a check ended because it ran out of time, not because CI said so. */
+function ranOut(check: Pick<CheckRow, "checkedAt" | "giveUpAt">, now: Date): boolean {
+  const end = check.giveUpAt?.getTime();
+  if (end === undefined) return false;
+  return (check.checkedAt ?? now).getTime() >= end;
+}
+
+export type CiGate =
+  | { kind: "merge" }
+  | { kind: "wait"; message: string }
+  | { kind: "fail"; message: string }
+  /** The PR's check gave up before this merge was asked for, so it's checked again. */
+  | { kind: "recheck" };
+
+/**
+ * Whether a merge nobody approves may go, from the PR's CI check: once CI
+ * passed, or when the PR has no CI. Failed CI, or CI still running when the
+ * check gives up, stops it.
+ */
+export function ciGate(
+  check: Pick<CheckRow, "state" | "message" | "checkedAt" | "giveUpAt"> | null,
+  mergeCreatedAt: Date,
+  now = new Date(),
+): CiGate {
+  if (!check) return { kind: "wait", message: "Waiting for CI before merging." };
+  const said = check.message.replace(/\.$/, "");
+  switch (check.state) {
+    case "passed":
+      return { kind: "merge" };
+    case "failed":
+      return { kind: "fail", message: `${said}. The PR wasn't merged.` };
+    case "waiting":
+      // Its last look is due at the limit itself, so give that a moment to land.
+      if (check.giveUpAt && now.getTime() >= check.giveUpAt.getTime() + LAST_LOOK_GRACE_MS) {
+        return { kind: "fail", message: "CI didn't finish in time. The PR wasn't merged." };
+      }
+      return { kind: "wait", message: `${said || "Waiting for CI"}. Merging once it passes.` };
+    case "unchecked":
+      if (!ranOut(check, now)) return { kind: "merge" };
+      if (check.giveUpAt && check.giveUpAt.getTime() < mergeCreatedAt.getTime()) {
+        return { kind: "recheck" };
+      }
+      return { kind: "fail", message: `${said}. The PR wasn't merged.` };
   }
 }
 
@@ -489,6 +538,10 @@ export class DeploySteps {
     const pr = await this.#latest(task.id, "open_pr");
     const prUrl = pr?.state === "succeeded" ? pr.url : null;
     const pull = githubPull(prUrl);
+    // A merge you approved goes when you say. One that nobody approves waits for CI.
+    if (pr && pull && !action.requiresApproval && !(await this.#ciAllows(task, action, pr))) {
+      return;
+    }
     if (task.environment === "sandbox" && pull) {
       const { gitToken } = await readSecrets(this.#ctx, task.workspaceId);
       if (gitToken) return this.#mergeThroughGitHub(task, action, target, pull, gitToken);
@@ -503,6 +556,47 @@ export class DeploySteps {
       title: task.title,
       body: pr?.prBody ?? task.summary ?? task.objective,
     });
+  }
+
+  /**
+   * Whether the PR's CI lets the merge go now. Otherwise the merge waits,
+   * and the PR's check moves the task on when it changes, or the merge
+   * fails when CI failed or didn't finish in time.
+   */
+  async #ciAllows(task: TaskRow, action: ActionRow, pr: ActionRow): Promise<boolean> {
+    const [check] = await this.#db
+      .select()
+      .from(schema.actionChecks)
+      .where(eq(schema.actionChecks.actionId, pr.id));
+    const gate = ciGate(check ?? null, action.createdAt);
+    if (gate.kind === "merge") return true;
+    if (gate.kind === "fail") {
+      await this.#end(action, "failed", { message: gate.message }, ["ready"]);
+      return false;
+    }
+    if (gate.kind === "recheck" && check) {
+      await this.#db
+        .delete(schema.actionChecks)
+        .where(
+          and(eq(schema.actionChecks.id, check.id), eq(schema.actionChecks.state, "unchecked")),
+        );
+    }
+    if (!check || gate.kind === "recheck") {
+      // Usually started already, when the PR opened. Starting it twice is safe.
+      this.#background("PR CI check", async () => {
+        await this.#ctx.checks.checkAction({
+          kind: "task_action",
+          workspaceId: task.workspaceId,
+          ownerId: task.ownerId,
+          actionId: pr.id,
+        });
+      });
+    }
+    await this.#wait(
+      action,
+      gate.kind === "wait" ? gate.message : "Waiting for CI before merging.",
+    );
+    return false;
   }
 
   async #defaultBranch(task: TaskRow, remoteKey: string): Promise<string | null> {

@@ -13,7 +13,7 @@ In Supervised and Auto, Claude Code refuses to start rather than run commands un
 
 New conversations start in the workspace default (**Settings**, Auto out of the box). You can switch any conversation from its header. A switch applies to tasks started after it, and running tasks keep the mode they started with. Every task records its mode in the audit log.
 
-Merge and deploy happen only when a task is delivered as a deploy, to a repo with a [site check that deploys it](checks.md#sites-that-deploy). Auto then pushes and opens the PR on its own and asks once, "Approve deployment?", after the PR exists. Supervised asks for push and PR first, then for the deployment. Full access merges and deploys without asking, and a Read-only conversation can't deploy at all.
+Merge and deploy happen only when a task is delivered as a deploy, to a repo with a [site check that deploys it](checks.md#sites-that-deploy). Auto then pushes and opens the PR on its own and asks once, "Approve deployment?", after the PR exists. Supervised asks for push and PR first, then for the deployment. Full access merges and deploys without asking, once the PR's CI passes, and a Read-only conversation can't deploy at all.
 
 ## Sending from chat
 

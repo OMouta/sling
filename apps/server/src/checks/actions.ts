@@ -358,7 +358,7 @@ export class ActionChecks {
     const changed = saved.state !== row.state || saved.message !== row.message || opts.first;
     if (changed && !(opts.first && saved.toolCallId)) {
       // The first check of a chat step goes back with the tool's result instead.
-      if (saved.actionId) await this.#publishTask(saved.actionId);
+      if (saved.actionId) await this.#publishTask(saved.actionId, saved.kind === CI_KIND);
       else if (!(await this.#land(saved))) {
         await this.#schedule(
           { id: saved.id, attempt: saved.attempts, land: 0 },
@@ -373,12 +373,15 @@ export class ActionChecks {
     return saved;
   }
 
-  async #publishTask(actionId: string) {
+  /** Shows the task. A PR's CI also moves it on, since a merge may wait for it. */
+  async #publishTask(actionId: string, advance: boolean) {
     const [a] = await this.#db
       .select({ taskId: schema.actions.taskId })
       .from(schema.actions)
       .where(eq(schema.actions.id, actionId));
-    if (a) await this.#ctx.tasks.publish(a.taskId);
+    if (!a) return;
+    if (advance) await this.#ctx.tasks.advance(a.taskId);
+    else await this.#ctx.tasks.publish(a.taskId);
   }
 
   /**

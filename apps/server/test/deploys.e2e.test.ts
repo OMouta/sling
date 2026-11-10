@@ -160,6 +160,8 @@ let githubUrl = "";
 const github = {
   merges: [] as { path: string; body: Record<string, unknown>; auth: string | undefined }[],
   pulls: new Map<number, { head: string; merged: boolean; sha: string | null }>(),
+  /** How the PR's one check stands. */
+  ci: "success" as "success" | "failure" | "pending",
 };
 const fake = createFakeProvider({
   runner: { prUrl: () => "https://github.com/acme/app/pull/7" },
@@ -606,14 +608,20 @@ async function githubHandler(req: IncomingMessage, res: ServerResponse) {
     res.end(JSON.stringify(value));
   };
   const authorized = req.headers.authorization === `Bearer ${GIT_TOKEN}`;
-  // The PR's CI: one check that passed, on the commit the PR is at.
+  // The PR's CI: one check, on the commit the PR is at.
   const ci = /^\/repos\/acme\/app\/commits\/(\w+)\/(check-runs|status)(\?.*)?$/.exec(req.url ?? "");
   if (ci) {
     if (!authorized) return json(401, { message: "Bad credentials" });
     if (ci[1] !== PR_HEAD) return json(404, { message: "Not Found" });
     return ci[2] === "status"
       ? json(200, { state: "success", statuses: [] })
-      : json(200, { check_runs: [{ name: "test", status: "completed", conclusion: "success" }] });
+      : json(200, {
+          check_runs: [
+            github.ci === "pending"
+              ? { name: "test", status: "in_progress", conclusion: null }
+              : { name: "test", status: "completed", conclusion: github.ci },
+          ],
+        });
   }
   const m = /^\/repos\/acme\/app\/pulls\/(\d+)(\/merge)?$/.exec(req.url ?? "");
   const pr = m ? github.pulls.get(Number(m[1])) : undefined;
@@ -1389,6 +1397,68 @@ describe("sandbox tasks", () => {
       },
     ]);
   });
+
+  /** A Full access sandbox task for the App target, set up by the test above. */
+  async function fullAccessAppTask(title: string) {
+    github.pulls.delete(7);
+    github.merges.length = 0;
+    return api<{ id: string }>("POST", "/api/tasks", {
+      repo: APP_KEY,
+      title,
+      objective: "Fix the app.",
+      deliver: "deploy",
+      mode: "full-access",
+      environment: "sandbox",
+    });
+  }
+
+  it("in Full access, stops the deploy when the PR's CI fails", async () => {
+    github.ci = "failure";
+    try {
+      const created = await fullAccessAppTask("Fix the app, CI fails");
+      const done = await stepReaches(created.id, "verify", ["skipped"], 60_000);
+      expect(step(done, "merge")).toMatchObject({
+        state: "failed",
+        message: "CI failed: test (1 of 1). The PR wasn't merged.",
+      });
+      expect(github.merges).toEqual([]);
+    } finally {
+      github.ci = "success";
+    }
+  });
+
+  it("in Full access, merges only once the PR's CI passes", async () => {
+    github.ci = "pending";
+    try {
+      const created = await fullAccessAppTask("Fix the app, CI is slow");
+      const waiting = await until(
+        "the merge waits for CI",
+        async () => {
+          const t = await task(created.id);
+          const merge = step(t, "merge");
+          return merge?.state === "ready" && merge.message?.startsWith("CI running") ? t : null;
+        },
+        60_000,
+      );
+      expect(step(waiting, "merge")?.message).toBe(
+        "CI running: 0 of 1 check done. Merging once it passes.",
+      );
+      expect(github.merges).toEqual([]);
+      github.pulls.set(7, { head: waiting.branch, merged: false, sha: null });
+      github.ci = "success";
+      // CI is read again every 30 s.
+      const done = await stepReaches(created.id, "verify", ["succeeded", "failed"], 90_000);
+      expect(step(done, "open_pr")?.check).toMatchObject({ state: "passed" });
+      expect(step(done, "merge")).toMatchObject({
+        state: "succeeded",
+        message: "Merged on GitHub (squash).",
+      });
+      expect(step(done, "verify")?.state).toBe("succeeded");
+      expect(github.merges).toHaveLength(1);
+    } finally {
+      github.ci = "success";
+    }
+  }, 120_000);
 });
 
 // ---------------------------------------------------------------- the alert

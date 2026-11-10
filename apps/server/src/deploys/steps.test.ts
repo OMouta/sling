@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { actionOfRequest, callHook, githubPull, mergeOnGitHub } from "./steps.ts";
+import { actionOfRequest, callHook, ciGate, githubPull, mergeOnGitHub } from "./steps.ts";
 
 let server: Server;
 let base = "";
@@ -205,5 +205,64 @@ describe("deploy hooks", () => {
       message:
         "The deploy hook didn't answer within 0 s, so Sling can't tell whether a deploy started.",
     });
+  });
+});
+
+describe("ciGate", () => {
+  const now = new Date("2026-01-01T12:00:00Z");
+  const min = (n: number) => new Date(now.getTime() + n * 60_000);
+  const merge = min(-60);
+  const check = (state: "passed" | "failed" | "waiting" | "unchecked", message: string) => ({
+    state,
+    message,
+    checkedAt: min(-1),
+    giveUpAt: min(10),
+  });
+
+  it("merges once CI passed, or when the PR has no CI", () => {
+    expect(ciGate(check("passed", "CI passed: 3 checks"), merge, now)).toEqual({ kind: "merge" });
+    expect(ciGate(check("unchecked", "No CI ran on this PR"), merge, now)).toEqual({
+      kind: "merge",
+    });
+  });
+
+  it("waits while CI runs, or before the check has started", () => {
+    expect(ciGate(check("waiting", "CI running: 1 of 3 checks done"), merge, now)).toEqual({
+      kind: "wait",
+      message: "CI running: 1 of 3 checks done. Merging once it passes.",
+    });
+    expect(ciGate(null, merge, now)).toEqual({
+      kind: "wait",
+      message: "Waiting for CI before merging.",
+    });
+  });
+
+  it("stops on failed CI, and on CI that didn't finish in time", () => {
+    expect(ciGate(check("failed", "CI failed: lint (1 of 3)"), merge, now)).toEqual({
+      kind: "fail",
+      message: "CI failed: lint (1 of 3). The PR wasn't merged.",
+    });
+    const gaveUp = {
+      state: "unchecked" as const,
+      message: "CI running: 1 of 3 checks done. Sling stopped checking after 30 min.",
+      checkedAt: min(-5),
+      giveUpAt: min(-5),
+    };
+    expect(ciGate(gaveUp, merge, now)).toEqual({
+      kind: "fail",
+      message:
+        "CI running: 1 of 3 checks done. Sling stopped checking after 30 min. The PR wasn't merged.",
+    });
+    // Its job was lost, and the time is up.
+    expect(ciGate({ ...check("waiting", "CI running"), giveUpAt: min(-1) }, merge, now)).toEqual({
+      kind: "wait",
+      message: "CI running. Merging once it passes.",
+    });
+    expect(ciGate({ ...check("waiting", "CI running"), giveUpAt: min(-3) }, merge, now)).toEqual({
+      kind: "fail",
+      message: "CI didn't finish in time. The PR wasn't merged.",
+    });
+    // A check that gave up before a later deploy asked is run again.
+    expect(ciGate(gaveUp, min(-1), now)).toEqual({ kind: "recheck" });
   });
 });
