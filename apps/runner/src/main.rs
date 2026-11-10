@@ -188,7 +188,11 @@ fn main() {
     if let Some(prepared) = prepared {
         std::process::exit(runtime.block_on(sandbox::run(prepared)));
     }
-    if let Err(e) = runtime.block_on(real_main(cli)) {
+    let result = runtime.block_on(real_main(cli));
+    // Blocking work still under way, such as a scan of the home folder,
+    // mustn't hold up the exit.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+    if let Err(e) = result {
         tracing::error!("{e:#}");
         eprintln!("error: {e:#}");
         if e.downcast_ref::<connection::Refused>().is_some() {
