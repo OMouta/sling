@@ -145,8 +145,10 @@ export function routingSummary(routing: RoutingView) {
   };
 }
 
-function created(c: CreatedTask) {
+function created(c: CreatedTask, asked: string) {
   const target = c.routing.target;
+  const noRemote =
+    asked !== "local" && c.task.deliver === "local" && MODE_POLICY[c.task.mode].writes;
   return {
     taskId: c.task.id,
     branch: c.task.branch,
@@ -158,6 +160,12 @@ function created(c: CreatedTask) {
     machine: target?.kind === "machine" ? target.runnerName : null,
     sandboxProvider: target?.kind === "sandbox" ? target.providerName : null,
     routing: routingSummary(c.routing),
+    ...(noRemote
+      ? {
+          delivery:
+            "The repo has no remote, so nothing gets pushed and there's no PR. Sling commits the work on its branch on that machine.",
+        }
+      : {}),
     ...(c.approvalId
       ? {
           waitingForApproval:
@@ -370,7 +378,7 @@ function allTools(ctx: AppContext, scope: ToolScope, canDeploy: boolean) {
               input.providerInstallationId,
             ),
           });
-          return created(result);
+          return created(result, input.deliver);
         } catch (err) {
           if (err instanceof TaskRoutingError) {
             return {

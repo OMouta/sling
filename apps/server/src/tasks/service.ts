@@ -192,8 +192,10 @@ export class TaskService implements GatewayHandlers {
     }
 
     const id = newId("tsk");
-    const deliver: Delivery = MODE_POLICY[input.mode].writes ? input.deliver : "local";
     const machine = decision.kind === "machine" ? decision : null;
+    // A repo with no remote has nowhere to push: the commit stays on its branch.
+    const pushable = !machine || (await this.#hasRemote(machine.repoId));
+    const deliver: Delivery = MODE_POLICY[input.mode].writes && pushable ? input.deliver : "local";
     const [task] = await db
       .insert(schema.tasks)
       .values({
@@ -803,6 +805,14 @@ export class TaskService implements GatewayHandlers {
   }
 
   // ------------------------------------------------------------- actions
+
+  async #hasRemote(repoId: string): Promise<boolean> {
+    const [repo] = await this.#db
+      .select({ remoteUrl: schema.repos.remoteUrl })
+      .from(schema.repos)
+      .where(eq(schema.repos.id, repoId));
+    return Boolean(repo?.remoteUrl);
+  }
 
   /** The repo's normalized remote: from the machine's repo, or the sandbox's. */
   async #remoteKeyOf(db: Db | Tx, task: TaskRow): Promise<string | null> {

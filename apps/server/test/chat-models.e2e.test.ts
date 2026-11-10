@@ -437,6 +437,33 @@ describe("repos from the web app", () => {
     });
   });
 
+  it("keeps a task in a repo with no remote on its branch, and tells the chat it's committed", async () => {
+    const conv = await api<{ id: string }>("POST", "/api/conversations");
+    await api("PATCH", `/api/conversations/${conv.id}`, { mode: "auto" });
+    const { id } = await api<{ id: string }>("POST", "/api/tasks", {
+      repo: "docs",
+      title: "Fix a typo",
+      objective: "Fix it.",
+      conversationId: conv.id,
+      deliver: "pr",
+    });
+    const note = await until("the task's note", async () => {
+      const d = await api<{ messages: { role: string; text: string }[] }>(
+        "GET",
+        `/api/conversations/${conv.id}`,
+      );
+      return d.messages.find((m) => m.role === "system")?.text;
+    });
+    const { task } = await api<{ task: { deliver: string; actions: unknown[]; branch: string } }>(
+      "GET",
+      `/api/tasks/${id}`,
+    );
+    expect(task).toMatchObject({ deliver: "local", actions: [] });
+    expect(note).toContain(`Sling committed the work as 1111111 on branch ${task.branch}.`);
+    expect(note).toContain("Nothing gets pushed: the commit stays on its branch on devbox.");
+    expect(note).not.toContain("Delivery step");
+  });
+
   it("only sends paths the machine reported", async () => {
     const [m] = await api<{ id: string }[]>("GET", "/api/runners");
     const before = runner?.repoChanges.length;
