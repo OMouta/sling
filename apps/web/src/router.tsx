@@ -52,10 +52,10 @@ export const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
   // `next` is the page to open after signing in; `step` resumes at the second factor.
-  validateSearch: (search: Record<string, unknown>): { next?: string; step?: "2fa" } => {
-    const next = returnPath(search.next);
-    return { ...(next ? { next } : {}), ...(search.step === "2fa" ? { step: "2fa" } : {}) };
-  },
+  validateSearch: (search: Record<string, unknown>): { next?: string; step?: "2fa" } => ({
+    next: returnPath(search.next),
+    step: search.step === "2fa" ? "2fa" : undefined,
+  }),
   component: LoginPage,
 });
 
@@ -72,8 +72,8 @@ export const chatsRoute = createRoute({
   path: "/chats",
   // `q` searches names and messages; `filter` is the tab.
   validateSearch: (search: Record<string, unknown>): ChatsSearch => ({
-    ...(typeof search.q === "string" && search.q.trim() ? { q: search.q } : {}),
-    ...(oneOf(CONVERSATION_FILTERS, search.filter, "all") ? { filter: search.filter } : {}),
+    q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
+    filter: oneOf(CONVERSATION_FILTERS, search.filter, "all") ? search.filter : undefined,
   }),
   component: ChatsPage,
 });
@@ -130,9 +130,9 @@ export const tasksRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/tasks",
   validateSearch: (search: Record<string, unknown>): TasksSearch => ({
-    ...(oneOf(TASK_VIEWS, search.view, "all") ? { view: search.view } : {}),
-    ...(oneOf(HARNESSES, search.agent) ? { agent: search.agent } : {}),
-    ...(oneOf(["machine", "sandbox"] as const, search.where) ? { where: search.where } : {}),
+    view: oneOf(TASK_VIEWS, search.view, "all") ? search.view : undefined,
+    agent: oneOf(HARNESSES, search.agent) ? search.agent : undefined,
+    where: oneOf(["machine", "sandbox"] as const, search.where) ? search.where : undefined,
   }),
   component: TasksPage,
 });
@@ -145,8 +145,9 @@ export const taskRoute = createRoute({
 export const workflowsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/workflows",
-  validateSearch: (search: Record<string, unknown>): { tab?: "on" | "off" } =>
-    oneOf(["on", "off"] as const, search.tab) ? { tab: search.tab } : {},
+  validateSearch: (search: Record<string, unknown>): { tab?: "on" | "off" } => ({
+    tab: oneOf(["on", "off"] as const, search.tab) ? search.tab : undefined,
+  }),
   component: WorkflowsPage,
 });
 

@@ -296,6 +296,11 @@ describe("web app", () => {
     expect(await screen.findByText("The footer year is wrong.")).toBeTruthy();
   });
 
+  it("opens Home after sign-in when the page to return to is on another site", async () => {
+    const router = renderAt(`/login?next=${encodeURIComponent("//evil.example/x")}`);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+  });
+
   it("only returns to a page on this site after signing in", () => {
     expect(returnPath("/tasks/tsk_1?x=1#a")).toBe("/tasks/tsk_1?x=1#a");
     expect(returnPath("//evil.example/a")).toBeUndefined();
