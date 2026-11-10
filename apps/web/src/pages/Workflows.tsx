@@ -5,6 +5,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight, Plus, Upload, Workflow, Zap } from "lucide-react";
 import { useRef, useState } from "react";
 import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
+import { LoadFailed } from "../components/RouteFallback.tsx";
 import { RunStatusBadge } from "../components/StatusBadge.tsx";
 import {
   Badge,
@@ -126,7 +127,19 @@ export function WorkflowsPage() {
           ))}
         </div>
       )}
-      <ErrorText error={workflows.error} />
+      {workflows.isError && !workflows.data ? (
+        <LoadFailed
+          title="Couldn't load workflows"
+          retry={() => void workflows.refetch()}
+          retrying={workflows.isFetching}
+        />
+      ) : (
+        workflows.error && (
+          <div className="px-5 pb-3">
+            <ErrorText error={workflows.error} />
+          </div>
+        )
+      )}
       {workflows.data?.length === 0 && (
         <Empty
           fill
@@ -137,6 +150,13 @@ export function WorkflowsPage() {
               New workflow
             </Button>
           }
+        />
+      )}
+      {all.length > 0 && sorted.length === 0 && (
+        <Empty
+          fill
+          icon={Workflow}
+          title={tab === "on" ? "No workflows are on" : "No workflows are off"}
         />
       )}
       {sorted.length > 0 && (

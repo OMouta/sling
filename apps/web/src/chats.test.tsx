@@ -53,9 +53,12 @@ const MATCH: Record<string, (c: ConversationSummaryView) => boolean> = {
   archived: (c) => c.archived,
 };
 
+let listStatus = 200;
+
 beforeEach(() => {
   requests = [];
   archiveStatus = 200;
+  listStatus = 200;
   conversations = [
     chat({}),
     chat({
@@ -88,6 +91,9 @@ beforeEach(() => {
         return Response.json({ needsSetup: false, signedIn: true, email: "a@b.c", version: "1" });
       }
       if (url.pathname === "/api/conversations") {
+        if (listStatus !== 200) {
+          return Response.json({ error: "The server is busy." }, { status: listStatus });
+        }
         const q = url.searchParams.get("q")?.toLowerCase();
         const matched = q
           ? conversations.filter((c) => c.preview?.toLowerCase().includes(q))
@@ -225,6 +231,18 @@ describe("chats", () => {
     });
     fireEvent.click(again.getByRole("option", { name: "Search chats for “an old chat”" }));
     await waitFor(() => expect(router.state.location.search).toEqual({ q: "an old chat" }));
+  });
+
+  it("says the list didn't load, rather than that there are no chats, and tries again", async () => {
+    listStatus = 500;
+    open("/chats");
+    const main = within(await screen.findByRole("main"));
+    expect(await main.findByText("Couldn't load chats")).toBeTruthy();
+    expect(main.queryByText("No chats yet")).toBeNull();
+    listStatus = 200;
+    fireEvent.click(main.getByRole("button", { name: "Try again" }));
+    expect(await main.findByText("Fix the footer")).toBeTruthy();
+    expect(main.queryByText("Couldn't load chats")).toBeNull();
   });
 
   it("archives a chat into the Archived tab, and restores it from there", async () => {

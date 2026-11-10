@@ -5,6 +5,7 @@ import { useContext, useEffect, useMemo, useState } from "react";
 import { useConversationMenu } from "../components/ConversationMenu.tsx";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, ShellContext, Toolbar } from "../components/Page.tsx";
+import { LoadFailed } from "../components/RouteFallback.tsx";
 import {
   Badge,
   Button,
@@ -65,6 +66,7 @@ export function ChatsPage() {
   const conversations = useConversationList(q, filter);
   const pages = conversations.data?.pages;
   const rows = useMemo(() => pages?.flatMap((p) => p.items) ?? [], [pages]);
+  const failed = conversations.isError && rows.length === 0;
   const groups = useMemo(() => groupByDate(rows), [rows]);
   const counts = useStickyCounts(pages?.[0]?.counts);
   const end = useLoadMore(conversations);
@@ -118,8 +120,13 @@ export function ChatsPage() {
         </Toolbar>
       }
     >
-      <ErrorText error={conversations.error} />
-      {!conversations.isPending && rows.length === 0 ? (
+      {failed ? (
+        <LoadFailed
+          title="Couldn't load chats"
+          retry={() => void conversations.refetch()}
+          retrying={conversations.isFetching}
+        />
+      ) : !conversations.isPending && rows.length === 0 ? (
         q || (filter !== "all" && filter !== "archived") ? (
           <Empty fill icon={SearchX} title="No chats match" />
         ) : filter === "archived" ? (
@@ -129,6 +136,7 @@ export function ChatsPage() {
         )
       ) : (
         <div className="w-full px-5 pt-1 pb-10">
+          <ErrorText error={conversations.error} />
           {conversations.isPending ? (
             <div className="space-y-2">
               <Skeleton className="h-16 w-full rounded-xl" />

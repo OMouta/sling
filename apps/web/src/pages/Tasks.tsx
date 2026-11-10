@@ -10,6 +10,7 @@ import { Bot, Box, CircleDot, ListChecks } from "lucide-react";
 import { useMemo } from "react";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
+import { LoadFailed } from "../components/RouteFallback.tsx";
 import { TaskStateBadge } from "../components/TaskCard.tsx";
 import {
   Avatar,
@@ -130,13 +131,23 @@ export function TasksPage() {
         )
       }
     >
-      <ErrorText error={tasks.error} />
+      {tasks.error && rows.length > 0 && (
+        <div className="px-5 pb-3">
+          <ErrorText error={tasks.error} />
+        </div>
+      )}
       {tasks.isPending ? (
         <div className="space-y-3 px-5 py-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-5 w-full" />
           ))}
         </div>
+      ) : tasks.isError && rows.length === 0 ? (
+        <LoadFailed
+          title="Couldn't load tasks"
+          retry={() => void tasks.refetch()}
+          retrying={tasks.isFetching}
+        />
       ) : rows.length === 0 ? (
         <Empty fill icon={ListChecks} title={filtered ? "No tasks match" : "No tasks yet"} />
       ) : (

@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { RotateCw } from "lucide-react";
+import { CloudOff, RotateCw } from "lucide-react";
 import { Button, Empty } from "./ui.tsx";
 
 /**
@@ -30,6 +30,30 @@ export function NotFound() {
       action={
         <Button variant="primary" onClick={() => void navigate({ to: "/" })}>
           Go home
+        </Button>
+      }
+    />
+  );
+}
+
+/** A list that couldn't load, in place of the list, with a way to try again. */
+export function LoadFailed({
+  title,
+  retry,
+  retrying,
+}: {
+  title: string;
+  retry: () => void;
+  retrying: boolean;
+}) {
+  return (
+    <Empty
+      fill
+      icon={CloudOff}
+      title={title}
+      action={
+        <Button icon={RotateCw} busy={retrying} onClick={retry}>
+          Try again
         </Button>
       }
     />

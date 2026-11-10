@@ -300,6 +300,16 @@ describe("workflows list", () => {
     await screen.findByRole("switch", { name: "Enable Important email to Discord" });
   });
 
+  it("says so when a tab has no workflows", async () => {
+    renderAt("/workflows");
+    fireEvent.click(
+      await screen.findByRole("switch", { name: "Disable Important email to Discord" }),
+    );
+    await screen.findByRole("switch", { name: "Enable Important email to Discord" });
+    fireEvent.click(screen.getByRole("tab", { name: /^On/ }));
+    expect(await screen.findByText("No workflows are on")).toBeTruthy();
+  });
+
   it("creates a workflow from a template a step at a time: template, accounts, name", async () => {
     renderAt("/workflows");
     fireEvent.click(await screen.findByRole("button", { name: "New workflow" }));

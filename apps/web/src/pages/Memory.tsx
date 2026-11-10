@@ -5,6 +5,7 @@ import { Brain, Check, Ellipsis, MessageSquare, Pencil, Plus, Search, Trash2 } f
 import { type KeyboardEvent, useDeferredValue, useEffect, useRef, useState } from "react";
 import { Glyph } from "../components/Glyph.tsx";
 import { Page, Toolbar } from "../components/Page.tsx";
+import { LoadFailed } from "../components/RouteFallback.tsx";
 import {
   Button,
   Card,
@@ -88,13 +89,23 @@ export function MemoryPage() {
         )
       }
     >
-      <ErrorText error={list.error} />
+      {list.error && list.data && (
+        <div className="px-5 pb-3">
+          <ErrorText error={list.error} />
+        </div>
+      )}
       {list.isPending ? (
         <div className="space-y-3 px-5 pt-1 pb-6">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-14 w-full rounded-xl" />
           ))}
         </div>
+      ) : list.isError && !list.data ? (
+        <LoadFailed
+          title="Couldn't load memories"
+          retry={() => void list.refetch()}
+          retrying={list.isFetching}
+        />
       ) : all.length === 0 && !adding ? (
         <Empty
           fill
