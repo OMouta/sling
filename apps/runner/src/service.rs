@@ -219,7 +219,10 @@ pub async fn install(paths: &Paths) -> Result<String> {
         std::fs::write(&file, systemd_unit(&exe, &path, home.as_deref()))?;
         for args in [
             &["--user", "daemon-reload"][..],
-            &["--user", "enable", "--now", "sling-runner.service"][..],
+            &["--user", "enable", "sling-runner.service"][..],
+            // Replaces a Runner that's already running, with its old binary
+            // and key.
+            &["--user", "restart", "sling-runner.service"][..],
         ] {
             let out = sh("systemctl", args).await?;
             if !out.ok() {

@@ -120,8 +120,14 @@ impl Manager {
         self.config.lock().unwrap().clone()
     }
 
-    pub fn set_config(&self, cfg: Config) {
-        *self.config.lock().unwrap() = cfg;
+    /// Takes a reloaded config. The pairing stays the one this process
+    /// started with, whose key it holds; a new pairing counts from the next
+    /// start.
+    pub fn set_config(&self, mut cfg: Config) {
+        let mut current = self.config.lock().unwrap();
+        cfg.runner_id.clone_from(&current.runner_id);
+        cfg.server_url.clone_from(&current.server_url);
+        *current = cfg;
     }
 
     /// Keeps `var` out of the environment of every `harness` run.

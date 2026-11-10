@@ -104,6 +104,11 @@ if ($Code) {
   if ($LASTEXITCODE -ne 0) { throw "Installing the service failed." }
   Write-Host ""
   Write-Host "Choose the repos Sling may use under Machines in Sling."
+} elseif (& $Runner config show 2>$null | Select-String -Quiet '^runner_id = ') {
+  # Already paired: restart the Runner on the binary just installed.
+  & $Runner service install
+  if ($LASTEXITCODE -ne 0) { throw "Restarting the Runner failed." }
+  Write-Host "This machine is already paired, so the Runner was restarted on the new version."
 } else {
   $PairUrl = if ($Url) { $Url } else { "<sling-url>" }
   Write-Host ""

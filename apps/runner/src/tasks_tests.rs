@@ -292,6 +292,20 @@ async fn refuses_a_mode_above_the_local_cap() {
     }
 }
 
+#[test]
+fn a_reloaded_config_keeps_the_pairing_the_runner_started_with() {
+    let env = setup(Mode::Auto);
+    let mut next = env.mgr.config();
+    next.runner_id = Some("rnr_other".into());
+    next.server_url = Some("https://other.example".into());
+    next.max_concurrent_tasks = 2;
+    env.mgr.set_config(next);
+    let cfg = env.mgr.config();
+    assert_eq!(cfg.runner_id.as_deref(), Some("rnr_test"));
+    assert_eq!(cfg.server_url.as_deref(), Some("http://localhost"));
+    assert_eq!(cfg.max_concurrent_tasks, 2);
+}
+
 #[tokio::test]
 async fn refuses_a_repo_that_is_not_in_the_local_config() {
     let env = setup(Mode::FullAccess);

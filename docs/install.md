@@ -101,7 +101,13 @@ git pull
 docker compose up -d --build
 ```
 
-Migrations run on startup.
+Migrations run on startup. Then update each machine's Runner to the new version by running the install command again without a code. A machine that's already paired keeps its pairing, and the Runner restarts on the new version:
+
+```sh
+curl -fsSL https://sling.example.com/install.sh | sh
+```
+
+On Windows: `irm https://sling.example.com/install.ps1 | iex`.
 
 ## Backups
 

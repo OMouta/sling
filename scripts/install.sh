@@ -10,7 +10,9 @@
 #                   there, the version that Sling runs, and pairs with it.
 #   SLING_CODE      Pairing code from Machines > Add machine. With SLING_URL,
 #                   the script runs `sling-runner pair` and
-#                   `sling-runner service install`.
+#                   `sling-runner service install`. Without it, a machine
+#                   that's already paired gets its Runner restarted on the
+#                   new version.
 #   SLING_REPO      GitHub repo to download from instead, as owner/name.
 #   SLING_VERSION   Release tag to download from SLING_REPO, for example
 #                   v0.1.0. Defaults to the latest.
@@ -115,6 +117,13 @@ if [ -n "$CODE" ]; then
   "$runner" service install
   echo
   echo "Choose the repos Sling may use under Machines in Sling."
+  exit 0
+fi
+
+# Already paired: restart the Runner on the binary just installed.
+if "$runner" config show 2>/dev/null | grep -q '^runner_id = '; then
+  "$runner" service install
+  echo "This machine is already paired, so the Runner was restarted on the new version."
   exit 0
 fi
 

@@ -24,6 +24,8 @@ curl -fsSL https://github.com/$SLING_REPO/releases/latest/download/install.sh | 
 
 With neither `SLING_URL` nor `SLING_REPO`, the script uses the `sling-runner` already on your PATH. From source: `cargo build --release -p sling-runner`.
 
+Run the install command again without `SLING_CODE` to update a machine. If it's already paired, the script restarts the Runner on the new version instead.
+
 You also need, on the same machine and as the same user:
 
 - `git`
