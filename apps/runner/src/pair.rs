@@ -8,6 +8,36 @@ use crate::connection::VERSION;
 use crate::identity::Identity;
 use crate::sys::{hostname, os};
 
+/// An HTTP client for the control plane. It trusts the same roots as the
+/// WebSocket: the system's, so a private CA the OS trusts works for all
+/// three. Mozilla's roots are the fallback only when the system has none.
+pub(crate) fn http_agent(timeout: std::time::Duration) -> ureq::Agent {
+    use std::sync::OnceLock;
+    use ureq::tls::{Certificate, RootCerts, TlsConfig};
+    static ROOTS: OnceLock<RootCerts> = OnceLock::new();
+    let roots = ROOTS.get_or_init(|| {
+        let found = rustls_native_certs::load_native_certs();
+        for e in &found.errors {
+            tracing::debug!("skipped a system certificate: {e}");
+        }
+        if found.certs.is_empty() {
+            return RootCerts::WebPki;
+        }
+        found
+            .certs
+            .iter()
+            .map(|c| Certificate::from_der(c.as_ref()).to_owned())
+            .collect::<Vec<_>>()
+            .into()
+    });
+    ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_global(Some(timeout))
+        .tls_config(TlsConfig::builder().root_certs(roots.clone()).build())
+        .build()
+        .new_agent()
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PairRequest<'a> {
@@ -44,11 +74,7 @@ pub fn pair(paths: &Paths, url: &str, code: &str, name: Option<String>) -> Resul
     }
     // A fresh identity per pairing. It's only saved once the server accepts it.
     let identity = Identity::generate()?;
-    let agent = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_global(Some(std::time::Duration::from_secs(30)))
-        .build()
-        .new_agent();
+    let agent = http_agent(std::time::Duration::from_secs(30));
     let mut res = agent
         .post(&format!("{url}/api/runner/pair"))
         .send_json(PairRequest {

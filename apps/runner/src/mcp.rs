@@ -55,11 +55,7 @@ impl Tools {
         Tools {
             url: url.trim_end_matches('/').to_string(),
             token: token.to_string(),
-            http: ureq::Agent::config_builder()
-                .http_status_as_error(false)
-                .timeout_global(Some(TIMEOUT))
-                .build()
-                .new_agent(),
+            http: crate::pair::http_agent(TIMEOUT),
         }
     }
 

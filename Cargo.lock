@@ -1520,6 +1520,7 @@ dependencies = [
  "libc",
  "prost",
  "rusqlite",
+ "rustls-native-certs",
  "serde",
  "serde_json",
  "sling-harness-claude-code",
