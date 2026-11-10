@@ -17,14 +17,15 @@ Use a bot that nothing else reads. Telegram gives each message to one reader, so
 Under **Connectors**, add Telegram and paste the token. The form takes it from there:
 
 - It says which bot the token belongs to, or that Telegram doesn't accept it.
-- It asks you to send the bot a message, with a link that opens the chat. Send it anything. The form notices within a few seconds, and your chat shows up as the one it answers.
-- **Chats it answers** starts with your chat. Messages from any other chat are dropped before a workflow sees them. To add another person or a group, have them message the bot while the form is open, or add the chat's ID.
+- It asks you to send the bot a private message, with a link that opens the chat. Send it anything. The form notices within a few seconds, and your chat shows up as the one it answers. It never picks a group by itself.
+- **Chats and people it answers** starts with your chat. Messages from any other chat are dropped before a workflow sees them. To add another person or a group, have them message the bot while the form is open, or add the chat's ID.
+- In a group, the bot answers only the people on the list, by their own Telegram ID, which is the same as their private chat's. Other members are ignored, and a group with nobody from the list answers no one. People who wrote in a group while the form is open show up to add.
 
 **Add** checks the token before saving.
 
 ## Nodes
 
-**Telegram message received** is the trigger. It fires for each text message from an allowed chat, or a photo's caption. Its output is a `telegram.message` with the message ID, the chat's ID, type and name, who sent it, the text, and when.
+**Telegram message received** is the trigger. It fires for each text message from an allowed chat and an allowed person, or a photo's caption. Its output is a `telegram.message` with the message ID, the chat's ID, type and name, who sent it, the text, and when.
 
 Messages from one chat run one at a time, in order.
 

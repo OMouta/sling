@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { TgChat } from "./api.ts";
 import { createBotApi, createTelegramConnector } from "./index.ts";
 import type { TelegramConfig, TelegramCredentials, TelegramMessage } from "./schemas.ts";
-import { OFFSET_KEY } from "./source.ts";
+import { OFFSET_KEY, toTelegramMessage } from "./source.ts";
 import { type BotApiStandIn, startBotApi } from "./stand-in.ts";
 
 let bot: BotApiStandIn;
@@ -11,6 +11,7 @@ let connector: ReturnType<typeof createTelegramConnector>;
 
 const ANA: TgChat = { id: 5551234, type: "private", first_name: "Ana", username: "ana_s" };
 const BOB: TgChat = { id: 5559999, type: "private", first_name: "Bob" };
+const TEAM: TgChat = { id: -100777, type: "supergroup", title: "Team" };
 const log = { info() {}, warn() {}, error() {} };
 
 beforeAll(async () => {
@@ -55,7 +56,7 @@ describe("the setup lookup", () => {
         { field: "botToken", tone: "ok", text: "Connected as @sling_test_bot" },
         {
           field: "allowedChatIds",
-          text: "Send @sling_test_bot a message in Telegram, and your chat shows up here.",
+          text: "Send @sling_test_bot a private message in Telegram, and your chat shows up here.",
           link: { url: "https://t.me/sling_test_bot" },
         },
       ],
@@ -83,6 +84,67 @@ describe("the setup lookup", () => {
       { value: "5551234", label: "Ana", detail: "@ana_s" },
       { value: "777", label: "777", detail: "Not found" },
     ]);
+  });
+});
+
+describe("the setup lookup with a group", () => {
+  it("never picks a group by itself, and offers the people who wrote there", async () => {
+    const other = await startBotApi();
+    try {
+      const c = createTelegramConnector({
+        api: (token) => createBotApi(token, { baseUrl: other.url }),
+      });
+      const setup = (config: Partial<TelegramConfig> = {}) =>
+        c.setup?.({
+          credentials: { botToken: other.token },
+          config,
+          log,
+          signal: AbortSignal.timeout(5_000),
+        });
+      other.message(TEAM, "hello bot");
+      const grouped = await setup();
+      expect(grouped?.config).toBeUndefined();
+      expect(grouped?.retryAfterMs).toBe(3_000);
+      expect(grouped?.options?.allowedChatIds).toEqual([
+        { value: "-100777", label: "Team", detail: "Group" },
+        { value: "42", label: "Someone", detail: "Person" },
+      ]);
+      expect((await setup({ allowedChatIds: ["-100777"] }))?.notes).toContainEqual({
+        field: "allowedChatIds",
+        tone: "info",
+        text: "In a group, it answers only the people on this list. Add yourself too.",
+      });
+      other.message(ANA, "me");
+      expect((await setup())?.config).toEqual({ allowedChatIds: ["5551234"] });
+    } finally {
+      await other.close();
+    }
+  });
+});
+
+describe("who a message is answered for", () => {
+  const update = (chat: TgChat, fromId: number) => ({
+    update_id: 1,
+    message: {
+      message_id: 1,
+      date: 0,
+      chat,
+      from: { id: fromId, is_bot: false, first_name: "X" },
+      text: "hi",
+    },
+  });
+
+  it("answers a group only for the people on the list", () => {
+    const ana = update(TEAM, 5551234);
+    const someone = update(TEAM, 42);
+    // A group on the list with no people on it answers nobody.
+    expect(toTelegramMessage(ana, new Set(["-100777"]))).toBeNull();
+    expect(toTelegramMessage(ana, new Set(["-100777", "5551234"]))?.from.id).toBe("5551234");
+    expect(toTelegramMessage(someone, new Set(["-100777", "5551234"]))).toBeNull();
+    // A person on the list isn't answered in a group that isn't.
+    expect(toTelegramMessage(ana, new Set(["5551234"]))).toBeNull();
+    // A private chat's ID is the person's, so a list from before keeps working.
+    expect(toTelegramMessage(update(ANA, 5551234), new Set(["5551234"]))?.chatId).toBe("5551234");
   });
 });
 

@@ -12,13 +12,17 @@ export const credentialsSchema = z.object({
 
 export type TelegramCredentials = z.infer<typeof credentialsSchema>;
 
+/**
+ * Who the bot answers: private chats, which carry the person's own ID, and
+ * groups. In a group it answers only the people on the list.
+ */
 export const configSchema = z.object({
   allowedChatIds: z
     .array(z.string().regex(CHAT_ID, "A Telegram chat ID is a number"))
     .default([])
     .meta({
       step: "Who it answers",
-      title: "Chats it answers",
+      title: "Chats and people it answers",
       picker: true,
       allowOther: true,
       placeholder: "Add a chat ID",

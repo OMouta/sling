@@ -28,25 +28,30 @@ export const OFFSET_KEY = "offset";
 export const BAD_TOKEN =
   "Telegram doesn't accept the bot token. Get a new one from @BotFather and paste it on the Connectors page.";
 
-/** The trigger payload for an update, or null when it isn't a text message from an allowed chat. */
+/**
+ * The trigger payload for an update, or null when it isn't a text message
+ * from an allowed chat and an allowed person. A private chat's ID is the
+ * person's own, so the list holds both. In a group, only the people on the
+ * list are answered, so a group with none of them answers nobody.
+ */
 export function toTelegramMessage(
   update: TgUpdate,
   allowedChatIds: ReadonlySet<string>,
 ): TelegramMessage | null {
   const m = update.message;
-  if (!m || m.from?.is_bot) return null;
+  if (!m?.from || m.from.is_bot) return null;
   const text = m.text ?? m.caption ?? "";
   if (!text.trim()) return null;
   const chatId = String(m.chat.id);
-  if (!allowedChatIds.has(chatId)) return null;
+  if (!allowedChatIds.has(chatId) || !allowedChatIds.has(String(m.from.id))) return null;
   return {
     id: String(m.message_id),
     chatId,
     chatType: m.chat.type,
     chatName: chatName(m.chat),
     from: {
-      id: String(m.from?.id ?? m.chat.id),
-      username: m.from?.username ?? null,
+      id: String(m.from.id),
+      username: m.from.username ?? null,
       name: userName(m.from) || chatName(m.chat),
     },
     text,
