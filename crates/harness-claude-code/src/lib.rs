@@ -824,17 +824,17 @@ pub fn truncate_tail(s: &str, max: usize) -> String {
 }
 
 /// Prompt Sling sends Claude Code. The Runner does all committing and
-/// pushing, so Claude Code is told to leave its changes uncommitted. Sling
+/// pushing, so Claude Code is told not to, and to keep git out of its
+/// summary. Sling
 /// commits new files only when they were made with the file tools, so it's
 /// told to use those.
 pub fn build_prompt(title: &str, objective: &str, writes: bool) -> String {
     let rules = if writes {
         "- Work only inside the current directory.\n\
          - Create and edit files with your file tools (Write, Edit), not with shell commands. Sling only commits new files it saw you create.\n\
-         - Leave your changes uncommitted. Sling commits them for you.\n\
-         - Do not push, and do not open pull requests.\n\
+         - Do not commit, push, or open pull requests. Sling commits your work when you finish and handles the rest.\n\
          - Run the relevant tests if the project has them.\n\
-         - When you finish, reply with a short summary of what you changed and what the tests showed."
+         - When you finish, reply with a short summary of what you changed and what the tests showed. Don't mention committing. Sling does that after you."
     } else {
         "- This is a read-only task. Do not modify any files.\n\
          - Investigate and report what you found.\n\

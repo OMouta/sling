@@ -604,14 +604,13 @@ pub fn truncate_tail(s: &str, max: usize) -> String {
 }
 
 /// Prompt Sling sends Codex. The Runner does all committing and pushing, so
-/// Codex is told to leave its changes uncommitted.
+/// Codex is told not to, and to keep git out of its summary.
 pub fn build_prompt(title: &str, objective: &str, writes: bool) -> String {
     let rules = if writes {
         "- Work only inside the current directory.\n\
-         - Leave your changes uncommitted. Sling commits them for you.\n\
-         - Do not push, and do not open pull requests.\n\
+         - Do not commit, push, or open pull requests. Sling commits your work when you finish and handles the rest.\n\
          - Run the relevant tests if the project has them.\n\
-         - When you finish, reply with a short summary of what you changed and what the tests showed."
+         - When you finish, reply with a short summary of what you changed and what the tests showed. Don't mention committing. Sling does that after you."
     } else {
         "- This is a read-only task. Do not modify any files.\n\
          - Investigate and report what you found.\n\
