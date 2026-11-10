@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { QueryClient } from "@tanstack/react-query";
+import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { connectRealtime } from "./realtime.ts";
+import { connectRealtime, useConnection, useLiveReply } from "./realtime.ts";
 
 /** A socket the test opens, feeds, and closes by hand. */
 class FakeSocket {
@@ -127,6 +128,47 @@ describe("the live connection", () => {
     latest().open();
     // Back after an outage: everything is refetched.
     expect(qc.invalidateQueries).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps one socket when the old one's close event comes after the device is back online", () => {
+    stop = connectRealtime(qc);
+    const first = latest();
+    first.open();
+    // A browser marks the socket closing at once and fires close only later.
+    first.close = () => {
+      first.readyState = 2;
+    };
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("online"));
+    expect(FakeSocket.all).toHaveLength(2);
+    const second = latest();
+    second.open();
+    first.drop(1006);
+    vi.advanceTimersByTime(30_000);
+    expect(FakeSocket.all).toHaveLength(2);
+    expect(renderHook(() => useConnection()).result.current).toBe("open");
+
+    const delta = JSON.stringify({ type: "agent.delta", conversationId: "cnv_dup", text: "Hi" });
+    first.onmessage?.({ data: delta });
+    second.onmessage?.({ data: delta });
+    expect(renderHook(() => useLiveReply("cnv_dup")).result.current?.text).toBe("Hi");
+  });
+
+  it("ignores a socket that was still closing when it reconnected", () => {
+    stop = connectRealtime(qc);
+    const first = latest();
+    first.open();
+    // The server started closing it; the close event hasn't come yet.
+    first.readyState = 2;
+    window.dispatchEvent(new Event("online"));
+    const second = latest();
+    second.open();
+    first.drop(1006);
+    vi.advanceTimersByTime(30_000);
+    expect(FakeSocket.all).toHaveLength(2);
+    // The ping still runs on the socket in use.
+    expect(second.sent).toContain("ping");
+    expect(renderHook(() => useConnection()).result.current).toBe("open");
   });
 
   it("doesn't reconnect after it's stopped", () => {

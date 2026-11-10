@@ -515,12 +515,43 @@ export function connectRealtime(qc: QueryClient): () => void {
   let ping: number | undefined;
   let lastFrameAt = 0;
 
+  // After the socket in use closes, by itself or by `drop`: try again later.
+  const closed = (code: number) => {
+    window.clearInterval(ping);
+    // A socket closed on purpose, as on unmount, mustn't mark its successor closed.
+    if (stopped) return;
+    connection.set("closed");
+    if (code === 4401 || code === 4403) {
+      void qc.invalidateQueries();
+      return;
+    }
+    const delay =
+      Math.min(30_000, 1000 * 2 ** Math.min(attempt++, 5)) * (0.5 + Math.random() * 0.5);
+    timer = window.setTimeout(open, delay);
+  };
+  // Gives up on the socket in use now, without waiting for its close event,
+  // which a dead connection can take a long time to send. Nothing it sends
+  // after this is applied.
+  const drop = () => {
+    const sock = ws;
+    if (!sock) return;
+    ws = null;
+    if (current === sock) current = null;
+    sock.onopen = null;
+    sock.onmessage = null;
+    sock.onclose = null;
+    sock.close();
+    closed(1006);
+  };
   const open = () => {
+    window.clearTimeout(timer);
     connection.set("connecting");
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}/api/ws`);
-    current = ws;
-    ws.onopen = () => {
+    const sock = new WebSocket(`${proto}://${location.host}/api/ws`);
+    ws = sock;
+    current = sock;
+    sock.onopen = () => {
+      if (ws !== sock) return;
       const reconnected = attempt > 0;
       attempt = 0;
       connection.set("open");
@@ -528,15 +559,18 @@ export function connectRealtime(qc: QueryClient): () => void {
       sendPresence(true);
       // Anything could have changed while we were away.
       if (reconnected) void qc.invalidateQueries();
+      window.clearInterval(ping);
       ping = window.setInterval(() => {
+        if (ws !== sock) return;
         if (Date.now() - lastFrameAt > 60_000) {
-          ws?.close();
+          drop();
           return;
         }
-        if (ws?.readyState === 1) ws.send("ping");
+        if (sock.readyState === 1) sock.send("ping");
       }, 25_000);
     };
-    ws.onmessage = (e) => {
+    sock.onmessage = (e) => {
+      if (ws !== sock) return;
       lastFrameAt = Date.now();
       try {
         const ev = JSON.parse(e.data as string) as ServerEvent | { type: "pong" };
@@ -545,33 +579,25 @@ export function connectRealtime(qc: QueryClient): () => void {
         // Ignore malformed frames.
       }
     };
-    ws.onclose = (event) => {
-      window.clearInterval(ping);
-      // A socket closed on purpose, as on unmount, mustn't mark its successor closed.
-      if (stopped) return;
-      connection.set("closed");
-      if (event.code === 4401 || event.code === 4403) {
-        void qc.invalidateQueries();
-        return;
-      }
-      const delay =
-        Math.min(30_000, 1000 * 2 ** Math.min(attempt++, 5)) * (0.5 + Math.random() * 0.5);
-      timer = window.setTimeout(open, delay);
+    sock.onclose = (event) => {
+      if (ws !== sock) return;
+      ws = null;
+      if (current === sock) current = null;
+      closed(event.code);
     };
   };
   const onVisibility = () => {
     if (document.visibilityState === "visible") {
-      if (ws?.readyState === 1 && Date.now() - lastFrameAt > 60_000) ws.close();
+      if (ws?.readyState === 1 && Date.now() - lastFrameAt > 60_000) drop();
       void qc.invalidateQueries();
     }
     sendPresence();
   };
   // The device says the network went away or came back: don't wait for the
   // stale check or the backoff.
-  const onOffline = () => ws?.close();
+  const onOffline = () => drop();
   const onOnline = () => {
     if (ws?.readyState === 1 || ws?.readyState === 0) return;
-    window.clearTimeout(timer);
     attempt = Math.max(attempt, 1);
     open();
   };
