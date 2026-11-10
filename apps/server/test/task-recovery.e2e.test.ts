@@ -240,6 +240,32 @@ it("keeps a cancel made while the machine was away and never got the task", asyn
   fake.close();
 });
 
+it("unregisters a machine whose connect fails halfway, and takes it back once it works", async () => {
+  const fake = await addRunner("tower");
+  const tasksService = server.ctx.tasks as unknown as { ready?: unknown };
+  tasksService.ready = async () => {
+    throw new Error("ready failed");
+  };
+  try {
+    await fake.connect();
+    await fake.exited;
+  } finally {
+    delete tasksService.ready;
+  }
+  expect(fake.errors).toContain(0);
+  await until("the machine to read offline", async () => {
+    const [r] = await server.ctx.db
+      .select()
+      .from(schema.runners)
+      .where(eq(schema.runners.id, fake.runnerId));
+    return r && !r.online && !server.ctx.runners.isOnline(fake.runnerId);
+  });
+
+  await fake.connect();
+  await until("the machine to read online", async () => server.ctx.runners.isOnline(fake.runnerId));
+  fake.close();
+});
+
 it("marks machines offline at startup, so their tasks get the grace period", async () => {
   const fake = await addRunner("server");
   const id = await addTask({ state: "running", runnerId: fake.runnerId });

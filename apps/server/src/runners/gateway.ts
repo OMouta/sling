@@ -181,6 +181,8 @@ export class RunnerGateway {
     const log = this.#ctx.log.child({ component: "runner-gateway" });
     const nonce = randomBytes(32);
     let session: RunnerSession | null = null;
+    /** Set when connecting failed after the session was registered. Later frames are dropped. */
+    let broken = false;
     let queue: Promise<void> = Promise.resolve();
 
     const send = (envelope: Envelope) => {
@@ -210,9 +212,20 @@ export class RunnerGateway {
       // Handle frames strictly in order so task events keep their sequence.
       queue = queue
         .then(async () => {
+          if (broken) return;
           if (!session) {
             if (envelope.body.case !== "hello") return fail(Error_Code.PROTOCOL, "expected hello");
-            session = await this.#authenticate(envelope.body.value, nonce, send, socket, fail);
+            const hello = envelope.body.value;
+            try {
+              await this.#authenticate(hello, nonce, send, socket, fail, (s) => {
+                session = s;
+              });
+            } catch (err) {
+              // The close handler unregisters the session and marks the machine offline.
+              broken = true;
+              log.error({ err, runnerId: hello.runnerId }, "runner connect failed");
+              fail(Error_Code.UNSPECIFIED, "The server couldn't finish connecting this machine.");
+            }
             clearTimeout(helloTimer);
             return;
           }
@@ -255,22 +268,23 @@ export class RunnerGateway {
     send: (e: Envelope) => boolean,
     socket: WebSocket,
     fail: (code: Error_Code, message: string) => void,
-  ): Promise<RunnerSession | null> {
+    registered: (session: RunnerSession) => void,
+  ): Promise<void> {
     const [runner] = await this.#ctx.db
       .select()
       .from(schema.runners)
       .where(eq(schema.runners.id, hello.runnerId));
     if (!runner) {
       fail(Error_Code.UNKNOWN_RUNNER, "unknown runner");
-      return null;
+      return;
     }
     if (runner.revokedAt) {
       fail(Error_Code.REVOKED, "this runner was revoked");
-      return null;
+      return;
     }
     if (Math.abs(Number(hello.timestampMs) - Date.now()) > MAX_CLOCK_SKEW_MS) {
       fail(Error_Code.CLOCK_SKEW, "clock skew too large");
-      return null;
+      return;
     }
     const ok = verify(
       null,
@@ -280,9 +294,11 @@ export class RunnerGateway {
     );
     if (!ok) {
       fail(Error_Code.BAD_SIGNATURE, "bad signature");
-      return null;
+      return;
     }
 
+    // Closed while the runner was looked up: there's no connection to register.
+    if (socket.readyState !== socket.OPEN) return;
     const session: RunnerSession = {
       runnerId: runner.id,
       workspaceId: runner.workspaceId,
@@ -295,6 +311,7 @@ export class RunnerGateway {
     // One connection per Runner. A newer one replaces the old.
     this.#sessions.get(runner.id)?.close(4009, "replaced by a newer connection");
     this.#sessions.set(runner.id, session);
+    registered(session);
 
     await this.#ctx.db
       .update(schema.runners)
@@ -326,7 +343,6 @@ export class RunnerGateway {
     this.#ctx.log.info({ runnerId: runner.id }, "runner connected");
     await this.handlers?.ready(session, hello);
     this.#ctx.channels?.runnerConnected(session);
-    return session;
   }
 
   async #handle(session: RunnerSession, envelope: Envelope) {
