@@ -273,16 +273,15 @@ describe("web search on an API model", () => {
     const sent = (await messages(id)).find((m) => m.role === "user" && m.research);
     expect(sent?.text).toBe("Research Rust's release history.");
 
-    // Cut off after its eighth step, still calling tools, it has no text to show.
-    for (let i = 0; i < 10; i++) plan.push(recall());
+    // Still calling tools after seven steps, it has to answer on its eighth.
+    for (let i = 0; i < 7; i++) plan.push(recall());
+    plan.push({ reason: "stop", parts: text("What I found so far.") });
     before = seen.length;
-    await api("POST", `/api/conversations/${id}/messages`, { text: "And the one before?" });
-    await until("the turn to stop", async () => {
-      const conv = await api<{ agentStatus: string }>("GET", `/api/conversations/${id}`);
-      return seen.length - before >= 8 && conv.agentStatus === "idle";
-    });
-    await new Promise((r) => setTimeout(r, 300));
+    const short = await ask(id, "And the one before?");
+    expect(short.text).toBe("What I found so far.");
     expect(seen.length - before).toBe(8);
+    expect(seen[before + 6]?.toolChoice).not.toEqual({ type: "none" });
+    expect(seen[before + 7]?.toolChoice).toEqual({ type: "none" });
     expect(system(seen[before])).not.toContain("Deep research");
   });
 
