@@ -1,7 +1,7 @@
 import type { NodeSpecView, WebhookSecretView } from "@sling/workflow";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ago } from "../../lib/format.ts";
+import { ago, clockTime, dateTime } from "../../lib/format.ts";
 import type { FormField } from "../../lib/schemaForm.ts";
 import { qk, workflowApi } from "../../lib/workflowApi.ts";
 import { CopyButton } from "../JsonView.tsx";
@@ -114,9 +114,7 @@ function HeaderSelect({
 /** A clock time today, or a date and time before or after that. */
 function clock(iso: string): string {
   const at = new Date(iso);
-  return new Date().toDateString() === at.toDateString()
-    ? at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    : at.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  return new Date().toDateString() === at.toDateString() ? clockTime(at) : dateTime(at);
 }
 
 /**

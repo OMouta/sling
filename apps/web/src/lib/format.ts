@@ -10,6 +10,40 @@ export function ago(iso: string | null | undefined, now = Date.now()): string {
   return rtf.format(Math.round(seconds / 86400), "day");
 }
 
+/** When something runs out: "expires in 5 minutes", "expires in under a minute", "expired". */
+export function expiresIn(iso: string, now = Date.now()): string {
+  const left = new Date(iso).getTime() - now;
+  if (!(left > 0)) return "expired";
+  if (left < 60_000) return "expires in under a minute";
+  return `expires ${ago(iso, now)}`;
+}
+
+const CLOCK = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const CLOCK_SECONDS = new Intl.DateTimeFormat(undefined, {
+  hour: "numeric",
+  minute: "2-digit",
+  second: "2-digit",
+});
+const DATE_TIME = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** The time of day in the reader's own 12 or 24 hour style: "14:05" or "2:05 PM". */
+export function clockTime(iso: string | Date, { seconds = false } = {}): string {
+  return (seconds ? CLOCK_SECONDS : CLOCK).format(new Date(iso));
+}
+
+/** A date and time in the reader's style: "Nov 10, 14:05". */
+export function dateTime(iso: string | Date): string {
+  return DATE_TIME.format(new Date(iso));
+}
+
+/** Whether the reader's clock is 12 hour, so a column of times can be sized for "10:04:05 PM". */
+export const TWELVE_HOUR = /h1[12]/.test(CLOCK.resolvedOptions().hourCycle ?? "");
+
 export function shortSha(sha: string | null | undefined): string {
   return sha ? sha.slice(0, 8) : "";
 }
@@ -18,15 +52,21 @@ export function plural(n: number, word: string): string {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-/** "850 ms", "3.2 s", "4m 05s", "1h 02m". */
+/** "850 ms", "3.2 s", "45 s", "4m 05s", "1h 02m". */
 export function duration(ms: number | null | undefined): string {
   if (ms === null || ms === undefined || !Number.isFinite(ms)) return "";
   if (ms < 1000) return `${Math.round(ms)} ms`;
   const s = ms / 1000;
-  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.round(s)} s`;
+  if (s < 60) return `${s < 10 ? s.toFixed(1) : Math.floor(s)} s`;
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ${String(Math.floor(s % 60)).padStart(2, "0")}s`;
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+
+/** A duration that ticks by the second, such as a running timer: "0 s", "12 s", "4m 05s". */
+export function elapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return s < 10 ? `${s} s` : duration(s * 1000);
 }
 
 export function between(start: string | null, end: string | null, now = Date.now()): number | null {

@@ -1,6 +1,7 @@
 import { HARNESS_LABELS, type Harness, isHarness, type TaskEventView } from "@sling/core";
 import { Check, ChevronRight, LoaderCircle, Square, SquareCheck, X } from "lucide-react";
 import { useState } from "react";
+import { clockTime, TWELVE_HOUR } from "../lib/format.ts";
 import { cx, Mono } from "./ui.tsx";
 
 type P = Record<string, unknown>;
@@ -26,7 +27,11 @@ export function Timeline({ events, harness }: { events: TaskEventView[]; harness
   const lastPlan = [...visible].reverse().find((e) => e.type === "plan");
 
   return (
-    <ol className="relative space-y-3 before:absolute before:top-2 before:bottom-2 before:left-[62px] before:w-px before:bg-border">
+    <ol
+      // A 12 hour clock needs room for "10:04:05 PM".
+      style={{ "--time-w": TWELVE_HOUR ? "76px" : "52px" } as React.CSSProperties}
+      className="relative space-y-3 before:absolute before:top-2 before:bottom-2 before:left-[calc(var(--time-w)+10px)] before:w-px before:bg-border"
+    >
       {visible.map((e) =>
         e.type === "plan" && e !== lastPlan ? null : (
           <EventRow key={e.seq} event={e} harness={harness} />
@@ -47,17 +52,15 @@ function Row({
 }) {
   return (
     <li className={cx("relative flex gap-5 text-[13px] leading-5", className)}>
-      <time className="tabular w-[52px] shrink-0 text-right font-mono text-[11px] leading-5 text-subtle">
-        {new Date(time).toLocaleTimeString(undefined, {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-          hourCycle: "h23",
-        })}
+      <time
+        dateTime={time}
+        className="tabular w-(--time-w) shrink-0 text-right font-mono text-[11px] leading-5 text-subtle"
+      >
+        {clockTime(time, { seconds: true })}
       </time>
       <span
         aria-hidden="true"
-        className="absolute top-[7px] left-[59px] size-[7px] rounded-full bg-line-strong shadow-[0_0_0_3px_var(--bg)]"
+        className="absolute top-[7px] left-[calc(var(--time-w)+7px)] size-[7px] rounded-full bg-line-strong shadow-[0_0_0_3px_var(--bg)]"
       />
       <div className="min-w-0 flex-1">{children}</div>
     </li>

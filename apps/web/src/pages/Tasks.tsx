@@ -29,6 +29,7 @@ import { ago, between, duration } from "../lib/format.ts";
 import { useLoadMore, useStickyCounts } from "../lib/pages.ts";
 import { environmentSummary } from "../lib/taskEnvironment.ts";
 import { useTaskList } from "../lib/tasks.ts";
+import { useNow } from "../lib/useNow.ts";
 
 export function TasksPage() {
   const navigate = useNavigate();
@@ -45,6 +46,9 @@ export function TasksPage() {
   const successRate = stats && finished > 0 ? Math.round((stats.succeeded / finished) * 100) : null;
   const filtered = view !== "all" || agent !== "any" || where !== "any";
   const end = useLoadMore(tasks);
+  // A running task's duration counts up, and "Started" moves on by itself.
+  const running = rows.some(isRunning);
+  const now = useNow(running ? 1000 : 30_000, rows.length > 0);
 
   return (
     <Page
@@ -147,6 +151,7 @@ export function TasksPage() {
               <TaskRow
                 key={t.id}
                 task={t}
+                now={now}
                 onOpen={() => void navigate({ to: "/tasks/$id", params: { id: t.id } })}
               />
             ))}
@@ -163,9 +168,13 @@ export function TasksPage() {
   );
 }
 
-function TaskRow({ task: t, onOpen }: { task: TaskView; onOpen: () => void }) {
+function isRunning(t: TaskView): boolean {
+  return t.state === "running" && !t.finishedAt;
+}
+
+function TaskRow({ task: t, now, onOpen }: { task: TaskView; now: number; onOpen: () => void }) {
   const env = environmentSummary(t);
-  const ran = between(t.startedAt, t.finishedAt);
+  const ran = t.finishedAt || isRunning(t) ? between(t.startedAt, t.finishedAt, now) : null;
   const awaiting = t.actions.some((a) => a.state === "awaiting_approval");
   return (
     <Tr onClick={onOpen}>
@@ -218,7 +227,7 @@ function TaskRow({ task: t, onOpen }: { task: TaskView; onOpen: () => void }) {
         {ran !== null ? duration(ran) : <span className="text-faint">–</span>}
       </Td>
       <Td align="right" className="text-[13px] text-muted">
-        {ago(t.createdAt)}
+        {ago(t.createdAt, now)}
       </Td>
     </Tr>
   );

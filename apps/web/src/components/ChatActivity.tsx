@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useId, useState } from "react";
 import { api, lateAnswer } from "../lib/api.ts";
-import { duration, readableLocalDate } from "../lib/format.ts";
+import { duration, elapsed, readableLocalDate } from "../lib/format.ts";
 import { useMadeRule } from "../lib/rules.ts";
 import { useNow } from "../lib/useNow.ts";
 import { ActionCheckLine } from "./ActionCheck.tsx";
@@ -207,9 +207,7 @@ export function WorkingLine({ startedAt }: { startedAt: number }) {
     <p className="flex items-center gap-2 text-[13px] text-muted">
       <Spinner className="size-3.5" />
       <span className="text-shimmer">Thinking</span>
-      <span className="tabular text-subtle">
-        {Math.max(0, Math.round((now - startedAt) / 1000))}s
-      </span>
+      <span className="tabular text-subtle">{elapsed(now - startedAt)}</span>
     </p>
   );
 }

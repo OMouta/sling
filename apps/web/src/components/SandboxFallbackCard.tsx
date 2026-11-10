@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Box } from "lucide-react";
 import { api } from "../lib/api.ts";
-import { ago } from "../lib/format.ts";
+import { expiresIn } from "../lib/format.ts";
 import { fallbackPayload } from "../lib/sandbox.ts";
 import { Badge, Button, Card, CardFooter, ErrorText, Kicker, Mono } from "./ui.tsx";
 
@@ -76,7 +76,9 @@ export function SandboxFallbackCard({ approval }: { approval: ApprovalView }) {
         )}
       </div>
       <CardFooter>
-        <span className="mr-auto text-xs text-subtle">Expires {ago(approval.expiresAt)}</span>
+        <span className="mr-auto text-xs text-subtle first-letter:uppercase">
+          {expiresIn(approval.expiresAt)}
+        </span>
         <ErrorText error={decide.error} />
         <Button size="sm" busy={decide.isPending} onClick={() => decide.mutate("reject")}>
           Reject

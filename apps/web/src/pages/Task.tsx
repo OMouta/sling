@@ -6,7 +6,7 @@ import { TaskCard, TaskStateBadge } from "../components/TaskCard.tsx";
 import { Timeline } from "../components/Timeline.tsx";
 import { Button, Card, Empty, ErrorText, Mono, Skeleton, Stat } from "../components/ui.tsx";
 import { isDeployStep } from "../lib/deploys.ts";
-import { between, duration, shortSha } from "../lib/format.ts";
+import { between, dateTime, duration, shortSha } from "../lib/format.ts";
 import { useEarlierEvents, useTaskDetail } from "../lib/tasks.ts";
 import { taskRoute } from "../router.tsx";
 
@@ -37,16 +37,6 @@ function Delivers({ task }: { task: TaskView }) {
     );
   }
   return DELIVER[task.deliver];
-}
-
-function when(iso: string | null): string {
-  if (!iso) return "–";
-  return new Date(iso).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 export function TaskPage() {
@@ -147,7 +137,7 @@ export function TaskPage() {
                   <Mono>{shortSha(task.commitSha)}</Mono>
                 </Stat>
               )}
-              <Stat label="Created">{when(task.createdAt)}</Stat>
+              <Stat label="Created">{dateTime(task.createdAt)}</Stat>
               {ran !== null && (
                 <Stat label={task.finishedAt ? "Ran for" : "Running for"}>
                   <span className="tabular">{duration(ran)}</span>

@@ -1,7 +1,8 @@
 import type { ReplyTrace, TraceStep } from "@sling/core";
 import { ChevronRight, FlaskConical, X } from "lucide-react";
 import { useState } from "react";
-import { elapsed, webCounts, webCountsText } from "../lib/research.ts";
+import { elapsed } from "../lib/format.ts";
+import { webCounts, webCountsText } from "../lib/research.ts";
 import { useNow } from "../lib/useNow.ts";
 import { type ActivityContext, ReplySteps } from "./ChatActivity.tsx";
 import { cx } from "./ui.tsx";

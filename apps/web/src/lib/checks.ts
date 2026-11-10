@@ -11,6 +11,7 @@ import type {
 } from "@sling/core";
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 import { api } from "./api.ts";
+import { clockTime } from "./format.ts";
 import type { ConversationDetail } from "./types.ts";
 
 /**
@@ -166,6 +167,5 @@ export function watchesText(c: CheckView): string {
 export function deadlineText(iso: string): string {
   const d = new Date(iso);
   const day = d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-  const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-  return `${day}, ${time}`;
+  return `${day}, ${clockTime(d)}`;
 }

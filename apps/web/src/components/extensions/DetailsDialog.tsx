@@ -3,7 +3,7 @@ import { ExternalLink } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCatalogs, useExtension, useSetEnabled } from "../../lib/extensionApi.ts";
 import { runsCode } from "../../lib/extensions.ts";
-import { ago } from "../../lib/format.ts";
+import { ago, clockTime } from "../../lib/format.ts";
 import { ChatMarkdown } from "../ChatMarkdown.tsx";
 import { Badge, cx, Dialog, ErrorText, Skeleton, Switch } from "../ui.tsx";
 import {
@@ -226,7 +226,7 @@ function Log({ detail }: { detail?: ExtensionDetailView }) {
         // biome-ignore lint/suspicious/noArrayIndexKey: as above.
         <li key={i} className="flex gap-2.5 whitespace-pre-wrap">
           <time dateTime={line.at} className="shrink-0 text-faint">
-            {new Date(line.at).toLocaleTimeString(undefined, { hour12: false })}
+            {clockTime(line.at, { seconds: true })}
           </time>
           <span
             className={cx(

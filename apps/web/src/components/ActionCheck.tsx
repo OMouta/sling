@@ -1,5 +1,6 @@
 import type { ActionCheckView } from "@sling/core";
 import { CircleCheck, CircleDashed, CircleHelp, CircleX } from "lucide-react";
+import { clockTime } from "../lib/format.ts";
 import { cx } from "./ui.tsx";
 
 const LOOK = {
@@ -8,10 +9,6 @@ const LOOK = {
   waiting: { Icon: CircleDashed, tone: "text-subtle", label: "Still checking" },
   unchecked: { Icon: CircleHelp, tone: "text-subtle", label: "Couldn't check" },
 } as const;
-
-function clock(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
 
 /**
  * What Sling saw when it looked after an action: the event read back, the
@@ -31,7 +28,7 @@ export function ActionCheckLine({
     <p
       role="status"
       aria-label={`${look.label}: ${check.message}`}
-      title={`${look.label} at ${clock(check.at)}`}
+      title={`${look.label} at ${clockTime(check.at)}`}
       className={cx(
         "flex min-w-0 items-center gap-1.5 text-xs leading-4",
         variant === "row" && "border-t border-border px-2.5 py-1.5",

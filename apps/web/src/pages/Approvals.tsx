@@ -47,7 +47,7 @@ import {
   taskRepo,
   useDeployTargets,
 } from "../lib/deploys.ts";
-import { ago, plural } from "../lib/format.ts";
+import { expiresIn, plural } from "../lib/format.ts";
 import { useLoadMore } from "../lib/pages.ts";
 import { useTaskDetail } from "../lib/tasks.ts";
 import { useRun } from "../lib/workflowApi.ts";
@@ -199,8 +199,8 @@ function StepList({ approvals, remoteUrl }: { approvals: ApprovalView[]; remoteU
             <Icon aria-hidden="true" className="text-subtle" />
             <span className="font-medium">{a.actionKind ? LABEL[a.actionKind] : a.title}</span>
             <span className="text-xs text-muted">
-              {a.actionKind === "push" ? `to ${remoteUrl || "origin"} · ` : ""}expires{" "}
-              {ago(a.expiresAt)}
+              {a.actionKind === "push" ? `to ${remoteUrl || "origin"} · ` : ""}
+              {expiresIn(a.expiresAt)}
             </span>
           </li>
         );
@@ -375,7 +375,7 @@ function WorkflowApproval({ approval }: { approval: ApprovalView }) {
           ) : (
             "From a workflow"
           )}{" "}
-          · expires {ago(approval.expiresAt)}
+          · {expiresIn(approval.expiresAt)}
         </p>
         {approval.payload && (
           <pre className="max-h-60 overflow-auto rounded-lg bg-field p-3 font-mono text-xs whitespace-pre-wrap shadow-field">
