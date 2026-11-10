@@ -55,12 +55,33 @@ export function StepNote({
 }
 
 /** A command or URL to copy, in a field-like box. */
+/**
+ * A command that wraps between its words. A short word, such as a pairing
+ * code, never breaks; a long one, such as a URL, breaks wherever it must.
+ */
+function Words({ text }: { text: string }) {
+  return text.split(/(\s+)/).map((part, i) =>
+    /^\s*$/.test(part) ? (
+      part
+    ) : (
+      <span
+        // A command's words have no identity of their own.
+        // biome-ignore lint/suspicious/noArrayIndexKey: as above.
+        key={i}
+        className={part.length > 24 ? "[overflow-wrap:anywhere]" : "whitespace-nowrap"}
+      >
+        {part}
+      </span>
+    ),
+  );
+}
+
 export function CopyLine({ text, label = "Copy" }: { text: string | undefined; label?: string }) {
   const [copied, setCopied] = useState<string | null>(null);
   return (
     <div className="flex items-center gap-2 rounded-lg bg-field py-1 pr-1 pl-3 shadow-field">
-      <pre className="min-w-0 flex-1 py-1 font-mono text-xs leading-5 break-all whitespace-pre-wrap text-soft">
-        {text ?? "…"}
+      <pre className="min-w-0 flex-1 py-1 font-mono text-xs leading-5 whitespace-pre-wrap text-soft">
+        {text ? <Words text={text} /> : "…"}
       </pre>
       <Button
         size="sm"

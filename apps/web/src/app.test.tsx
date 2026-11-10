@@ -357,13 +357,18 @@ describe("web app", () => {
     // The command for the system picked.
     fireEvent.click(d.getByRole("radio", { name: /Windows/ }));
     fireEvent.click(d.getByRole("button", { name: "Continue" }));
-    expect(await d.findByText(/irm http:\/\/localhost\/install\.ps1/)).toBeTruthy();
+    // A command is one block of text, set word by word.
+    const command = (text: string | RegExp) =>
+      d.findByText((_, el) => el?.tagName === "PRE" && Boolean(el.textContent?.match(text)));
+    expect(await command(/irm http:\/\/localhost\/install\.ps1/)).toBeTruthy();
     fireEvent.click(d.getByRole("button", { name: "Back" }));
     fireEvent.click(d.getByRole("radio", { name: /macOS or Linux/ }));
     fireEvent.click(d.getByRole("button", { name: "Continue" }));
     expect(
-      await d.findByText("curl -fsSL http://localhost/install.sh | SLING_CODE=ABCD-1234 sh"),
+      await command(/^curl -fsSL http:\/\/localhost\/install\.sh \| SLING_CODE=ABCD-1234 sh$/),
     ).toBeTruthy();
+    // The code never breaks at its hyphen when the command wraps.
+    expect(d.getByText("SLING_CODE=ABCD-1234").className).toContain("whitespace-nowrap");
     // Nothing to continue to until the machine connects.
     expect(d.getByText(/Waiting for the machine/)).toBeTruthy();
     const next = () =>
