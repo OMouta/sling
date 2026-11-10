@@ -64,6 +64,23 @@ export function useTaskDetail(id: string) {
   return useQuery(taskDetailQuery(qc, id));
 }
 
+/** The kinds of event a running task's card in the chat shows, and how many it keeps. */
+export const ACTIVITY_TYPES: readonly string[] = ["command", "agent_message", "file_change"];
+export const ACTIVITY_EVENTS = 16;
+export const activityKey = (id: string) => ["task", id, "activity"] as const;
+
+/** A running task's newest steps, for its card in the chat. */
+export function useTaskActivity(id: string) {
+  return useQuery({
+    queryKey: activityKey(id),
+    queryFn: ({ signal }) =>
+      api.get<{ events: TaskEventView[] }>(
+        `/api/tasks/${id}/events?limit=${ACTIVITY_EVENTS}&types=${ACTIVITY_TYPES.join(",")}`,
+        { signal },
+      ),
+  });
+}
+
 /** Loads the events before the loaded ones, into the task's cached detail. */
 export function useEarlierEvents(id: string) {
   const qc = useQueryClient();

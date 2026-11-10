@@ -130,20 +130,29 @@ export async function taskRoutes(app: FastifyInstance, ctx: AppContext) {
     },
   );
 
-  // The events before `before`, for showing earlier ones.
+  // The events before `before`, for showing earlier ones. Without it, the
+  // newest. `limit` and `types` keep it to the few a summary shows.
   r.get(
     "/api/tasks/:id/events",
     {
       schema: {
         params: z.object({ id: z.string() }),
-        querystring: z.object({ before: z.coerce.number().int().min(0) }),
+        querystring: z.object({
+          before: z.coerce.number().int().min(0).optional(),
+          limit: z.coerce.number().int().min(1).max(EVENT_PAGE).optional(),
+          types: z
+            .string()
+            .transform((s) => s.split(",").filter(Boolean))
+            .optional(),
+        }),
       },
     },
     async (request, reply) => {
       const actor = actorOf(request);
       const row = await ownedTask(actor.workspaceId, request.params.id);
       if (!row) return reply.code(404).send({ error: "not found" });
-      const page = await eventPage(ctx, row.id, { before: request.query.before });
+      const { before, limit, types } = request.query;
+      const page = await eventPage(ctx, row.id, { before, limit, types });
       return { events: page.events.map(toEventView), olderCursor: page.olderCursor };
     },
   );
@@ -399,9 +408,10 @@ const EVENT_FROM_MAX = 20_000;
 export async function eventPage(
   ctx: AppContext,
   taskId: string,
-  opts: { before?: number; from?: number },
+  opts: { before?: number; from?: number; limit?: number; types?: string[] | undefined },
 ): Promise<{ events: (typeof schema.taskEvents.$inferSelect)[]; olderCursor: number | null }> {
   const e = schema.taskEvents;
+  const limit = opts.limit ?? EVENT_PAGE;
   if (opts.from !== undefined) {
     const since = await ctx.db
       .select()
@@ -422,13 +432,17 @@ export async function eventPage(
     .select()
     .from(e)
     .where(
-      and(eq(e.taskId, taskId), opts.before !== undefined ? lt(e.seq, opts.before) : undefined),
+      and(
+        eq(e.taskId, taskId),
+        opts.before !== undefined ? lt(e.seq, opts.before) : undefined,
+        opts.types ? inArray(e.type, opts.types) : undefined,
+      ),
     )
     .orderBy(desc(e.seq))
-    .limit(EVENT_PAGE + 1);
+    .limit(limit + 1);
   const kept: (typeof schema.taskEvents.$inferSelect)[] = [];
   let bytes = 0;
-  for (const row of newest.slice(0, EVENT_PAGE)) {
+  for (const row of newest.slice(0, limit)) {
     bytes += JSON.stringify(row.payload).length;
     if (kept.length > 0 && bytes > EVENT_PAGE_BYTES) break;
     kept.push(row);

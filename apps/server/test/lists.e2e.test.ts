@@ -538,5 +538,15 @@ describe("chat and task history", () => {
     const refreshed = await api<Page>("GET", `/api/tasks/${taskId}?from=100`);
     expect(refreshed.events).toHaveLength(total - 100);
     expect(refreshed.olderCursor).toBe(100);
+
+    // A chat's task card asks for only the newest few it shows.
+    const recent = await api<Page>(
+      "GET",
+      `/api/tasks/${taskId}/events?limit=3&types=command,agent_message`,
+    );
+    expect(recent.events.map((e) => e.seq)).toEqual([total - 3, total - 2, total - 1]);
+    expect(recent.olderCursor).toBe(total - 3);
+    const none = await api<Page>("GET", `/api/tasks/${taskId}/events?limit=3&types=command`);
+    expect(none.events).toEqual([]);
   });
 });

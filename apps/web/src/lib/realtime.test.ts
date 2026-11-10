@@ -6,6 +6,7 @@ import type {
   RunnerView,
   RunView,
   SandboxListView,
+  TaskEventView,
   WorkflowSummaryView,
 } from "@sling/core";
 import type { WorkflowDetailView } from "@sling/workflow";
@@ -30,6 +31,7 @@ import {
   workflowSummary,
 } from "../test/fixtures.ts";
 import { apply } from "./realtime.ts";
+import { ACTIVITY_EVENTS, activityKey } from "./tasks.ts";
 import type { ConversationDetail, TaskDetail } from "./types.ts";
 import { qk } from "./workflowApi.ts";
 
@@ -268,5 +270,29 @@ describe("extension realtime events", () => {
     const qc = client();
     apply(qc, { type: "extension.updated", extension: ntfyExtension });
     expect(qc.getQueryData(qk.extensions())).toBeUndefined();
+  });
+});
+
+describe("task events", () => {
+  it("keep a chat card's latest steps short, and skip kinds it doesn't show", () => {
+    const qc = client();
+    const event = (seq: number, type: TaskEventView["type"]): TaskEventView => ({
+      taskId: "tsk_1",
+      seq,
+      at: "2026-11-07T10:00:00.000Z",
+      type,
+      payload: {},
+    });
+    const start = Array.from({ length: ACTIVITY_EVENTS }, (_, i) => event(i, "command"));
+    qc.setQueryData(activityKey("tsk_1"), { events: start });
+    apply(qc, { type: "task.event", event: event(ACTIVITY_EVENTS, "log") });
+    apply(qc, { type: "task.event", event: event(ACTIVITY_EVENTS + 1, "agent_message") });
+    apply(qc, { type: "task.event", event: event(ACTIVITY_EVENTS + 1, "agent_message") });
+    const seqs = qc
+      .getQueryData<{ events: TaskEventView[] }>(activityKey("tsk_1"))
+      ?.events.map((e) => e.seq);
+    expect(seqs).toHaveLength(ACTIVITY_EVENTS);
+    expect(seqs?.at(0)).toBe(1);
+    expect(seqs?.at(-1)).toBe(ACTIVITY_EVENTS + 1);
   });
 });

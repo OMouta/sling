@@ -8,6 +8,7 @@ import type {
   SandboxListView,
   SandboxView,
   ServerEvent,
+  TaskEventView,
   TaskView,
   TraceStep,
   WorkflowSummaryView,
@@ -26,7 +27,7 @@ import { mapPaged, patchPaged } from "./pages.ts";
 import { applyPersonalityEvent } from "./personalities.ts";
 import { applyRuleEvent } from "./rules.ts";
 import { applySourceEvent } from "./sources.ts";
-import { tasksKey } from "./tasks.ts";
+import { ACTIVITY_EVENTS, ACTIVITY_TYPES, activityKey, tasksKey } from "./tasks.ts";
 import type { ConversationDetail, TaskDetail } from "./types.ts";
 import { qk } from "./workflowApi.ts";
 
@@ -351,6 +352,12 @@ export function apply(qc: QueryClient, ev: ServerEvent) {
         if (!d || d.events.some((e) => e.seq === ev.event.seq)) return d;
         return { ...d, events: [...d.events, ev.event] };
       });
+      if (ACTIVITY_TYPES.includes(ev.event.type)) {
+        qc.setQueryData<{ events: TaskEventView[] }>(activityKey(ev.event.taskId), (d) => {
+          if (!d || d.events.some((e) => e.seq === ev.event.seq)) return d;
+          return { ...d, events: [...d.events, ev.event].slice(-ACTIVITY_EVENTS) };
+        });
+      }
       return;
     case "approval.updated":
       void qc.invalidateQueries({ queryKey: ["approvals"] });

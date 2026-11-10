@@ -52,7 +52,7 @@ import {
   environmentSummary,
   sortConsidered,
 } from "../lib/taskEnvironment.ts";
-import { useTaskDetail } from "../lib/tasks.ts";
+import { useTaskActivity } from "../lib/tasks.ts";
 import { useNow } from "../lib/useNow.ts";
 import { ActionCheckLine } from "./ActionCheck.tsx";
 import { ChatMarkdown } from "./ChatMarkdown.tsx";
@@ -454,9 +454,9 @@ function activityLine(e: TaskEventView): { key: string; icon: ReactNode; text: R
 
 /** The agent's latest steps, live, for a running task's card in the chat. */
 function TaskActivity({ task }: { task: TaskView }) {
-  const detail = useTaskDetail(task.id);
+  const activity = useTaskActivity(task.id);
   const lines = new Map<string, NonNullable<ReturnType<typeof activityLine>>>();
-  for (const e of detail.data?.events ?? []) {
+  for (const e of activity.data?.events ?? []) {
     const line = activityLine(e);
     // A command's result replaces its start, in the start's place.
     if (line) lines.set(line.key, line);
