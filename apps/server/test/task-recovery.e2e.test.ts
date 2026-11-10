@@ -239,3 +239,23 @@ it("keeps a cancel made while the machine was away and never got the task", asyn
   expect(fake.assigned.map((a) => a.taskId)).not.toContain(id);
   fake.close();
 });
+
+it("marks machines offline at startup, so their tasks get the grace period", async () => {
+  const fake = await addRunner("server");
+  const id = await addTask({ state: "running", runnerId: fake.runnerId });
+  await server.close();
+  // What a crash leaves behind: nothing marked offline.
+  const database = createDatabase(pg.getConnectionUri(), 1);
+  const { db } = database;
+  await db.update(schema.runners).set({ online: true }).where(eq(schema.runners.id, fake.runnerId));
+  await db.update(schema.tasks).set({ runnerOfflineSince: null }).where(eq(schema.tasks.id, id));
+  await database.close();
+
+  server = await startServer(config, { model: new MockLanguageModelV4({}), jobs: false });
+  const [r] = await server.ctx.db
+    .select()
+    .from(schema.runners)
+    .where(eq(schema.runners.id, fake.runnerId));
+  expect(r?.online).toBe(false);
+  expect((await taskRow(id))?.runnerOfflineSince).toBeInstanceOf(Date);
+}, 60_000);

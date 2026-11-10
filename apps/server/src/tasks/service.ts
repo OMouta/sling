@@ -557,6 +557,28 @@ export class TaskService implements GatewayHandlers {
     await this.#ctx.deploys.machineConnected(session.runnerId);
   }
 
+  /**
+   * At startup no machine is connected, whatever the last process recorded
+   * before it stopped. Marks them offline, so their active tasks get the
+   * usual grace period to come back.
+   */
+  async startedWithoutRunners(): Promise<void> {
+    await this.#db
+      .update(schema.runners)
+      .set({ online: false })
+      .where(eq(schema.runners.online, true));
+    await this.#db
+      .update(schema.tasks)
+      .set({ runnerOfflineSince: new Date() })
+      .where(
+        and(
+          inArray(schema.tasks.state, ACTIVE),
+          isNotNull(schema.tasks.runnerId),
+          isNull(schema.tasks.runnerOfflineSince),
+        ),
+      );
+  }
+
   async disconnected(session: RunnerSession): Promise<void> {
     const rows = await this.#db
       .update(schema.tasks)

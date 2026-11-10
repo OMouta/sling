@@ -185,6 +185,7 @@ export async function startServer(config: Config, opts: StartOptions = {}): Prom
     if (interrupted > 0) {
       app.log.info({ count: interrupted }, "ended chat approvals a restart cut off");
     }
+    await c.tasks.startedWithoutRunners();
     c.runners.start();
     boss = await startJobs(c, config.databaseUrl, { schedules: opts.jobs !== false });
     c.boss = boss;
