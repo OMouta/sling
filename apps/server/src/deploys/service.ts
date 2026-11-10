@@ -172,10 +172,13 @@ export class DeployService {
 
   // ------------------------------------------------------------- lifecycle
 
-  /** Starts the verify worker and settles steps a previous process left in flight. */
+  /**
+   * Starts the verify worker and settles steps a previous process left in
+   * flight. A paused server leaves them for the next start that isn't.
+   */
   async start(boss: PgBoss): Promise<void> {
     await this.verifier.start(boss);
-    await this.steps.recover();
+    if (!this.#ctx.config.automationPaused) await this.steps.recover();
   }
 
   /** Runs every minute: machine steps nobody answered, and verify jobs that went missing. */
@@ -203,8 +206,9 @@ export class DeployService {
   }
 
   /** A machine connected or sent a new inventory: steps waiting for it may go now. */
-  machineConnected(runnerId: string): Promise<void> {
-    return this.steps.machineConnected(runnerId);
+  async machineConnected(runnerId: string): Promise<void> {
+    if (this.#ctx.config.automationPaused) return;
+    await this.steps.machineConnected(runnerId);
   }
 
   /** Starts a merge, deploy, or verify step that's ready. */

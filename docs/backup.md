@@ -109,6 +109,10 @@ data, but holds back everything that acts on its own:
   don't run.
 - Webhooks answer 503 with `Retry-After`, so senders that retry deliver again later.
 - Automatic push notifications aren't sent.
+- Sandboxes aren't swept: none are created, timed out, or destroyed, including ones
+  the original server made after the backup.
+- Merge and deploy steps that were in flight at backup time stay as they were, and a
+  machine connecting doesn't start waiting ones.
 
 `/metrics` reports `sling_automation_paused 1`, and the log says so at startup.
 Runners still connect if they're pointed at this server's address.

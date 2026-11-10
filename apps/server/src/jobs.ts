@@ -30,19 +30,27 @@ export async function startJobs(
   return boss;
 }
 
+/**
+ * The minute sweep. A paused copy, such as a restored backup, leaves sandboxes
+ * and merge and deploy steps alone: the original server may still own them.
+ */
+export async function sweep(ctx: AppContext): Promise<void> {
+  await ctx.tasks.sweep();
+  if (!ctx.config.automationPaused) {
+    await ctx.sandboxes.sweep();
+    await ctx.deploys.sweep();
+  }
+  await reconcileSettlements(ctx);
+  await ctx.engine.reconcile();
+}
+
 async function schedule(ctx: AppContext, boss: PgBoss) {
   await boss.createQueue(QUEUES.sweep, { policy: "singleton" });
   await boss.createQueue(QUEUES.pruneEvents, { policy: "singleton" });
   await boss.schedule(QUEUES.sweep, "* * * * *");
   await boss.schedule(QUEUES.pruneEvents, "17 3 * * *");
 
-  await boss.work(QUEUES.sweep, async () => {
-    await ctx.tasks.sweep();
-    await ctx.sandboxes.sweep();
-    await ctx.deploys.sweep();
-    await reconcileSettlements(ctx);
-    await ctx.engine.reconcile();
-  });
+  await boss.work(QUEUES.sweep, () => sweep(ctx));
   await boss.work(QUEUES.pruneEvents, async () => {
     const n = await ctx.tasks.pruneEvents();
     const payloads = await ctx.engine.prunePayloads();
