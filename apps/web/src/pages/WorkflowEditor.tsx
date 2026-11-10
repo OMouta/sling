@@ -785,7 +785,7 @@ function CanvasView({ detail, issuesOpen, onCloseIssues, onDeleted }: CanvasProp
         </aside>
       )}
       {phone && hasSelection && (
-        <div className="anim-pop fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto overscroll-contain rounded-t-2xl bg-surface shadow-popover">
+        <div className="anim-pop fixed inset-x-0 bottom-0 z-40 max-h-[70vh] overflow-y-auto overscroll-contain rounded-t-2xl bg-surface pb-[env(safe-area-inset-bottom)] shadow-popover">
           <div className="flex justify-end px-2 pt-2">
             <Button
               size="sm"

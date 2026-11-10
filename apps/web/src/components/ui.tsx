@@ -523,7 +523,7 @@ export function Dialog({
         aria-labelledby={id}
         tabIndex={-1}
         className={cx(
-          "anim-pop relative flex max-h-[90vh] w-full flex-col rounded-t-2xl bg-surface shadow-popover outline-none sm:rounded-2xl",
+          "anim-pop relative flex max-h-[90vh] w-full flex-col rounded-t-2xl bg-surface pb-[env(safe-area-inset-bottom)] shadow-popover outline-none sm:rounded-2xl sm:pb-0",
           wide ? "sm:max-w-4xl" : "sm:max-w-lg",
         )}
       >

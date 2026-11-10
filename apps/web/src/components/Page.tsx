@@ -144,7 +144,7 @@ export function ToolbarText({ children }: { children: ReactNode }) {
 /** The totals bar at the bottom of a list. */
 export function StatsBar({ items }: { items: (ReactNode | false | null | undefined)[] }) {
   return (
-    <div className="flex h-10 shrink-0 items-stretch overflow-x-auto border-t border-border text-xs text-muted">
+    <div className="box-content flex h-10 shrink-0 items-stretch overflow-x-auto border-t border-border pb-[env(safe-area-inset-bottom)] text-xs text-muted">
       {items.filter(Boolean).map((item, i) => (
         <div
           // Fixed positions in a short list.

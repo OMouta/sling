@@ -352,7 +352,7 @@ function MemoryRow({
             aria-expanded={open}
             onClick={toggle}
             className={cx(
-              "sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100",
+              "sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100 pointer-coarse:opacity-100",
               open && "sm:opacity-100",
             )}
           />
