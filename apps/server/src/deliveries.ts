@@ -137,7 +137,7 @@ async function stepsOf(ctx: AppContext, taskId: string): Promise<StepState[]> {
 /** A task's steps in the order they run, for working out where it stands. */
 async function orderedSteps(ctx: AppContext, taskId: string) {
   return ctx.db
-    .select({ kind: schema.actions.kind, state: schema.actions.state })
+    .select({ id: schema.actions.id, kind: schema.actions.kind, state: schema.actions.state })
     .from(schema.actions)
     .where(eq(schema.actions.taskId, taskId))
     .orderBy(schema.actions.position);
@@ -171,13 +171,21 @@ export async function enqueueSettlement(ctx: AppContext, taskId: string, reason:
   const [task] = await ctx.db.select().from(schema.tasks).where(eq(schema.tasks.id, taskId));
   if (!task) return;
   const version = settlementVersion(task, await stepsOf(ctx, taskId));
+  const waitingOn =
+    reason === "approval_needed" ? waitingStep(await orderedSteps(ctx, taskId)) : null;
   await ctx.db
     .insert(schema.deliveries)
     .values(
       SETTLEMENT_CONSUMERS.map((consumer) => ({
         id: `settle:${taskId}:${reason}:${version}:${consumer}`,
         kind: `settle.${consumer}`,
-        payload: { taskId, reason, version, noteId: newId("msg") },
+        payload: {
+          taskId,
+          reason,
+          version,
+          noteId: newId("msg"),
+          ...(waitingOn ? { waitingOn } : {}),
+        },
       })),
     )
     .onConflictDoNothing();
@@ -204,6 +212,12 @@ export function settleReasonOf(
     return step.state === "awaiting_approval" ? "approval_needed" : null;
   }
   return "delivered";
+}
+
+/** The step a task waits on for approval: the first current step that hasn't ended. */
+function waitingStep(ordered: { id: string; kind: string; state: ActionState }[]): string | null {
+  const next = currentSteps(ordered).find((s) => !isTerminalAction(s.state));
+  return next?.state === "awaiting_approval" ? next.id : null;
 }
 
 const SETTLE_REASONS: SettleReason[] = ["finished", "approval_needed", "delivered"];
@@ -252,7 +266,8 @@ export async function reconcileSettlements(ctx: AppContext, now = new Date()): P
   let queued = 0;
   for (const task of candidates) {
     const steps = await stepsOf(ctx, task.id);
-    const reason = settleReasonOf(task.state, await orderedSteps(ctx, task.id));
+    const ordered = await orderedSteps(ctx, task.id);
+    const reason = settleReasonOf(task.state, ordered);
     if (!reason) continue;
     const version = settlementVersion(task, steps);
     // Settled already under any reason: the IDs are exact, so the lookup uses the key.
@@ -263,6 +278,22 @@ export async function reconcileSettlements(ctx: AppContext, now = new Date()): P
       .where(inArray(schema.deliveries.id, ids))
       .limit(1);
     if (settled) continue;
+    // Approving a later step first changes the version, but the task still
+    // waits on the step that was already announced.
+    const waitingOn = reason === "approval_needed" ? waitingStep(ordered) : null;
+    if (waitingOn) {
+      const [announced] = await ctx.db
+        .select({ id: schema.deliveries.id })
+        .from(schema.deliveries)
+        .where(
+          and(
+            sql`starts_with(${schema.deliveries.id}, ${`settle:${task.id}:approval_needed:`})`,
+            sql`${schema.deliveries.payload}->>'waitingOn' = ${waitingOn}`,
+          ),
+        )
+        .limit(1);
+      if (announced) continue;
+    }
     ctx.log.warn({ taskId: task.id, reason }, "queued a settlement that was never queued");
     await enqueueSettlement(ctx, task.id, reason);
     queued++;

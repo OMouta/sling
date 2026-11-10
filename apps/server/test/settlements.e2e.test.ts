@@ -107,3 +107,62 @@ it("queues a settlement that was lost, once, and leaves the rest alone", async (
   // A second pass finds nothing left to queue.
   expect(await reconcileSettlements(server.ctx, now)).toBe(0);
 });
+
+it("doesn't announce the same waiting step again after a later step is approved first", async () => {
+  const { db } = server.ctx;
+  await db
+    .insert(schema.users)
+    .values({ id: "usr_2", name: "Bo", email: "bo@example.com" })
+    .onConflictDoNothing();
+  await db.insert(schema.workspaces).values({ id: "wsp_2", name: "Bo" }).onConflictDoNothing();
+  const taskId = newId("tsk");
+  await db.insert(schema.tasks).values({
+    id: taskId,
+    workspaceId: "wsp_2",
+    ownerId: "usr_2",
+    repoName: "site",
+    title: "Waits on both",
+    objective: "Do it",
+    mode: "supervised",
+    branch: `sling/${taskId}`,
+    state: "succeeded",
+    finishedAt: new Date(),
+  });
+  const approvals: string[] = [];
+  for (const [position, kind] of (["push", "open_pr"] as const).entries()) {
+    const actionId = newId("act");
+    await db.insert(schema.actions).values({
+      id: actionId,
+      taskId,
+      workspaceId: "wsp_2",
+      ownerId: "usr_2",
+      kind,
+      state: "awaiting_approval",
+      position,
+      requiresApproval: true,
+    });
+    const id = newId("apv");
+    await db.insert(schema.approvals).values({
+      id,
+      workspaceId: "wsp_2",
+      ownerId: "usr_2",
+      actionId,
+      taskId,
+      expiresAt: new Date(Date.now() + 60 * 60_000),
+    });
+    approvals.push(id);
+  }
+  // The ordinary path announced the push waiting for approval.
+  await enqueueSettlement(server.ctx, taskId, "approval_needed");
+
+  // The PR is approved while the push still waits.
+  expect(await server.ctx.tasks.decide("wsp_2", approvals[1] as string, "usr_2", true)).toBe(true);
+
+  // Well after the quiet period, the reconcile finds nothing new to say about it.
+  await reconcileSettlements(server.ctx, new Date(Date.now() + 10 * 60_000));
+  const rows = await db
+    .select({ id: schema.deliveries.id })
+    .from(schema.deliveries)
+    .where(like(schema.deliveries.id, `settle:${taskId}:%:agent`));
+  expect(rows).toHaveLength(1);
+});
