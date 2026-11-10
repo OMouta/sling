@@ -141,14 +141,25 @@ export function ChatControls(props: PickerProps & { className?: string }) {
   const effort = assistant?.effort ?? current?.defaultEffort ?? null;
   const style = useAnchoredStyle(open, button, popover);
 
+  // Anything else pressed closes it, the mode menu beside it too, and so
+  // does Escape wherever focus is.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
-      if (!root.current?.contains(t) && !popover.current?.contains(t)) setOpen(false);
+      if (!button.current?.contains(t) && !popover.current?.contains(t)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      setOpen(false);
+      button.current?.focus({ preventScroll: true });
     };
     document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   return (
@@ -268,7 +279,11 @@ export function ModelPicker({
   const search = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
 
-  useEffect(() => search.current?.focus({ preventScroll: true }), []);
+  // A hidden field can't take focus, so this waits until the picker is placed.
+  const placed = Boolean(style);
+  useEffect(() => {
+    if (placed) search.current?.focus({ preventScroll: true });
+  }, [placed]);
 
   const all = useMemo<Row[]>(
     () =>
@@ -298,6 +313,14 @@ export function ModelPicker({
   // The workspace default comes first, unless a search leaves it out.
   const lead = onDefault && (!typed || WORKSPACE_DEFAULT.toLowerCase().includes(typed)) ? 1 : 0;
   const fallback = catalog?.defaults.assistant ?? null;
+  // While searching, the rail marks the provider of the result in focus.
+  const railShown: Rail | null = typed
+    ? (rows[Math.max(0, cursor - lead)]?.provider ?? null)
+    : rail;
+  const toRail = (r: Rail) => {
+    setQuery("");
+    setRail(r);
+  };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset the cursor when the list changes.
   useEffect(() => setCursor(0), [rail, query]);
@@ -395,25 +418,25 @@ export function ModelPicker({
       <div className="grid h-[min(360px,55vh)] grid-cols-[56px_minmax(0,1fr)] sm:grid-cols-[56px_minmax(0,1fr)_200px]">
         <div className="flex flex-col items-center gap-1.5 border-r border-border py-2.5">
           <RailButton
-            active={rail === "favorites"}
+            active={railShown === "favorites"}
             label="Favorites"
-            onClick={() => setRail("favorites")}
+            onClick={() => toRail("favorites")}
           >
             <Star
               size={18}
               aria-hidden="true"
-              fill={rail === "favorites" ? "currentColor" : "none"}
+              fill={railShown === "favorites" ? "currentColor" : "none"}
             />
           </RailButton>
           <span className="my-0.5 h-px w-7 bg-border" />
           {providers.map((p) => (
             <RailButton
               key={p.provider}
-              active={rail === p.provider}
+              active={railShown === p.provider}
               label={
                 p.kind === "cli" ? `${p.label} on ${p.machines.join(", ")}` : `${p.label} API key`
               }
-              onClick={() => setRail(p.provider)}
+              onClick={() => toRail(p.provider)}
             >
               <ProviderIcon provider={p.provider} size={20} />
             </RailButton>

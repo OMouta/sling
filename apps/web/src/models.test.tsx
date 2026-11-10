@@ -260,6 +260,37 @@ describe("model picker", () => {
     ]);
   });
 
+  it("marks the provider of the search result it's on", () => {
+    wrap(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
+    const codex = screen.getByRole("button", { name: "Codex on devbox" });
+    const claude = screen.getByRole("button", { name: "Claude Code on devbox" });
+    expect(claude.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.change(screen.getByLabelText("Search models"), { target: { value: "5.6" } });
+    expect(codex.getAttribute("aria-pressed")).toBe("true");
+    expect(claude.getAttribute("aria-pressed")).toBe("false");
+    // Picking a provider leaves the search for its list.
+    fireEvent.click(claude);
+    expect((screen.getByLabelText("Search models") as HTMLInputElement).value).toBe("");
+    expect(claude.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("closes on Escape wherever focus is, and when the mode menu opens", () => {
+    wrap(<Harness />);
+    const pill = screen.getByRole("button", { name: /^Model:/ });
+    fireEvent.click(pill);
+    expect(screen.getByRole("dialog", { name: "Choose a model" })).toBeTruthy();
+    fireEvent.keyDown(pill, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Choose a model" })).toBeNull();
+
+    fireEvent.click(pill);
+    const mode = screen.getByRole("button", { name: "Permission mode: Supervised" });
+    fireEvent.pointerDown(mode);
+    fireEvent.click(mode);
+    expect(screen.queryByRole("dialog", { name: "Choose a model" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /Full access/ })).toBeTruthy();
+  });
+
   it("offers Fast only where the model has it", () => {
     wrap(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: /^Model:/ }));
