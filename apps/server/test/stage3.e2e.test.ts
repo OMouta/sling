@@ -1178,6 +1178,46 @@ describe("sandboxes", () => {
     await setFakeBehavior("boot");
   });
 
+  it("keeps a sandbox until its provider can remove it", async () => {
+    await setFakeBehavior("no-boot");
+    try {
+      await providerStops();
+    } finally {
+      await setFakeBehavior("boot");
+    }
+  });
+
+  async function providerStops() {
+    const created = await newTask({ title: "Provider stops", environment: "sandbox" });
+    const provisioning = await until("provisioning", async () => {
+      const t = await task(created.id);
+      const s = await sandbox(t.environment.sandboxId);
+      return s?.state === "provisioning" && s.externalId ? s : null;
+    });
+    const externalId = provisioning.externalId as string;
+    // What a disabled or revoked extension leaves: the connector, without a provider.
+    const { executionProvider: _, ...standIn } = fake.connector;
+    server.ctx.registry.unregisterConnector(fake.connector.id);
+    server.ctx.registry.registerConnector(standIn);
+    try {
+      await api("POST", `/api/sandboxes/${provisioning.id}/destroy`);
+      await server.ctx.sandboxes.idle();
+      expect((await sandbox(provisioning.id))?.state).not.toBe("destroyed");
+      expect(fake.state.live.has(externalId)).toBe(true);
+    } finally {
+      server.ctx.registry.unregisterConnector(fake.connector.id);
+      server.ctx.registry.registerConnector(fake.connector);
+    }
+    await server.ctx.db
+      .update(schema.sandboxes)
+      .set({ updatedAt: new Date(Date.now() - 10 * 60_000) })
+      .where(eq(schema.sandboxes.id, provisioning.id));
+    await server.ctx.sandboxes.sweep();
+    await server.ctx.sandboxes.idle();
+    expect((await sandbox(provisioning.id))?.state).toBe("destroyed");
+    expect(fake.state.destroyed).toContain(externalId);
+  }
+
   it("lets a workflow delegate to a sandbox and see where the task ran", async () => {
     const def = {
       schema: "sling.workflow/v1",

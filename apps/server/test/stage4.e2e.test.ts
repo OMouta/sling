@@ -44,6 +44,7 @@ import { schema } from "@sling/db";
 import { buildProject, loadProject, packProject, writeCatalog } from "@sling/extension-cli";
 import { type FakeMachinesApi, startFakeMachinesApi } from "@sling/extension-fly-machines/fake-api";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { type WebSocket, WebSocketServer } from "ws";
 import type { Config } from "../src/config.ts";
@@ -774,5 +775,33 @@ describe("a sandbox provider from an extension", () => {
     await until("the orphan to go", async () => fly.machines.get("orphan1")?.state === "destroyed");
     const list = await api<SandboxListView>("GET", "/api/sandboxes");
     expect(list.sandboxes.every((s) => s.state === "destroyed")).toBe(true);
+  });
+
+  it("won't disable the provider while one of its sandboxes is live", async () => {
+    const [m] = await server.ctx.db.select().from(schema.workspaceMembers).limit(1);
+    const [inst] = await server.ctx.db
+      .select({ id: schema.connectorInstallations.id })
+      .from(schema.connectorInstallations)
+      .where(eq(schema.connectorInstallations.connectorId, "fly-machines"));
+    if (!m || !inst) throw new Error("the Fly installation is missing");
+    await server.ctx.db.insert(schema.sandboxes).values({
+      id: "sbx_live_on_disable",
+      workspaceId: m.workspaceId,
+      ownerId: m.userId,
+      providerInstallationId: inst.id,
+      state: "ready",
+      remoteKey: KEY,
+      readyAt: new Date(),
+    });
+    const refused = await raw("PATCH", "/api/extensions/fly-machines", { enabled: false });
+    expect(refused.status).toBe(409);
+    expect(refused.text).toMatch(/still has 1 sandbox/);
+
+    await server.ctx.db
+      .update(schema.sandboxes)
+      .set({ state: "destroyed", destroyedAt: new Date() })
+      .where(eq(schema.sandboxes.id, "sbx_live_on_disable"));
+    await api("PATCH", "/api/extensions/fly-machines", { enabled: false });
+    await api("PATCH", "/api/extensions/fly-machines", { enabled: true });
   });
 });

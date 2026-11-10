@@ -1369,6 +1369,7 @@ export class ExtensionService {
       if (x.row.enabled === enabled && !(enabled && x.row.status === "error")) {
         return (await this.view(actor.workspaceId, id)) as ExtensionView;
       }
+      if (!enabled) await this.#refuseLiveSandboxes(x, await this.#installations(x));
       const [row] = await this.#ctx.db
         .update(schema.extensions)
         .set({ enabled, updatedAt: new Date() })
@@ -1392,6 +1393,40 @@ export class ExtensionService {
     });
   }
 
+  async #installations(x: InstalledExtension) {
+    const connectorIds = x.contents.connectors.map((c) => c.id);
+    if (connectorIds.length === 0) return [];
+    return this.#ctx.db
+      .select({
+        id: schema.connectorInstallations.id,
+        name: schema.connectorInstallations.name,
+        connectorId: schema.connectorInstallations.connectorId,
+        credentialId: schema.connectorInstallations.credentialId,
+      })
+      .from(schema.connectorInstallations)
+      .where(inArray(schema.connectorInstallations.connectorId, connectorIds));
+  }
+
+  /** Sandboxes need their provider running to be destroyed. */
+  async #refuseLiveSandboxes(
+    x: InstalledExtension,
+    installs: { id: string; name: string; connectorId: string }[],
+  ): Promise<void> {
+    const providers = new Set(
+      x.contents.connectors.filter((c) => c.isExecutionProvider).map((c) => c.id),
+    );
+    for (const inst of installs) {
+      if (!providers.has(inst.connectorId)) continue;
+      const live = await liveSandboxCount(this.#ctx, inst.id);
+      if (live > 0) {
+        throw new ExtensionError(
+          `${inst.name} still has ${live} ${live === 1 ? "sandbox" : "sandboxes"}. Destroy ${live === 1 ? "it" : "them"} on the Sandboxes page first.`,
+          409,
+        );
+      }
+    }
+  }
+
   /**
    * Removes an extension, its installations in every workspace, and their
    * credentials. Workflows that use it stay, and fail on its node types.
@@ -1402,31 +1437,8 @@ export class ExtensionService {
       const x = this.#installed.get(id);
       if (!x) throw new ExtensionError("No such extension.", 404);
       const connectorIds = x.contents.connectors.map((c) => c.id);
-      const installs =
-        connectorIds.length > 0
-          ? await this.#ctx.db
-              .select({
-                id: schema.connectorInstallations.id,
-                name: schema.connectorInstallations.name,
-                connectorId: schema.connectorInstallations.connectorId,
-                credentialId: schema.connectorInstallations.credentialId,
-              })
-              .from(schema.connectorInstallations)
-              .where(inArray(schema.connectorInstallations.connectorId, connectorIds))
-          : [];
-      const providers = new Set(
-        x.contents.connectors.filter((c) => c.isExecutionProvider).map((c) => c.id),
-      );
-      for (const inst of installs) {
-        if (!providers.has(inst.connectorId)) continue;
-        const live = await liveSandboxCount(this.#ctx, inst.id);
-        if (live > 0) {
-          throw new ExtensionError(
-            `${inst.name} still has ${live} ${live === 1 ? "sandbox" : "sandboxes"}. Destroy ${live === 1 ? "it" : "them"} on the Sandboxes page first.`,
-            409,
-          );
-        }
-      }
+      const installs = await this.#installations(x);
+      await this.#refuseLiveSandboxes(x, installs);
 
       for (const cid of x.connectorIds) {
         this.#ctx.registry.unregisterConnector(cid);

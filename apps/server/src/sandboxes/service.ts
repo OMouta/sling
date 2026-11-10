@@ -688,13 +688,21 @@ export class SandboxService {
       .select()
       .from(schema.connectorInstallations)
       .where(eq(schema.connectorInstallations.id, row.providerInstallationId));
-    const connector = install ? this.#ctx.registry.connector(install.connectorId) : undefined;
-    if (!install || !connector?.executionProvider) {
+    if (!install) {
       this.#ctx.log.warn(
         { sandboxId: row.id, externalId },
         "sandbox provider is gone, so its resource can't be removed",
       );
       return true;
+    }
+    const connector = this.#ctx.registry.connector(install.connectorId);
+    if (!connector?.executionProvider) {
+      // Its extension is disabled, revoked or failing. The resource may still run, so keep trying.
+      this.#ctx.log.warn(
+        { sandboxId: row.id, externalId },
+        "sandbox provider isn't running; the sweep retries",
+      );
+      return false;
     }
     try {
       const pctx = await this.#providerContext(install, connector);
