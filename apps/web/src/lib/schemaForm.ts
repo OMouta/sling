@@ -305,14 +305,3 @@ export function setField(
   else copy[field.key] = next;
   return copy;
 }
-
-/** Keys of required fields that have no value. */
-export function missingRequired(fields: FormField[], value: Record<string, unknown>): string[] {
-  return fields
-    .filter((f) => f.required && f.kind !== "boolean")
-    .filter((f) => {
-      const v = value[f.key];
-      return v === undefined || v === null || v === "";
-    })
-    .map((f) => f.key);
-}

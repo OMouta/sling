@@ -2,10 +2,8 @@ import type { ApprovalView, RunnerView } from "@sling/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
-  Activity,
   ArrowDownUp,
   ExternalLink,
-  GitMerge,
   GitPullRequest,
   Rocket,
   ShieldCheck,
@@ -19,6 +17,7 @@ import { Content, Page, Toolbar } from "../components/Page.tsx";
 import { RuleQuestion } from "../components/RuleQuestion.tsx";
 import { RulesList } from "../components/RulesList.tsx";
 import { SandboxFallbackCard } from "../components/SandboxFallbackCard.tsx";
+import { ACTION_ICON, ACTION_LABEL } from "../components/TaskCard.tsx";
 import {
   Button,
   Card,
@@ -51,14 +50,6 @@ import { useLoadMore } from "../lib/pages.ts";
 import { useTaskDetail } from "../lib/tasks.ts";
 import { useRun } from "../lib/workflowApi.ts";
 import { type ApprovalsTab, approvalsRoute } from "../router.tsx";
-
-const LABEL = {
-  push: "Push branch",
-  open_pr: "Open pull request",
-  merge: "Merge",
-  deploy: "Deploy",
-  verify: "Check the site",
-};
 
 export function ApprovalsPage() {
   const search = approvalsRoute.useSearch();
@@ -139,14 +130,6 @@ export function ApprovalsPage() {
   );
 }
 
-const ICON = {
-  push: Upload,
-  open_pr: GitPullRequest,
-  merge: GitMerge,
-  deploy: Rocket,
-  verify: Activity,
-};
-
 function ApprovalGroup({ taskId, approvals }: { taskId: string; approvals: ApprovalView[] }) {
   // Merge and deploy wait together, once the PR exists: that's one deployment to approve.
   if (approvals.some((a) => a.actionKind === "merge" || a.actionKind === "deploy")) {
@@ -187,11 +170,13 @@ function StepList({ approvals, remoteUrl }: { approvals: ApprovalView[]; remoteU
   return (
     <ul className="space-y-1.5 text-[13px]">
       {approvals.map((a) => {
-        const Icon = a.actionKind ? ICON[a.actionKind] : Upload;
+        const Icon = (a.actionKind && ACTION_ICON[a.actionKind]) || Upload;
         return (
           <li key={a.id} className="flex flex-wrap items-center gap-x-2">
             <Icon aria-hidden="true" className="text-subtle" />
-            <span className="font-medium">{a.actionKind ? LABEL[a.actionKind] : a.title}</span>
+            <span className="font-medium">
+              {(a.actionKind && ACTION_LABEL[a.actionKind]) || a.title}
+            </span>
             <span className="text-xs text-muted">
               {a.actionKind === "push" ? `to ${remoteUrl || "origin"} · ` : ""}
               {expiresIn(a.expiresAt)}

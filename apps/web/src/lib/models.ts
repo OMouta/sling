@@ -1,12 +1,10 @@
-import {
-  type AgentChoice,
-  type AssistantChoice,
-  type AssistantProvider,
-  effortLabel,
-  type Harness,
-  type ModelCatalogView,
-  type ModelOption,
-  type ModelProviderId,
+import type {
+  AssistantChoice,
+  AssistantProvider,
+  Harness,
+  ModelCatalogView,
+  ModelOption,
+  ModelProviderId,
 } from "@sling/core";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
@@ -55,40 +53,6 @@ export function findAssistantModel(
 ): ModelOption | undefined {
   if (!choice) return undefined;
   return providerModels(catalog, choice.provider)?.models.find((m) => m.id === choice.model);
-}
-
-export function findAgentModel(
-  catalog: ModelCatalogView | undefined,
-  choice: AgentChoice,
-): ModelOption | undefined {
-  if (!choice.model) return undefined;
-  return agentModels(catalog, choice.harness)?.models.find((m) => m.id === choice.model);
-}
-
-/** What the assistant pill says: the model, then its effort, if one is set. */
-export function assistantSummary(
-  catalog: ModelCatalogView | undefined,
-  choice: AssistantChoice | null,
-): { model: string; effort: string | null } {
-  if (!choice) return { model: "Pick a model", effort: null };
-  const m = findAssistantModel(catalog, choice);
-  return {
-    model: shortLabel(m?.label ?? choice.model),
-    effort: choice.effort ? effortLabel(choice.effort) : null,
-  };
-}
-
-export function agentSummary(
-  catalog: ModelCatalogView | undefined,
-  choice: AgentChoice,
-): { agent: string; model: string; effort: string | null } {
-  const a = agentModels(catalog, choice.harness);
-  const m = findAgentModel(catalog, choice);
-  return {
-    agent: a?.label ?? choice.harness,
-    model: choice.model ? (m?.label ?? choice.model) : "Default",
-    effort: choice.effort ? effortLabel(choice.effort) : null,
-  };
 }
 
 /** Picking another model keeps the effort and fast tier only where the new model has them. */

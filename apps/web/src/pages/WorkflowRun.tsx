@@ -2,7 +2,7 @@ import type { NodeRunView, RunDetailView, RunView } from "@sling/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { RotateCcw, Square, Zap } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { JsonView } from "../components/JsonView.tsx";
 import { Page, useFocusMode } from "../components/Page.tsx";
 import { RUN_STATE, RUN_TONE, RunStatusBadge } from "../components/StatusBadge.tsx";
@@ -11,6 +11,7 @@ import { ReadOnlyCanvas, useReadOnlyStore } from "../components/workflow/ReadOnl
 import { runDuration, triggerTitle } from "../components/workflow/RunsTab.tsx";
 import { api } from "../lib/api.ts";
 import { ago, dateTime, duration } from "../lib/format.ts";
+import { useNow } from "../lib/useNow.ts";
 import type { CatalogIndex } from "../lib/workflow/catalog.ts";
 import { useCatalogIndex } from "../lib/workflow/catalogIndex.ts";
 import * as g from "../lib/workflow/graph.ts";
@@ -199,13 +200,7 @@ function RunSummary({
 }) {
   const active = ACTIVE.has(run.status);
   // Keep "so far" durations moving while the run is active.
-  const [, tick] = useState(0);
-  const timer = useRef<ReturnType<typeof setInterval>>(undefined);
-  useEffect(() => {
-    if (!active) return;
-    timer.current = setInterval(() => tick((n) => n + 1), 1000);
-    return () => clearInterval(timer.current);
-  }, [active]);
+  useNow(1000, active);
 
   return (
     <div className="shrink-0 space-y-3 px-5 py-3">

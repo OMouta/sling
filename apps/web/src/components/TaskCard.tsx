@@ -75,7 +75,7 @@ import {
   useConfirm,
 } from "./ui.tsx";
 
-const ACTION_LABEL: Record<string, string> = {
+export const ACTION_LABEL: Record<string, string> = {
   push: "Push branch",
   open_pr: "Open pull request",
   merge: "Merge",
@@ -83,7 +83,7 @@ const ACTION_LABEL: Record<string, string> = {
   verify: "Check the site",
 };
 
-const ACTION_ICON = {
+export const ACTION_ICON = {
   push: Upload,
   open_pr: GitPullRequest,
   merge: GitMerge,

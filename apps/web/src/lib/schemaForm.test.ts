@@ -7,7 +7,6 @@ import {
   fieldFor,
   formFields,
   humanize,
-  missingRequired,
   setField,
 } from "./schemaForm.ts";
 
@@ -183,12 +182,6 @@ describe("defaults and values", () => {
     expect(setField({ a: "x", b: 1 }, { key: "a", required: false }, "")).toEqual({ b: 1 });
     expect(setField({ a: "x" }, { key: "a", required: true }, "")).toEqual({ a: "" });
     expect(setField({ a: "x" }, { key: "a", required: true }, undefined)).toEqual({});
-  });
-
-  it("lists required fields with no value", () => {
-    const fields = formFields(schemaOf("http.request"));
-    expect(missingRequired(fields, { method: "GET" })).toEqual(["url"]);
-    expect(missingRequired(fields, { url: "https://x" })).toEqual([]);
   });
 });
 

@@ -136,11 +136,6 @@ export function Toolbar({
   );
 }
 
-/** A line of help text for a toolbar that has no filters. */
-export function ToolbarText({ children }: { children: ReactNode }) {
-  return <p className="min-w-0 text-xs leading-4 text-muted">{children}</p>;
-}
-
 /** The totals bar at the bottom of a list. */
 export function StatsBar({ items }: { items: (ReactNode | false | null | undefined)[] }) {
   return (

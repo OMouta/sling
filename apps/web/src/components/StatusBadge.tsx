@@ -1,12 +1,5 @@
-import type {
-  ActionView,
-  InstallationStatus,
-  NodeRunStatus,
-  RunStatus,
-  SandboxState,
-  TaskState,
-} from "@sling/core";
-import { Badge, Dot, type Tone } from "./ui.tsx";
+import type { ActionView, NodeRunStatus, RunStatus, SandboxState, TaskState } from "@sling/core";
+import { Badge, type Tone } from "./ui.tsx";
 
 /*
  * One word or two for every state Sling shows, so a badge, a dot's text and
@@ -55,24 +48,6 @@ export const RUN_TONE = Object.fromEntries(
 export function RunStatusBadge({ status }: { status: RunStatus | NodeRunStatus }) {
   const s = RUN_STATE[status];
   return <Badge tone={s?.tone ?? "neutral"}>{s?.label ?? status}</Badge>;
-}
-
-export const INSTALLATION_STATE: Record<InstallationStatus, { label: string; tone: Tone }> = {
-  idle: { label: "Idle", tone: "neutral" },
-  connecting: { label: "Connecting", tone: "warn" },
-  connected: { label: "Connected", tone: "ok" },
-  error: { label: "Error", tone: "danger" },
-  disabled: { label: "Off", tone: "neutral" },
-};
-
-export function InstallationStatusLabel({ status }: { status: InstallationStatus }) {
-  const s = INSTALLATION_STATE[status];
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-soft">
-      <Dot tone={s?.tone ?? "neutral"} />
-      {s?.label ?? status}
-    </span>
-  );
 }
 
 export const SANDBOX_STATE: Record<SandboxState, { label: string; tone: Tone }> = {

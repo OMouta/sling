@@ -186,7 +186,7 @@ const memoryRoute = createRoute({
   path: "/memory",
   component: lazyRouteComponent(() => import("./pages/Memory.tsx"), "MemoryPage"),
 });
-/** `new` makes one; anything else is the ID of one to edit. */
+/** One personality, to edit. New ones are made from the Personalities page. */
 export const personalityRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/personalities/$id",

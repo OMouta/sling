@@ -650,23 +650,14 @@ const pickDraft = (p: PersonalityView): Draft => ({
 
 export function PersonalityEditorPage() {
   const { id } = personalityRoute.useParams();
-  const isNew = id === "new";
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const personalities = usePersonalities();
   const list = personalities.data ?? [];
-  const existing = isNew ? undefined : list.find((p) => p.id === id);
-  // A new draft reads the list once; an existing one follows the stored personality.
-  const savedKey = existing
-    ? `${existing.id}:${existing.updatedAt}`
-    : isNew && personalities.isSuccess
-      ? "new"
-      : "";
-  // biome-ignore lint/correctness/useExhaustiveDependencies: savedKey stands for existing and list.
-  const saved = useMemo(
-    () => (existing ? pickDraft(existing) : savedKey === "new" ? blankDraft(list) : null),
-    [savedKey],
-  );
+  const existing = list.find((p) => p.id === id);
+  // The draft follows the stored personality.
+  const savedKey = existing ? `${existing.id}:${existing.updatedAt}` : "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: savedKey stands for existing.
+  const saved = useMemo(() => (existing ? pickDraft(existing) : null), [savedKey]);
   // The draft and what it started from. An untouched draft follows changes made elsewhere.
   const [state, setState] = useState<{ id: string; base: Draft; draft: Draft } | null>(null);
   if (saved && (state?.id !== id || (state.base !== saved && sameDraft(state.draft, state.base)))) {
@@ -676,20 +667,16 @@ export function PersonalityEditorPage() {
   const setDraft = (d: Draft) => setState((s) => (s ? { ...s, draft: d } : s));
 
   const save = useMutation({
-    mutationFn: (d: Draft) =>
-      isNew
-        ? api.post<PersonalityView>("/api/personalities", d)
-        : api.patch<PersonalityView>(`/api/personalities/${id}`, d),
+    mutationFn: (d: Draft) => api.patch<PersonalityView>(`/api/personalities/${id}`, d),
     onSuccess: (p) => {
       qc.setQueryData<PersonalityView[]>(personalitiesKey, (l) =>
-        l ? (l.some((x) => x.id === p.id) ? l.map((x) => (x.id === p.id ? p : x)) : [...l, p]) : l,
+        l?.map((x) => (x.id === p.id ? p : x)),
       );
-      if (isNew) void navigate({ to: "/personalities" });
-      else setState({ id: p.id, base: pickDraft(p), draft: pickDraft(p) });
+      setState({ id: p.id, base: pickDraft(p), draft: pickDraft(p) });
     },
   });
 
-  if (personalities.isSuccess && !isNew && !existing) {
+  if (personalities.isSuccess && !existing) {
     return (
       <Page title="Personality" crumb={{ label: "Personalities", to: "/personalities" }}>
         <Empty fill icon={Drama} title="This personality doesn't exist anymore">
@@ -715,7 +702,7 @@ export function PersonalityEditorPage() {
   }
 
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft({ ...draft, [k]: v });
-  const dirty = isNew || !state || !sameDraft(draft, state.base);
+  const dirty = !state || !sameDraft(draft, state.base);
   const valid = draft.name.trim() !== "" && draft.instructions.trim() !== "";
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -724,14 +711,14 @@ export function PersonalityEditorPage() {
 
   return (
     <Page
-      title={isNew ? "New personality" : existing?.name || "Personality"}
+      title={existing?.name || "Personality"}
       crumb={{ label: "Personalities", to: "/personalities" }}
       badge={existing?.isDefault ? <Badge>Default</Badge> : undefined}
       controls={
         <div className="flex items-center gap-2">
           <ErrorText error={save.error} />
           {existing && <PersonalityMenu personality={existing} />}
-          {!isNew && dirty && (
+          {dirty && (
             <Button onClick={() => state && setDraft(state.base)} disabled={save.isPending}>
               Discard
             </Button>
@@ -743,7 +730,7 @@ export function PersonalityEditorPage() {
             busy={save.isPending}
             disabled={!valid || !dirty}
           >
-            {isNew ? "Create" : "Save"}
+            Save
           </Button>
         </div>
       }
@@ -761,7 +748,6 @@ export function PersonalityEditorPage() {
                 maxLength={PERSONALITY_NAME_MAX}
                 placeholder="Travel"
                 onChange={(e) => set("name", e.target.value)}
-                autoFocus={isNew}
               />
             </Field>
             <Field label="Description">

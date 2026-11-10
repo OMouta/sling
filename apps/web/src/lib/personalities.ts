@@ -22,12 +22,6 @@ export function usePersonalityTemplates() {
   });
 }
 
-/** A personality by ID, from the list. Archived ones aren't in it. */
-export function usePersonality(id: string | null | undefined): PersonalityView | undefined {
-  const list = usePersonalities();
-  return id ? list.data?.find((p) => p.id === id) : undefined;
-}
-
 export const COLOR_LABELS: Record<PersonalityColor, string> = {
   violet: "Violet",
   blue: "Blue",

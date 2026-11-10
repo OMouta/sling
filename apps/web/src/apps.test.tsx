@@ -48,6 +48,22 @@ const personalityTemplates: PersonalityTemplateView[] = [
   },
 ];
 let previews: Record<string, ExtensionPreview> = {};
+const onCall: PersonalityView = {
+  id: "prs_oncall",
+  name: "On call",
+  description: "",
+  instructions: "Keep the site up.",
+  tools: [],
+  color: "blue",
+  shape: "orbit",
+  assistant: null,
+  isDefault: false,
+  position: 1,
+  revision: 1,
+  templateKey: null,
+  createdAt: "2026-11-01T10:00:00.000Z",
+  updatedAt: "2026-11-01T10:00:00.000Z",
+};
 
 function route(method: string, path: string, body: unknown): unknown {
   if (method === "POST") {
@@ -62,13 +78,16 @@ function route(method: string, path: string, body: unknown): unknown {
     }
     return { ok: true };
   }
+  if (method === "PATCH" && path === `/api/personalities/${onCall.id}`) {
+    posts.push({ path, body });
+    return { ...onCall, ...(body as object) };
+  }
   if (path === "/api/status") {
     return { needsSetup: false, signedIn: true, email: "a@b.c", version: "0.1.0" };
   }
   if (path === "/api/personalities/templates") return personalityTemplates;
-  if (path === "/api/personalities" || path === "/api/conversations" || path === "/api/runners") {
-    return [];
-  }
+  if (path === "/api/personalities") return personalityList;
+  if (path === "/api/conversations" || path === "/api/runners") return [];
   return null;
 }
 
@@ -81,8 +100,11 @@ class FakeSocket {
   close() {}
 }
 
+let personalityList: PersonalityView[] = [];
+
 beforeEach(() => {
   posts = [];
+  personalityList = [];
   previews = {
     agenda: agendaPreview,
     "acme-notes": notesPreview,
@@ -129,7 +151,8 @@ function openPreview(source: PreviewSource) {
 
 describe("personality tool groups", () => {
   it("offers apps, deploys, and setup, with what each lets it do", async () => {
-    renderAt("/personalities/new");
+    personalityList = [onCall];
+    renderAt(`/personalities/${onCall.id}`);
     const apps = await screen.findByRole("switch", { name: "Apps and workflows" });
     const deploys = screen.getByRole("switch", { name: "Deploys" });
     expect(screen.getByRole("switch", { name: "Change Sling's setup" })).toBeTruthy();
@@ -141,15 +164,12 @@ describe("personality tool groups", () => {
     );
     expect(PERSONALITY_TOOLS.slice(2, 5)).toEqual(["apps", "deploys", "setup"]);
 
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "On call" } });
-    fireEvent.change(screen.getByLabelText("Instructions"), {
-      target: { value: "Keep the site up." },
-    });
     fireEvent.click(deploys);
     fireEvent.click(apps);
-    fireEvent.click(screen.getByRole("button", { name: "Create" }));
-    await waitFor(() => expect(posts.some((p) => p.path === "/api/personalities")).toBe(true));
-    expect(posts.find((p) => p.path === "/api/personalities")?.body).toMatchObject({
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const path = `/api/personalities/${onCall.id}`;
+    await waitFor(() => expect(posts.some((p) => p.path === path)).toBe(true));
+    expect(posts.find((p) => p.path === path)?.body).toMatchObject({
       name: "On call",
       tools: ["apps", "deploys"],
     });

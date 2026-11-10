@@ -1,7 +1,6 @@
 import {
   type AnyNodeSpec,
   EXEC_ERROR,
-  EXEC_IN,
   type ExecPortSpec,
   execOutputsOf,
   type NamedTypeView,
@@ -87,10 +86,6 @@ export function portsOf(spec: NodeSpecView, config: Record<string, unknown>): No
     inputs: spec.inputs,
     outputs,
   };
-}
-
-export function hasExecInput(ports: NodePorts, port: string): boolean {
-  return ports.execIn && port === EXEC_IN;
 }
 
 export function defaultConfig(spec: NodeSpecView): Record<string, unknown> {
