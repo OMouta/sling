@@ -131,6 +131,8 @@ if [ ! -f "$ENV_FILE" ]; then
   chmod 600 "$ENV_FILE"
   bold "Created deploy/$ENV_FILE"
 fi
+# It holds the secrets, including in a copy made by hand.
+chmod 600 "$ENV_FILE"
 if [ -z "$(get_env SLING_SECRET_KEY "$ENV_FILE")" ]; then
   set_env SLING_SECRET_KEY "$(random_secret 48)" "$ENV_FILE"
   note "Generated SLING_SECRET_KEY. Keep a copy: stored API keys can't be read without it."
@@ -239,6 +241,19 @@ case "$mode" in
     set_env COMPOSE_PROFILES cloudflare "$ENV_FILE"
     ;;
   *) fail "Unknown mode $mode. Use local, lan, tailscale, or cloudflare." ;;
+esac
+
+# Behind a tunnel, every request reaches Sling from the tunnel's container, so
+# per-address limits need the client address it forwards. The app port is
+# bound to 127.0.0.1 then, so only Docker's private addresses reach it. A list
+# set by hand stays as it is.
+TUNNEL_PROXIES="10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+proxies="$(get_env SLING_TRUSTED_PROXIES "$ENV_FILE")"
+case "$mode" in
+  tailscale | cloudflare)
+    if [ -z "$proxies" ]; then set_env SLING_TRUSTED_PROXIES "$TUNNEL_PROXIES" "$ENV_FILE"; fi ;;
+  *)
+    if [ "$proxies" = "$TUNNEL_PROXIES" ]; then set_env SLING_TRUSTED_PROXIES "" "$ENV_FILE"; fi ;;
 esac
 
 if [ "$start" = 0 ]; then

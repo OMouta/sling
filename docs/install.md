@@ -30,6 +30,7 @@ On a machine without bash, or to set it up by hand:
 ```sh
 cd deploy
 cp .env.example .env
+chmod 600 .env
 ```
 
 Fill in `.env`:
@@ -150,7 +151,9 @@ Forwarded client addresses are trusted only from `SLING_TRUSTED_PROXIES`, a
 comma-separated list of proxy IPs or CIDRs. Leave it empty for direct access.
 For a tunnel or reverse proxy, list its actual source address or isolated proxy
 network, and prevent direct public access to the application port. Avoid trusting
-all addresses. Do not log full webhook URLs or OAuth callback query strings in
+all addresses. `setup.sh` sets it for its own Tailscale and Cloudflare tunnels,
+where the app port only listens on 127.0.0.1, and clears it again when you
+switch back to local or LAN. Do not log full webhook URLs or OAuth callback query strings in
 your proxy: those contain credentials, even though Sling redacts its own request
 URLs.
 
