@@ -371,9 +371,15 @@ async fn real_main(cli: Cli) -> Result<()> {
                     tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60)).await;
                 }
             });
+            // The connection keeps running while tasks stop, so their
+            // results can still go out.
+            let connection = tokio::spawn(connection::run_forever(mgr.clone(), identity));
             tokio::select! {
-                r = connection::run_forever(mgr, identity) => r?,
-                _ = tokio::signal::ctrl_c() => tracing::info!("stopping"),
+                r = connection => r??,
+                signal = sandbox::stop_signal() => {
+                    tracing::info!("{signal}; stopping");
+                    stop_tasks(&mgr).await;
+                }
             }
         }
         Command::Doctor => doctor(&paths).await?,
@@ -403,6 +409,23 @@ async fn real_main(cli: Cli) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Interrupts running tasks and waits a little for them to end, so Sling
+/// hears about them now rather than at the next start.
+async fn stop_tasks(mgr: &std::sync::Arc<tasks::Manager>) {
+    let running = mgr.running_count();
+    if running == 0 {
+        return;
+    }
+    tracing::info!("interrupting {running} running task(s)");
+    mgr.interrupt_all();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while mgr.running_count() > 0 && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    // A moment for the results to go out.
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 }
 
 async fn doctor(paths: &Paths) -> Result<()> {

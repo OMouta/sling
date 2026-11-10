@@ -706,7 +706,8 @@ async fn idle(mgr: &Arc<tasks::Manager>, limit: Option<Duration>) {
     }
 }
 
-async fn stop_signal() -> &'static str {
+/// Resolves on SIGTERM or Ctrl-C, naming which.
+pub(crate) async fn stop_signal() -> &'static str {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};

@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -47,6 +47,8 @@ pub struct Manager {
     agent_env_removed: Mutex<HashMap<String, Vec<String>>>,
     /// Push and PR actions still running.
     actions_in_flight: AtomicUsize,
+    /// The Runner is shutting down, so tasks it stops finish as interrupted.
+    stopping: AtomicBool,
     /// Repos the latest scan found, and when it ran. Only these can be
     /// added from Sling.
     found: Mutex<(Vec<Found>, Option<Instant>)>,
@@ -104,6 +106,7 @@ impl Manager {
             early_cancels: Mutex::new(HashSet::new()),
             agent_env_removed: Mutex::new(HashMap::new()),
             actions_in_flight: AtomicUsize::new(0),
+            stopping: AtomicBool::new(false),
             found: Mutex::new((Vec::new(), None)),
             repo_lock: tokio::sync::Mutex::new(()),
             inventory_turn: tokio::sync::Mutex::new(()),
@@ -284,6 +287,22 @@ impl Manager {
         for tx in self.running.lock().unwrap().values() {
             let _ = tx.send(true);
         }
+    }
+
+    /// Stops every running task because the Runner is shutting down. They
+    /// finish as interrupted, as they would after a crash.
+    pub fn interrupt_all(&self) {
+        self.stopping.store(true, Ordering::SeqCst);
+        self.cancel_all();
+    }
+
+    fn interrupted(&self, branch: &str) -> Option<TaskFinished> {
+        self.stopping.load(Ordering::SeqCst).then(|| TaskFinished {
+            outcome: task_finished::Outcome::Interrupted as i32,
+            error: "The Runner stopped while this task was running.".into(),
+            branch: branch.to_string(),
+            ..Default::default()
+        })
     }
 
     pub fn held_tasks(&self) -> Vec<HeldTask> {
@@ -538,6 +557,9 @@ impl Manager {
         mut cancel: watch::Receiver<bool>,
     ) -> Result<TaskFinished> {
         if *cancel.borrow() {
+            if let Some(f) = self.interrupted(&a.branch) {
+                return Ok(f);
+            }
             return Ok(TaskFinished {
                 outcome: task_finished::Outcome::Cancelled as i32,
                 error: "Cancelled before it started.".into(),
@@ -636,6 +658,12 @@ impl Manager {
             ..Default::default()
         };
         if cancelled {
+            if let Some(f) = self.interrupted(&a.branch) {
+                return Ok(TaskFinished {
+                    summary: base.summary,
+                    ..f
+                });
+            }
             return Ok(TaskFinished {
                 outcome: task_finished::Outcome::Cancelled as i32,
                 error: "Cancelled.".into(),

@@ -529,6 +529,37 @@ async fn cancelling_a_running_task_stops_the_agent() {
 }
 
 #[tokio::test]
+async fn stopping_the_runner_interrupts_running_tasks() {
+    let env = setup(Mode::FullAccess);
+    for agent in AGENTS {
+        let id = format!("{agent}-t11");
+        let mut a = assign(
+            agent,
+            &id,
+            PermissionMode::Auto,
+            &format!("sling/t11-{agent}"),
+            "site",
+        );
+        a.objective = "[hang]".into();
+        env.mgr.assign(a, &all_ready()).await;
+        wait_for(
+            &env.mgr,
+            &id,
+            |k| matches!(k, Kind::Log(l) if l.text.contains("session")),
+        )
+        .await;
+        env.mgr.interrupt_all();
+        let events = wait_for(&env.mgr, &id, |k| matches!(k, Kind::Finished(_))).await;
+        let done = finished(&events);
+        assert_eq!(
+            done.outcome(),
+            task_finished::Outcome::Interrupted,
+            "{agent}: {done:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn the_agent_never_sees_sling_variables_or_tokens() {
     // SAFETY: tests only add variables; nothing reads these concurrently in a
     // way that matters.
