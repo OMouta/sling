@@ -1169,22 +1169,39 @@ export class TaskService implements GatewayHandlers {
     approve: boolean,
     via?: { via: string; externalUserId?: string },
   ): Promise<boolean> {
-    const [approval] = await this.#db
-      .update(schema.approvals)
-      .set({
-        state: approve ? "approved" : "rejected",
-        decidedBy: userId,
-        decidedVia: via?.via ?? null,
-        decidedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(schema.approvals.id, approvalId),
-          eq(schema.approvals.workspaceId, workspaceId),
-          eq(schema.approvals.state, "pending"),
-        ),
-      )
-      .returning();
+    // The decision and its step move together, so a failure after this can't
+    // leave a step waiting on an approval that's already decided.
+    const approval = await this.#db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(schema.approvals)
+        .set({
+          state: approve ? "approved" : "rejected",
+          decidedBy: userId,
+          decidedVia: via?.via ?? null,
+          decidedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.approvals.id, approvalId),
+            eq(schema.approvals.workspaceId, workspaceId),
+            eq(schema.approvals.state, "pending"),
+          ),
+        )
+        .returning();
+      if (row?.kind === "task_action" && row.actionId) {
+        await tx
+          .update(schema.actions)
+          .set(
+            approve
+              ? { state: "ready" }
+              : { state: "rejected", message: "Rejected.", finishedAt: new Date() },
+          )
+          .where(
+            and(eq(schema.actions.id, row.actionId), eq(schema.actions.state, "awaiting_approval")),
+          );
+      }
+      return row;
+    });
     if (!approval) return false;
     await audit(this.#ctx, {
       workspaceId,
@@ -1214,17 +1231,31 @@ export class TaskService implements GatewayHandlers {
     }
     const { actionId, taskId } = approval;
     if (!actionId || !taskId) return true;
-    await this.#db
-      .update(schema.actions)
-      .set(
-        approve
-          ? { state: "ready" }
-          : { state: "rejected", message: "Rejected.", finishedAt: new Date() },
-      )
-      .where(and(eq(schema.actions.id, actionId), eq(schema.actions.state, "awaiting_approval")));
     const reason = await this.#advanceActions(taskId);
     if (reason && reason !== "approval_needed") await this.settle(taskId, reason);
     return true;
+  }
+
+  /** Moves a step on after its approval expired, or was decided without the step moving. */
+  async #moveDecidedStep(
+    taskId: string,
+    actionId: string,
+    decided: "approved" | "rejected" | "expired",
+  ): Promise<void> {
+    await this.#db
+      .update(schema.actions)
+      .set(
+        decided === "approved"
+          ? { state: "ready" }
+          : decided === "rejected"
+            ? { state: "rejected", message: "Rejected.", finishedAt: new Date() }
+            : { state: "expired", message: "The approval expired.", finishedAt: new Date() },
+      )
+      .where(and(eq(schema.actions.id, actionId), eq(schema.actions.state, "awaiting_approval")));
+    const reason = await this.#advanceActions(taskId);
+    if (reason && !(decided === "approved" && reason === "approval_needed")) {
+      await this.settle(taskId, reason);
+    }
   }
 
   /** Approves or rejects every pending approval on a task at once. */
@@ -1271,10 +1302,14 @@ export class TaskService implements GatewayHandlers {
         ),
       );
     for (const t of lost) {
-      await this.#setState(t.id, t.state, "interrupted", {
-        error: "The machine stayed offline for more than 30 minutes.",
-      });
-      await this.settle(t.id, "finished");
+      try {
+        await this.#setState(t.id, t.state, "interrupted", {
+          error: "The machine stayed offline for more than 30 minutes.",
+        });
+        await this.settle(t.id, "finished");
+      } catch (err) {
+        this.#ctx.log.error({ err, taskId: t.id }, "interrupting an offline task failed");
+      }
     }
 
     const expired = await db
@@ -1283,24 +1318,44 @@ export class TaskService implements GatewayHandlers {
       .where(and(eq(schema.approvals.state, "pending"), lt(schema.approvals.expiresAt, new Date())))
       .returning();
     for (const a of expired) {
-      await this.#publishApproval(a.workspaceId, a.id);
-      if (a.kind === "workflow") {
-        await this.onWorkflowApproval?.(a);
-        continue;
+      try {
+        await this.#publishApproval(a.workspaceId, a.id);
+        if (a.kind === "workflow") {
+          await this.onWorkflowApproval?.(a);
+          continue;
+        }
+        if (a.kind === "sandbox_fallback") {
+          await this.#ctx.sandboxes.fallbackDecided(a, "expired");
+          continue;
+        }
+        if (!a.actionId || !a.taskId) continue;
+        await this.#moveDecidedStep(a.taskId, a.actionId, "expired");
+      } catch (err) {
+        this.#ctx.log.error({ err, approvalId: a.id }, "approval expiry failed");
       }
-      if (a.kind === "sandbox_fallback") {
-        await this.#ctx.sandboxes.fallbackDecided(a, "expired");
-        continue;
+    }
+
+    // Steps still waiting on an approval that was decided or expired, as when
+    // the process stopped between the two.
+    const stranded = await db.execute<{ id: string; task_id: string; decided: string }>(sql`
+      select a.id, a.task_id, (
+        select p.state from ${schema.approvals} p
+        where p.action_id = a.id order by p.created_at desc limit 1
+      ) as decided
+      from ${schema.actions} a
+      where a.state = 'awaiting_approval'
+        and not exists (
+          select 1 from ${schema.approvals} p where p.action_id = a.id and p.state = 'pending'
+        )
+    `);
+    for (const r of stranded.rows) {
+      const decided = r.decided;
+      if (decided !== "approved" && decided !== "rejected" && decided !== "expired") continue;
+      try {
+        await this.#moveDecidedStep(r.task_id, r.id, decided);
+      } catch (err) {
+        this.#ctx.log.error({ err, actionId: r.id }, "moving a decided step failed");
       }
-      if (!a.actionId || !a.taskId) continue;
-      await db
-        .update(schema.actions)
-        .set({ state: "expired", message: "The approval expired.", finishedAt: new Date() })
-        .where(
-          and(eq(schema.actions.id, a.actionId), eq(schema.actions.state, "awaiting_approval")),
-        );
-      const reason = await this.#advanceActions(a.taskId);
-      if (reason) await this.settle(a.taskId, reason);
     }
 
     const queued = await db

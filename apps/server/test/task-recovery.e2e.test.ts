@@ -149,3 +149,48 @@ it("rate limits and records sign-in under the address the server sees, not one t
   expect(workspaceId).not.toBe("");
   expect(session?.ipAddress).toBe("127.0.0.1");
 }, 30_000);
+
+it("moves a step whose approval was decided without it, and decides a step with its approval", async () => {
+  const { db } = server.ctx;
+  const step = async (approval: "pending" | "approved" | "rejected") => {
+    const taskId = await addTask({ state: "succeeded", finishedAt: new Date() });
+    const actionId = newId("act");
+    await db.insert(schema.actions).values({
+      id: actionId,
+      taskId,
+      workspaceId,
+      ownerId: userId,
+      kind: "push",
+      state: "awaiting_approval",
+      position: 0,
+      requiresApproval: true,
+    });
+    const approvalId = newId("apv");
+    await db.insert(schema.approvals).values({
+      id: approvalId,
+      workspaceId,
+      ownerId: userId,
+      actionId,
+      taskId,
+      state: approval,
+      expiresAt: new Date(Date.now() + 60 * 60_000),
+    });
+    return { actionId, approvalId };
+  };
+  const stateOf = async (actionId: string) =>
+    (await db.select().from(schema.actions).where(eq(schema.actions.id, actionId)))[0]?.state;
+
+  // The process stopped after the decision, before the step moved.
+  const approved = await step("approved");
+  const rejected = await step("rejected");
+  const waiting = await step("pending");
+  await server.ctx.tasks.sweep();
+  // No machine to push from, so it stays ready.
+  expect(await stateOf(approved.actionId)).toBe("ready");
+  expect(await stateOf(rejected.actionId)).toBe("rejected");
+  expect(await stateOf(waiting.actionId)).toBe("awaiting_approval");
+
+  expect(await server.ctx.tasks.decide(workspaceId, waiting.approvalId, userId, true)).toBe(true);
+  expect(await stateOf(waiting.actionId)).toBe("ready");
+  expect(await server.ctx.tasks.decide(workspaceId, waiting.approvalId, userId, true)).toBe(false);
+});
