@@ -625,7 +625,7 @@ pub async fn run(
     let _ = child.kill().await;
 
     let capture = capture.lock().await;
-    result.output = capture.text();
+    result.output = crate::redact::redact(&capture.text());
     result.truncated = capture.truncated();
     result.duration_ms = started.elapsed().as_millis() as u64;
     result

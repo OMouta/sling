@@ -134,6 +134,20 @@ async fn runs_a_command_and_keeps_both_streams() {
 }
 
 #[tokio::test]
+async fn masks_tokens_in_command_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let token = "ghp_0123456789abcdefghij0123456789abcd";
+    let r = request(
+        &format!("echo GH_TOKEN={token}"),
+        false,
+        PermissionMode::FullAccess,
+    );
+    let res = run_here(&r, dir.path(), &Sandbox::Missing(String::new())).await;
+    assert!(res.output.starts_with("GH_TOKEN="), "{}", res.output);
+    assert!(!res.output.contains(token), "{}", res.output);
+}
+
+#[tokio::test]
 async fn stops_a_command_that_runs_too_long() {
     let dir = tempfile::tempdir().unwrap();
     let mut r = request("echo started; sleep 30", false, PermissionMode::FullAccess);
