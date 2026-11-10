@@ -54,6 +54,8 @@ export const MIN_INTERVAL_SECONDS = 30;
 export const MAX_RUNNING = 8;
 /** Most due checks one tick picks up. The rest wait for the next. */
 const TICK_BATCH = 200;
+/** How long Sling waits for a workflow's own alert before it decides about its push. */
+const ALERT_WAIT_MS = 60_000;
 const DUE_QUEUE = "checks-due";
 
 const SiteConfig = z.object({
@@ -1026,30 +1028,72 @@ export class Checks implements CheckService {
       dedupeKey: `check:${row.id}:${result.id}`,
     });
     if (!row.notify) return;
-    if (await this.#workflowAlerts(row.workspaceId, runs, view)) return;
-    await ctx.push.notify(row.workspaceId, row.ownerId, alertPayload(row.id, alert), {
-      urgency: alert.urgency,
-      ttlSeconds: 60 * 60,
+    const push = async () => {
+      await ctx.push.notify(row.workspaceId, row.ownerId, alertPayload(row.id, alert), {
+        urgency: alert.urgency,
+        ttlSeconds: 60 * 60,
+      });
+    };
+    if (await this.#olderSiteAlert(row.workspaceId, view)) return;
+    const notifying = await this.#mayNotify(runs);
+    if (notifying.length === 0) return push();
+    // Wait for those runs, and push unless one of them did.
+    this.#background("check alert", async () => {
+      if (!(await this.#notified(notifying))) await push();
     });
   }
 
-  /** The chat a start rule opened for this change, when it opened one. */
+  /** The runs this change started whose workflow has a Notify my devices step. */
+  async #mayNotify(runs: { id: string; versionId: string }[]): Promise<string[]> {
+    const ids: string[] = [];
+    for (const run of runs) {
+      const version = await this.#ctx.engine.version(run.versionId);
+      if (version?.definition.nodes.some((n) => n.type === "app.notify")) ids.push(run.id);
+    }
+    return ids;
+  }
+
   /**
-   * Whether a workflow already pushes about this change, so Sling's own push
-   * would be a second one: a run this change started that notifies, or an
-   * older Site down alert that still checks deploy targets every minute.
+   * Whether one of these runs pushed. Gives them a minute to finish; one
+   * still going after that is taken to push when it gets there.
    */
-  async #workflowAlerts(
-    workspaceId: string,
-    runs: { versionId: string }[],
-    view: CheckView,
-  ): Promise<boolean> {
-    const notifies = async (versionId: string | null) => {
-      if (!versionId) return false;
-      const version = await this.#ctx.engine.version(versionId);
-      return version?.definition.nodes.some((n) => n.type === "app.notify") ?? false;
-    };
-    for (const run of runs) if (await notifies(run.versionId)) return true;
+  async #notified(runIds: string[]): Promise<boolean> {
+    const end = Date.now() + ALERT_WAIT_MS;
+    for (;;) {
+      const [pushed] = await this.#db
+        .select({ id: schema.nodeRuns.id })
+        .from(schema.nodeRuns)
+        .where(
+          and(
+            inArray(schema.nodeRuns.runId, runIds),
+            eq(schema.nodeRuns.nodeType, "app.notify"),
+            eq(schema.nodeRuns.status, "succeeded"),
+          ),
+        )
+        .limit(1);
+      if (pushed) return true;
+      const [going] = await this.#db
+        .select({ id: schema.workflowRuns.id })
+        .from(schema.workflowRuns)
+        .where(
+          and(
+            inArray(schema.workflowRuns.id, runIds),
+            inArray(schema.workflowRuns.status, ["queued", "running", "waiting"]),
+          ),
+        )
+        .limit(1);
+      if (!going) return false;
+      if (Date.now() >= end) return true;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  }
+
+  /**
+   * Whether an older Site down alert, one that still checks deploy targets
+   * every minute, pushes about this change, so Sling's own push would be a
+   * second one.
+   */
+  async #olderSiteAlert(workspaceId: string, view: CheckView): Promise<boolean> {
     if (!view.deploy) return false;
     const enabled = await this.#db
       .select({ versionId: schema.workflows.activeVersionId })

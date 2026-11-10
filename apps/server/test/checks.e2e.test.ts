@@ -381,6 +381,59 @@ describe("a site check", () => {
     expect(events.some((e) => e.type === "check.changed" && e.check.id === created.id)).toBe(true);
   });
 
+  it("still pushes when a workflow it started never reached its own push", async () => {
+    const node = (id: string, type: string, config: Record<string, unknown>) => ({
+      id,
+      type,
+      version: 1,
+      position: { x: 0, y: 0 },
+      config,
+    });
+    const exec = (from: string, port: string, to: string) => ({
+      id: `${from}_${to}`,
+      kind: "exec",
+      from: { node: from, port },
+      to: { node: to, port: "in" },
+    });
+    const wf = await api<{ id: string }>("POST", "/api/workflows", {
+      definition: {
+        schema: "sling.workflow/v1",
+        name: "Only on Mondays",
+        description: "",
+        nodes: [
+          node("changed", "checks.changed", { check: "Shop", kind: "any", on: "any" }),
+          node("never", "core.if", { condition: 'trigger.state = "nope"' }),
+          node("push", "app.notify", { title: "Shop changed", urgency: "normal" }),
+        ],
+        edges: [exec("changed", "next", "never"), exec("never", "true", "push")],
+      },
+    });
+    await api("POST", `/api/workflows/${wf.id}/publish`, { note: "test" });
+    await api("PATCH", `/api/workflows/${wf.id}`, { enabled: true });
+    const created = await api<CheckView>("POST", "/api/checks", {
+      name: "Shop",
+      config: { kind: "site", checks: [{ url: `${siteUrl}/ok` }], versionUrl: null },
+    });
+    const before = pushes.length;
+    siteDown = true;
+    try {
+      const { workspaceId } = await workspace();
+      await server.ctx.checks.run(workspaceId, created.id);
+      await server.ctx.checks.run(workspaceId, created.id);
+      await server.ctx.checks.idle();
+      const runs = await server.ctx.db
+        .select({ status: schema.workflowRuns.status })
+        .from(schema.workflowRuns)
+        .where(eq(schema.workflowRuns.workflowId, wf.id));
+      expect(runs.map((r) => r.status)).toEqual(["succeeded"]);
+      expect(pushes.slice(before).map((p) => p.payload.title)).toEqual(["Shop is down: 500"]);
+    } finally {
+      siteDown = false;
+      await api("PATCH", `/api/workflows/${wf.id}`, { enabled: false });
+      await api("DELETE", `/api/checks/${created.id}`);
+    }
+  });
+
   it("keeps the newest 100 results", async () => {
     const c = await api<CheckView>("POST", "/api/checks", {
       name: "Busy",
