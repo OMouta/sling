@@ -59,14 +59,17 @@ fn resolves_working_directories() {
 
 #[test]
 fn leaves_the_sandbox_only_at_full_access() {
-    let full = Config::default();
+    let full = Config {
+        max_mode: Mode::FullAccess,
+        ..Config::default()
+    };
     let capped = Config {
         max_mode: Mode::Auto,
         ..Config::default()
     };
     let off = Config {
         commands: false,
-        ..Config::default()
+        ..full.clone()
     };
     let have = Sandbox::Seatbelt;
     let none = Sandbox::Missing("no bwrap".into());

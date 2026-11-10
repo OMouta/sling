@@ -213,6 +213,7 @@ beforeAll(async () => {
   const { code } = await api<{ code: string }>("POST", "/api/runners/enrollments");
   await cli("config", "set", "codex-bin", join(dir, "no-codex-here"));
   await cli("config", "set", "claude-bin", join(dir, "no-claude-here"));
+  await cli("config", "set", "max-mode", "full-access");
   await cli("pair", server.url, code, "--name", "laptop");
   runner = spawn(RUNNER, ["run"], { env, stdio: "ignore" });
   const machine = await until("the machine", async () => {

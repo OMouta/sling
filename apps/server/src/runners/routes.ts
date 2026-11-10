@@ -1,4 +1,4 @@
-import { newId } from "@sling/core";
+import { newId, PERMISSION_MODES } from "@sling/core";
 import { schema } from "@sling/db";
 import { Error_Code } from "@sling/runner-protocol";
 import { and, eq, gt, isNull } from "drizzle-orm";
@@ -64,6 +64,8 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
           arch: z.string().max(50),
           hostname: z.string().max(200),
           version: z.string().max(50),
+          // Older Runners don't send it. They default to Full access.
+          maxMode: z.enum(PERMISSION_MODES).optional(),
         }),
       },
     },
@@ -105,6 +107,7 @@ export async function runnerRoutes(app: FastifyInstance, ctx: AppContext) {
           arch: body.arch,
           hostname: body.hostname,
           version: body.version,
+          ...(body.maxMode ? { maxMode: body.maxMode } : {}),
           ephemeral: enrollment.sandboxId !== null,
           sandboxId: enrollment.sandboxId,
         });

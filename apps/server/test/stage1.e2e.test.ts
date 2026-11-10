@@ -202,6 +202,8 @@ async function machine(): Promise<Runner> {
   return r;
 }
 
+let pairedCap = "";
+
 const task = async (id: string) => (await api<{ task: Task }>("GET", `/api/tasks/${id}`)).task;
 
 beforeAll(async () => {
@@ -245,6 +247,7 @@ beforeAll(async () => {
   await runnerCli("repo", "add", repo);
   await runnerCli("config", "set", "codex-bin", FAKE_CODEX);
   await runnerCli("pair", server.url, code, "--name", "e2e-box");
+  pairedCap = (await machine()).maxMode;
   startRunner();
   await until("runner online", async () => (await machine()).online);
 }, 120_000);
@@ -259,6 +262,10 @@ afterAll(async () => {
 // ---------------------------------------------------------------- tests
 
 describe("Stage 1", () => {
+  it("starts a newly paired machine at Auto, before it first connects", () => {
+    expect(pairedCap).toBe("auto");
+  });
+
   it("rejects a reused pairing code", async () => {
     const { code } = await api<{ code: string }>("POST", "/api/runners/enrollments");
     const pair = (c: string) =>
@@ -277,6 +284,9 @@ describe("Stage 1", () => {
       });
     expect((await pair(code)).status).toBe(200);
     expect((await pair(code)).status).toBe(400);
+    // A Runner that doesn't report its cap when pairing defaulted to Full access.
+    const old = (await api<Runner[]>("GET", "/api/runners")).find((r) => !r.online);
+    expect(old?.maxMode).toBe("full-access");
     // Clean up the extra runner so later tests see one machine.
     const all = await api<Runner[]>("GET", "/api/runners");
     for (const r of all.filter((r) => !r.online)) await api("DELETE", `/api/runners/${r.id}`);

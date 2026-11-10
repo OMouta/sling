@@ -569,6 +569,7 @@ async function setUpRealRunner() {
   } catch {
     // This build can't set a deploy command yet.
   }
+  await realCli("config", "set", "max-mode", "full-access");
   await realCli("pair", server.url, code, "--name", "realbox");
   startReal();
   let r: RunnerView;

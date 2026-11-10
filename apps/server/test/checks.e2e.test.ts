@@ -294,6 +294,7 @@ beforeAll(async () => {
     await cli("config", "set", "codex-bin", join(dir, "no-codex-here"));
     await cli("config", "set", "claude-bin", join(dir, "no-claude-here"));
     await cli("config", "set", "scan-roots", dir);
+    await cli("config", "set", "max-mode", "full-access");
     await cli("pair", server.url, enrollment.code, "--name", "laptop");
     runner = spawn(RUNNER, ["run"], { env, stdio: "ignore" });
     machine = await until("the machine", async () =>

@@ -18,6 +18,7 @@ struct PairRequest<'a> {
     arch: &'a str,
     hostname: String,
     version: &'a str,
+    max_mode: &'a str,
 }
 
 #[derive(Deserialize)]
@@ -58,6 +59,7 @@ pub fn pair(paths: &Paths, url: &str, code: &str, name: Option<String>) -> Resul
             arch: std::env::consts::ARCH,
             hostname: hostname(),
             version: VERSION,
+            max_mode: cfg.max_mode.as_str(),
         })
         .with_context(|| format!("could not reach {url}"))?;
     if !res.status().is_success() {

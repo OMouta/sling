@@ -72,7 +72,7 @@ The assistant never picks the mode. It isn't a tool parameter, and the server re
 - Push, PR, merge, and deploy steps that need approval wait as approval records. They survive restarts and expire after 24 hours.
 
 **On the Runner** (holds even if the control plane is compromised)
-- `max-mode` in the local config. Tasks above it are refused.
+- `max-mode` in the local config. Tasks above it are refused. A newly paired machine starts at Auto.
 - Only repos listed in the local config exist. Sling can ask the Runner to add one, but only a git repo the Runner found on the machine itself, and only while `remote-repos` is on. `sling-runner config set remote-repos off` makes the local list final.
 - Branch names must start with `sling/` and can't be the default branch.
 - Pushes never force, and only push the task's own branch.
@@ -87,7 +87,13 @@ Codex's `workspace-write` sandbox and Claude Code's sandbox both block network. 
 
 ## Full access
 
-Full access runs Codex with no sandbox and skips every approval. A prompt injection in a README, an issue, or a log file then reaches your machine with no gate in between. The web app shows a red banner while a conversation is in this mode. To make a machine refuse it entirely:
+Full access runs Codex with no sandbox and skips every approval. A prompt injection in a README, an issue, or a log file then reaches your machine with no gate in between. The web app shows a red banner while a conversation is in this mode. A newly paired machine refuses it until you allow it there:
+
+```sh
+sling-runner config set max-mode full-access
+```
+
+To make a machine refuse it again:
 
 ```sh
 sling-runner config set max-mode auto

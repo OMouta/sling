@@ -130,7 +130,10 @@ pub struct Config {
     pub server_url: Option<String>,
     pub runner_id: Option<String>,
     pub name: String,
-    #[serde(default = "default_max_mode")]
+    /// The highest mode this machine accepts. A config file without the key
+    /// was written before new machines started at Auto, so it keeps the Full
+    /// access it had. Every file the Runner writes has the key.
+    #[serde(default = "unset_max_mode")]
     pub max_mode: Mode,
     #[serde(default = "default_concurrency")]
     pub max_concurrent_tasks: u32,
@@ -205,7 +208,7 @@ fn default_files() -> bool {
     true
 }
 
-fn default_max_mode() -> Mode {
+fn unset_max_mode() -> Mode {
     Mode::FullAccess
 }
 
@@ -219,7 +222,7 @@ impl Default for Config {
             server_url: None,
             runner_id: None,
             name: crate::sys::hostname(),
-            max_mode: default_max_mode(),
+            max_mode: Mode::Auto,
             max_concurrent_tasks: default_concurrency(),
             worktree_root: None,
             codex_bin: None,
@@ -537,6 +540,29 @@ mod tests {
         assert_eq!(back.repos[0].deploy_command.as_deref(), Some("fly deploy"));
         assert!(!text.contains("deploy_timeout"), "left out unless set");
         assert_eq!(back.repos[0].deploy_timeout_secs(), 900);
+    }
+
+    #[test]
+    fn a_new_machine_starts_at_auto_and_an_old_one_keeps_its_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths {
+            config_dir: dir.path().join("config"),
+            data_dir: dir.path().join("data"),
+        };
+        // No file yet: a new machine. Saving it, as pairing does, writes the cap.
+        let fresh = Config::load(&paths).unwrap();
+        assert_eq!(fresh.max_mode, Mode::Auto);
+        fresh.save(&paths).unwrap();
+        let text = std::fs::read_to_string(paths.config_file()).unwrap();
+        assert!(text.contains("max_mode = \"auto\""));
+        assert_eq!(Config::load(&paths).unwrap().max_mode, Mode::Auto);
+
+        // A file that never set the key keeps Full access, also after a save.
+        std::fs::write(paths.config_file(), "name = \"laptop\"\n").unwrap();
+        let old = Config::load(&paths).unwrap();
+        assert_eq!(old.max_mode, Mode::FullAccess);
+        old.save(&paths).unwrap();
+        assert_eq!(Config::load(&paths).unwrap().max_mode, Mode::FullAccess);
     }
 
     #[test]

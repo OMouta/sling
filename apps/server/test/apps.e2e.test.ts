@@ -550,6 +550,7 @@ beforeAll(async () => {
   await cli("config", "set", "claude-bin", join(work, "no-claude-here"));
   // Look for repos only here, not in the whole home directory.
   await cli("config", "set", "scan-roots", work);
+  await cli("config", "set", "max-mode", "full-access");
   await cli("pair", server.url, code, "--name", "laptop");
   runner = spawn(RUNNER, ["run"], { env, stdio: "ignore" });
   await until("the machine with Codex", async () => {

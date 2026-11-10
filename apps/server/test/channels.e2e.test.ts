@@ -337,6 +337,7 @@ beforeAll(async () => {
   await cli("config", "set", "codex-bin", join(dir, "no-codex-here"));
   await cli("config", "set", "claude-bin", join(dir, "no-claude-here"));
   await cli("config", "set", "remote-repos", "off");
+  await cli("config", "set", "max-mode", "full-access");
   await cli("pair", server.url, code, "--name", "laptop");
   await cli("channel", "add", "imessage", "--messages-db", join(dir, "chat.db"));
   await cli("channel", "allow", "imessage", "+351 912 345 678");
