@@ -91,9 +91,12 @@ export function instantOf(t: Time, fallbackZone: string): number {
   if (t.zone && tzid !== "floating") {
     return isZone(tzid) ? wallToInstant(wall, tzid) : t.toUnixTime() * 1000;
   }
-  const named = (t as Time & { timezone?: string }).timezone;
+  const named = (t as Named).timezone;
   return wallToInstant(wall, isZone(named) ? named : fallbackZone);
 }
+
+/** A time whose TZID came with no VTIMEZONE: ical.js keeps the name aside. */
+type Named = Time & { timezone?: string };
 
 /** Matches an occurrence to the RECURRENCE-ID of the instance that replaces it. */
 function recurrenceKey(t: Time, zone: string): string {
@@ -248,9 +251,12 @@ export function collectOccurrences(
           ),
         );
         const it = event.iterator(fastStart(master, start, win, span));
+        // The occurrences ical.js steps through don't keep that name.
+        const named = (start as Named).timezone;
         for (let i = 0; i < MAX_STEPS; i++) {
-          const t = it.next();
+          const t = it.next() as Named | null;
           if (!t) break;
+          if (named && !t.timezone) t.timezone = named;
           if (instantOf(t, win.timeZone) >= win.end) break;
           if (replaced.size > 0 && replaced.has(recurrenceKey(t, win.timeZone))) continue;
           const o = occurrence(t, span, win, info);

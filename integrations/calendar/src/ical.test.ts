@@ -221,6 +221,32 @@ describe("one-off events and time zones", () => {
     ]);
   });
 
+  it("reads a recurring event's TZID with no VTIMEZONE as that zone", () => {
+    const ics = cal(
+      "BEGIN:VEVENT",
+      "UID:ny-weekly",
+      "DTSTART;TZID=America/New_York:20261023T090000",
+      "DTEND;TZID=America/New_York:20261023T100000",
+      "RRULE:FREQ=WEEKLY",
+      "EXDATE;TZID=America/New_York:20261030T090000",
+      "SUMMARY:New York sync",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:ny-weekly",
+      "RECURRENCE-ID;TZID=America/New_York:20261113T090000",
+      "DTSTART;TZID=America/New_York:20261113T110000",
+      "DTEND;TZID=America/New_York:20261113T120000",
+      "SUMMARY:New York sync, moved",
+      "END:VEVENT",
+    );
+    // New York leaves daylight saving on November 1st.
+    expect(utc(read(ics, "2026-10-23", 28))).toEqual([
+      "2026-10-23T13:00:00.000Z",
+      "2026-11-06T14:00:00.000Z",
+      "2026-11-13T16:00:00.000Z",
+    ]);
+  });
+
   it("uses an Outlook VTIMEZONE's rules", () => {
     const ics = cal(
       WINDOWS_TZ,
