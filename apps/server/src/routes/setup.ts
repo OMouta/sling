@@ -3,6 +3,7 @@ import { count, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../context.ts";
 import { actorFromHeaders } from "../http/session.ts";
+import { serverRunnerVersion } from "../runners/builds.ts";
 
 export async function setupRoutes(app: FastifyInstance, ctx: AppContext) {
   /** Tells the web app whether to show first-run setup, login, or the app. */
@@ -21,7 +22,7 @@ export async function setupRoutes(app: FastifyInstance, ctx: AppContext) {
       email: actor?.email ?? null,
       // What the owner asked to be called at setup.
       name: user?.name.trim() || null,
-      version: "0.1.0",
+      version: serverRunnerVersion() ?? "0.0.0",
       // The one address sign-in works at, so a page opened elsewhere can say so.
       publicUrl: ctx.config.publicUrl.origin,
     };

@@ -1478,7 +1478,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "sling-harness-claude-code"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -1491,7 +1491,7 @@ dependencies = [
 
 [[package]]
 name = "sling-harness-codex"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "libc",
@@ -1505,7 +1505,7 @@ dependencies = [
 
 [[package]]
 name = "sling-runner"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "base64",
@@ -1538,7 +1538,7 @@ dependencies = [
 
 [[package]]
 name = "sling-runner-protocol"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "prost",
  "prost-build",

@@ -40,7 +40,7 @@ function workspaceVersion(cargoToml: string | undefined): string | undefined {
 let ownVersion: string | null | undefined;
 
 /** The sling-runner version built with this server, like `0.1.0`, if Cargo.toml is there. */
-function serverRunnerVersion(): string | null {
+export function serverRunnerVersion(): string | null {
   if (ownVersion === undefined) {
     let text: string | undefined;
     try {

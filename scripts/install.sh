@@ -15,7 +15,7 @@
 #                   new version.
 #   SLING_REPO      GitHub repo to download from instead, as owner/name.
 #   SLING_VERSION   Release tag to download from SLING_REPO, for example
-#                   v0.1.0. Defaults to the latest.
+#                   v0.0.1. Defaults to the latest.
 #   SLING_BIN_DIR   Install directory. Defaults to ~/.local/bin.
 #
 # With neither SLING_URL nor SLING_REPO, it uses the sling-runner on PATH.

@@ -121,6 +121,7 @@ describe("the Runner version", () => {
     expect(runnerIsOlder("dev", "0.2.0")).toBe(false);
     expect(runnerIsOlder(null, "0.2.0")).toBe(false);
     expect(runnerIsOlder("0.1.0", null)).toBe(false);
-    expect(runnerIsOlder("0.0.1")).toBe(true);
+    // Against this server's own version, from Cargo.toml.
+    expect(runnerIsOlder("0.0.0")).toBe(true);
   });
 });
