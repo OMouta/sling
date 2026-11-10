@@ -1,6 +1,6 @@
 //! Removes old task worktrees. A worktree is removed once its task's spool is
 //! gone (the server is done with it) and it hasn't been touched for 7 days.
-//! Branches are kept.
+//! Then task branches with nothing left to deliver go too.
 
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -12,7 +12,36 @@ use crate::sys::run;
 
 pub const KEEP_FOR: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
-pub async fn collect(cfg: &Config, paths: &Paths, keep_for: Duration) -> Result<usize> {
+pub struct Collected {
+    pub worktrees: usize,
+    pub branches: usize,
+}
+
+/// `busy` names repos with a task under way, whose branches are left alone.
+pub async fn collect(
+    cfg: &Config,
+    paths: &Paths,
+    keep_for: Duration,
+    busy: impl Fn(&str) -> bool,
+) -> Result<Collected> {
+    let worktrees = remove_worktrees(cfg, paths, keep_for).await?;
+    let mut branches = 0;
+    for repo in &cfg.repos {
+        if busy(&repo.name) {
+            continue;
+        }
+        match crate::git::prune_task_branches(&repo.path).await {
+            Ok(n) => branches += n,
+            Err(e) => tracing::warn!("could not clean up branches in {}: {e:#}", repo.name),
+        }
+    }
+    Ok(Collected {
+        worktrees,
+        branches,
+    })
+}
+
+async fn remove_worktrees(cfg: &Config, paths: &Paths, keep_for: Duration) -> Result<usize> {
     let root = cfg.worktree_root(paths);
     let Ok(entries) = std::fs::read_dir(&root) else {
         return Ok(0);

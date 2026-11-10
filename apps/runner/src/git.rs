@@ -136,31 +136,134 @@ pub fn valid_task_branch(branch: &str, default_branch: &str) -> bool {
         && !branch.ends_with(".lock")
 }
 
-/// Adds a worktree on a new `branch` from `base`. If that fails part way,
-/// removes what it made, so a retry starts clean.
-pub async fn worktree_add(repo: &Path, path: &Path, branch: &str, base: &str) -> Result<()> {
+/// Adds a worktree at `base`, on a new `branch`, or detached when there's
+/// none. If that fails part way, removes what it made, so a retry starts
+/// clean.
+pub async fn worktree_add(
+    repo: &Path,
+    path: &Path,
+    branch: Option<&str>,
+    base: &str,
+) -> Result<()> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
     let had_path = path.exists();
-    let had_branch = branch_exists(repo, branch).await;
+    let had_branch = match branch {
+        Some(b) => branch_exists(repo, b).await,
+        None => false,
+    };
     let p = path.display().to_string();
-    let added = git_slow_ok(
-        repo,
-        &["worktree", "add", "--quiet", "-b", branch, &p, base],
-    )
-    .await;
+    let mut args = vec!["worktree", "add", "--quiet"];
+    match branch {
+        Some(b) => args.extend(["-b", b]),
+        None => args.push("--detach"),
+    }
+    args.extend([p.as_str(), base]);
+    let added = git_slow_ok(repo, &args).await;
     if added.is_err() {
         let _ = git(repo, &["worktree", "remove", "--force", &p]).await;
         if !had_path {
             let _ = tokio::fs::remove_dir_all(path).await;
         }
         let _ = git(repo, &["worktree", "prune"]).await;
-        if !had_branch && branch_exists(repo, branch).await {
-            let _ = git(repo, &["branch", "-D", branch]).await;
+        if let Some(b) = branch
+            && !had_branch
+            && branch_exists(repo, b).await
+        {
+            let _ = git(repo, &["branch", "-D", b]).await;
         }
     }
     added.map(|_| ())
+}
+
+/// Deletes task branches whose work needs nothing more: no worktree has
+/// them checked out, and every commit on them is on the default branch
+/// already, or Sling merged them there (the merge carries the commit's
+/// `Sling-Task` trailer). Returns how many it deleted.
+pub async fn prune_task_branches(repo: &Path) -> Result<usize> {
+    let default = default_branch(repo).await;
+    let mut targets = Vec::new();
+    for r in [
+        format!("refs/remotes/origin/{default}"),
+        format!("refs/heads/{default}"),
+    ] {
+        if ref_exists(repo, &r).await {
+            targets.push(r);
+        }
+    }
+    if targets.is_empty() {
+        return Ok(0);
+    }
+    let checked_out: Vec<String> = git_ok(repo, &["worktree", "list", "--porcelain"])
+        .await?
+        .lines()
+        .filter_map(|l| l.strip_prefix("branch "))
+        .map(str::to_string)
+        .collect();
+    let branches = git_ok(
+        repo,
+        &["for-each-ref", "--format=%(refname)", "refs/heads/sling/"],
+    )
+    .await?;
+    let mut deleted = 0;
+    for full in branches.lines() {
+        let Some(name) = full.strip_prefix("refs/heads/") else {
+            continue;
+        };
+        if !valid_task_branch(name, &default) || checked_out.iter().any(|c| c == full) {
+            continue;
+        }
+        if !branch_is_done(repo, full, &targets).await {
+            continue;
+        }
+        if git(repo, &["branch", "-D", name])
+            .await
+            .is_ok_and(|o| o.ok())
+        {
+            deleted += 1;
+        }
+    }
+    Ok(deleted)
+}
+
+async fn branch_is_done(repo: &Path, branch: &str, targets: &[String]) -> bool {
+    for t in targets {
+        if git(repo, &["merge-base", "--is-ancestor", branch, t])
+            .await
+            .is_ok_and(|o| o.ok())
+        {
+            return true;
+        }
+    }
+    let Ok(task) = git_ok(
+        repo,
+        &[
+            "log",
+            "-1",
+            "--format=%(trailers:key=Sling-Task,valueonly)",
+            branch,
+        ],
+    )
+    .await
+    else {
+        return false;
+    };
+    let task = task.trim();
+    if task.is_empty() {
+        return false;
+    }
+    let trailer = format!("Sling-Task: {task}");
+    for t in targets {
+        let grep = format!("--grep={trailer}");
+        if let Ok(messages) =
+            git_ok(repo, &["log", "--format=%B", "--fixed-strings", &grep, t]).await
+            && messages.lines().any(|l| l.trim() == trailer)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 async fn branch_exists(repo: &Path, branch: &str) -> bool {
@@ -535,7 +638,11 @@ mod tests {
         // Fails after git has made the branch and checked it out.
         hook(&repo, "post-checkout");
         let path = dir.path().join("worktrees/t1");
-        assert!(worktree_add(&repo, &path, "sling/t1", &base).await.is_err());
+        assert!(
+            worktree_add(&repo, &path, Some("sling/t1"), &base)
+                .await
+                .is_err()
+        );
         assert!(!path.exists());
         assert!(!branch_exists(&repo, "sling/t1").await);
         assert_eq!(
@@ -601,6 +708,57 @@ mod tests {
         assert_eq!(default_branch(&repo).await, "master");
         sh(&repo, &["remote", "set-head", "origin", "trunk"]);
         assert_eq!(default_branch(&repo).await, "trunk");
+    }
+
+    #[tokio::test]
+    async fn prunes_only_task_branches_with_nothing_left_to_deliver() {
+        let (dir, repo, base) = repo_with_commit();
+        let commit_on = |branch: &str, file: &str, message: &str| {
+            sh(&repo, &["checkout", "-q", branch]);
+            std::fs::write(repo.join(file), file).unwrap();
+            sh(&repo, &["add", file]);
+            sh(&repo, &["commit", "-qm", message]);
+            sh(&repo, &["checkout", "-q", "main"]);
+        };
+        // Never changed: the same commit as its base.
+        sh(&repo, &["branch", "sling/empty", &base]);
+        // Squash-merged by Sling: main has a commit with its trailer.
+        sh(&repo, &["branch", "sling/squashed", &base]);
+        commit_on("sling/squashed", "s.txt", "Work\n\nSling-Task: tsk_1");
+        sh(&repo, &["merge", "-q", "--squash", "sling/squashed"]);
+        sh(&repo, &["commit", "-qm", "Merge it\n\nSling-Task: tsk_1"]);
+        // Waiting for review: its work isn't on main.
+        sh(&repo, &["branch", "sling/waiting", &base]);
+        commit_on("sling/waiting", "w.txt", "Work\n\nSling-Task: tsk_12");
+        // A task that's still running has its worktree.
+        let wt = dir.path().join("wt");
+        worktree_add(&repo, &wt, Some("sling/running"), &base)
+            .await
+            .unwrap();
+        // Not a task branch.
+        sh(&repo, &["branch", "feature", &base]);
+
+        assert_eq!(prune_task_branches(&repo).await.unwrap(), 2);
+        let left = sh(
+            &repo,
+            &["for-each-ref", "--format=%(refname:short)", "refs/heads/"],
+        );
+        let mut left: Vec<&str> = left.lines().collect();
+        left.sort();
+        assert_eq!(left, ["feature", "main", "sling/running", "sling/waiting"]);
+    }
+
+    #[tokio::test]
+    async fn read_only_worktrees_make_no_branch() {
+        let (dir, repo, base) = repo_with_commit();
+        let wt = dir.path().join("wt");
+        worktree_add(&repo, &wt, None, &base).await.unwrap();
+        assert_eq!(sh(&wt, &["rev-parse", "HEAD"]), base);
+        let branches = sh(
+            &repo,
+            &["for-each-ref", "--format=%(refname:short)", "refs/heads/"],
+        );
+        assert_eq!(branches, "main");
     }
 
     #[tokio::test]

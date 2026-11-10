@@ -552,7 +552,9 @@ impl Manager {
         let default_branch = spool.lock().unwrap().meta.default_branch.clone();
         let (base_ref, base_sha) = git::base_ref(&repo_path, &default_branch).await?;
         let worktree = cfg.worktree_root(&self.paths).join(&a.task_id);
-        git::worktree_add(&repo_path, &worktree, &a.branch, &base_sha)
+        // Read-only tasks can't push, so they get no branch to leave behind.
+        let branch = mode.writes().then_some(a.branch.as_str());
+        git::worktree_add(&repo_path, &worktree, branch, &base_sha)
             .await
             .context("creating the task worktree")?;
         spool.lock().unwrap().set_meta(|m| {
@@ -572,7 +574,13 @@ impl Manager {
                 harness_version: detection.version.clone(),
             }),
         );
-        self.log(spool, format!("Branched {} from {base_ref}", a.branch));
+        self.log(
+            spool,
+            match branch {
+                Some(b) => format!("Branched {b} from {base_ref}"),
+                None => format!("Checked out {base_ref}"),
+            },
+        );
         if let Some(line) = settings_line(agent, a) {
             self.log(spool, line);
         }

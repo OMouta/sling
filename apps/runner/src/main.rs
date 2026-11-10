@@ -89,7 +89,8 @@ enum Command {
         #[command(subcommand)]
         command: ServiceCommand,
     },
-    /// Remove worktrees of finished tasks older than 7 days.
+    /// Remove worktrees of finished tasks older than 7 days, and task
+    /// branches with nothing left to push or merge.
     Gc,
     /// Check that everything this Runner needs is in place.
     Doctor,
@@ -357,8 +358,13 @@ async fn real_main(cli: Cli) -> Result<()> {
             let gc_mgr = mgr.clone();
             tokio::spawn(async move {
                 loop {
-                    match gc::collect(&gc_mgr.config(), &gc_mgr.paths, gc::KEEP_FOR).await {
-                        Ok(n) if n > 0 => tracing::info!("removed {n} old worktrees"),
+                    let busy = |repo: &str| gc_mgr.running_in_repo(repo);
+                    match gc::collect(&gc_mgr.config(), &gc_mgr.paths, gc::KEEP_FOR, busy).await {
+                        Ok(c) if c.worktrees + c.branches > 0 => tracing::info!(
+                            "removed {} old worktrees and {} finished task branches",
+                            c.worktrees,
+                            c.branches
+                        ),
                         Ok(_) => {}
                         Err(e) => tracing::warn!("worktree cleanup failed: {e:#}"),
                     }
@@ -389,8 +395,11 @@ async fn real_main(cli: Cli) -> Result<()> {
         }
         Command::Gc => {
             let cfg = Config::load(&paths)?;
-            let n = gc::collect(&cfg, &paths, gc::KEEP_FOR).await?;
-            println!("Removed {n} worktrees.");
+            let c = gc::collect(&cfg, &paths, gc::KEEP_FOR, |_| false).await?;
+            println!(
+                "Removed {} worktrees and {} finished task branches.",
+                c.worktrees, c.branches
+            );
         }
     }
     Ok(())
