@@ -2,17 +2,33 @@
 //! everything that leaves the machine goes through here.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
-use crate::sys::{Output, run};
+use crate::sys::{Output, run, run_timeout};
+
+/// For fetches, checkouts, commits and pushes, which can take minutes in a
+/// big repo or on a slow network.
+const SLOW: Duration = Duration::from_secs(300);
 
 async fn git(dir: &Path, args: &[&str]) -> Result<Output> {
     run("git", args, Some(dir)).await
 }
 
+async fn git_slow(dir: &Path, args: &[&str]) -> Result<Output> {
+    run_timeout("git", args, Some(dir), SLOW).await
+}
+
 async fn git_ok(dir: &Path, args: &[&str]) -> Result<String> {
-    let out = git(dir, args).await?;
+    checked(args, git(dir, args).await?)
+}
+
+async fn git_slow_ok(dir: &Path, args: &[&str]) -> Result<String> {
+    checked(args, git_slow(dir, args).await?)
+}
+
+fn checked(args: &[&str], out: Output) -> Result<String> {
     if !out.ok() {
         bail!("git {} failed: {}", args.join(" "), out.stderr.trim());
     }
@@ -59,7 +75,7 @@ pub async fn fetch(repo: &Path) -> Result<()> {
     if remote_url(repo).await.is_none() {
         return Ok(());
     }
-    git_ok(repo, &["fetch", "--quiet", "origin"])
+    git_slow_ok(repo, &["fetch", "--quiet", "origin"])
         .await
         .map(|_| ())
 }
@@ -91,17 +107,45 @@ pub fn valid_task_branch(branch: &str, default_branch: &str) -> bool {
         && !branch.ends_with(".lock")
 }
 
+/// Adds a worktree on a new `branch` from `base`. If that fails part way,
+/// removes what it made, so a retry starts clean.
 pub async fn worktree_add(repo: &Path, path: &Path, branch: &str, base: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
+    let had_path = path.exists();
+    let had_branch = branch_exists(repo, branch).await;
     let p = path.display().to_string();
-    git_ok(
+    let added = git_slow_ok(
         repo,
         &["worktree", "add", "--quiet", "-b", branch, &p, base],
     )
+    .await;
+    if added.is_err() {
+        let _ = git(repo, &["worktree", "remove", "--force", &p]).await;
+        if !had_path {
+            let _ = tokio::fs::remove_dir_all(path).await;
+        }
+        let _ = git(repo, &["worktree", "prune"]).await;
+        if !had_branch && branch_exists(repo, branch).await {
+            let _ = git(repo, &["branch", "-D", branch]).await;
+        }
+    }
+    added.map(|_| ())
+}
+
+async fn branch_exists(repo: &Path, branch: &str) -> bool {
+    git(
+        repo,
+        &[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
+    )
     .await
-    .map(|_| ())
+    .is_ok_and(|o| o.ok())
 }
 
 pub async fn worktree_remove(repo: &Path, path: &Path) -> Result<()> {
@@ -135,7 +179,7 @@ pub async fn commit_changes(
     base_sha: &str,
     reported: &[PathBuf],
 ) -> Result<CommitResult> {
-    git_ok(worktree, &["add", "-u"]).await?;
+    git_slow_ok(worktree, &["add", "-u"]).await?;
     let root = std::fs::canonicalize(worktree)?;
     for path in reported {
         let abs = if path.is_absolute() {
@@ -192,14 +236,14 @@ pub async fn commit_changes(
 }
 
 async fn commit(worktree: &Path, message: &str) -> Result<()> {
-    let mut out = git(
+    let mut out = git_slow(
         worktree,
         &["commit", "--quiet", "--no-verify", "-m", message],
     )
     .await?;
     if !out.ok() && out.stderr.contains("user.email") {
         // No git identity on this machine. Commit as the Runner instead.
-        out = git(
+        out = git_slow(
             worktree,
             &[
                 "-c",
@@ -242,15 +286,20 @@ pub fn parse_shortstat(s: &str) -> (u32, u32, u32) {
     out
 }
 
-/// Pushes the task branch. Never force-pushes.
+/// Pushes the task branch. Never force-pushes. Skips the repo's pre-push
+/// hooks, which would run against the user's own checkout rather than the
+/// task's work.
 pub async fn push(repo: &Path, branch: &str) -> Result<()> {
     if remote_url(repo).await.is_none() {
         bail!("this repo has no `origin` remote to push to");
     }
     let refspec = format!("refs/heads/{branch}:refs/heads/{branch}");
-    git_ok(repo, &["push", "--quiet", "origin", &refspec])
-        .await
-        .map(|_| ())
+    git_slow_ok(
+        repo,
+        &["push", "--quiet", "--no-verify", "origin", &refspec],
+    )
+    .await
+    .map(|_| ())
 }
 
 /// `https://github.com/owner/repo` from common remote URL forms.
@@ -368,24 +417,26 @@ pub async fn open_pr(
     title: &str,
     body: &str,
 ) -> Result<String> {
-    let existing = run(
+    let existing = run_timeout(
         gh,
         &[
             "pr", "list", "--head", branch, "--state", "open", "--json", "url", "--jq", ".[0].url",
         ],
         Some(repo),
+        SLOW,
     )
     .await?;
     let url = existing.stdout.trim();
     if existing.ok() && url.starts_with("http") {
         return Ok(url.to_string());
     }
-    let out = run(
+    let out = run_timeout(
         gh,
         &[
             "pr", "create", "--head", branch, "--base", base, "--title", title, "--body", body,
         ],
         Some(repo),
+        SLOW,
     )
     .await?;
     if !out.ok() {
@@ -457,6 +508,50 @@ mod tests {
         assert_ne!(c.sha, agent_sha);
         assert_eq!(c.files_changed, 2);
         assert_eq!(sh(&repo, &["log", "-1", "--format=%s"]), "task");
+    }
+
+    #[tokio::test]
+    async fn a_failed_worktree_add_leaves_no_branch_or_folder() {
+        let (dir, repo, base) = repo_with_commit();
+        // Fails after git has made the branch and checked it out.
+        hook(&repo, "post-checkout");
+        let path = dir.path().join("worktrees/t1");
+        assert!(worktree_add(&repo, &path, "sling/t1", &base).await.is_err());
+        assert!(!path.exists());
+        assert!(!branch_exists(&repo, "sling/t1").await);
+        assert_eq!(
+            sh(&repo, &["worktree", "list", "--porcelain"])
+                .lines()
+                .filter(|l| l.starts_with("worktree "))
+                .count(),
+            1
+        );
+    }
+
+    /// Installs a hook that always fails.
+    fn hook(repo: &Path, name: &str) {
+        let hook = repo.join(".git/hooks").join(name);
+        std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn task_pushes_skip_pre_push_hooks() {
+        let (dir, repo, base) = repo_with_commit();
+        let remote = dir.path().join("remote.git");
+        sh(&repo, &["init", "-q", "--bare", remote.to_str().unwrap()]);
+        sh(
+            &repo,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        );
+        hook(&repo, "pre-push");
+        sh(&repo, &["branch", "sling/t2", &base]);
+        push(&repo, "sling/t2").await.unwrap();
+        assert_eq!(sh(&remote, &["rev-parse", "refs/heads/sling/t2"]), base);
     }
 
     #[tokio::test]
