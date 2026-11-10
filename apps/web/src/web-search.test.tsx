@@ -144,6 +144,14 @@ let live: LiveReplyView | null = null;
 let posts: { path: string; body: unknown }[] = [];
 
 function route(path: string): unknown {
+  if (path === "/api/conversations/cnv_2") {
+    const other = route("/api/conversations/cnv_1") as { conversation: object };
+    return {
+      ...other,
+      conversation: { ...other.conversation, id: "cnv_2", title: "Other" },
+      messages: [],
+    };
+  }
   switch (path) {
     case "/api/status":
       return { needsSetup: false, signedIn: true, email: "a@b.c", version: "0.1.0" };
@@ -228,6 +236,7 @@ function open() {
       <RouterProvider router={router} context={{ queryClient }} />
     </QueryClientProvider>,
   );
+  return router;
 }
 
 describe("web search in a chat", () => {
@@ -360,6 +369,16 @@ describe("Deep research", () => {
     await waitFor(() =>
       expect(screen.queryByRole("button", { name: "Turn off Deep research" })).toBeNull(),
     );
+  });
+
+  it("stays with its chat when you open another one", async () => {
+    const router = open();
+    await plusMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Deep research" }));
+    expect(screen.getByRole("button", { name: "Turn off Deep research" })).toBeTruthy();
+    await act(() => router.navigate({ to: "/c/$id", params: { id: "cnv_2" } }));
+    await screen.findByRole("heading", { name: "Other" });
+    expect(screen.queryByRole("button", { name: "Turn off Deep research" })).toBeNull();
   });
 
   it("comes off with the chip's ×, and then isn't sent", async () => {

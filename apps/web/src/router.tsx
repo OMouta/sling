@@ -241,6 +241,8 @@ export function createAppRouter(history?: RouterHistory) {
     // Back returns a page to where it was scrolled. A chat keeps its own place.
     scrollRestoration: ({ location }) => !location.pathname.startsWith("/c/"),
     scrollToTopSelectors: [`[data-scroll-restoration-id="${PAGE_SCROLLER}"]`],
+    // A page for another chat, task or run starts fresh, not with the last one's state.
+    defaultRemountDeps: ({ params }) => params,
     ...(history ? { history } : {}),
   });
 }
