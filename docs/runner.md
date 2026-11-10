@@ -150,7 +150,7 @@ sling-runner repo add ~/code/site --network
 
 Repos added from Sling start with network off, so use these commands on the machine to turn it on.
 
-For Codex that opens the whole network. Claude Code's sandbox only takes a list of hosts, so for Claude Code it opens package registries and code hosts: GitHub, GitLab, Bitbucket, npm, Yarn, JSR, Deno, PyPI, crates.io, the Go module proxy, RubyGems, Maven, Gradle, Packagist, NuGet, pub.dev, and Hex. Full access has no sandbox, so network is on there for both.
+For Codex that opens the whole network. The Runner sets Codex's network and writable folders on every task, so a `[sandbox_workspace_write]` table in your own `~/.codex/config.toml` doesn't change them. Claude Code's sandbox only takes a list of hosts, so for Claude Code it opens package registries and code hosts: GitHub, GitLab, Bitbucket, npm, Yarn, JSR, Deno, PyPI, crates.io, the Go module proxy, RubyGems, Maven, Gradle, Packagist, NuGet, pub.dev, and Hex. Full access has no sandbox, so network is on there for both.
 
 A running Runner picks up config changes within a minute.
 

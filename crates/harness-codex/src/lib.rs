@@ -252,9 +252,16 @@ pub fn args_for(opts: &RunOptions) -> Vec<String> {
         "-c".into(),
         "approval_policy=\"never\"".into(),
     ];
-    if opts.network && opts.sandbox == "workspace-write" {
+    // Set every time, so a user's own config.toml can't open the network
+    // or extra folders to a task.
+    if opts.sandbox == "workspace-write" {
         args.push("-c".into());
-        args.push("sandbox_workspace_write.network_access=true".into());
+        args.push(format!(
+            "sandbox_workspace_write.network_access={}",
+            opts.network
+        ));
+        args.push("-c".into());
+        args.push("sandbox_workspace_write.writable_roots=[]".into());
     }
     if let Some(model) = &opts.model {
         args.push("-m".into());
@@ -807,12 +814,18 @@ mod tests {
             effort: None,
             fast: false,
         };
-        assert!(
-            args_for(&opts).contains(&"sandbox_workspace_write.network_access=true".to_string())
-        );
+        let has = |opts: &RunOptions, arg: &str| args_for(opts).contains(&arg.to_string());
+        assert!(has(&opts, "sandbox_workspace_write.network_access=true"));
+        assert!(has(&opts, "sandbox_workspace_write.writable_roots=[]"));
+        opts.network = false;
+        assert!(has(&opts, "sandbox_workspace_write.network_access=false"));
+        assert!(has(&opts, "sandbox_workspace_write.writable_roots=[]"));
         opts.sandbox = "read-only".into();
+        opts.network = true;
         assert!(
-            !args_for(&opts).contains(&"sandbox_workspace_write.network_access=true".to_string())
+            !args_for(&opts)
+                .iter()
+                .any(|a| a.starts_with("sandbox_workspace_write"))
         );
         assert_eq!(args_for(&opts).last().unwrap(), "-");
     }
