@@ -164,11 +164,14 @@ async function pendingFallback(ctx: AppContext, taskId: string): Promise<boolean
 /**
  * Task service hook: wakes runs waiting on the task, then offers
  * `sling.task_settled` and, for new approvals, `sling.approval_requested`.
+ * `version` tells settlements with the same reason apart, such as a second
+ * approval on the same task.
  */
 export async function emitTaskSettled(
   ctx: AppContext,
   taskId: string,
   reason: string,
+  version: string,
   strict = false,
 ) {
   const t = await taskView(ctx, taskId);
@@ -185,7 +188,7 @@ export async function emitTaskSettled(
       type: SLING_EVENTS.taskSettled,
       workspaceId: row.workspaceId,
       payload: { task, reason },
-      dedupeKey: `task:${taskId}:${reason}`,
+      dedupeKey: `task:${taskId}:${reason}:${version}`,
     },
     { strict },
   );

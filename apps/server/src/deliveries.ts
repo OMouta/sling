@@ -78,7 +78,7 @@ export async function drainDeliveries(ctx: AppContext) {
             await ctx.agent.onTaskSettled(taskId, reason, String(row.payload.noteId));
             break;
           case "settle.workflow":
-            await emitTaskSettled(ctx, taskId, reason, true);
+            await emitTaskSettled(ctx, taskId, reason, String(row.payload.version ?? row.id), true);
             break;
           case "settle.push":
             ctx.push.taskSettled(taskId, reason);
@@ -177,7 +177,7 @@ export async function enqueueSettlement(ctx: AppContext, taskId: string, reason:
       SETTLEMENT_CONSUMERS.map((consumer) => ({
         id: `settle:${taskId}:${reason}:${version}:${consumer}`,
         kind: `settle.${consumer}`,
-        payload: { taskId, reason, noteId: newId("msg") },
+        payload: { taskId, reason, version, noteId: newId("msg") },
       })),
     )
     .onConflictDoNothing();

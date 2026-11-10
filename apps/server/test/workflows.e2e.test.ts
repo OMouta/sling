@@ -824,6 +824,17 @@ describe("waits", () => {
     });
     const watcherRuns = await c.call<RunView[]>("GET", `/api/workflows/${settledWatcher.id}/runs`);
     expect(watcherRuns).toHaveLength(1);
+    // The same settle point again starts nothing; a new one for the same reason does.
+    await server.ctx.tasks.onSettled?.(taskId, "finished");
+    await db.update(schema.tasks).set({ state: "failed" }).where(eq(schema.tasks.id, taskId));
+    await server.ctx.tasks.onSettled?.(taskId, "finished");
+    await until("a second watcher run", async () => {
+      const runs = await c.call<RunView[]>("GET", `/api/workflows/${settledWatcher.id}/runs`);
+      return runs.length >= 2 ? runs : null;
+    });
+    expect(
+      await c.call<RunView[]>("GET", `/api/workflows/${settledWatcher.id}/runs`),
+    ).toHaveLength(2);
     await c.call("PATCH", `/api/workflows/${settledWatcher.id}`, { enabled: false });
   });
 
