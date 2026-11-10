@@ -35,6 +35,7 @@ const USERS = [
   "recipient",
   "fresh",
   "restart",
+  "catchup",
   "validity",
   "filters",
   "folders",
@@ -629,6 +630,31 @@ describe("email source", () => {
     expect(subjects(first)).toEqual(["Before restart", "While stopped", "After restart"]);
     const keys = first.emitted.map((e) => e.dedupeKey);
     expect(new Set(keys).size).toBe(3);
+  });
+
+  it("hands over only the last day of mail that came while it was stopped", async () => {
+    const first = harness(creds("catchup"));
+    const source = await start(first);
+    await source.stop();
+    const raw = (subject: string) =>
+      `From: outbox@example.com\r\nTo: catchup@example.com\r\nSubject: ${subject}\r\n\r\n${subject}\r\n`;
+    await withImap("catchup", async (client) => {
+      const daysAgo = (n: number) => new Date(Date.now() - n * 86_400_000);
+      await client.append("INBOX", raw("A week old"), [], daysAgo(7));
+      await client.append("INBOX", raw("Two days old"), [], daysAgo(2));
+      await client.append("INBOX", raw("An hour old"), [], new Date(Date.now() - 3_600_000));
+    });
+
+    const second = harness(creds("catchup"), {}, first);
+    await start(second);
+    await until(() => first.emitted.length === 1);
+    await pause(800);
+    expect(subjects(first)).toEqual(["An hour old"]);
+    expect(JSON.parse(first.state.get(markKey("INBOX")) ?? "{}").uid).toBe(3);
+
+    await deliver("catchup", { subject: "New" });
+    await until(() => first.emitted.length === 2);
+    expect(subjects(first)).toEqual(["An hour old", "New"]);
   });
 
   it("starts from the newest message when UIDVALIDITY changes", async () => {

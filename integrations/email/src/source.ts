@@ -1,7 +1,8 @@
 /**
  * The email event source. One IMAP connection per watched folder: IDLE when
  * the server has it, polling when it doesn't. Each folder keeps a mark of the
- * highest UID handed to workflows, so restarts neither repeat nor backfill.
+ * highest UID handed to workflows, so restarts don't repeat mail. Mail that
+ * came while it wasn't watching is handed over only from the last day.
  */
 import type {
   EventSource,
@@ -28,6 +29,9 @@ export interface EmailSourceOptions {
   maxIdleTimeMs?: number;
   backoff?: Backoff;
 }
+
+/** How far back mail that came while nothing was watching is still handed over. */
+export const CATCH_UP_MS = 24 * 60 * 60_000;
 
 /** Bytes of a message downloaded at most. The body text comes first, attachments later. */
 export const SOURCE_LIMIT = 10 * 1024 * 1024;
@@ -210,6 +214,8 @@ async function watchConnection(
 
   const polling = options.idle === false || !client.capabilities.has("IDLE");
   const timer = polling ? setInterval(poke, options.pollIntervalMs ?? 60_000) : null;
+  // The first pass catches up on what came while nothing was watching.
+  let catchUp: Date | null = new Date(Date.now() - CATCH_UP_MS);
   try {
     while (!signal.aborted && !closed) {
       if (!pending) {
@@ -220,7 +226,8 @@ async function watchConnection(
         continue;
       }
       pending = false;
-      mark = await deliverNew(ctx, client, folder, mark, signal);
+      mark = await deliverNew(ctx, client, folder, mark, signal, catchUp);
+      catchUp = null;
     }
   } finally {
     if (timer) clearInterval(timer);
@@ -238,20 +245,40 @@ async function highestUid(client: ImapFlow, mailbox: MailboxObject): Promise<num
   return newest ? newest.uid : 0;
 }
 
-/** Emits every message above the mark, oldest first. The mark moves only after each emit lands. */
+/**
+ * Emits every message above the mark, oldest first. The mark moves only after
+ * each emit lands. With `notBefore`, mail that arrived before then is passed
+ * over, and the mark ends past it.
+ */
 async function deliverNew(
   ctx: Ctx,
   client: ImapFlow,
   folder: string,
   start: UidMark,
   signal: AbortSignal,
+  notBefore: Date | null = null,
 ): Promise<UidMark> {
   let mark = start;
-  const found = await client.search({ uid: `${mark.uid + 1}:*` }, { uid: true });
-  // "n:*" always matches the newest message, even when its UID is below n.
-  const uids = (Array.isArray(found) ? found : [])
-    .filter((u) => u > mark.uid)
-    .sort((a, b) => a - b);
+  const range = `${mark.uid + 1}:*`;
+  const above = (found: number[] | false | undefined) =>
+    // "n:*" always matches the newest message, even when its UID is below n.
+    (Array.isArray(found) ? found : []).filter((u) => u > mark.uid).sort((a, b) => a - b);
+  let uids = above(await client.search({ uid: range }, { uid: true }));
+  let skipTo = 0;
+  if (notBefore && uids.length > 0) {
+    // SEARCH SINCE goes by whole days in the server's zone, so ask from the day before.
+    const since = new Date(notBefore.getTime() - 86_400_000);
+    const recent = new Set(above(await client.search({ uid: range, since }, { uid: true })));
+    const kept = uids.filter((u) => recent.has(u));
+    if (kept.length < uids.length) {
+      ctx.log.info("Passing over mail from before the last day", {
+        folder,
+        count: uids.length - kept.length,
+      });
+      skipTo = uids.at(-1) ?? 0;
+    }
+    uids = kept;
+  }
   for (const uid of uids) {
     if (signal.aborted) break;
     const id = dedupeKey(folder, mark.uidValidity, uid);
@@ -277,10 +304,15 @@ async function deliverNew(
           error: errorMessage(error),
         });
       }
+      const stale = notBefore && message.internalDate && new Date(message.internalDate) < notBefore;
       // A failed emit throws, which reconnects and retries from the same mark.
-      if (email) await ctx.emit({ type: RECEIVED_EVENT, payload: email, dedupeKey: id });
+      if (email && !stale) await ctx.emit({ type: RECEIVED_EVENT, payload: email, dedupeKey: id });
     }
     mark = { uidValidity: mark.uidValidity, uid };
+    await ctx.state.set(markKey(folder), JSON.stringify(mark));
+  }
+  if (skipTo > mark.uid && !signal.aborted) {
+    mark = { uidValidity: mark.uidValidity, uid: skipTo };
     await ctx.state.set(markKey(folder), JSON.stringify(mark));
   }
   return mark;

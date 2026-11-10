@@ -32,7 +32,7 @@ Under **More settings**, prefer port 993 for IMAP and 465 for SMTP, both with TL
 
 - Sling keeps one IMAP connection per watched folder. It uses IDLE, so new mail shows up within seconds. Servers without IDLE are checked every minute.
 - On first start it begins with the newest message. Mail that was already there doesn't fire triggers.
-- It remembers the last message it handed to workflows in each folder, so a restart picks up mail that arrived while it was down and never repeats mail. If the server renumbers a folder, which shows up as a new UIDVALIDITY, Sling starts again from the newest message.
+- It remembers the last message it handed to workflows in each folder, so a restart picks up mail that arrived while it was down and never repeats mail. It picks up only the last day of it, so turning a workflow back on after a while doesn't run it on weeks of old mail. If the server renumbers a folder, which shows up as a new UIDVALIDITY, Sling starts again from the newest message.
 - It only reads. Sling opens folders read-only, and messages stay unread.
 - The connection reconnects by itself, waiting longer after each failure. The Connectors page shows its status.
 
