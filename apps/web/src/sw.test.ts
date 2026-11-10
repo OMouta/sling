@@ -23,6 +23,13 @@ interface FakeNotification {
   close: ReturnType<typeof vi.fn>;
 }
 
+/** A browser's push subscription, as the worker sees one. */
+const renewed = (options: object) => ({
+  endpoint: "https://fcm.googleapis.com/fcm/send/new",
+  options,
+  toJSON: () => ({ keys: { p256dh: "BNew", auth: "aNew" } }),
+});
+
 function worker(respond: (url: string, init: RequestInit) => Promise<Response>) {
   const handlers = new Map<string, (event: unknown) => void>();
   const shown: Shown[] = [];
@@ -32,7 +39,12 @@ function worker(respond: (url: string, init: RequestInit) => Promise<Response>) 
     location: { href: "https://sling.test/sw.js", origin: "https://sling.test" },
     addEventListener: (type: string, fn: (event: unknown) => void) => handlers.set(type, fn),
     skipWaiting: () => {},
+    navigator: {
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36",
+    },
     registration: {
+      pushManager: { subscribe: async (options: object) => renewed(options) },
       showNotification: async (title: string, options: Shown["options"]) => {
         shown.push({ title, options });
       },
@@ -61,6 +73,7 @@ function worker(respond: (url: string, init: RequestInit) => Promise<Response>) 
     shown,
     fetches,
     opened,
+    dispatch,
     push: (payload: unknown) =>
       dispatch("push", { data: { json: () => payload } }).then(() => shown.at(-1)),
     /** Taps a shown notification, or one of its buttons. */
@@ -209,5 +222,28 @@ describe("the service worker", () => {
     await sw.click(n, "allow");
     expect(sw.fetches).toEqual([]);
     expect(sw.opened).toEqual(["/c/cnv_1"]);
+  });
+
+  it("saves a subscription the browser renews, made with the same key", async () => {
+    const sw = worker(() => json({ id: "psh_2" }));
+    const key = new Uint8Array([4, 1, 2]).buffer;
+    await sw.dispatch("pushsubscriptionchange", {
+      oldSubscription: { options: { applicationServerKey: key } },
+      newSubscription: null,
+    });
+    expect(sw.fetches).toEqual([
+      {
+        url: "/api/push/subscriptions",
+        init: {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            endpoint: "https://fcm.googleapis.com/fcm/send/new",
+            keys: { p256dh: "BNew", auth: "aNew" },
+            label: "Chrome on Mac",
+          }),
+        },
+      },
+    ]);
   });
 });

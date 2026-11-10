@@ -170,3 +170,64 @@ self.addEventListener("notificationclick", (event) => {
     })(),
   );
 });
+
+/*
+ * The browser can renew or drop this device's push subscription on its own.
+ * Subscribe again with the same key and save it, so pushes keep arriving.
+ * The old one is removed on the server the first time a push to it fails.
+ */
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(
+    (async () => {
+      const key = event.oldSubscription?.options?.applicationServerKey;
+      const sub =
+        event.newSubscription ||
+        (key
+          ? await self.registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: key,
+            })
+          : null);
+      if (!sub) return;
+      const { keys = {} } = sub.toJSON();
+      await fetch("/api/push/subscriptions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          endpoint: sub.endpoint,
+          keys: { p256dh: keys.p256dh || "", auth: keys.auth || "" },
+          label: deviceLabel(self.navigator.userAgent),
+        }),
+      }).catch(() => {});
+    })(),
+  );
+});
+
+/** "Chrome on Mac" and the like, as the page names a device. */
+function deviceLabel(ua) {
+  const find = (pairs, fallback) => pairs.find(([re]) => re.test(ua))?.[1] || fallback;
+  const browser = find(
+    [
+      [/Edg(e|A|iOS)?\//, "Edge"],
+      [/Firefox\/|FxiOS\//, "Firefox"],
+      [/OPR\/|Opera/, "Opera"],
+      [/SamsungBrowser\//, "Samsung Internet"],
+      [/Chrome\/|CriOS\/|Chromium\//, "Chrome"],
+      [/Safari\//, "Safari"],
+    ],
+    "Browser",
+  );
+  const device = find(
+    [
+      [/iPhone|iPod/, "iPhone"],
+      [/iPad/, "iPad"],
+      [/Android/, "Android"],
+      [/CrOS/, "ChromeOS"],
+      [/Macintosh|Mac OS X/, "Mac"],
+      [/Windows/, "Windows"],
+      [/Linux/, "Linux"],
+    ],
+    "this device",
+  );
+  return `${browser} on ${device}`;
+}
