@@ -3,7 +3,7 @@ import { mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { BuildError, RunnerBuilds, runnerTag } from "./builds.ts";
+import { BuildError, RunnerBuilds, runnerIsOlder, runnerTag } from "./builds.ts";
 
 const TARGET = "aarch64-apple-darwin";
 const ARCHIVE = `sling-runner-v0.1.0-${TARGET}.tar.gz`;
@@ -111,5 +111,16 @@ describe("the Runner version", () => {
     expect(await runnerTag(file)).toBe("v1.4.2");
     expect(await runnerTag(join(dir, "missing.toml"))).toBeUndefined();
     expect(await runnerTag()).toMatch(/^v\d+\.\d+\.\d+/);
+  });
+
+  it("flags a runner older than the server's", () => {
+    expect(runnerIsOlder("0.1.0", "0.2.0")).toBe(true);
+    expect(runnerIsOlder("0.9.3", "0.10.0")).toBe(true);
+    expect(runnerIsOlder("0.2.0", "0.2.0")).toBe(false);
+    expect(runnerIsOlder("0.3.0", "0.2.0")).toBe(false);
+    expect(runnerIsOlder("dev", "0.2.0")).toBe(false);
+    expect(runnerIsOlder(null, "0.2.0")).toBe(false);
+    expect(runnerIsOlder("0.1.0", null)).toBe(false);
+    expect(runnerIsOlder("0.0.1")).toBe(true);
   });
 });

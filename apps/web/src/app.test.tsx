@@ -452,6 +452,12 @@ describe("web app", () => {
     expect(screen.getByText("0.166.0")).toBeTruthy();
   });
 
+  it("says when a machine's Runner is older than Sling", async () => {
+    runners = [{ ...runner, updateAvailable: true }];
+    renderAt("/machines");
+    expect(await screen.findByText(/sling-runner 0\.1\.0, update available/)).toBeTruthy();
+  });
+
   it("pairs a machine a step at a time: what it runs, the command, then its repos", async () => {
     renderAt("/machines?pair=true");
     const d = within(await screen.findByRole("dialog", { name: "Add a machine" }));

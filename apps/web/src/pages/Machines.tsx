@@ -528,7 +528,8 @@ function MachineCard({ runner, access }: { runner: RunnerView; access: SandboxAc
   const facts = [
     runner.os && (OS_LABEL[runner.os] ?? runner.os),
     runner.arch,
-    runner.version && `sling-runner ${runner.version}`,
+    runner.version &&
+      `sling-runner ${runner.version}${runner.updateAvailable ? ", update available" : ""}`,
     runner.hostname && runner.hostname !== runner.name && runner.hostname,
   ].filter(Boolean);
 

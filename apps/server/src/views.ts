@@ -17,6 +17,7 @@ import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { actionCheckViews } from "./checks/action-views.ts";
 import type { AppContext } from "./context.ts";
 import { stepRuleOffer } from "./rules/steps.ts";
+import { runnerIsOlder } from "./runners/builds.ts";
 import { effectiveLabels } from "./runners/labels.ts";
 
 type RunnerRow = typeof schema.runners.$inferSelect;
@@ -36,6 +37,7 @@ export function toRunnerView(r: RunnerRow, repos: RepoRow[]): RunnerView {
     online: r.online,
     lastSeenAt: iso(r.lastSeenAt),
     version: r.version,
+    updateAvailable: runnerIsOlder(r.version),
     os: r.os,
     arch: r.arch,
     hostname: r.hostname,

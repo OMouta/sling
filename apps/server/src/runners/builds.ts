@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,9 +28,51 @@ const CARGO_TOML = new URL("../../../../Cargo.toml", import.meta.url);
  */
 export async function runnerTag(file: URL | string = CARGO_TOML): Promise<string | undefined> {
   const text = await readFile(file, "utf8").catch(() => undefined);
-  const section = text?.split(/^\[workspace\.package\]\s*$/m)[1]?.split(/^\[/m)[0];
-  const version = section?.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+  const version = workspaceVersion(text);
   return version ? `v${version}` : undefined;
+}
+
+function workspaceVersion(cargoToml: string | undefined): string | undefined {
+  const section = cargoToml?.split(/^\[workspace\.package\]\s*$/m)[1]?.split(/^\[/m)[0];
+  return section?.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+}
+
+let ownVersion: string | null | undefined;
+
+/** The sling-runner version built with this server, like `0.1.0`, if Cargo.toml is there. */
+function serverRunnerVersion(): string | null {
+  if (ownVersion === undefined) {
+    let text: string | undefined;
+    try {
+      text = readFileSync(CARGO_TOML, "utf8");
+    } catch {
+      text = undefined;
+    }
+    ownVersion = workspaceVersion(text) ?? null;
+  }
+  return ownVersion;
+}
+
+function parseVersion(v: string): number[] | null {
+  const m = v
+    .trim()
+    .replace(/^v/, "")
+    .match(/^(\d+)\.(\d+)\.(\d+)/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+/** True when `version` is an older sling-runner than `current`, which defaults to this server's. */
+export function runnerIsOlder(
+  version: string | null | undefined,
+  current: string | null = serverRunnerVersion(),
+): boolean {
+  const have = version ? parseVersion(version) : null;
+  const want = current ? parseVersion(current) : null;
+  if (!have || !want) return false;
+  for (let i = 0; i < 3; i++) {
+    if (have[i] !== want[i]) return (have[i] ?? 0) < (want[i] ?? 0);
+  }
+  return false;
 }
 
 /** A build machines asked for that Sling can't hand out, with what to tell them. */

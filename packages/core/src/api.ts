@@ -58,6 +58,8 @@ export interface RunnerView {
   online: boolean;
   lastSeenAt: string | null;
   version: string | null;
+  /** The machine runs an older sling-runner than this server's. */
+  updateAvailable?: boolean;
   os: string | null;
   arch: string | null;
   hostname: string | null;
