@@ -6,7 +6,7 @@ import { TaskCard, TaskStateBadge } from "../components/TaskCard.tsx";
 import { Timeline } from "../components/Timeline.tsx";
 import { Button, Card, Empty, ErrorText, Mono, Skeleton, Stat } from "../components/ui.tsx";
 import { isDeployStep } from "../lib/deploys.ts";
-import { between, dateTime, duration, shortSha } from "../lib/format.ts";
+import { dateTime, shortSha } from "../lib/format.ts";
 import { useEarlierEvents, useTaskDetail } from "../lib/tasks.ts";
 import { taskRoute } from "../router.tsx";
 
@@ -63,7 +63,6 @@ export function TaskPage() {
       </Page>
     );
   const { task, events, olderCursor } = detail.data;
-  const ran = between(task.startedAt, task.finishedAt);
 
   return (
     <Page
@@ -125,22 +124,19 @@ export function TaskPage() {
         <aside className="lg:sticky lg:top-6 lg:self-start">
           <Card className="p-4">
             <dl className="grid grid-cols-2 gap-4 lg:grid-cols-1">
-              <Stat label="Agent">
-                {HARNESS_LABELS[task.harness]}
-                {task.harnessVersion ? ` ${task.harnessVersion}` : ""}
-              </Stat>
               <Stat label="Delivers">
                 <Delivers task={task} />
               </Stat>
-              {task.commitSha && (
-                <Stat label="Commit">
-                  <Mono>{shortSha(task.commitSha)}</Mono>
+              <Stat label="Created">{dateTime(task.createdAt)}</Stat>
+              {task.harnessVersion && (
+                <Stat label={`${HARNESS_LABELS[task.harness]} version`}>
+                  <span className="tabular">{task.harnessVersion}</span>
                 </Stat>
               )}
-              <Stat label="Created">{dateTime(task.createdAt)}</Stat>
-              {ran !== null && (
-                <Stat label={task.finishedAt ? "Ran for" : "Running for"}>
-                  <span className="tabular">{duration(ran)}</span>
+              {/* The card names the commit with the changes it made. */}
+              {task.commitSha && !task.diffStats && (
+                <Stat label="Commit">
+                  <Mono>{shortSha(task.commitSha)}</Mono>
                 </Stat>
               )}
             </dl>

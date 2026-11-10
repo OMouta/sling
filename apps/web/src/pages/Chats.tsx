@@ -1,10 +1,10 @@
 import type { ConversationSummaryView } from "@sling/core";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Archive, MessagesSquare, Plus, Search, SearchX } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { useConversationMenu } from "../components/ConversationMenu.tsx";
 import { ModeBadge } from "../components/ModeBadge.tsx";
-import { Page, Toolbar } from "../components/Page.tsx";
+import { Page, ShellContext, Toolbar } from "../components/Page.tsx";
 import {
   Badge,
   Button,
@@ -36,6 +36,7 @@ const SOURCE_LABEL: Record<string, string> = {
 /** Every chat: search what was said, filter by what's going on, rename or archive. */
 export function ChatsPage() {
   const navigate = useNavigate();
+  const shell = useContext(ShellContext);
   const search = chatsRoute.useSearch();
   const [text, setText] = useState(search.q ?? "");
   const [q, setQ] = useState(search.q ?? "");
@@ -82,7 +83,13 @@ export function ChatsPage() {
       toolbar={
         <Toolbar
           actions={
-            <Button variant="primary" icon={Plus} onClick={() => void navigate({ to: "/" })}>
+            // The sidebar has New chat; a phone keeps it closed, so the page offers it there.
+            <Button
+              variant="primary"
+              icon={Plus}
+              className="md:hidden"
+              onClick={shell.newConversation}
+            >
               New chat
             </Button>
           }
@@ -105,45 +112,43 @@ export function ChatsPage() {
         </Toolbar>
       }
     >
-      <div className="w-full px-5 pt-1 pb-10">
-        <ErrorText error={conversations.error} />
-        {conversations.isPending ? (
-          <div className="space-y-2">
-            <Skeleton className="h-16 w-full rounded-xl" />
-            <Skeleton className="h-16 w-full rounded-xl" />
-          </div>
-        ) : rows.length === 0 ? (
-          <Card>
-            {q ? (
-              <Empty icon={SearchX} title="No chats match" className="py-12" />
-            ) : filter === "archived" ? (
-              <Empty icon={Archive} title="No archived chats" className="py-12" />
-            ) : filter !== "all" ? (
-              <Empty icon={SearchX} title="No chats match" className="py-12" />
-            ) : (
-              <Empty icon={MessagesSquare} title="No chats yet" className="py-12" />
-            )}
-          </Card>
+      <ErrorText error={conversations.error} />
+      {!conversations.isPending && rows.length === 0 ? (
+        q || (filter !== "all" && filter !== "archived") ? (
+          <Empty fill icon={SearchX} title="No chats match" />
+        ) : filter === "archived" ? (
+          <Empty fill icon={Archive} title="No archived chats" />
         ) : (
-          groups.map((g) => (
-            <section key={g.label} aria-label={g.label} className="mt-4 first:mt-0">
-              <h2 className="section-label mb-2 px-1">{g.label}</h2>
-              {/* Not clipped, so a row's menu can open past the card. */}
-              <Card className="divide-y divide-border">
-                {g.items.map((c) => (
-                  <ChatRow key={c.id} c={c} menu={menu(c)} />
-                ))}
-              </Card>
-            </section>
-          ))
-        )}
-        <div ref={end} aria-hidden="true" />
-        {isFetchingNextPage && (
-          <div className="flex justify-center pt-4">
-            <Spinner />
-          </div>
-        )}
-      </div>
+          <Empty fill icon={MessagesSquare} title="No chats yet" />
+        )
+      ) : (
+        <div className="w-full px-5 pt-1 pb-10">
+          {conversations.isPending ? (
+            <div className="space-y-2">
+              <Skeleton className="h-16 w-full rounded-xl" />
+              <Skeleton className="h-16 w-full rounded-xl" />
+            </div>
+          ) : (
+            groups.map((g) => (
+              <section key={g.label} aria-label={g.label} className="mt-4 first:mt-0">
+                <h2 className="section-label mb-2 px-1">{g.label}</h2>
+                {/* Not clipped, so a row's menu can open past the card. */}
+                <Card className="divide-y divide-border">
+                  {g.items.map((c) => (
+                    <ChatRow key={c.id} c={c} menu={menu(c)} />
+                  ))}
+                </Card>
+              </section>
+            ))
+          )}
+          <div ref={end} aria-hidden="true" />
+          {isFetchingNextPage && (
+            <div className="flex justify-center pt-4">
+              <Spinner />
+            </div>
+          )}
+        </div>
+      )}
       {dialog}
     </Page>
   );
@@ -200,13 +205,8 @@ function ChatRow({ c, menu }: { c: ConversationSummaryView; menu: React.ReactNod
 /** What a chat is doing, as a small mark at the end of its row. */
 function ChatStatusMark({ c }: { c: ConversationSummaryView }) {
   const status = conversationStatus(c);
-  if (status === "waiting") {
-    return (
-      <span title="Waiting for you" className="grid size-4 place-items-center">
-        <Dot tone="warn" />
-      </span>
-    );
-  }
+  // A waiting chat says so in its "Waiting for you" badge.
+  if (status === "waiting") return null;
   if (status === "thinking") {
     return (
       <span title="Thinking" className="grid size-4 place-items-center">

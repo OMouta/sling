@@ -82,13 +82,16 @@ export function ChecksPage() {
         ) : undefined
       }
       toolbar={
-        <Toolbar
-          actions={
-            <Button variant="primary" icon={Plus} onClick={add}>
-              Add check
-            </Button>
-          }
-        />
+        // While nothing is watched, the empty state has the only Add check.
+        list.data && checks.length === 0 ? undefined : (
+          <Toolbar
+            actions={
+              <Button variant="primary" icon={Plus} onClick={add}>
+                Add check
+              </Button>
+            }
+          />
+        )
       }
     >
       {editing && (

@@ -162,7 +162,9 @@ describe("chats", () => {
     expect(await main.findByRole("region", { name: "Today" })).toBeTruthy();
     const week = within(main.getByRole("region", { name: "Previous 7 days" }));
     expect(week.getByText("Fix the footer")).toBeTruthy();
-    expect(week.getByTitle("Waiting for you")).toBeTruthy();
+    // Once, as a badge, not also as a dot.
+    expect(week.getAllByText("Waiting for you")).toHaveLength(1);
+    expect(week.queryByTitle("Waiting for you")).toBeNull();
   });
 
   it("filters the Chats page and searches what was said", async () => {

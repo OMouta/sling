@@ -6,14 +6,13 @@ import {
   type TaskView,
 } from "@sling/core";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Bot, Box, CircleDot, ListChecks, Plus } from "lucide-react";
+import { Bot, Box, CircleDot, ListChecks } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ModeBadge } from "../components/ModeBadge.tsx";
 import { Page, StatsBar, Toolbar } from "../components/Page.tsx";
 import { TaskStateBadge } from "../components/TaskCard.tsx";
 import {
   Avatar,
-  Button,
   Empty,
   ErrorText,
   FilterSelect,
@@ -68,13 +67,7 @@ export function TasksPage() {
         />
       }
       toolbar={
-        <Toolbar
-          actions={
-            <Button variant="primary" icon={Plus} onClick={() => void navigate({ to: "/" })}>
-              New task
-            </Button>
-          }
-        >
+        <Toolbar>
           <FilterSelect
             label="Agent"
             icon={Bot}
