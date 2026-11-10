@@ -336,6 +336,10 @@ beforeAll(async () => {
     "bravo online",
     async () => (await machines()).find((m) => m.name === "bravo")?.online,
   );
+  // A machine is online a moment before its list of repos arrives.
+  await until("both machines' repos", async () =>
+    (await machines()).every((m) => m.repos.length > 0),
+  );
   for (const m of await machines()) ids[m.name] = m.id;
 }, 180_000);
 

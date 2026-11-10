@@ -882,7 +882,8 @@ describe("process lifecycle", () => {
 
   it("moves new calls to a new version, and stops the old one when its calls finish", async () => {
     const old = t.runtime.activate(v1);
-    const slow = run(old, "swap.which", { ms: 300 });
+    // Long enough that the old process is still on this call after the swap.
+    const slow = run(old, "swap.which", { ms: 2_000 });
     await waitFor(() => Boolean(t.runtime.host("swap")?.process));
     const oldPid = t.runtime.host("swap")?.process?.pid;
 
