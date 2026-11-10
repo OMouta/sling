@@ -827,6 +827,55 @@ describe("waits", () => {
     await c.call("PATCH", `/api/workflows/${settledWatcher.id}`, { enabled: false });
   });
 
+  it("cancels the task a cancelled run waits on", async () => {
+    const m = await workspace();
+    const db = server.ctx.db;
+    const runnerId = newId("rnr");
+    await db.insert(schema.runners).values({
+      id: runnerId,
+      workspaceId: m.workspaceId,
+      ownerId: m.userId,
+      name: "spare",
+      publicKey: Buffer.alloc(32, 3).toString("base64"),
+    });
+    const repoId = newId("rpo");
+    await db.insert(schema.repos).values({
+      id: repoId,
+      workspaceId: m.workspaceId,
+      ownerId: m.userId,
+      runnerId,
+      name: "site",
+      defaultBranch: "main",
+    });
+    const taskId = newId("tsk");
+    await db.insert(schema.tasks).values({
+      id: taskId,
+      workspaceId: m.workspaceId,
+      ownerId: m.userId,
+      runnerId,
+      repoId,
+      repoName: "site",
+      title: "Not needed after all",
+      objective: "x",
+      mode: "auto",
+      state: "queued",
+      branch: taskBranch(taskId, "x"),
+    });
+    const wf = await deploy(
+      c,
+      def(
+        "Cancelled task wait",
+        [n("t", "core.manual"), n("w", "test.wait_task", { taskId })],
+        [x("t.next", "w")],
+      ),
+    );
+    const run = await start(c, wf.id);
+    await settled(c, run.id, ["waiting"]);
+    await c.call("POST", `/api/runs/${run.id}/cancel`);
+    const [task] = await db.select().from(schema.tasks).where(eq(schema.tasks.id, taskId));
+    expect(task?.state).toBe("cancelled");
+  });
+
   it("waits for an event with a timeout", async () => {
     const wf = await deploy(
       c,

@@ -1602,6 +1602,13 @@ export class Engine {
       if (w.kind === "event" && w.eventType === RUN_FINISHED && w.key) {
         await this.cancel(workspaceId, w.key);
       }
+      if (w.kind === "task" && w.key) {
+        await this.#ctx.tasks
+          .cancel(workspaceId, w.key, updated.ownerId)
+          .catch((err) =>
+            this.#ctx.log.error({ err, runId, taskId: w.key }, "couldn't cancel the run's task"),
+          );
+      }
     }
     await this.#publishRun(updated);
     await this.#publishWorkflow(updated.workflowId);
