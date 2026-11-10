@@ -13,11 +13,12 @@ import type {
   TraceStep,
   WorkflowSummaryView,
 } from "@sling/core";
+import { previewText } from "@sling/core";
 import type { WorkflowDetailView } from "@sling/workflow";
 import type { QueryClient } from "@tanstack/react-query";
 import { useMemo, useSyncExternalStore } from "react";
 import { applyCheckEvent, applyToolStepCheck } from "./checks.ts";
-import { conversationsKey, patchListedConversation, previewText } from "./conversations.ts";
+import { conversationsKey, patchListedConversation } from "./conversations.ts";
 import { applyDeployTargetEvent } from "./deploys.ts";
 import { applyExtension, forgetExtension } from "./extensionApi.ts";
 import { liveText } from "./followUps.ts";

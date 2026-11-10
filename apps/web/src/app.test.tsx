@@ -395,6 +395,40 @@ describe("web app", () => {
     expect(screen.getByRole("combobox", { name: "Order" })).toBeTruthy();
   });
 
+  it("shows a pull request's description on Approvals as the task page does", async () => {
+    approvals = [
+      {
+        id: "apv_pr",
+        kind: "task_action",
+        title: "Open pull request",
+        state: "pending",
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        createdAt: new Date().toISOString(),
+        taskId: "tsk_1",
+        actionId: "act_pr",
+        actionKind: "open_pr",
+        task: {
+          title: "Make footer year dynamic",
+          repoName: "site",
+          runnerName: "devbox",
+          branch: "sling/footer",
+          remoteUrl: "git@github.com:a/site.git",
+          diffStats: null,
+          summary: null,
+          conversationId: null,
+        },
+        prTitle: "Make the footer year dynamic",
+        prBody: "Uses **the current year**.\n\n- `Footer.tsx`",
+        runId: null,
+        payload: null,
+      },
+    ];
+    renderAt("/approvals");
+    expect(await screen.findByText("the current year", { selector: "strong" })).toBeTruthy();
+    expect(screen.getByText("Footer.tsx", { selector: "li code" })).toBeTruthy();
+    expect(screen.queryByText(/\*\*/)).toBeNull();
+  });
+
   it("lists machines with their repos", async () => {
     renderAt("/machines");
     expect(await screen.findByText("devbox")).toBeTruthy();

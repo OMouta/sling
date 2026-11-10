@@ -5,6 +5,7 @@ import {
   MESSAGE_MAX_FILES,
   newId,
   PERMISSION_MODES,
+  previewText,
   type TaskState,
 } from "@sling/core";
 import { type MessageMeta, schema } from "@sling/db";
@@ -487,10 +488,7 @@ function lateAnswer(ended: ApprovalOutcome): string {
 
 /** One line of a message, for a list. */
 function previewOf(content: unknown, role: string): string {
-  const text = textOf((content as { content?: unknown })?.content).trim();
-  const line = role === "system" ? (text.split("\n")[0] ?? "") : text;
-  const flat = line.replace(/\s+/g, " ");
-  return flat.length > 160 ? `${flat.slice(0, 159)}…` : flat;
+  return previewText(textOf((content as { content?: unknown })?.content), role);
 }
 
 /** Lists conversations with their latest message, tasks, and whether they wait on the user. */

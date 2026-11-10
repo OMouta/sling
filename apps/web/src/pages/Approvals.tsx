@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { ActionCheckLine } from "../components/ActionCheck.tsx";
+import { ChatMarkdown } from "../components/ChatMarkdown.tsx";
 import { DeployPlanText } from "../components/DeployBits.tsx";
 import { Content, Page, Toolbar } from "../components/Page.tsx";
 import { RuleQuestion } from "../components/RuleQuestion.tsx";
@@ -45,7 +46,7 @@ import {
   taskRepo,
   useDeployTargets,
 } from "../lib/deploys.ts";
-import { expiresIn, plural } from "../lib/format.ts";
+import { expiresIn, plural, withoutLocalLinks } from "../lib/format.ts";
 import { useLoadMore } from "../lib/pages.ts";
 import { useTaskDetail } from "../lib/tasks.ts";
 import { useRun } from "../lib/workflowApi.ts";
@@ -295,7 +296,11 @@ function PullRequestGroup({ taskId, approvals }: { taskId: string; approvals: Ap
         {pr?.prTitle && (
           <div className="rounded-lg bg-surface-2 p-3 text-[13px] shadow-raised">
             <p className="font-medium">{pr.prTitle}</p>
-            <p className="mt-1 leading-5 whitespace-pre-wrap text-muted">{pr.prBody}</p>
+            {pr.prBody && (
+              <div className="prose-chat mt-1 leading-5 text-muted">
+                <ChatMarkdown>{withoutLocalLinks(pr.prBody)}</ChatMarkdown>
+              </div>
+            )}
           </div>
         )}
       </div>

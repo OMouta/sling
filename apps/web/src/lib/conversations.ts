@@ -134,10 +134,3 @@ export function groupByDate(
   }
   return groups;
 }
-
-/** A message's text as a list shows it: one line, shortened. */
-export function previewText(text: string, role: string): string {
-  const line = role === "system" ? (text.split("\n")[0] ?? "") : text;
-  const flat = line.replace(/\s+/g, " ").trim();
-  return flat.length > 160 ? `${flat.slice(0, 159)}…` : flat;
-}
