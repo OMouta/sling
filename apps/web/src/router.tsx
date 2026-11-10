@@ -17,6 +17,7 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { PAGE_SCROLLER } from "./components/Page.tsx";
+import { NotFound, RouteError } from "./components/RouteFallback.tsx";
 import { AppLayout } from "./components/Shell.tsx";
 import { returnPath } from "./lib/returnTo.ts";
 import { ApprovalsPage } from "./pages/Approvals.tsx";
@@ -207,6 +208,13 @@ export const extensionsRoute = createRoute({
   component: lazyRouteComponent(() => import("./pages/Extensions.tsx"), "ExtensionsPage"),
 });
 
+// Any other address, inside the app so the sidebar stays.
+const notFoundRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "$",
+  component: NotFound,
+});
+
 const routeTree = rootRoute.addChildren([
   setupRoute,
   loginRoute,
@@ -230,6 +238,7 @@ const routeTree = rootRoute.addChildren([
     personalitiesRoute,
     personalityRoute,
     memoryRoute,
+    notFoundRoute,
   ]),
 ]);
 
@@ -241,6 +250,8 @@ export function createAppRouter(history?: RouterHistory) {
     // Back returns a page to where it was scrolled. A chat keeps its own place.
     scrollRestoration: ({ location }) => !location.pathname.startsWith("/c/"),
     scrollToTopSelectors: [`[data-scroll-restoration-id="${PAGE_SCROLLER}"]`],
+    defaultErrorComponent: RouteError,
+    defaultNotFoundComponent: NotFound,
     // A page for another chat, task or run starts fresh, not with the last one's state.
     defaultRemountDeps: ({ params }) => params,
     ...(history ? { history } : {}),

@@ -52,12 +52,17 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
-/** Built assets have hashed names, so a cached one is always right. */
+/**
+ * Built assets have hashed names, so a cached one is always right. A page
+ * in place of one, as an older server may answer for a file it doesn't
+ * have, is never kept.
+ */
 async function asset(event) {
   const hit = await caches.match(event.request);
   if (hit) return hit;
   const res = await fetch(event.request);
-  if (res.status === 200 && res.type === "basic") {
+  const type = res.headers.get("content-type") || "";
+  if (res.status === 200 && res.type === "basic" && !type.includes("text/html")) {
     const copy = res.clone();
     event.waitUntil(caches.open(ASSETS + BUILD).then((c) => c.put(event.request, copy)));
   }

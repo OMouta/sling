@@ -30,13 +30,52 @@ const renewed = (options: object) => ({
   toJSON: () => ({ keys: { p256dh: "BNew", auth: "aNew" } }),
 });
 
-function worker(respond: (url: string, init: RequestInit) => Promise<Response>) {
+/** The Cache Storage API, in memory, keyed by URL. */
+function memoryCaches() {
+  const stores = new Map<string, Map<string, Response>>();
+  const key = (req: Request | string) => (typeof req === "string" ? req : req.url);
+  const store = (name: string) => {
+    let s = stores.get(name);
+    if (!s) {
+      s = new Map();
+      stores.set(name, s);
+    }
+    return s;
+  };
+  return {
+    stores,
+    open: async (name: string) => {
+      const s = store(name);
+      return {
+        match: async (req: Request | string) => s.get(key(req))?.clone(),
+        put: async (req: Request | string, res: Response) => {
+          s.set(key(req), res);
+        },
+      };
+    },
+    keys: async () => [...stores.keys()],
+    delete: async (name: string) => stores.delete(name),
+    match: async (req: Request | string) => {
+      for (const s of stores.values()) {
+        const hit = s.get(key(req));
+        if (hit) return hit.clone();
+      }
+      return undefined;
+    },
+  };
+}
+
+function worker(
+  respond: (url: string, init: RequestInit) => Promise<Response>,
+  opts: { href?: string; caches?: ReturnType<typeof memoryCaches> } = {},
+) {
+  const href = opts.href ?? "https://sling.test/sw.js";
   const handlers = new Map<string, (event: unknown) => void>();
   const shown: Shown[] = [];
   const fetches: { url: string; init: RequestInit }[] = [];
   const opened: string[] = [];
   const self = {
-    location: { href: "https://sling.test/sw.js", origin: "https://sling.test" },
+    location: { href, origin: "https://sling.test" },
     addEventListener: (type: string, fn: (event: unknown) => void) => handlers.set(type, fn),
     skipWaiting: () => {},
     navigator: {
@@ -57,11 +96,12 @@ function worker(respond: (url: string, init: RequestInit) => Promise<Response>) 
       claim: async () => {},
     },
   };
-  const fetch = (url: string, init: RequestInit) => {
+  const fetch = (input: string | { url: string }, init: RequestInit = {}) => {
+    const url = typeof input === "string" ? input : input.url;
     fetches.push({ url, init });
     return respond(url, init);
   };
-  new Function("self", "caches", "fetch", source)(self, {}, fetch);
+  new Function("self", "caches", "fetch", source)(self, opts.caches ?? {}, fetch);
 
   async function dispatch(type: string, event: object) {
     const work: Promise<unknown>[] = [];
@@ -74,6 +114,17 @@ function worker(respond: (url: string, init: RequestInit) => Promise<Response>) 
     fetches,
     opened,
     dispatch,
+    /** A page's request, and what the worker answers it with, if it answers. */
+    request: async (url: string, mode: RequestMode = "cors") => {
+      let answer: Promise<Response> | undefined;
+      await dispatch("fetch", {
+        request: { url, method: "GET", mode },
+        respondWith: (p: Promise<Response>) => {
+          answer = p;
+        },
+      });
+      return answer ? await answer : undefined;
+    },
     push: (payload: unknown) =>
       dispatch("push", { data: { json: () => payload } }).then(() => shown.at(-1)),
     /** Taps a shown notification, or one of its buttons. */
@@ -245,5 +296,29 @@ describe("the service worker", () => {
         },
       },
     ]);
+  });
+});
+
+describe("the worker's cache", () => {
+  /** A same-origin response, as the browser gives the worker. */
+  const basic = (body: string, type: string) => {
+    const res = new Response(body, { headers: { "content-type": type } });
+    Object.defineProperty(res, "type", { value: "basic" });
+    return Promise.resolve(res);
+  };
+
+  it("keeps built files, but never a page sent in place of one", async () => {
+    const caches = memoryCaches();
+    const sw = worker(
+      (url) =>
+        url.endsWith("/Settings-old.js")
+          ? basic("<!doctype html>", "text/html; charset=utf-8")
+          : basic("export {};", "text/javascript"),
+      { href: "https://sling.test/sw.js?cache=1&v=b2", caches },
+    );
+    await sw.request("https://sling.test/assets/index-b2.js");
+    await sw.request("https://sling.test/assets/Settings-old.js");
+    const kept = [...caches.stores.values()].flatMap((s) => [...s.keys()]);
+    expect(kept).toEqual(["https://sling.test/assets/index-b2.js"]);
   });
 });

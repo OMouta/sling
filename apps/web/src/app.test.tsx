@@ -320,6 +320,14 @@ describe("web app", () => {
     expect(screen.queryByLabelText("Password")).toBeNull();
   });
 
+  it("says a page isn't there inside the app, with a way home", async () => {
+    renderAt("/no-such-page");
+    expect(await screen.findByText("Page not found")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "New chat" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Go home" }));
+    expect(await screen.findByText("Log in to a coding agent")).toBeTruthy();
+  });
+
   it("asks for a logged-in coding agent before the first conversation", async () => {
     renderAt("/");
     expect(await screen.findByText("Log in to a coding agent")).toBeTruthy();

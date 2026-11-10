@@ -160,7 +160,7 @@ export async function registerRoutes(app: FastifyInstance, ctx: AppContext) {
   serveWebApp(app, ctx.config);
 }
 
-function serveWebApp(app: FastifyInstance, config: Config) {
+export function serveWebApp(app: FastifyInstance, config: Pick<Config, "webDist">) {
   const dist = config.webDist;
   if (!dist || !existsSync(join(dist, "index.html"))) {
     app.log.info("no built web app found, serving the API only");
@@ -177,6 +177,9 @@ function serveWebApp(app: FastifyInstance, config: Config) {
     }
     const file = path.slice(1);
     if (file && existsSync(join(dist, file))) return reply.sendFile(file);
+    // A built file that isn't here, such as a chunk of an older build, is
+    // missing: the app shell in its place would break the page asking for it.
+    if (path.startsWith("/assets/")) return reply.code(404).send({ error: "not found" });
     return reply.sendFile("index.html");
   });
 }

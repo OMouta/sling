@@ -36,3 +36,49 @@ export function registerServiceWorker(navigate: (href: string) => void) {
   if (document.readyState === "complete") void register();
   else window.addEventListener("load", () => void register(), { once: true });
 }
+
+let newBuild = false;
+let checkedAt = 0;
+
+/**
+ * Asks the server for the app shell and looks for this build's entry chunk
+ * in it. The service worker starts the app from its cached shell, so the
+ * first open after an update runs the build before it.
+ */
+async function checkBuild() {
+  checkedAt = Date.now();
+  try {
+    const res = await fetch("/", { cache: "no-cache", headers: { accept: "text/html" } });
+    const html = res.ok ? await res.text() : "";
+    if (/\/assets\/[^"']+\.js/.test(html) && !html.includes(`/assets/${buildId()}`)) {
+      newBuild = true;
+    }
+  } catch {
+    // Offline: check again next time.
+  }
+}
+
+/**
+ * Production builds check for a newer one when they start and when the tab
+ * comes back after a while. Once there is one, the next move to another page
+ * loads it in full, so the update arrives without interrupting anything.
+ */
+export function watchForNewBuild(router: {
+  subscribe: (
+    event: "onBeforeNavigate",
+    fn: (e: { pathChanged: boolean; toLocation: { href: string } }) => void,
+  ) => () => void;
+}) {
+  if (!import.meta.env.PROD) return;
+  router.subscribe("onBeforeNavigate", (e) => {
+    if (newBuild && e.pathChanged) window.location.assign(e.toLocation.href);
+  });
+  const check = () => {
+    if (!newBuild && Date.now() - checkedAt > 10 * 60_000) void checkBuild();
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") check();
+  });
+  if (document.readyState === "complete") check();
+  else window.addEventListener("load", check, { once: true });
+}
