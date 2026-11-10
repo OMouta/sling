@@ -45,9 +45,10 @@ function approval(
 
 /** A chat whose latest reply did these steps. */
 function chat(...steps: ToolStep[]) {
+  const earlier = [row("user", "Hi"), row("assistant", "Hello.")];
   const user = row("user", "Do it");
   const reply = row("assistant", "Done.", { steps, ms: 10 });
-  return { rows: [row("user", "Hi"), row("assistant", "Hello."), user, reply], user, reply };
+  return { rows: [...earlier, user, reply], user, reply };
 }
 
 describe("what Retry and Edit may replace", () => {
@@ -70,6 +71,14 @@ describe("what Retry and Edit may replace", () => {
   it("is nothing while the latest message has no reply", () => {
     const rows = [row("user", "Hi"), row("assistant", "Hello."), row("user", "Still there?")];
     expect(replaceableIds(rows).size).toBe(0);
+  });
+
+  it("leaves out the reply to an earlier message that was saved after the latest one", () => {
+    const first = row("user", "Run the slow command");
+    const second = row("user", "What is 2+2?");
+    const slow = { ...row("assistant", "It finished."), meta: { seen: first.id } };
+    const answer = { ...row("assistant", "4."), meta: { seen: slow.id } };
+    expect(replaceableIds([first, second, slow, answer])).toEqual(new Set([second.id, answer.id]));
   });
 
   it("is nothing when a note from Sling came after the message", () => {

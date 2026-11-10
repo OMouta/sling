@@ -43,11 +43,19 @@ function textOf(m: LanguageModelV4CallOptions["prompt"][number] | undefined): st
 const asked: string[] = [];
 /** What each suggestion request sent. */
 const suggestions: { system: string; prompt: string }[] = [];
+/** A turn asked something "slow" waits for this before it answers. */
+let gate: Promise<void> = Promise.resolve();
+/** Each turn's prompt, as role and text, without the instructions. */
+const prompts: string[][] = [];
 
 const model = new MockLanguageModelV4({
   doStream: async (options: LanguageModelV4CallOptions) => {
     const user = textOf(options.prompt.findLast((m) => m.role === "user"));
     asked.push(user);
+    prompts.push(
+      options.prompt.filter((m) => m.role !== "system").map((m) => `${m.role}: ${textOf(m)}`),
+    );
+    if (user.includes("slow")) await gate;
     const answer = user.includes("recipe")
       ? "Pasta with tomatoes.\n\n<follow-ups>\nMake it vegan\nHow long does it keep?\n</follow-ups>"
       : `Reply ${asked.length} to: ${user}`;
@@ -223,6 +231,40 @@ describe("retry", () => {
       ["assistant", true],
     ]);
   });
+});
+
+describe("a message sent while a reply is being written", () => {
+  it("gets its own reply once that reply is saved, and only one", async () => {
+    let release = () => {};
+    gate = new Promise((r) => {
+      release = r;
+    });
+    const conv = await api<{ id: string }>("POST", "/api/conversations");
+    await api("POST", `/api/conversations/${conv.id}/messages`, { text: "Run the slow command" });
+    await until(
+      "the turn to start",
+      async () => (await detail(conv.id)).agentStatus === "thinking",
+    );
+    await api("POST", `/api/conversations/${conv.id}/messages`, { text: "What is 2+2?" });
+    const before = asked.length;
+    release();
+    const messages = await settled(conv.id, 2);
+    expect(messages.map((m) => [m.role, m.text])).toEqual([
+      ["user", "Run the slow command"],
+      ["user", "What is 2+2?"],
+      ["assistant", expect.stringMatching(/to: Run the slow command$/)],
+      ["assistant", expect.stringMatching(/to: What is 2\+2\?$/)],
+    ]);
+    // The second turn reads the first reply before the message it answers.
+    expect(prompts.at(-1)).toEqual([
+      "user: Run the slow command",
+      expect.stringMatching(/^assistant: .*to: Run the slow command$/),
+      "user: What is 2+2?",
+    ]);
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(asked.length - before).toBe(1);
+    expect((await detail(conv.id)).messages).toHaveLength(4);
+  }, 30_000);
 });
 
 describe("edit", () => {

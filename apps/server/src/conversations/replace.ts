@@ -1,6 +1,7 @@
 import type { ToolStep } from "@sling/core";
 import { schema } from "@sling/db";
 import { and, eq, gt } from "drizzle-orm";
+import { inTurnOrder } from "../agent/history.ts";
 import type { AppContext } from "../context.ts";
 
 type MessageRow = typeof schema.messages.$inferSelect;
@@ -63,13 +64,18 @@ export function hadSideEffect(step: ToolStep, reads: ReadonlySet<string> = new S
   return true;
 }
 
-/** The latest user message and every message after it, or null with none. */
+/**
+ * The latest user message and every message after it, in the order turns
+ * answered them, or null with none. A reply to an earlier message that was
+ * saved after it isn't part of it.
+ */
 export function latestExchange(
   rows: readonly MessageRow[],
 ): { user: MessageRow; after: MessageRow[] } | null {
-  const i = rows.findLastIndex((r) => r.role === "user");
-  const user = rows[i];
-  return user ? { user, after: rows.slice(i + 1) } : null;
+  const ordered = inTurnOrder(rows);
+  const i = ordered.findLastIndex((r) => r.role === "user");
+  const user = ordered[i];
+  return user ? { user, after: ordered.slice(i + 1) } : null;
 }
 
 /**

@@ -376,6 +376,11 @@ export interface MessageMeta {
   personalityId?: string;
   /** A note from Sling for the person only, such as a slow start: the model never sees it. */
   notice?: boolean;
+  /**
+   * On a turn's reply and its steps: the newest message the turn had read. A
+   * message saved after it, while the turn ran, is the next turn's to answer.
+   */
+  seen?: string;
 }
 
 export interface DiffStats {

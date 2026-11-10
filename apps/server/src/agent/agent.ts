@@ -29,7 +29,14 @@ import { appTools } from "./app-tools.ts";
 import { NoChatMachine } from "./cli-chat.ts";
 import { deployOutcome, stepLine } from "./deploy-update.ts";
 import { withoutFollowUps } from "./follow-ups.ts";
-import { textOf, toMessageView, toModelMessages, UPDATE_PREFIX } from "./history.ts";
+import {
+  awaitsReply,
+  inTurnOrder,
+  textOf,
+  toMessageView,
+  toModelMessages,
+  UPDATE_PREFIX,
+} from "./history.ts";
 import { NoModelConfigured, resolveAssistant, webTools } from "./models.ts";
 import { assistantInstructions } from "./prompt.ts";
 import { agentTools, allowedTools, type ToolScope } from "./tools.ts";
@@ -335,14 +342,17 @@ export class Agent {
       .from(schema.conversations)
       .where(eq(schema.conversations.id, conversationId));
     if (!conv) return { reply: "" };
-    const rows = await ctx.db
+    const saved = await ctx.db
       .select()
       .from(schema.messages)
       .where(eq(schema.messages.conversationId, conversationId))
       .orderBy(asc(schema.messages.id));
+    const rows = inTurnOrder(saved);
     const last = rows.at(-1);
     if (!last) return { reply: "" };
-    if (last.role === "assistant" || last.role === "tool") return { reply: lastReply(rows) };
+    if (!awaitsReply(rows)) return { reply: lastReply(rows) };
+    // Saved on every message this turn writes. Anything newer waits for the next turn.
+    const meta: MessageMeta = { seen: saved.at(-1)?.id ?? last.id };
 
     if (opts.resumed) {
       const [started] = await ctx.db
@@ -353,10 +363,15 @@ export class Agent {
         )
         .limit(1);
       if (started) {
-        await this.addMessage(conv, "assistant", {
-          role: "assistant",
-          content: INTERRUPTED_TURN_MESSAGE,
-        });
+        await this.addMessage(
+          conv,
+          "assistant",
+          { role: "assistant", content: INTERRUPTED_TURN_MESSAGE },
+          null,
+          null,
+          null,
+          { meta },
+        );
         return { reply: INTERRUPTED_TURN_MESSAGE };
       }
     }
@@ -422,6 +437,7 @@ export class Agent {
           web,
           research,
           session: turnSession(conv.agentSession, turn),
+          meta,
           ...(opts.signal ? { signal: opts.signal } : {}),
         });
         this.#setStatus(conv.workspaceId, conv.id, "idle");
@@ -480,7 +496,7 @@ export class Agent {
       }
       // Each model step is its own stored message, for replaying to the model.
       // The chat shows only the last, with the earlier steps in its trace.
-      const { answer, trace: saved } = trace.finish(lastText);
+      const { answer, trace: kept } = trace.finish(lastText);
       const shown = messages.findLastIndex((m) => m.role === "assistant");
       for (const [i, m] of messages.entries()) {
         await this.addMessage(
@@ -489,7 +505,8 @@ export class Agent {
           i === shown ? withoutFollowUps(m) : m,
           null,
           i === messages.length - 1 ? usage : null,
-          i === shown ? (saved ?? { steps: [], ms: 0 }) : null,
+          i === shown ? (kept ?? { steps: [], ms: 0 }) : null,
+          { meta },
         );
       }
       this.#setStatus(conv.workspaceId, conv.id, "idle");
@@ -513,6 +530,7 @@ export class Agent {
         null,
         null,
         done,
+        { meta },
       );
       this.#setStatus(conv.workspaceId, conv.id, "error", message);
       return { reply: message };
@@ -539,6 +557,7 @@ export class Agent {
       trace: TraceRecorder;
       /** The session to resume, when it answered as this turn's personality. */
       session: (typeof schema.conversations.$inferSelect)["agentSession"];
+      meta: MessageMeta;
       signal?: AbortSignal;
       web: boolean;
       research: boolean;
@@ -598,6 +617,7 @@ export class Agent {
       null,
       { inputTokens: result.usage.input, outputTokens: result.usage.output },
       saved,
+      { meta: turn.meta },
     );
     return answer;
   }
@@ -616,7 +636,7 @@ export function cliTranscript(
 } {
   const line = (r: typeof schema.messages.$inferSelect) => {
     const text = textOf((r.content as ModelMessage).content).trim();
-    if (!text) return "";
+    if (!text || r.meta?.notice) return "";
     if (r.role === "system") return `${UPDATE_PREFIX} ${text}`;
     if (r.role === "assistant") return `${labels?.get(r.id) ?? "Assistant"}: ${text}`;
     return r.role === "user" ? `User: ${text}` : "";
@@ -630,7 +650,7 @@ export function cliTranscript(
   }
   const pending = rows
     .slice(lastAnswer + 1)
-    .filter((r) => r.role === "user" || r.role === "system");
+    .filter((r) => r.role === "user" || (r.role === "system" && !r.meta?.notice));
   const prompt = pending
     .map((r) => {
       const text = textOf((r.content as ModelMessage).content).trim();

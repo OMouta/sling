@@ -23,6 +23,33 @@ export function textOf(content: unknown): string {
     .join("");
 }
 
+type OrderedRow = Pick<MessageRow, "id" | "role" | "meta">;
+
+const fromTurn = (r: OrderedRow) => r.role === "assistant" || r.role === "tool";
+
+/** Where a row falls among the turns: a turn's messages right after the newest it had read. */
+const turnKey = (r: OrderedRow) => (fromTurn(r) && r.meta?.seen ? r.meta.seen : r.id);
+
+const byString = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Rows in the order turns answered them. A message sent while a reply was
+ * being written is saved before that reply, but comes after it here, as
+ * what the next turn answers.
+ */
+export function inTurnOrder<T extends OrderedRow>(rows: readonly T[]): T[] {
+  return [...rows].sort((a, b) => byString(turnKey(a), turnKey(b)) || byString(a.id, b.id));
+}
+
+/** Whether a user message or a note from Sling came after everything the latest turn read. */
+export function awaitsReply(rows: readonly OrderedRow[]): boolean {
+  let read = "";
+  for (const r of rows) if (fromTurn(r) && turnKey(r) > read) read = turnKey(r);
+  return rows.some(
+    (r) => (r.role === "user" || (r.role === "system" && !r.meta?.notice)) && r.id > read,
+  );
+}
+
 function hasToolCall(content: unknown): boolean {
   return (
     Array.isArray(content) &&
