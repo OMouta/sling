@@ -52,6 +52,8 @@ export const RUN_QUEUE = "workflow-run";
 export const TIMER_QUEUE = "workflow-timer";
 /** Event a parent run waits on while its child runs. */
 export const RUN_FINISHED = "workflow.run_finished";
+/** How long a run looks stuck before `reconcile` picks it up. */
+const RECONCILE_AFTER_MS = 2 * 60_000;
 /** Node runs older than this lose their stored inputs and outputs. */
 export const PAYLOAD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 /** How often an idempotent node is re-run after restarts before the engine gives up. */
@@ -351,6 +353,56 @@ export class Engine {
       n++;
     }
     if (n > 0) this.#ctx.log.info({ runs: n }, "requeued workflow runs");
+  }
+
+  /**
+   * Picks up runs a lost job or a crash left stuck while the server kept
+   * running: a queued run with no job, a timer whose job never fired, and a
+   * wait on an approval or a child run that already ended. Each is left a
+   * couple of minutes first, so work on its way isn't doubled.
+   */
+  async reconcile(): Promise<number> {
+    if (!this.#boss || this.#stopping || this.#workers.length === 0) return 0;
+    const before = new Date(Date.now() - RECONCILE_AFTER_MS);
+    let n = 0;
+    const queued = await this.#db.execute<{ id: string; concurrency_key: string | null }>(sql`
+      select r.id, r.concurrency_key from workflow_runs r
+      where r.status = 'queued' and r.updated_at < ${before.toISOString()}::timestamptz
+        and not exists (
+          select 1 from pgboss.job j
+          where j.name = ${RUN_QUEUE} and j.data->>'runId' = r.id
+            and j.state in ('created', 'retry', 'active')
+        )`);
+    for (const r of queued.rows) {
+      if (this.#active.has(r.id)) continue;
+      await this.enqueue({ id: r.id, concurrencyKey: r.concurrency_key });
+      n++;
+    }
+    const due = await this.#db
+      .select({ id: schema.runWaits.id })
+      .from(schema.runWaits)
+      .where(lt(schema.runWaits.resumeAt, before));
+    for (const w of due) {
+      await this.#timerFired(w.id);
+      n++;
+    }
+    const ended = await this.#db.execute<{ id: string }>(sql`
+      select w.id from run_waits w
+      where w.created_at < ${before.toISOString()}::timestamptz and (
+        (w.kind = 'approval' and exists (
+          select 1 from approvals a where a.id = w.key and a.state <> 'pending'))
+        or (w.kind = 'event' and w.event_type = ${RUN_FINISHED} and exists (
+          select 1 from workflow_runs c
+          where c.id = w.key and c.status in ('succeeded', 'failed', 'cancelled')))
+      )`);
+    for (const { id } of ended.rows) {
+      const [w] = await this.#db.select().from(schema.runWaits).where(eq(schema.runWaits.id, id));
+      if (!w) continue;
+      await this.#recheckWait(w);
+      n++;
+    }
+    if (n > 0) this.#ctx.log.warn({ runs: n }, "picked up stuck workflow runs");
+    return n;
   }
 
   // ------------------------------------------------------------- versions

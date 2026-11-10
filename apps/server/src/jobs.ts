@@ -41,6 +41,7 @@ async function schedule(ctx: AppContext, boss: PgBoss) {
     await ctx.sandboxes.sweep();
     await ctx.deploys.sweep();
     await reconcileSettlements(ctx);
+    await ctx.engine.reconcile();
   });
   await boss.work(QUEUES.pruneEvents, async () => {
     const n = await ctx.tasks.pruneEvents();

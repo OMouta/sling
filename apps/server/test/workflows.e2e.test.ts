@@ -832,9 +832,9 @@ describe("waits", () => {
       const runs = await c.call<RunView[]>("GET", `/api/workflows/${settledWatcher.id}/runs`);
       return runs.length >= 2 ? runs : null;
     });
-    expect(
-      await c.call<RunView[]>("GET", `/api/workflows/${settledWatcher.id}/runs`),
-    ).toHaveLength(2);
+    expect(await c.call<RunView[]>("GET", `/api/workflows/${settledWatcher.id}/runs`)).toHaveLength(
+      2,
+    );
     await c.call("PATCH", `/api/workflows/${settledWatcher.id}`, { enabled: false });
   });
 
@@ -962,6 +962,73 @@ describe("waits", () => {
     const r = await settled(c, retried.id, ["waiting"]);
     expect(byNode(r, "t")[0]?.outputs).toEqual({ input: { again: true } });
     await c.call("POST", `/api/runs/${retried.id}/cancel`);
+  });
+});
+
+describe("stuck runs", () => {
+  it("picks up a run whose timer job or queue job was lost", async () => {
+    const wf = await deploy(
+      c,
+      def(
+        "Lost jobs",
+        [
+          n("t", "core.manual"),
+          n("w", "core.wait", { seconds: 600 }),
+          n("rec", "test.record", { tag: "woke" }),
+        ],
+        [x("t.next", "w"), x("w.next", "rec")],
+      ),
+    );
+    const db = server.ctx.db;
+    const engine = server.ctx.engine;
+    const waitOf = async (runId: string) => {
+      const [w] = await db.select().from(schema.runWaits).where(eq(schema.runWaits.runId, runId));
+      if (!w) throw new Error("no wait");
+      return w;
+    };
+    const longAgo = new Date(Date.now() - 10 * 60_000);
+
+    // The timer's job is gone, and the wait is long overdue.
+    const timer = await start(c, wf.id);
+    await settled(c, timer.id, ["waiting"]);
+    const tw = await waitOf(timer.id);
+    await db.execute(
+      sql`delete from pgboss.job where name = 'workflow-timer' and data->>'waitId' = ${tw.id}`,
+    );
+    await db
+      .update(schema.runWaits)
+      .set({ resumeAt: longAgo, createdAt: longAgo })
+      .where(eq(schema.runWaits.id, tw.id));
+
+    // The wait resolved, but queueing the run failed.
+    const queued = await start(c, wf.id);
+    await settled(c, queued.id, ["waiting"]);
+    const qw = await waitOf(queued.id);
+    const enqueue = engine.enqueue;
+    engine.enqueue = async () => {
+      throw new Error("lost");
+    };
+    try {
+      await expect(engine.resolveWait(qw.id, { kind: "timer" })).rejects.toThrow("lost");
+    } finally {
+      engine.enqueue = enqueue;
+    }
+    await db
+      .update(schema.workflowRuns)
+      .set({ updatedAt: longAgo })
+      .where(eq(schema.workflowRuns.id, queued.id));
+
+    // Nothing else is stuck, so a fresh run isn't touched.
+    const fresh = await start(c, wf.id);
+    await settled(c, fresh.id, ["waiting"]);
+
+    expect(await engine.reconcile()).toBeGreaterThanOrEqual(2);
+    await settled(c, timer.id, ["succeeded"]);
+    await settled(c, queued.id, ["succeeded"]);
+    expect((await c.call<RunDetailView>("GET", `/api/runs/${fresh.id}`)).run.status).toBe(
+      "waiting",
+    );
+    await c.call("POST", `/api/runs/${fresh.id}/cancel`);
   });
 });
 
