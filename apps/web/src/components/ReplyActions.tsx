@@ -13,6 +13,7 @@ import {
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { api } from "../lib/api.ts";
 import { copyText } from "../lib/clipboard.ts";
+import { sendsOnEnter } from "../lib/keys.ts";
 import { canSpeak, speak, stopIfSpeaking, stopSpeaking, useSpeaking } from "../lib/speech.ts";
 import type { ConversationDetail } from "../lib/types.ts";
 import { Button, cx, ErrorText, Textarea } from "./ui.tsx";
@@ -229,7 +230,7 @@ function ReasonPopover({
         aria-label="What was wrong with it?"
         onChange={(e) => setReason(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+          if (sendsOnEnter(e)) {
             e.preventDefault();
             send();
           }

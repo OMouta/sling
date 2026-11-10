@@ -9,6 +9,7 @@ import {
   useEffect,
 } from "react";
 import type { Dictation } from "../lib/dictation.ts";
+import { sendsOnEnter } from "../lib/keys.ts";
 import { MicButton } from "./MicButton.tsx";
 import { Button, cx, ErrorText, Menu, MenuItem } from "./ui.tsx";
 
@@ -137,7 +138,7 @@ export function Composer({
             onPaste={onPaste}
             onKeyDown={(e) => {
               if (onKeyDown?.(e)) return;
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) submit(e);
+              if (sendsOnEnter(e)) submit(e);
             }}
             aria-label="Message"
             placeholder={dictation.listening ? "Listening…" : placeholder}

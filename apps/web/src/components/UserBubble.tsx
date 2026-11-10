@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../lib/api.ts";
+import { sendsOnEnter } from "../lib/keys.ts";
 import { MentionText } from "./MentionText.tsx";
 import { Button, ErrorText } from "./ui.tsx";
 
@@ -83,7 +84,7 @@ function EditBox({ message, onDone }: { message: MessageView; onDone: () => void
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Escape") onDone();
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+          if (sendsOnEnter(e)) {
             e.preventDefault();
             submit();
           }

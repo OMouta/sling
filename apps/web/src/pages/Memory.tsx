@@ -19,6 +19,7 @@ import {
   Skeleton,
 } from "../components/ui.tsx";
 import { ago } from "../lib/format.ts";
+import { sendsOnEnter } from "../lib/keys.ts";
 import {
   applyMemoryEvent,
   MEMORY_LIST_MAX,
@@ -210,7 +211,7 @@ function MemoryEditor({
     else onSave(clean);
   };
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (sendsOnEnter(e)) {
       e.preventDefault();
       submit();
     } else if (e.key === "Escape") {
