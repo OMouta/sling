@@ -21,9 +21,6 @@ pub mod chat;
 /// Command output kept per event. The tail matters more than the head.
 pub const MAX_OUTPUT_BYTES: usize = 8 * 1024;
 
-/// Claude Code versions this adapter has been run against.
-pub const TESTED_VERSIONS: &[&str] = &["2.1.318"];
-
 /// Hosts Bash may reach in Supervised and Auto when the repo allows network.
 /// Claude Code's sandbox only takes a list of hosts and refuses `*`, so
 /// "network on" means package registries and code hosts.
@@ -155,13 +152,10 @@ pub async fn detect(bin: &str) -> Detection {
             };
         }
     };
-    let (logged_in, mut detail) = match quick(bin, &["auth", "status", "--json"]).await {
+    let (logged_in, detail) = match quick(bin, &["auth", "status", "--json"]).await {
         Ok((_, out)) => login_state(&out),
         Err(e) => (false, format!("could not check the login: {e}")),
     };
-    if !TESTED_VERSIONS.contains(&version.as_str()) {
-        detail.push_str(&format!(" (untested Claude Code version {version})"));
-    }
     Detection {
         installed: true,
         version,

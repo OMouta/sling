@@ -20,9 +20,6 @@ pub mod chat;
 /// Command output kept per event. The tail matters more than the head.
 pub const MAX_OUTPUT_BYTES: usize = 8 * 1024;
 
-/// Codex versions this adapter has been run against.
-pub const TESTED_VERSIONS: &[&str] = &["0.166.0"];
-
 #[derive(Debug, Clone, Default)]
 pub struct Detection {
     pub installed: bool,
@@ -53,10 +50,6 @@ pub async fn detect(bin: &str) -> Detection {
         Ok(text) => login_state(&text),
         Err(e) => (false, format!("not logged in: {e}")),
     };
-    let mut detail = detail;
-    if !TESTED_VERSIONS.contains(&version.as_str()) {
-        detail.push_str(&format!(" (untested Codex version {version})"));
-    }
     Detection {
         installed: true,
         version,
