@@ -132,7 +132,7 @@ export function ConnectorsPage() {
         ) : undefined
       }
     >
-      <div className="space-y-9 px-5 pt-2 pb-6">
+      <div className="space-y-9 px-5 py-6">
         {back?.outcome === "failed" && !back.installationId && (
           <p role="alert" className="text-xs text-danger">
             {back.error ?? "Connecting didn't finish."}
@@ -169,7 +169,7 @@ export function ConnectorsPage() {
 
         {(providers.length > 0 || installedProviders.length > 0) && (
           <Group id="sandbox-providers" title="Sandbox providers">
-            <ProviderReadiness />
+            {installedProviders.length > 0 && <ProviderReadiness />}
             {installedProviders.length > 0 && (
               <div className="grid items-start gap-3 2xl:grid-cols-2">
                 {installedProviders.map((i) => (

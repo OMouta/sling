@@ -6,13 +6,16 @@ import { lazy, type ReactNode, Suspense, useCallback, useEffect, useMemo, useSta
 import { api } from "../lib/api.ts";
 import { decisionCount, useApprovalCounts } from "../lib/approvals.ts";
 import { useRecentConversations } from "../lib/conversations.ts";
+import { plural } from "../lib/format.ts";
 import { machinesOnly } from "../lib/machines.ts";
 import { NEW_CHAT_EVENT } from "../lib/newChat.ts";
 import { connectRealtime, setOpenConversation, useConnection } from "../lib/realtime.ts";
+import { providerInstallations } from "../lib/sandbox.ts";
 import { useSandboxes } from "../lib/sandboxApi.ts";
 import { useRecentTasks } from "../lib/tasks.ts";
 import { useDefaultTimeZone } from "../lib/timezone.ts";
 import type { Status } from "../lib/types.ts";
+import { useConnectors, useInstallations } from "../lib/workflowApi.ts";
 import { Logo } from "./Logo.tsx";
 import { NAV, type NavItem } from "./nav.ts";
 import { ShellContext } from "./Page.tsx";
@@ -212,6 +215,10 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
   });
   const tasks = useRecentTasks();
   const sandboxes = useSandboxes();
+  const installations = useInstallations();
+  const connectors = useConnectors();
+  const hasProvider =
+    providerInstallations(installations.data ?? [], connectors.data ?? []).length > 0;
   const conversations = useRecentConversations();
   // An open chat is one of the Chats page's.
   const inChat = useRouterState({ select: (s) => s.location.pathname.startsWith("/c/") });
@@ -286,7 +293,11 @@ function Sidebar({ onNew, onCollapse }: { onNew: () => void; onCollapse: () => v
 
       <div className="shrink-0 space-y-2 px-3 pb-3">
         <div className="space-y-px">{section("footer")}</div>
-        <StatusCard machines={machines.length} online={online} usage={sandboxes.data?.usage} />
+        <StatusCard
+          machines={machines.length}
+          online={online}
+          usage={hasProvider ? sandboxes.data?.usage : undefined}
+        />
       </div>
     </>
   );
@@ -309,7 +320,9 @@ function StatusCard({
     <div className="rounded-xl bg-surface p-3 shadow-card">
       <div className="flex items-center justify-between gap-2">
         <p className="truncate text-xs font-medium">
-          {machines === 0 ? "No machines yet" : `${online} of ${machines} machines online`}
+          {machines === 0
+            ? "No machines yet"
+            : `${online} of ${plural(machines, "machine")} online`}
         </p>
         <span
           className={cx(
@@ -345,14 +358,6 @@ function StatusCard({
             {used.toLocaleString()} of {budget.toLocaleString()} sandbox minutes this month
           </p>
         </>
-      )}
-      {machines === 0 && (
-        <Link
-          to="/machines"
-          className="pressable mt-2.5 flex h-[26px] items-center justify-center rounded-full bg-surface-2 text-xs font-medium shadow-raised hover:shadow-raised-hover"
-        >
-          Pair a machine
-        </Link>
       )}
     </div>
   );

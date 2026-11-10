@@ -695,6 +695,7 @@ describe("connectors: sandbox providers", () => {
   });
 
   it("lists only what a sandbox still needs", async () => {
+    installations = [...integrationInstallations, dockerInstallation];
     sandboxRepos = allowedRepos;
     settings = sandboxSettings;
     renderAt("/connectors");
@@ -705,6 +706,13 @@ describe("connectors: sandbox providers", () => {
         .getAllByRole("listitem")
         .map((li) => li.textContent),
     ).toEqual(["Add a GitHub tokenSettings"]);
+  });
+
+  it("asks nothing about sandboxes until a provider is added", async () => {
+    renderAt("/connectors");
+    const providers = await providerSection();
+    expect(providers.getByRole("button", { name: "Add Docker" })).toBeTruthy();
+    expect(providers.queryByRole("list", { name: "Sandbox setup" })).toBeNull();
   });
 
   it("installs a provider with its schema form", async () => {
